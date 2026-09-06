@@ -1,0 +1,63 @@
+---
+import type { InferGetStaticParamsType } from 'astro';
+import { getCollection } from 'astro:content';
+import Base from '../../layouts/Base.astro';
+import Header from '../../components/shell/Header.astro';
+import Footer from '../../components/shell/Footer.astro';
+
+export async function getStaticPaths() {
+  return [{ params: { lang: 'en' } }, { params: { lang: 'tr' } }] as const;
+}
+
+type Params = InferGetStaticParamsType<typeof getStaticPaths>;
+const { lang } = Astro.params as Params;
+
+const allSections = await getCollection('sections');
+// Level sections have a two-segment id: "<lang>/<level>".
+const levels = allSections
+  .filter((s) => s.id.split('/').length === 2 && s.id.startsWith(`${lang}/`))
+  .sort((a, b) => a.data.order - b.data.order);
+
+const copy: Record<string, { title: string; tagline: string }> = {
+  en: {
+    title: 'CodeChup Claude Code Academy',
+    tagline: 'Learn Claude Code from zero to expert — hands-on, source-verified lessons.',
+  },
+  tr: {
+    title: 'CodeChup Claude Code Akademisi',
+    tagline: "Claude Code'u sıfırdan uzmanlığa; uygulamalı ve kaynağı doğrulanmış derslerle.",
+  },
+};
+const t = copy[lang] ?? copy.en;
+---
+
+<Base
+  title={t.title}
+  description={t.tagline}
+  lang={lang}
+  path={`/${lang}/`}
+  alternates={[
+    { lang: 'en', path: '/en/' },
+    { lang: 'tr', path: '/tr/' },
+    { lang: 'x-default', path: '/en/' },
+  ]}
+>
+  <Header lang={lang} />
+  <main class="mx-auto max-w-3xl px-4 py-16">
+    <h1 class="font-mono text-3xl font-bold">{t.title}</h1>
+    <p class="mt-4 text-fg-muted">{t.tagline}</p>
+    <ul class="mt-8 flex flex-col gap-3">
+      {
+        levels.map((level) => (
+          <li>
+            <a class="text-link underline" href={`/${lang}/${level.id.split('/')[1]}/`}>
+              {level.data.title}
+            </a>
+            <span class="text-fg-muted"> — {level.data.description}</span>
+          </li>
+        ))
+      }
+    </ul>
+  </main>
+  <Footer lang={lang} />
+</Base>

@@ -1,0 +1,165 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+  <style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#0b0d12; color:#efe9dc; font-family:'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  a { color:#efe9dc; text-decoration:none; } a:hover { color:#e6b731; }
+  .mono { font-family:'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  .eyebrow { font-family:'JetBrains Mono', ui-monospace, monospace; font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:#958f84; }
+  .eyebrow::before { content:'// '; color:#ff4d3d; }
+  .h1 { font-weight:700; font-size:56px; line-height:1.02; letter-spacing:-0.02em; text-wrap:balance; }
+  .h2 { font-weight:600; font-size:32px; line-height:1.1; letter-spacing:-0.015em; }
+  .h3 { font-weight:600; font-size:20px; line-height:1.3; letter-spacing:-0.01em; }
+  .soft { color:#b9b3a6; } .muted { color:#958f84; }
+  .card { background:#171b24; border:1px solid rgba(239,233,220,0.10); border-radius:10px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); }
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:44px; padding:0 18px; border-radius:6px; font-weight:500; font-size:15px; border:1px solid transparent; white-space:nowrap; }
+  .btn-primary { background:#e6b731; color:#22190a; }
+  .btn-ghost { border-color:rgba(239,233,220,0.32); color:#efe9dc; background:transparent; }
+  .btn-soft { background:#1f2430; color:#efe9dc; }
+  .chip { display:inline-flex; align-items:center; height:28px; padding:0 10px; border-radius:4px; background:#1f2430; color:#b9b3a6; font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.04em; }
+  .hr { height:1px; background:rgba(239,233,220,0.10); }
+  .term { background:#11141b; border:1px solid rgba(239,233,220,0.10); border-radius:10px; font-family:'JetBrains Mono', monospace; font-size:13px; line-height:1.6; color:#b9b3a6; overflow:hidden; }
+  .term .bar { display:flex; align-items:center; gap:8px; height:36px; padding:0 14px; border-bottom:1px solid rgba(239,233,220,0.10); color:#958f84; font-size:12px; }
+  .term .dot { width:10px; height:10px; border-radius:999px; background:#1f2430; }
+  .term .body { padding:14px 16px; white-space:pre; }
+  .p { color:#8fd3ff; } .u { color:#efe9dc; } .g { color:#e6b731; } .ok { color:#61cb7c; } .d { color:#958f84; } .r { color:#ff4d3d; }
+  .caret { display:inline-block; width:0.55em; height:1em; background:#ff4d3d; vertical-align:-0.15em; }
+  .sigil { display:inline-block; }
+  .kbd { font-family:'JetBrains Mono', monospace; font-size:12px; padding:2px 6px; border:1px solid rgba(239,233,220,0.32); border-bottom-width:2px; border-radius:4px; color:#b9b3a6; }
+  .grid { display:grid; gap:16px; }
+  .row { display:flex; align-items:center; gap:12px; }
+  .col { display:flex; flex-direction:column; gap:12px; }
+  .badge { display:inline-flex; align-items:center; height:22px; padding:0 8px; border-radius:4px; font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; }
+  .level-1 { background:rgba(106,197,232,0.15); color:#6ac5e8; }
+  .level-2 { background:rgba(97,203,124,0.15); color:#61cb7c; }
+  .level-3 { background:rgba(254,140,44,0.15); color:#fe8c2c; }
+  .level-4 { background:rgba(230,183,49,0.18); color:#e6b731; }
+  .callout { border:1px solid rgba(239,233,220,0.10); border-radius:10px; padding:14px 16px; background:#11141b; display:flex; gap:12px; }
+  .callout.warn { border-color:rgba(254,140,44,0.4); }
+  .callout.changed { border-color:rgba(255,77,61,0.4); }
+  .tab { height:32px; padding:0 12px; border-radius:6px 6px 0 0; font-family:'JetBrains Mono', monospace; font-size:12px; color:#958f84; display:inline-flex; align-items:center; border:1px solid transparent; border-bottom:none; }
+  .tab.on { color:#efe9dc; background:#11141b; border-color:rgba(239,233,220,0.10); }
+  .progress { height:4px; background:#1f2430; border-radius:999px; overflow:hidden; }
+  .progress > div { height:100%; background:#e6b731; }
+  .nav a { display:block; padding:6px 10px; border-radius:6px; font-size:14px; color:#b9b3a6; }
+  .nav a.on { background:#1f2430; color:#efe9dc; }
+  .nav .lvl { font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#958f84; margin:14px 10px 6px; }
+  .toc a { display:block; font-size:13px; color:#958f84; padding:4px 0 4px 12px; border-left:1px solid rgba(239,233,220,0.10); }
+  .toc a.on { color:#efe9dc; border-left-color:#e6b731; }
+  .swatch { border-radius:8px; border:1px solid rgba(239,233,220,0.10); padding:10px; display:flex; flex-direction:column; gap:6px; }
+  .swatch .c { height:44px; border-radius:6px; border:1px solid rgba(239,233,220,0.10); }
+  .swatch .n { font-family:'JetBrains Mono', monospace; font-size:11px; color:#b9b3a6; }
+  .swatch .v { font-family:'JetBrains Mono', monospace; font-size:11px; color:#958f84; }
+  .focus { outline:2px solid #e6b731; outline-offset:2px; }
+  .quiz-opt { display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid rgba(239,233,220,0.10); border-radius:8px; }
+  .quiz-opt.right { border-color:#61cb7c; }
+  .quiz-opt.wrong { border-color:#f75e51; }
+  .radio { width:18px; height:18px; border-radius:999px; border:2px solid rgba(239,233,220,0.32); }
+  .radio.on { border-color:#61cb7c; background:#61cb7c; box-shadow: inset 0 0 0 3px #171b24; }
+</style>
+</helmet>
+
+<div style="width:390px; min-height:1950px; background:#0b0d12;">
+  
+<header style="display:flex; align-items:center; justify-content:space-between; height:64px; padding:0 16px; border-bottom:1px solid rgba(239,233,220,0.10); background:#0b0d12;">
+  
+<div class="row" style="gap:10px; align-items:center;">
+  <svg class="sigil" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" role="img" aria-label="CodeChup"><g fill="#efe9dc"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/><rect x="17" y="9" width="6" height="6" rx="1"/><rect x="1" y="17" width="6" height="6" rx="1"/><rect x="9" y="17" width="6" height="6" rx="1"/><rect x="17" y="17" width="6" height="6" rx="1"/></g><rect x="17" y="1" width="6" height="6" rx="1" fill="#e6b731"/></svg>
+  <div class="col" style="gap:2px; line-height:1;">
+    <div class="mono" style="font-size:12px; font-weight:500; letter-spacing:0.02em; color:#efe9dc;">codechup<span class="caret" style="margin-left:2px;"></span></div>
+    <div class="mono" style="font-size:9px; letter-spacing:0.18em; text-transform:uppercase; color:#b9b3a6;">claude code academy</div>
+  </div>
+</div>
+  
+  <div class="row" style="gap:8px;">
+    <div class="row" style="width:44px; height:44px; justify-content:center;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></div>
+    <div class="row" style="width:44px; height:44px; justify-content:center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg></div>
+  </div>
+</header>
+  <section class="col" style="padding:40px 16px 32px; gap:18px;">
+    <span class="eyebrow">Zero to autonomous</span>
+    <h1 class="h1" style="margin:0; font-size:38px;">Learn Claude Code the way you will actually use it.</h1>
+    <p class="soft" style="margin:0; font-size:16px;">Levelled, hands-on, verified against the current release. Labs run in your own terminal.</p>
+    <a class="btn btn-primary" href="#" style="width:100%;">Start Level 1 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+    <a class="btn btn-ghost" href="#" style="width:100%;">Curriculum map</a>
+    <div class="term" style="font-size:12px;">
+      <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span style="margin-left:6px;">~/my-app</span></div>
+      <div class="body"><span class="p">›</span> <span class="u">add a PreToolUse hook that
+  blocks rm -rf outside /tmp</span>
+<span class="d">⏺ Write .claude/hooks/guard-bash.mjs</span>
+<span class="ok">✓</span> Hook registered.
+<span class="p">›</span> <span class="caret"></span></div>
+    </div>
+  </section>
+  <section class="col" style="padding:0 16px 32px; gap:12px;">
+    <span class="eyebrow">Four levels</span>
+    
+<div class="card col" style="padding:18px; gap:12px;">
+  <div class="row" style="justify-content:space-between;">
+    <span class="badge level-1">Level 1</span>
+    <span class="mono muted" style="font-size:12px;">18 lessons · 4 h</span>
+  </div>
+  <div class="h3">Beginner</div>
+  <div class="soft" style="font-size:14px;">Install, authenticate, prompt well, control permissions, give Claude memory.</div>
+  <div class="row" style="justify-content:space-between; margin-top:auto;">
+    <div class="progress" style="flex:1;"><div style="width:70%"></div></div>
+    <span class="mono muted" style="font-size:12px;">70%</span>
+  </div>
+</div>
+<div class="card col" style="padding:18px; gap:12px;">
+  <div class="row" style="justify-content:space-between;">
+    <span class="badge level-2">Level 2</span>
+    <span class="mono muted" style="font-size:12px;">24 lessons · 7 h</span>
+  </div>
+  <div class="h3">Intermediate</div>
+  <div class="soft" style="font-size:14px;">Pick the right model and effort, write skills and hooks, ship PRs.</div>
+  <div class="row" style="justify-content:space-between; margin-top:auto;">
+    <div class="progress" style="flex:1;"><div style="width:25%"></div></div>
+    <span class="mono muted" style="font-size:12px;">25%</span>
+  </div>
+</div>
+<div class="card col" style="padding:18px; gap:12px;">
+  <div class="row" style="justify-content:space-between;">
+    <span class="badge level-3">Level 3</span>
+    <span class="mono muted" style="font-size:12px;">28 lessons · 10 h</span>
+  </div>
+  <div class="h3">Advanced</div>
+  <div class="soft" style="font-size:14px;">Subagents, MCP servers, plugins, headless runs and CI automation.</div>
+  <div class="row" style="justify-content:space-between; margin-top:auto;">
+    <div class="progress" style="flex:1;"><div style="width:0%"></div></div>
+    <span class="mono muted" style="font-size:12px;">0%</span>
+  </div>
+</div>
+<div class="card col" style="padding:18px; gap:12px;">
+  <div class="row" style="justify-content:space-between;">
+    <span class="badge level-4">Level 4</span>
+    <span class="mono muted" style="font-size:12px;">22 lessons · 9 h</span>
+  </div>
+  <div class="h3">Master</div>
+  <div class="soft" style="font-size:14px;">Multi-agent workflows, autonomous loops, multi-session plans, artifacts.</div>
+  <div class="row" style="justify-content:space-between; margin-top:auto;">
+    <div class="progress" style="flex:1;"><div style="width:0%"></div></div>
+    <span class="mono muted" style="font-size:12px;">0%</span>
+  </div>
+</div>
+  </section>
+  <section class="col" style="padding:0 16px 40px; gap:10px;">
+    <span class="eyebrow">What changed</span>
+    <div class="row" style="padding:10px 0; border-top:1px solid rgba(239,233,220,0.10);"><span class="chip">2.1.263</span><span style="font-size:14px;">Cache analytics in /cost</span></div><div class="row" style="padding:10px 0; border-top:1px solid rgba(239,233,220,0.10);"><span class="chip">2.1.258</span><span style="font-size:14px;">/design canvas</span></div><div class="row" style="padding:10px 0; border-top:1px solid rgba(239,233,220,0.10);"><span class="chip">2.1.240</span><span style="font-size:14px;">plugin eval, /skill-doctor</span></div>
+  </section>
+  <footer style="padding:20px 16px; border-top:1px solid rgba(239,233,220,0.10);" class="col">
+    <div class="row" style="gap:8px;"><svg class="sigil" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" role="img" aria-label="CodeChup"><g fill="#958f84"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/><rect x="17" y="9" width="6" height="6" rx="1"/><rect x="1" y="17" width="6" height="6" rx="1"/><rect x="9" y="17" width="6" height="6" rx="1"/><rect x="17" y="17" width="6" height="6" rx="1"/></g><rect x="17" y="1" width="6" height="6" rx="1" fill="#e6b731"/></svg><span class="mono muted" style="font-size:11px;">codechup · claude code academy</span></div>
+    <span class="mono muted" style="font-size:11px;">MIT · v2.1.263</span>
+  </footer>
+</div>
+</x-dc>
+</body>
+</html>

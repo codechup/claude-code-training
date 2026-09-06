@@ -1,0 +1,56 @@
+---
+import type { InferGetStaticParamsType } from 'astro';
+import { getCollection } from 'astro:content';
+import Base from '../../../layouts/Base.astro';
+import Header from '../../../components/shell/Header.astro';
+import Footer from '../../../components/shell/Footer.astro';
+
+export async function getStaticPaths() {
+  const sections = await getCollection('sections');
+  const levelSections = sections.filter((s) => s.id.split('/').length === 2);
+  return levelSections.map((s) => {
+    const [lang, level] = s.id.split('/');
+    return { params: { lang, level }, props: { section: s } };
+  });
+}
+
+type Params = InferGetStaticParamsType<typeof getStaticPaths>;
+const { lang, level } = Astro.params as Params;
+const { section } = Astro.props;
+
+const allSections = await getCollection('sections');
+const modules = allSections
+  .filter((s) => s.id.split('/').length === 3 && s.id.startsWith(`${lang}/${level}/`))
+  .sort((a, b) => a.data.order - b.data.order);
+---
+
+<Base
+  title={`${section.data.title} — CodeChup Claude Code Academy`}
+  description={section.data.description}
+  lang={lang}
+  path={`/${lang}/${level}/`}
+  alternates={[
+    { lang: 'en', path: `/en/${level}/` },
+    { lang: 'tr', path: `/tr/${level}/` },
+    { lang: 'x-default', path: `/en/${level}/` },
+  ]}
+>
+  <Header lang={lang} />
+  <main class="mx-auto max-w-3xl px-4 py-16">
+    <h1 class="font-mono text-3xl font-bold">{section.data.title}</h1>
+    <p class="mt-4 text-fg-muted">{section.data.description}</p>
+    <ul class="mt-8 flex flex-col gap-3">
+      {
+        modules.map((mod) => (
+          <li>
+            <a class="text-link underline" href={`/${lang}/${level}/${mod.id.split('/')[2]}/`}>
+              {mod.data.title}
+            </a>
+            <span class="text-fg-muted"> — {mod.data.description}</span>
+          </li>
+        ))
+      }
+    </ul>
+  </main>
+  <Footer lang={lang} />
+</Base>

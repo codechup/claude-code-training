@@ -1,0 +1,114 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+  <style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#0b0d12; color:#efe9dc; font-family:'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  a { color:#efe9dc; text-decoration:none; } a:hover { color:#e6b731; }
+  .mono { font-family:'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  .eyebrow { font-family:'JetBrains Mono', ui-monospace, monospace; font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:#958f84; }
+  .eyebrow::before { content:'// '; color:#ff4d3d; }
+  .h1 { font-weight:700; font-size:56px; line-height:1.02; letter-spacing:-0.02em; text-wrap:balance; }
+  .h2 { font-weight:600; font-size:32px; line-height:1.1; letter-spacing:-0.015em; }
+  .h3 { font-weight:600; font-size:20px; line-height:1.3; letter-spacing:-0.01em; }
+  .soft { color:#b9b3a6; } .muted { color:#958f84; }
+  .card { background:#171b24; border:1px solid rgba(239,233,220,0.10); border-radius:10px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); }
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:44px; padding:0 18px; border-radius:6px; font-weight:500; font-size:15px; border:1px solid transparent; white-space:nowrap; }
+  .btn-primary { background:#e6b731; color:#22190a; }
+  .btn-ghost { border-color:rgba(239,233,220,0.32); color:#efe9dc; background:transparent; }
+  .btn-soft { background:#1f2430; color:#efe9dc; }
+  .chip { display:inline-flex; align-items:center; height:28px; padding:0 10px; border-radius:4px; background:#1f2430; color:#b9b3a6; font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.04em; }
+  .hr { height:1px; background:rgba(239,233,220,0.10); }
+  .term { background:#11141b; border:1px solid rgba(239,233,220,0.10); border-radius:10px; font-family:'JetBrains Mono', monospace; font-size:13px; line-height:1.6; color:#b9b3a6; overflow:hidden; }
+  .term .bar { display:flex; align-items:center; gap:8px; height:36px; padding:0 14px; border-bottom:1px solid rgba(239,233,220,0.10); color:#958f84; font-size:12px; }
+  .term .dot { width:10px; height:10px; border-radius:999px; background:#1f2430; }
+  .term .body { padding:14px 16px; white-space:pre; }
+  .p { color:#8fd3ff; } .u { color:#efe9dc; } .g { color:#e6b731; } .ok { color:#61cb7c; } .d { color:#958f84; } .r { color:#ff4d3d; }
+  .caret { display:inline-block; width:0.55em; height:1em; background:#ff4d3d; vertical-align:-0.15em; }
+  .sigil { display:inline-block; }
+  .kbd { font-family:'JetBrains Mono', monospace; font-size:12px; padding:2px 6px; border:1px solid rgba(239,233,220,0.32); border-bottom-width:2px; border-radius:4px; color:#b9b3a6; }
+  .grid { display:grid; gap:16px; }
+  .row { display:flex; align-items:center; gap:12px; }
+  .col { display:flex; flex-direction:column; gap:12px; }
+  .badge { display:inline-flex; align-items:center; height:22px; padding:0 8px; border-radius:4px; font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; }
+  .level-1 { background:rgba(106,197,232,0.15); color:#6ac5e8; }
+  .level-2 { background:rgba(97,203,124,0.15); color:#61cb7c; }
+  .level-3 { background:rgba(254,140,44,0.15); color:#fe8c2c; }
+  .level-4 { background:rgba(230,183,49,0.18); color:#e6b731; }
+  .callout { border:1px solid rgba(239,233,220,0.10); border-radius:10px; padding:14px 16px; background:#11141b; display:flex; gap:12px; }
+  .callout.warn { border-color:rgba(254,140,44,0.4); }
+  .callout.changed { border-color:rgba(255,77,61,0.4); }
+  .tab { height:32px; padding:0 12px; border-radius:6px 6px 0 0; font-family:'JetBrains Mono', monospace; font-size:12px; color:#958f84; display:inline-flex; align-items:center; border:1px solid transparent; border-bottom:none; }
+  .tab.on { color:#efe9dc; background:#11141b; border-color:rgba(239,233,220,0.10); }
+  .progress { height:4px; background:#1f2430; border-radius:999px; overflow:hidden; }
+  .progress > div { height:100%; background:#e6b731; }
+  .nav a { display:block; padding:6px 10px; border-radius:6px; font-size:14px; color:#b9b3a6; }
+  .nav a.on { background:#1f2430; color:#efe9dc; }
+  .nav .lvl { font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#958f84; margin:14px 10px 6px; }
+  .toc a { display:block; font-size:13px; color:#958f84; padding:4px 0 4px 12px; border-left:1px solid rgba(239,233,220,0.10); }
+  .toc a.on { color:#efe9dc; border-left-color:#e6b731; }
+  .swatch { border-radius:8px; border:1px solid rgba(239,233,220,0.10); padding:10px; display:flex; flex-direction:column; gap:6px; }
+  .swatch .c { height:44px; border-radius:6px; border:1px solid rgba(239,233,220,0.10); }
+  .swatch .n { font-family:'JetBrains Mono', monospace; font-size:11px; color:#b9b3a6; }
+  .swatch .v { font-family:'JetBrains Mono', monospace; font-size:11px; color:#958f84; }
+  .focus { outline:2px solid #e6b731; outline-offset:2px; }
+  .quiz-opt { display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid rgba(239,233,220,0.10); border-radius:8px; }
+  .quiz-opt.right { border-color:#61cb7c; }
+  .quiz-opt.wrong { border-color:#f75e51; }
+  .radio { width:18px; height:18px; border-radius:999px; border:2px solid rgba(239,233,220,0.32); }
+  .radio.on { border-color:#61cb7c; background:#61cb7c; box-shadow: inset 0 0 0 3px #171b24; }
+</style>
+</helmet>
+
+<div style="width:1200px; min-height:1250px; background:#0b0d12; padding:40px;" class="col">
+  <div class="row" style="justify-content:space-between; margin-bottom:8px;">
+    <div class="col" style="gap:6px;"><span class="eyebrow">Tokens</span><div class="h2">Dark and light from one set.</div></div>
+    <span class="mono muted" style="font-size:12px;">tokens.css → Tailwind @theme · no raw colours elsewhere</span>
+  </div>
+  <div style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:24px;">
+    <div class="card col" style="padding:20px; gap:12px; background:#0b0d12; color:#efe9dc;">
+      <span class="mono" style="font-size:12px; color:#958f84;">[data-theme=dark]</span>
+      <div class="grid" style="grid-template-columns: repeat(4, minmax(0, 1fr)); gap:10px;"><div class="swatch"><div class="c" style="background:#0b0d12;"></div><span class="n">--color-bg-0</span><span class="v">#0b0d12</span><span class="v">page ground</span></div><div class="swatch"><div class="c" style="background:#11141b;"></div><span class="n">--color-bg-1</span><span class="v">#11141b</span><span class="v">code, terminal</span></div><div class="swatch"><div class="c" style="background:#171b24;"></div><span class="n">--color-bg-2</span><span class="v">#171b24</span><span class="v">cards</span></div><div class="swatch"><div class="c" style="background:#1f2430;"></div><span class="n">--color-bg-3</span><span class="v">#1f2430</span><span class="v">raised, chips</span></div><div class="swatch"><div class="c" style="background:#efe9dc;"></div><span class="n">--color-ink</span><span class="v">#efe9dc</span><span class="v">primary text</span></div><div class="swatch"><div class="c" style="background:#b9b3a6;"></div><span class="n">--color-ink-soft</span><span class="v">#b9b3a6</span><span class="v">secondary</span></div><div class="swatch"><div class="c" style="background:#958f84;"></div><span class="n">--color-ink-muted</span><span class="v">#958f84</span><span class="v">meta, placeholders</span></div><div class="swatch"><div class="c" style="background:rgba(239,233,220,0.10);"></div><span class="n">--color-line</span><span class="v">rgba(239,233,220,0.10)</span><span class="v">hairlines</span></div><div class="swatch"><div class="c" style="background:#e6b731;"></div><span class="n">--color-accent</span><span class="v">#e6b731</span><span class="v">primary CTA, sigil, progress</span></div><div class="swatch"><div class="c" style="background:#22190a;"></div><span class="n">--color-accent-ink</span><span class="v">#22190a</span><span class="v">text on gold</span></div><div class="swatch"><div class="c" style="background:#e6b731;"></div><span class="n">--color-accent-text</span><span class="v">#e6b731</span><span class="v">gold as text, annotations</span></div><div class="swatch"><div class="c" style="background:#ff4d3d;"></div><span class="n">--color-caret</span><span class="v">#ff4d3d</span><span class="v">prompt, changed</span></div><div class="swatch"><div class="c" style="background:#8fd3ff;"></div><span class="n">--color-prompt</span><span class="v">#8fd3ff</span><span class="v">shell prompt</span></div><div class="swatch"><div class="c" style="background:#61cb7c;"></div><span class="n">--color-success</span><span class="v">#61cb7c</span><span class="v">passed</span></div><div class="swatch"><div class="c" style="background:#fe8c2c;"></div><span class="n">--color-warning</span><span class="v">#fe8c2c</span><span class="v">when-not-to-use</span></div><div class="swatch"><div class="c" style="background:#f75e51;"></div><span class="n">--color-danger</span><span class="v">#f75e51</span><span class="v">blocked, errors</span></div><div class="swatch"><div class="c" style="background:#6ac5e8;"></div><span class="n">--color-info</span><span class="v">#6ac5e8</span><span class="v">level 1</span></div></div>
+    </div>
+    <div class="card col" style="padding:20px; gap:12px; background:#f6f3ec; color:#16181d;">
+      <span class="mono" style="font-size:12px; color:#666a72;">[data-theme=light]</span>
+      <div class="grid" style="grid-template-columns: repeat(4, minmax(0, 1fr)); gap:10px;"><div class="swatch"><div class="c" style="background:#f6f3ec;"></div><span class="n">--color-bg-0</span><span class="v">#f6f3ec</span><span class="v">page ground</span></div><div class="swatch"><div class="c" style="background:#fbf9f4;"></div><span class="n">--color-bg-1</span><span class="v">#fbf9f4</span><span class="v">code, terminal</span></div><div class="swatch"><div class="c" style="background:#ffffff;"></div><span class="n">--color-bg-2</span><span class="v">#ffffff</span><span class="v">cards</span></div><div class="swatch"><div class="c" style="background:#efece4;"></div><span class="n">--color-bg-3</span><span class="v">#efece4</span><span class="v">raised, chips</span></div><div class="swatch"><div class="c" style="background:#16181d;"></div><span class="n">--color-ink</span><span class="v">#16181d</span><span class="v">primary text</span></div><div class="swatch"><div class="c" style="background:#4c4f57;"></div><span class="n">--color-ink-soft</span><span class="v">#4c4f57</span><span class="v">secondary</span></div><div class="swatch"><div class="c" style="background:#666a72;"></div><span class="n">--color-ink-muted</span><span class="v">#666a72</span><span class="v">meta, placeholders</span></div><div class="swatch"><div class="c" style="background:rgba(22,24,29,0.12);"></div><span class="n">--color-line</span><span class="v">rgba(22,24,29,0.12)</span><span class="v">hairlines</span></div><div class="swatch"><div class="c" style="background:#c99a12;"></div><span class="n">--color-accent</span><span class="v">#c99a12</span><span class="v">primary CTA, sigil, progress</span></div><div class="swatch"><div class="c" style="background:#1c1503;"></div><span class="n">--color-accent-ink</span><span class="v">#1c1503</span><span class="v">text on gold</span></div><div class="swatch"><div class="c" style="background:#7a5c00;"></div><span class="n">--color-accent-text</span><span class="v">#7a5c00</span><span class="v">gold as text, annotations</span></div><div class="swatch"><div class="c" style="background:#e63b2c;"></div><span class="n">--color-caret</span><span class="v">#e63b2c</span><span class="v">prompt, changed</span></div><div class="swatch"><div class="c" style="background:#1d6fa8;"></div><span class="n">--color-prompt</span><span class="v">#1d6fa8</span><span class="v">shell prompt</span></div><div class="swatch"><div class="c" style="background:#1f8f45;"></div><span class="n">--color-success</span><span class="v">#1f8f45</span><span class="v">passed</span></div><div class="swatch"><div class="c" style="background:#c4620b;"></div><span class="n">--color-warning</span><span class="v">#c4620b</span><span class="v">when-not-to-use</span></div><div class="swatch"><div class="c" style="background:#d0362a;"></div><span class="n">--color-danger</span><span class="v">#d0362a</span><span class="v">blocked, errors</span></div><div class="swatch"><div class="c" style="background:#1d7fb0;"></div><span class="n">--color-info</span><span class="v">#1d7fb0</span><span class="v">level 1</span></div></div>
+    </div>
+  </div>
+  <div style="display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:24px; margin-top:24px;">
+    <div class="card col" style="padding:20px; gap:10px;">
+      <span class="eyebrow">Type</span>
+      <div style="font-size:40px; font-weight:700; letter-spacing:-0.02em; line-height:1.05;">Inter 700 · 40</div>
+      <div style="font-size:32px; font-weight:600; letter-spacing:-0.015em;">Inter 600 · 32</div>
+      <div style="font-size:20px; font-weight:600;">Inter 600 · 20</div>
+      <div style="font-size:16px;">Inter 400 · 16 body, line 1.5, measure 65ch</div>
+      <div style="font-size:14px;" class="soft">Inter 400 · 14 secondary</div>
+      <div class="mono" style="font-size:14px;">JetBrains Mono 400 · 14 code</div>
+      <div class="mono" style="font-size:12px; letter-spacing:0.08em; text-transform:uppercase;" >Mono 500 · 12 eyebrow 0.08em</div>
+      <div class="mono muted" style="font-size:11px;">Scale: 11 12 13 14 16 18 20 24 32 40 56</div>
+    </div>
+    <div class="card col" style="padding:20px; gap:10px;">
+      <span class="eyebrow">Shape &amp; space</span>
+      <div class="row" style="gap:10px;"><div class="col" style="align-items:center; gap:4px;"><div style="width:44px; height:44px; border-radius:4px; background:#1f2430; border:1px solid rgba(239,233,220,0.32);"></div><span class="mono muted" style="font-size:11px;">r4</span></div><div class="col" style="align-items:center; gap:4px;"><div style="width:44px; height:44px; border-radius:6px; background:#1f2430; border:1px solid rgba(239,233,220,0.32);"></div><span class="mono muted" style="font-size:11px;">r6</span></div><div class="col" style="align-items:center; gap:4px;"><div style="width:44px; height:44px; border-radius:10px; background:#1f2430; border:1px solid rgba(239,233,220,0.32);"></div><span class="mono muted" style="font-size:11px;">r10</span></div><div class="col" style="align-items:center; gap:4px;"><div style="width:44px; height:44px; border-radius:16px; background:#1f2430; border:1px solid rgba(239,233,220,0.32);"></div><span class="mono muted" style="font-size:11px;">r16</span></div></div>
+      <div class="row" style="gap:6px; align-items:flex-end;"><div class="col" style="align-items:center; gap:4px;"><div style="width:4px; height:4px; background:#e6b731; opacity:0.8;"></div><span class="mono muted" style="font-size:10px;">4</span></div><div class="col" style="align-items:center; gap:4px;"><div style="width:8px; height:8px; background:#e6b731; opacity:0.8;"></div><span class="mono muted" style="font-size:10px;">8</span></div><div class="col" style="align-items:center; gap:4px;"><div style="width:12px; height:12px; background:#e6b731; opacity:0.8;"></div><span class="mono muted" style="font-size:10px;">12</span></div><div class="col" style="align-items:center; gap:4px;"><div style="width:16px; height:16px; background:#e6b731; opacity:0.8;"></div><span class="mono muted" style="font-size:10px;">16</span></div><div class="col" style="align-items:center; gap:4px;"><div style="width:24px; height:24px; background:#e6b731; opacity:0.8;"></div><span class="mono muted" style="font-size:10px;">24</span></div><div class="col" style="align-items:center; gap:4px;"><div style="width:32px; height:32px; background:#e6b731; opacity:0.8;"></div><span class="mono muted" style="font-size:10px;">32</span></div><div class="col" style="align-items:center; gap:4px;"><div style="width:48px; height:48px; background:#e6b731; opacity:0.8;"></div><span class="mono muted" style="font-size:10px;">48</span></div></div>
+      <p class="soft" style="margin:0; font-size:13px;">4-pt scale. Gutter 16 on phone, 32/64 on desktop. Sections 48–80 apart. Hairlines over boxes; 1 px inset top highlight on raised cards.</p>
+    </div>
+    <div class="card col" style="padding:20px; gap:10px;">
+      <span class="eyebrow">Motion &amp; a11y</span>
+      <div class="mono soft" style="font-size:13px;">--dur-1 120ms · --dur-2 200ms · --dur-3 320ms</div>
+      <div class="mono soft" style="font-size:13px;">--ease-out cubic-bezier(.2,0,0,1)</div>
+      <p class="soft" style="margin:0; font-size:13px;">Terminal caret blinks; nothing else animates by default. <span class="mono">prefers-reduced-motion</span> stops the caret. AA contrast on every text/surface pair, 44 px targets, visible dual focus ring:</p>
+      <div class="row" style="gap:12px;"><span class="btn btn-primary focus">Focused</span><span class="btn btn-ghost">Rest</span></div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

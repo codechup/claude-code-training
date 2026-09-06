@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+# Blocks direct pushes to main. Install once per clone/worktree:
+#   git config core.hooksPath scripts/git-hooks
+# (or run scripts/install-hooks.sh)
+remote="$1"
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main)
+      echo "pre-push: direct pushes to 'main' are not allowed. Open a PR from a plan/NN-slug branch (see plans/README.md)." >&2
+      exit 1;;
+  esac
+done
+exit 0

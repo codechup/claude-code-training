@@ -1,0 +1,138 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+  <style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#0b0d12; color:#efe9dc; font-family:'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  a { color:#efe9dc; text-decoration:none; } a:hover { color:#e6b731; }
+  .mono { font-family:'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  .eyebrow { font-family:'JetBrains Mono', ui-monospace, monospace; font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:#958f84; }
+  .eyebrow::before { content:'// '; color:#ff4d3d; }
+  .h1 { font-weight:700; font-size:56px; line-height:1.02; letter-spacing:-0.02em; text-wrap:balance; }
+  .h2 { font-weight:600; font-size:32px; line-height:1.1; letter-spacing:-0.015em; }
+  .h3 { font-weight:600; font-size:20px; line-height:1.3; letter-spacing:-0.01em; }
+  .soft { color:#b9b3a6; } .muted { color:#958f84; }
+  .card { background:#171b24; border:1px solid rgba(239,233,220,0.10); border-radius:10px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); }
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:44px; padding:0 18px; border-radius:6px; font-weight:500; font-size:15px; border:1px solid transparent; white-space:nowrap; }
+  .btn-primary { background:#e6b731; color:#22190a; }
+  .btn-ghost { border-color:rgba(239,233,220,0.32); color:#efe9dc; background:transparent; }
+  .btn-soft { background:#1f2430; color:#efe9dc; }
+  .chip { display:inline-flex; align-items:center; height:28px; padding:0 10px; border-radius:4px; background:#1f2430; color:#b9b3a6; font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.04em; }
+  .hr { height:1px; background:rgba(239,233,220,0.10); }
+  .term { background:#11141b; border:1px solid rgba(239,233,220,0.10); border-radius:10px; font-family:'JetBrains Mono', monospace; font-size:13px; line-height:1.6; color:#b9b3a6; overflow:hidden; }
+  .term .bar { display:flex; align-items:center; gap:8px; height:36px; padding:0 14px; border-bottom:1px solid rgba(239,233,220,0.10); color:#958f84; font-size:12px; }
+  .term .dot { width:10px; height:10px; border-radius:999px; background:#1f2430; }
+  .term .body { padding:14px 16px; white-space:pre; }
+  .p { color:#8fd3ff; } .u { color:#efe9dc; } .g { color:#e6b731; } .ok { color:#61cb7c; } .d { color:#958f84; } .r { color:#ff4d3d; }
+  .caret { display:inline-block; width:0.55em; height:1em; background:#ff4d3d; vertical-align:-0.15em; }
+  .sigil { display:inline-block; }
+  .kbd { font-family:'JetBrains Mono', monospace; font-size:12px; padding:2px 6px; border:1px solid rgba(239,233,220,0.32); border-bottom-width:2px; border-radius:4px; color:#b9b3a6; }
+  .grid { display:grid; gap:16px; }
+  .row { display:flex; align-items:center; gap:12px; }
+  .col { display:flex; flex-direction:column; gap:12px; }
+  .badge { display:inline-flex; align-items:center; height:22px; padding:0 8px; border-radius:4px; font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; }
+  .level-1 { background:rgba(106,197,232,0.15); color:#6ac5e8; }
+  .level-2 { background:rgba(97,203,124,0.15); color:#61cb7c; }
+  .level-3 { background:rgba(254,140,44,0.15); color:#fe8c2c; }
+  .level-4 { background:rgba(230,183,49,0.18); color:#e6b731; }
+  .callout { border:1px solid rgba(239,233,220,0.10); border-radius:10px; padding:14px 16px; background:#11141b; display:flex; gap:12px; }
+  .callout.warn { border-color:rgba(254,140,44,0.4); }
+  .callout.changed { border-color:rgba(255,77,61,0.4); }
+  .tab { height:32px; padding:0 12px; border-radius:6px 6px 0 0; font-family:'JetBrains Mono', monospace; font-size:12px; color:#958f84; display:inline-flex; align-items:center; border:1px solid transparent; border-bottom:none; }
+  .tab.on { color:#efe9dc; background:#11141b; border-color:rgba(239,233,220,0.10); }
+  .progress { height:4px; background:#1f2430; border-radius:999px; overflow:hidden; }
+  .progress > div { height:100%; background:#e6b731; }
+  .nav a { display:block; padding:6px 10px; border-radius:6px; font-size:14px; color:#b9b3a6; }
+  .nav a.on { background:#1f2430; color:#efe9dc; }
+  .nav .lvl { font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#958f84; margin:14px 10px 6px; }
+  .toc a { display:block; font-size:13px; color:#958f84; padding:4px 0 4px 12px; border-left:1px solid rgba(239,233,220,0.10); }
+  .toc a.on { color:#efe9dc; border-left-color:#e6b731; }
+  .swatch { border-radius:8px; border:1px solid rgba(239,233,220,0.10); padding:10px; display:flex; flex-direction:column; gap:6px; }
+  .swatch .c { height:44px; border-radius:6px; border:1px solid rgba(239,233,220,0.10); }
+  .swatch .n { font-family:'JetBrains Mono', monospace; font-size:11px; color:#b9b3a6; }
+  .swatch .v { font-family:'JetBrains Mono', monospace; font-size:11px; color:#958f84; }
+  .focus { outline:2px solid #e6b731; outline-offset:2px; }
+  .quiz-opt { display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid rgba(239,233,220,0.10); border-radius:8px; }
+  .quiz-opt.right { border-color:#61cb7c; }
+  .quiz-opt.wrong { border-color:#f75e51; }
+  .radio { width:18px; height:18px; border-radius:999px; border:2px solid rgba(239,233,220,0.32); }
+  .radio.on { border-color:#61cb7c; background:#61cb7c; box-shadow: inset 0 0 0 3px #171b24; }
+</style>
+</helmet>
+
+<div style="width:1200px; min-height:1550px; background:#0b0d12; padding:40px;" class="col">
+  <div class="col" style="gap:6px; margin-bottom:8px;"><span class="eyebrow">Components</span><div class="h2">The MDX vocabulary every lesson is built from.</div></div>
+  <div style="display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:24px;">
+    <div class="card col" style="padding:20px; gap:14px;">
+      <span class="eyebrow">Buttons &amp; chips</span>
+      <div class="row" style="gap:10px; flex-wrap:wrap;"><span class="btn btn-primary">Primary</span><span class="btn btn-soft">Secondary</span><span class="btn btn-ghost">Ghost</span><span class="btn btn-primary" style="opacity:0.45;">Disabled</span></div>
+      <div class="row" style="gap:8px; flex-wrap:wrap;"><span class="chip">hooks</span><span class="chip">mcp</span><span class="chip">2.1.263</span><span class="badge level-1">Level 1</span><span class="badge level-2">Level 2</span><span class="badge level-3">Level 3</span><span class="badge level-4">Level 4</span></div>
+      <div class="row" style="gap:8px;"><span class="kbd">Shift</span><span class="muted">+</span><span class="kbd">Tab</span><span class="soft" style="font-size:13px;">toggle plan mode</span></div>
+    </div>
+    <div class="card col" style="padding:20px; gap:14px;">
+      <span class="eyebrow">Callouts</span>
+      <div class="callout"><div class="col" style="gap:2px;"><span class="eyebrow">Note</span><span style="font-size:14px;">Neutral information the reader should not skip.</span></div></div>
+      <div class="callout warn"><div class="col" style="gap:2px;"><span class="eyebrow">When not to use</span><span style="font-size:14px;">The simpler tool that usually suffices.</span></div></div>
+      <div class="callout changed"><div class="col" style="gap:2px;"><span class="eyebrow">Changed</span><span style="font-size:14px;">Old behaviour → new behaviour, one line, version.</span></div></div>
+    </div>
+    <div class="card col" style="padding:20px; gap:12px;">
+      <span class="eyebrow">Code block · OS tabs · annotations</span>
+      <div class="row" style="gap:0;"><span class="tab on">macOS</span><span class="tab">Linux</span><span class="tab">Windows</span></div>
+      <div class="term" style="border-radius:0 10px 10px 10px;">
+        <div class="bar"><span>install</span><span class="row" style="margin-left:auto; gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg> copy</span></div>
+        <div class="body"><span class="d">1</span>  <span class="u">brew install --cask claude-code</span>   <span class="g">← native installer</span>
+<span class="d">2</span>  <span class="u">claude --version</span>
+<span class="d">3</span>  <span class="ok">2.1.263 (Claude Code)</span></div>
+      </div>
+      <p class="muted" style="margin:0; font-size:12px;">The tab choice is remembered site-wide (localStorage cc:os).</p>
+    </div>
+    <div class="card col" style="padding:20px; gap:12px;">
+      <span class="eyebrow">Transcript · real session, simplified</span>
+      <div class="term"><div class="body"><span class="p">›</span> <span class="u">why does the test in auth.test.ts fail?</span>
+<span class="d">⏺ Read src/auth.test.ts</span>
+<span class="d">⏺ Bash(npx vitest run auth)  exit 1</span>
+<span class="d">⏺ Edit src/auth.ts  +2 −1</span>
+<span class="ok">✓</span> Fixed: token expiry compared seconds to ms.</div></div>
+      <p class="muted" style="margin:0; font-size:12px;">Roles: prompt (›), tool (⏺), result (✓/✗). Never fabricated; captured from the lab repo.</p>
+    </div>
+    <div class="card col" style="padding:20px; gap:12px;">
+      <span class="eyebrow">Quiz</span>
+      <div style="font-size:15px;">Which scope can set bypassPermissions?</div>
+      <div class="quiz-opt wrong"><span class="radio" style="border-color:#f75e51;"></span><span>Project .claude/settings.json</span><span class="mono" style="margin-left:auto; font-size:12px; color:#f75e51;">ignored there</span></div>
+      <div class="quiz-opt right"><span class="radio on"></span><span>User or managed settings</span><span class="mono" style="margin-left:auto; font-size:12px; color:#61cb7c;">correct</span></div>
+      <div class="quiz-opt"><span class="radio"></span><span>Any scope</span></div>
+    </div>
+    <div class="card col" style="padding:20px; gap:12px;">
+      <span class="eyebrow">Decision tree · inline SVG</span>
+      <svg width="100%" viewBox="0 0 520 190" font-family="Inter, sans-serif" font-size="12">
+        <g fill="#1f2430" stroke="rgba(239,233,220,0.32)"><rect x="10" y="70" width="150" height="44" rx="6"/><rect x="220" y="20" width="130" height="40" rx="6"/><rect x="220" y="120" width="130" height="40" rx="6"/><rect x="390" y="120" width="120" height="40" rx="6"/></g>
+        <g fill="#efe9dc"><text x="85" y="88" text-anchor="middle">Should it run</text><text x="85" y="104" text-anchor="middle">every time?</text><text x="285" y="44" text-anchor="middle">Write a hook</text><text x="285" y="144" text-anchor="middle">Needs tools?</text><text x="450" y="144" text-anchor="middle">Skill</text></g>
+        <g stroke="#958f84" fill="none" stroke-width="1.5"><path d="M160 84 L220 40"/><path d="M160 100 L220 140"/><path d="M350 140 L390 140"/></g>
+        <g fill="#e6b731" font-family="JetBrains Mono, monospace" font-size="11"><text x="176" y="52">yes</text><text x="176" y="132">no</text><text x="362" y="132">yes</text></g>
+      </svg>
+    </div>
+    <div class="card col" style="padding:20px; gap:12px;">
+      <span class="eyebrow">Lesson meta · sources · feedback</span>
+      <div class="row" style="gap:14px; font-size:13px; flex-wrap:wrap;"><span class="row muted" style="gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 20 min</span><span class="row muted" style="gap:6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M5 21V4h12l-2 4 2 4H5"/></svg> core</span><span class="mono muted">verified v2.1.263</span></div>
+      <div class="row" style="gap:12px; padding:10px 0; border-top:1px solid rgba(239,233,220,0.10);"><span class="chip">official</span><div class="col" style="gap:2px;"><span style="font-size:14px;">Hooks reference</span><span class="mono muted" style="font-size:12px;">code.claude.com/docs/en/hooks</span></div><span class="mono muted" style="margin-left:auto; font-size:11px;">verified 2026-09-06</span></div>
+      <div class="row" style="gap:12px; padding:10px 0; border-top:1px solid rgba(239,233,220,0.10);"><span class="chip">video</span><div class="col" style="gap:2px;"><span style="font-size:14px;">Hooks in 12 minutes</span><span class="mono muted" style="font-size:12px;">youtube.com · 12:04 · Anthropic</span></div><span class="mono muted" style="margin-left:auto; font-size:11px;">verified 2026-09-06</span></div>
+      <div class="row muted" style="gap:8px; font-size:14px;">Was this helpful? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M7 10v11H3V10zM7 10l4-7a2 2 0 0 1 3 2v4h5a2 2 0 0 1 2 2l-1 8a2 2 0 0 1-2 2H7"/></svg><span style="display:inline-block; transform:rotate(180deg);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M7 10v11H3V10zM7 10l4-7a2 2 0 0 1 3 2v4h5a2 2 0 0 1 2 2l-1 8a2 2 0 0 1-2 2H7"/></svg></span></div>
+    </div>
+    <div class="card col" style="padding:20px; gap:12px;">
+      <span class="eyebrow">Search · language · theme</span>
+      <div class="row" style="gap:8px; height:44px; padding:0 14px; border:1px solid rgba(239,233,220,0.32); border-radius:6px; font-size:14px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span>pretooluse</span><span class="caret"></span><span class="kbd" style="margin-left:auto;">Esc</span></div>
+      <div class="col" style="gap:4px; font-size:14px;"><div class="row" style="justify-content:space-between; padding:8px 10px; background:#1f2430; border-radius:6px;"><span>Block dangerous commands with a PreToolUse hook</span><span class="mono muted" style="font-size:11px;">L2 · m07</span></div><div class="row" style="justify-content:space-between; padding:8px 10px;"><span class="soft">Hook anatomy</span><span class="mono muted" style="font-size:11px;">L2 · m07</span></div></div>
+      <div class="row" style="gap:10px;"><div class="row" style="gap:6px; height:36px; padding:0 10px; border:1px solid rgba(239,233,220,0.10); border-radius:6px; font-size:13px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><span class="mono">EN</span><span class="muted">/</span><span class="mono muted">TR</span></div><div class="row" style="width:36px; height:36px; justify-content:center; border:1px solid rgba(239,233,220,0.10); border-radius:6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></div><span class="muted" style="font-size:12px;">TR twin missing → “Türkçesi hazırlanıyor”</span></div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

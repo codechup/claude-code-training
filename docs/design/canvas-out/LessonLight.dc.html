@@ -1,0 +1,187 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+  <style>
+  :root { color-scheme: light; }
+  body { margin:0; background:#f6f3ec; color:#16181d; font-family:'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size:16px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+  a { color:#16181d; text-decoration:none; } a:hover { color:#c99a12; }
+  .mono { font-family:'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  .eyebrow { font-family:'JetBrains Mono', ui-monospace, monospace; font-size:12px; letter-spacing:0.08em; text-transform:uppercase; color:#666a72; }
+  .eyebrow::before { content:'// '; color:#e63b2c; }
+  .h1 { font-weight:700; font-size:56px; line-height:1.02; letter-spacing:-0.02em; text-wrap:balance; }
+  .h2 { font-weight:600; font-size:32px; line-height:1.1; letter-spacing:-0.015em; }
+  .h3 { font-weight:600; font-size:20px; line-height:1.3; letter-spacing:-0.01em; }
+  .soft { color:#4c4f57; } .muted { color:#666a72; }
+  .card { background:#ffffff; border:1px solid rgba(22,24,29,0.12); border-radius:10px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); }
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:8px; height:44px; padding:0 18px; border-radius:6px; font-weight:500; font-size:15px; border:1px solid transparent; white-space:nowrap; }
+  .btn-primary { background:#c99a12; color:#1c1503; }
+  .btn-ghost { border-color:rgba(22,24,29,0.36); color:#16181d; background:transparent; }
+  .btn-soft { background:#efece4; color:#16181d; }
+  .chip { display:inline-flex; align-items:center; height:28px; padding:0 10px; border-radius:4px; background:#efece4; color:#4c4f57; font-family:'JetBrains Mono', monospace; font-size:12px; letter-spacing:0.04em; }
+  .hr { height:1px; background:rgba(22,24,29,0.12); }
+  .term { background:#fbf9f4; border:1px solid rgba(22,24,29,0.12); border-radius:10px; font-family:'JetBrains Mono', monospace; font-size:13px; line-height:1.6; color:#4c4f57; overflow:hidden; }
+  .term .bar { display:flex; align-items:center; gap:8px; height:36px; padding:0 14px; border-bottom:1px solid rgba(22,24,29,0.12); color:#666a72; font-size:12px; }
+  .term .dot { width:10px; height:10px; border-radius:999px; background:#efece4; }
+  .term .body { padding:14px 16px; white-space:pre; }
+  .p { color:#1d6fa8; } .u { color:#16181d; } .g { color:#7a5c00; } .ok { color:#1f8f45; } .d { color:#666a72; } .r { color:#e63b2c; }
+  .caret { display:inline-block; width:0.55em; height:1em; background:#e63b2c; vertical-align:-0.15em; }
+  .sigil { display:inline-block; }
+  .kbd { font-family:'JetBrains Mono', monospace; font-size:12px; padding:2px 6px; border:1px solid rgba(22,24,29,0.36); border-bottom-width:2px; border-radius:4px; color:#4c4f57; }
+  .grid { display:grid; gap:16px; }
+  .row { display:flex; align-items:center; gap:12px; }
+  .col { display:flex; flex-direction:column; gap:12px; }
+  .badge { display:inline-flex; align-items:center; height:22px; padding:0 8px; border-radius:4px; font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.06em; text-transform:uppercase; }
+  .level-1 { background:rgba(106,197,232,0.15); color:#1d7fb0; }
+  .level-2 { background:rgba(97,203,124,0.15); color:#1f8f45; }
+  .level-3 { background:rgba(254,140,44,0.15); color:#c4620b; }
+  .level-4 { background:rgba(230,183,49,0.18); color:#c99a12; }
+  .callout { border:1px solid rgba(22,24,29,0.12); border-radius:10px; padding:14px 16px; background:#fbf9f4; display:flex; gap:12px; }
+  .callout.warn { border-color:rgba(254,140,44,0.4); }
+  .callout.changed { border-color:rgba(255,77,61,0.4); }
+  .tab { height:32px; padding:0 12px; border-radius:6px 6px 0 0; font-family:'JetBrains Mono', monospace; font-size:12px; color:#666a72; display:inline-flex; align-items:center; border:1px solid transparent; border-bottom:none; }
+  .tab.on { color:#16181d; background:#fbf9f4; border-color:rgba(22,24,29,0.12); }
+  .progress { height:4px; background:#efece4; border-radius:999px; overflow:hidden; }
+  .progress > div { height:100%; background:#c99a12; }
+  .nav a { display:block; padding:6px 10px; border-radius:6px; font-size:14px; color:#4c4f57; }
+  .nav a.on { background:#efece4; color:#16181d; }
+  .nav .lvl { font-family:'JetBrains Mono', monospace; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:#666a72; margin:14px 10px 6px; }
+  .toc a { display:block; font-size:13px; color:#666a72; padding:4px 0 4px 12px; border-left:1px solid rgba(22,24,29,0.12); }
+  .toc a.on { color:#16181d; border-left-color:#c99a12; }
+  .swatch { border-radius:8px; border:1px solid rgba(22,24,29,0.12); padding:10px; display:flex; flex-direction:column; gap:6px; }
+  .swatch .c { height:44px; border-radius:6px; border:1px solid rgba(22,24,29,0.12); }
+  .swatch .n { font-family:'JetBrains Mono', monospace; font-size:11px; color:#4c4f57; }
+  .swatch .v { font-family:'JetBrains Mono', monospace; font-size:11px; color:#666a72; }
+  .focus { outline:2px solid #c99a12; outline-offset:2px; }
+  .quiz-opt { display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid rgba(22,24,29,0.12); border-radius:8px; }
+  .quiz-opt.right { border-color:#1f8f45; }
+  .quiz-opt.wrong { border-color:#d0362a; }
+  .radio { width:18px; height:18px; border-radius:999px; border:2px solid rgba(22,24,29,0.36); }
+  .radio.on { border-color:#1f8f45; background:#1f8f45; box-shadow: inset 0 0 0 3px #ffffff; }
+</style>
+</helmet>
+
+<div style="width:1280px; min-height:1900px; background:#f6f3ec;">
+  
+<header style="display:flex; align-items:center; justify-content:space-between; height:64px; padding:0 32px; border-bottom:1px solid rgba(22,24,29,0.12); background:#f6f3ec;">
+  
+<div class="row" style="gap:10px; align-items:center;">
+  <svg class="sigil" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="28" height="28" role="img" aria-label="CodeChup"><g fill="#16181d"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/><rect x="17" y="9" width="6" height="6" rx="1"/><rect x="1" y="17" width="6" height="6" rx="1"/><rect x="9" y="17" width="6" height="6" rx="1"/><rect x="17" y="17" width="6" height="6" rx="1"/></g><rect x="17" y="1" width="6" height="6" rx="1" fill="#c99a12"/></svg>
+  <div class="col" style="gap:2px; line-height:1;">
+    <div class="mono" style="font-size:14px; font-weight:500; letter-spacing:0.02em; color:#16181d;">codechup<span class="caret" style="margin-left:2px;"></span></div>
+    <div class="mono" style="font-size:10px; letter-spacing:0.18em; text-transform:uppercase; color:#4c4f57;">claude code academy</div>
+  </div>
+</div>
+  
+  <nav class="row" style="gap:22px; font-size:14px;">
+    <a href="#">Curriculum</a><a href="#">Playbook</a><a href="#">Changelog</a><a href="#" class="muted">Design</a>
+  </nav>
+  <div class="row" style="gap:10px;">
+    <div class="row" style="gap:8px; height:36px; padding:0 12px; border:1px solid rgba(22,24,29,0.12); border-radius:6px; color:#666a72; font-size:13px; min-width:200px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><span>Search lessons</span><span class="kbd" style="margin-left:auto;">Ctrl K</span></div>
+    <div class="row" style="gap:6px; height:36px; padding:0 10px; border:1px solid rgba(22,24,29,0.12); border-radius:6px; font-size:13px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><span class="mono">EN</span><span class="muted">/</span><span class="mono muted">TR</span></div>
+    <div class="row" style="width:36px; height:36px; justify-content:center; border:1px solid rgba(22,24,29,0.12); border-radius:6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg></div>
+  </div>
+</header>
+  <div style="display:grid; grid-template-columns: 240px minmax(0, 1fr) 220px; gap:0; align-items:start;">
+    
+<aside class="nav col" style="gap:0; width:240px; padding:20px 12px; border-right:1px solid rgba(22,24,29,0.12);">
+  <div class="lvl">Level 1 · Beginner</div>
+  <a href="#">m01 Start</a><a href="#">m02 Interact</a><a href="#">m03 Memory</a><a href="#">m04 Commands</a>
+  <div class="lvl">Level 2 · Intermediate</div>
+  <a href="#">m05 Models &amp; effort</a><a href="#">m06 Skills</a>
+  <a href="#" style="color:#16181d;">m07 Hooks</a>
+  <div class="col" style="gap:2px; padding-left:10px;">
+    <a href="#">Hook anatomy</a><a class="on" href="#">Block dangerous commands</a><a href="#">Format on save</a><a href="#">Notify when done</a>
+  </div>
+  <a href="#">m08 Git</a><a href="#">m09 Prompting</a>
+  <div class="lvl">Level 3 · Advanced</div>
+  <a href="#">m10 Subagents</a><a href="#">m11 MCP</a><a href="#" class="muted">…</a>
+</aside>
+    <main style="padding:32px 48px; max-width:760px;">
+<div class="col" style="gap:20px;">
+  <div class="row" style="gap:8px; flex-wrap:wrap;">
+    <span class="badge level-2">Level 2</span><span class="mono muted" style="font-size:12px;">m07 Hooks · lesson 2 of 7</span>
+  </div>
+  <h1 class="h2" style="margin:0; font-size:40px;">Block dangerous commands with a PreToolUse hook</h1>
+  <div class="row" style="gap:14px; flex-wrap:wrap; font-size:13px;" >
+    <span class="row muted" style="gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg> 20 min</span>
+    <span class="row muted" style="gap:6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M5 21V4h12l-2 4 2 4H5"/></svg> core</span>
+    <span class="chip">hooks</span><span class="chip">security</span>
+    <span class="mono muted">updated 2026-09-06 · verified v2.1.263</span>
+  </div>
+  <div class="hr"></div>
+
+  <div class="callout"><div class="col" style="gap:4px;"><span class="eyebrow">You will</span><span style="font-size:15px;">Write a hook that inspects every Bash call before it runs, exits with code 2 to block, and returns a JSON reason Claude can read.</span></div></div>
+
+  <div class="callout warn"><div class="col" style="gap:4px;"><span class="eyebrow">When not to use this</span><span class="soft" style="font-size:14px;">A permission deny rule in settings.json is simpler when you only need to block a fixed command pattern. Reach for a hook when the decision depends on arguments or repository state.</span></div></div>
+
+  <div class="col" style="gap:8px;">
+    <div class="row" style="gap:0;"><span class="tab on">macOS / Linux</span><span class="tab">Windows</span></div>
+    <div class="term" style="border-radius:0 10px 10px 10px;">
+      <div class="bar"><span>.claude/hooks/guard-bash.mjs</span><span class="row" style="margin-left:auto; gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/></svg> copy</span></div>
+      <div class="body"><span class="d">1</span>  <span class="u">const input = JSON.parse(await readStdin());</span>
+<span class="d">2</span>  <span class="u">const cmd = input.tool_input?.command ?? '';</span>
+<span class="d">3</span>  <span class="u">if (/rm\s+-rf\s+(?!\/tmp)/.test(cmd)) {</span>   <span class="g">← anything outside /tmp</span>
+<span class="d">4</span>  <span class="u">  console.log(JSON.stringify({ decision: 'block', reason: 'rm -rf outside /tmp' }));</span>
+<span class="d">5</span>  <span class="u">  process.exit(2);</span>
+<span class="d">6</span>  <span class="u">}</span></div>
+    </div>
+  </div>
+
+  <div class="card col" style="padding:18px; gap:12px;">
+    <div class="row" style="gap:8px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M9 3v7L4 19a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-5-9V3M8 3h8"/></svg><span class="h3">Lab · run it against the sandbox repo</span></div>
+    <div class="col" style="gap:8px; font-size:14px;">
+      <div class="row" style="gap:10px;"><span class="mono" style="width:22px; height:22px; border-radius:4px; background:#efece4; display:inline-flex; align-items:center; justify-content:center; font-size:11px;">1</span><span>git checkout lesson/m07-02-start</span></div><div class="row" style="gap:10px;"><span class="mono" style="width:22px; height:22px; border-radius:4px; background:#efece4; display:inline-flex; align-items:center; justify-content:center; font-size:11px;">2</span><span>Register the hook in .claude/settings.json under PreToolUse</span></div><div class="row" style="gap:10px;"><span class="mono" style="width:22px; height:22px; border-radius:4px; background:#efece4; display:inline-flex; align-items:center; justify-content:center; font-size:11px;">3</span><span>Ask Claude to delete the build folder and watch it get blocked</span></div>
+    </div>
+    <div class="term" style="font-size:12px;"><div class="body"><span class="p">›</span> <span class="u">delete the build folder</span>
+<span class="d">⏺ Bash(rm -rf ./build)</span>
+<span class="r">✗ PreToolUse hook blocked: rm -rf outside /tmp</span>
+<span class="d">I will use the project's clean script instead.</span>
+<span class="d">⏺ Bash(npm run clean)</span></div></div>
+    <div class="row" style="gap:8px; font-size:13px;" ><span class="row" style="gap:6px; color:#1f8f45;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12l5 5L20 7"/></svg> expected: exit 2, Claude picks an alternative</span></div>
+  </div>
+
+  <div class="callout changed"><div class="col" style="gap:4px;"><span class="eyebrow">Changed</span><span class="soft" style="font-size:14px;">Project-scope <span class="mono">defaultMode: bypassPermissions</span> is ignored since 2.1.x. Hooks still run in every mode.</span></div></div>
+
+  <div class="col" style="gap:10px;">
+    <div class="h3">Check yourself</div>
+    <div class="card col" style="padding:16px; gap:8px;">
+      <div style="font-size:15px;">Which exit code makes Claude abandon the tool call?</div>
+      <div class="quiz-opt"><span class="radio"></span><span>0</span></div>
+      <div class="quiz-opt right"><span class="radio on"></span><span>2</span><span class="mono" style="margin-left:auto; font-size:12px; color:#1f8f45;">correct</span></div>
+      <div class="quiz-opt"><span class="radio"></span><span>1</span></div>
+    </div>
+  </div>
+
+  <div class="col" style="gap:10px;">
+    <div class="h3">Sources</div>
+    <div class="row" style="gap:12px; padding:10px 0; border-top:1px solid rgba(22,24,29,0.12);"><span class="chip">official</span><div class="col" style="gap:2px;"><span style="font-size:14px;">Hooks reference</span><span class="mono muted" style="font-size:12px;">code.claude.com/docs/en/hooks</span></div><span class="mono muted" style="margin-left:auto; font-size:11px;">verified 2026-09-06</span></div><div class="row" style="gap:12px; padding:10px 0; border-top:1px solid rgba(22,24,29,0.12);"><span class="chip">video</span><div class="col" style="gap:2px;"><span style="font-size:14px;">Hooks in 12 minutes</span><span class="mono muted" style="font-size:12px;">youtube.com · 12:04 · Anthropic</span></div><span class="mono muted" style="margin-left:auto; font-size:11px;">verified 2026-09-06</span></div><div class="row" style="gap:12px; padding:10px 0; border-top:1px solid rgba(22,24,29,0.12);"><span class="chip">repo</span><div class="col" style="gap:2px;"><span style="font-size:14px;">guard-bash example</span><span class="mono muted" style="font-size:12px;">github.com/codechup/claude-code-lab</span></div><span class="mono muted" style="margin-left:auto; font-size:11px;">verified 2026-09-06</span></div>
+  </div>
+
+  <div class="row" style="justify-content:space-between; padding-top:8px;">
+    <span class="row muted" style="gap:8px; font-size:14px;">Was this helpful? <span class="row" style="gap:6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M7 10v11H3V10zM7 10l4-7a2 2 0 0 1 3 2v4h5a2 2 0 0 1 2 2l-1 8a2 2 0 0 1-2 2H7"/></svg><span style="display:inline-block; transform:rotate(180deg);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M7 10v11H3V10zM7 10l4-7a2 2 0 0 1 3 2v4h5a2 2 0 0 1 2 2l-1 8a2 2 0 0 1-2 2H7"/></svg></span></span></span>
+    <a class="mono muted" style="font-size:12px;" href="#">Edit this page on GitHub</a>
+  </div>
+  <div class="hr"></div>
+  <div class="row" style="justify-content:space-between;">
+    <a class="btn btn-ghost" href="#">← Hook anatomy</a>
+    <a class="btn btn-soft" href="#">Format on save <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+  </div>
+  <div class="row" style="gap:10px;"><div class="progress" style="flex:1;"><div style="width:29%"></div></div><span class="mono muted" style="font-size:12px;">2 / 7 in m07</span></div>
+</div></main>
+    
+<aside class="toc col" style="gap:2px; width:200px; padding:24px 0 0 20px;">
+  <span class="eyebrow" style="margin-bottom:8px;">On this page</span>
+  <a class="on" href="#">You will</a><a href="#">When not to use this</a><a href="#">The hook</a><a href="#">Lab</a><a href="#">Anti-patterns</a><a href="#">Check yourself</a><a href="#">Sources</a>
+</aside>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

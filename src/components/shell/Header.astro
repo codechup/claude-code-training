@@ -1,0 +1,26 @@
+---
+import ThemeToggle from './ThemeToggle.astro';
+import LangSwitch from './LangSwitch.astro';
+
+interface Props {
+  lang: string;
+}
+
+const { lang } = Astro.props;
+
+const home = `/${lang}/`;
+const labels: Record<string, string> = {
+  en: 'CodeChup Claude Code Academy',
+  tr: 'CodeChup Claude Code Akademisi',
+};
+---
+
+<header class="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
+  <a href={home} class="font-mono font-bold text-fg no-underline">
+    {labels[lang] ?? labels.en}
+  </a>
+  <div class="flex items-center gap-3">
+    <LangSwitch currentLang={lang} />
+    <ThemeToggle />
+  </div>
+</header>

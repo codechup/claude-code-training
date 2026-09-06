@@ -1,0 +1,21 @@
+---
+// nginx owns "/" in production (it 302s based on Accept-Language / the
+// cc_lang cookie — see docs/deploy). This page is a JS-free fallback for
+// anywhere that static file serving happens without that redirect (e.g.
+// `astro preview`, a CDN edge miss, or opening the file directly).
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="refresh" content="0; url=/en/" />
+    <title>CodeChup Claude Code Academy</title>
+    <link rel="canonical" href="https://cc.codechup.com/en/" />
+  </head>
+  <body>
+    <p>
+      Redirecting to <a href="/en/">the English site</a> — <a href="/tr/">Türkçe için tıklayın</a>.
+    </p>
+  </body>
+</html>

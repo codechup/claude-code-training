@@ -1,0 +1,48 @@
+---
+import '../styles/app.css';
+
+export interface HrefLangAlternate {
+  /** BCP-47 language tag, e.g. "en" or "tr". Use "x-default" for the fallback. */
+  lang: string;
+  /** Absolute path, e.g. "/en/l1-beginner/". */
+  path: string;
+}
+
+interface Props {
+  title: string;
+  description: string;
+  /** html lang attribute, e.g. "en" or "tr". */
+  lang: string;
+  /** Absolute path of this page, e.g. "/en/l1-beginner/", used for the canonical URL. */
+  path: string;
+  /** hreflang alternates (en/tr + x-default). Omit for locale-agnostic pages. */
+  alternates?: HrefLangAlternate[];
+}
+
+const { title, description, lang, path, alternates } = Astro.props;
+
+const site = Astro.site ?? new URL('https://cc.codechup.com/');
+const canonicalUrl = new URL(path, site).toString();
+---
+
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalUrl} />
+    {
+      alternates?.map((alt) => (
+        <link rel="alternate" hreflang={alt.lang} href={new URL(alt.path, site).toString()} />
+      ))
+    }
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="generator" content={Astro.generator} />
+    <script is:inline src="/theme-init.js"></script>
+  </head>
+  <body class="min-h-screen bg-bg text-fg">
+    <slot />
+  </body>
+</html>

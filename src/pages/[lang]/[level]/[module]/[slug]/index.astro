@@ -1,0 +1,58 @@
+---
+import type { InferGetStaticParamsType } from 'astro';
+import { getCollection, render } from 'astro:content';
+import Base from '../../../../../layouts/Base.astro';
+import Header from '../../../../../components/shell/Header.astro';
+import Footer from '../../../../../components/shell/Footer.astro';
+
+export async function getStaticPaths() {
+  const lessons = await getCollection('lessons', ({ data }) => !data.draft);
+  return lessons.map((entry) => {
+    const [lang, level, module, slug] = entry.id.split('/');
+    return { params: { lang, level, module, slug }, props: { entry } };
+  });
+}
+
+type Params = InferGetStaticParamsType<typeof getStaticPaths>;
+const { lang, level, module, slug } = Astro.params as Params;
+const { entry } = Astro.props;
+const { Content } = await render(entry);
+---
+
+<Base
+  title={`${entry.data.title} — CodeChup Claude Code Academy`}
+  description={entry.data.description}
+  lang={lang}
+  path={`/${lang}/${level}/${module}/${slug}/`}
+  alternates={[
+    { lang: 'en', path: `/en/${level}/${module}/${slug}/` },
+    { lang: 'tr', path: `/tr/${level}/${module}/${slug}/` },
+    { lang: 'x-default', path: `/en/${level}/${module}/${slug}/` },
+  ]}
+>
+  <Header lang={lang} />
+  <main class="prose mx-auto max-w-3xl px-4 py-16">
+    <h1 class="font-mono text-3xl font-bold">{entry.data.title}</h1>
+    <p class="text-fg-muted">
+      {entry.data.duration_min} min · {entry.data.difficulty} · verified against Claude Code {
+        entry.data.verified_version
+      }
+    </p>
+    <Content />
+    <hr class="border-border" />
+    <h2 class="font-mono text-xl font-bold">Sources</h2>
+    <ul>
+      {
+        entry.data.sources.map((source) => (
+          <li>
+            <a class="text-link underline" href={source.url}>
+              {source.title}
+            </a>{' '}
+            ({source.type})
+          </li>
+        ))
+      }
+    </ul>
+  </main>
+  <Footer lang={lang} />
+</Base>

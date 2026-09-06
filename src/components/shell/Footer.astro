@@ -1,0 +1,33 @@
+---
+interface Props {
+  lang: string;
+}
+
+const { lang } = Astro.props;
+
+const verifiedVersion = '2.1.263';
+
+const text: Record<string, { verified: string; license: string }> = {
+  en: {
+    verified: `Verified against Claude Code ${verifiedVersion}`,
+    license: 'Content and code are MIT licensed.',
+  },
+  tr: {
+    verified: `Claude Code ${verifiedVersion} sürümüne göre doğrulanmıştır`,
+    license: 'İçerik ve kod MIT lisansı ile sunulmaktadır.',
+  },
+};
+
+const t = text[lang] ?? text.en;
+---
+
+<footer class="border-t border-border px-4 py-6 text-sm text-fg-muted">
+  <p>{t.verified}</p>
+  <p>
+    &copy; 2026 CodeChup —
+    <a class="text-link underline" href="https://github.com/codechup/claude-code-training">
+      GitHub
+    </a>
+    — {t.license}
+  </p>
+</footer>

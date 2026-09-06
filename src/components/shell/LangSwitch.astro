@@ -1,0 +1,42 @@
+---
+// Swaps the first path segment between "en" and "tr" and remembers the
+// choice in a `cc_lang` cookie (1 year) that the origin's `/` redirect
+// honours over Accept-Language (see docs/deploy for the nginx side — not
+// part of this repo's build).
+interface Props {
+  currentLang: string;
+}
+
+const { currentLang } = Astro.props;
+const other = currentLang === 'en' ? 'tr' : 'en';
+const label = other === 'en' ? 'English' : 'Türkçe';
+---
+
+<a
+  id="cc-lang-switch"
+  href="#"
+  data-target-lang={other}
+  class="rounded border border-border px-2 py-1 text-sm no-underline"
+>
+  {label}
+</a>
+
+<script>
+  const link = document.getElementById('cc-lang-switch') as HTMLAnchorElement | null;
+  if (link) {
+    const target = link.dataset.targetLang;
+    const segments = window.location.pathname.split('/').filter(Boolean);
+    if (target && segments.length > 0) {
+      segments[0] = target;
+      link.href = `/${segments.join('/')}/`;
+    }
+    link.addEventListener('click', () => {
+      try {
+        document.cookie = `cc_lang=${target}; path=/; max-age=${60 * 60 * 24 * 365}`;
+      } catch {
+        // Cookie writes can fail under strict privacy settings — the link's
+        // href navigation still works without the preference being saved.
+      }
+    });
+  }
+</script>

@@ -1,0 +1,32 @@
+---
+// Toggles data-theme on <html> and persists the choice to
+// localStorage["cc:theme"]. public/theme-init.js reads the same key before
+// paint on every subsequent load.
+---
+
+<button
+  id="cc-theme-toggle"
+  type="button"
+  aria-label="Toggle color theme"
+  class="rounded border border-border px-2 py-1 text-sm"
+>
+  <span aria-hidden="true">&#9788;/&#9789;</span>
+</button>
+
+<script>
+  const STORAGE_KEY = 'cc:theme';
+  const button = document.getElementById('cc-theme-toggle');
+
+  button?.addEventListener('click', () => {
+    const root = document.documentElement;
+    const current = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+    const next = current === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try {
+      window.localStorage.setItem(STORAGE_KEY, next);
+    } catch {
+      // localStorage may be unavailable (private mode, disabled storage) — the
+      // toggle still works for the current page load, it just won't persist.
+    }
+  });
+</script>

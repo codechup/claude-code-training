@@ -1,0 +1,61 @@
+---
+import type { InferGetStaticParamsType } from 'astro';
+import { getCollection } from 'astro:content';
+import Base from '../../../../layouts/Base.astro';
+import Header from '../../../../components/shell/Header.astro';
+import Footer from '../../../../components/shell/Footer.astro';
+
+export async function getStaticPaths() {
+  const sections = await getCollection('sections');
+  const moduleSections = sections.filter((s) => s.id.split('/').length === 3);
+  return moduleSections.map((s) => {
+    const [lang, level, module] = s.id.split('/');
+    return { params: { lang, level, module }, props: { section: s } };
+  });
+}
+
+type Params = InferGetStaticParamsType<typeof getStaticPaths>;
+const { lang, level, module } = Astro.params as Params;
+const { section } = Astro.props;
+
+const lessons = (await getCollection('lessons'))
+  .filter((l) => !l.data.draft && l.id.startsWith(`${lang}/${level}/${module}/`))
+  .sort((a, b) => a.data.order - b.data.order);
+---
+
+<Base
+  title={`${section.data.title} — CodeChup Claude Code Academy`}
+  description={section.data.description}
+  lang={lang}
+  path={`/${lang}/${level}/${module}/`}
+  alternates={[
+    { lang: 'en', path: `/en/${level}/${module}/` },
+    { lang: 'tr', path: `/tr/${level}/${module}/` },
+    { lang: 'x-default', path: `/en/${level}/${module}/` },
+  ]}
+>
+  <Header lang={lang} />
+  <main class="mx-auto max-w-3xl px-4 py-16">
+    <h1 class="font-mono text-3xl font-bold">{section.data.title}</h1>
+    <p class="mt-4 text-fg-muted">{section.data.description}</p>
+    <ol class="mt-8 flex flex-col gap-3">
+      {
+        lessons.map((lesson) => (
+          <li>
+            <a
+              class="text-link underline"
+              href={`/${lang}/${level}/${module}/${lesson.id.split('/')[3]}/`}
+            >
+              {lesson.data.title}
+            </a>
+            <span class="text-fg-muted">
+              {' '}
+              — {lesson.data.duration_min} min · {lesson.data.difficulty}
+            </span>
+          </li>
+        ))
+      }
+    </ol>
+  </main>
+  <Footer lang={lang} />
+</Base>
