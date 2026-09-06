@@ -1,0 +1,370 @@
+---
+// Pagefind-backed search (D061): Ctrl/Cmd+K opens, Esc closes, results
+// filtered to the current page's language by Pagefind's own per-`<html
+// lang>` index split (each page's build output carries its own detected
+// language, and `/pagefind/pagefind.js` — loaded here at runtime from the
+// same origin, allowed by `script-src 'self' 'wasm-unsafe-eval'` — scopes
+// `search()` to it automatically).
+//
+// Mount note (Handoff): `Header.astro` (P06's aria-hidden search
+// placeholder) is outside this plan's `owned_paths`, so this component is
+// exported ready-to-mount rather than wired into the header itself — see
+// this plan's Handoff notes for the one-line change whoever next touches
+// `Header.astro` needs (adding `data-search-trigger` to the placeholder
+// button; this component already listens for clicks on any such element).
+//
+// No inline script body: the `<script>` below has no `is:inline`, so Astro
+// bundles it to an external, hashed, same-origin file — CSP-safe, and it
+// dynamically `import()`s Pagefind's own runtime only once, on first open.
+interface Props {
+  lang: string;
+}
+
+const { lang } = Astro.props;
+
+const strings: Record<
+  string,
+  {
+    placeholder: string;
+    noResults: string;
+    loading: string;
+    unavailable: string;
+    resultsLabel: string;
+    closeLabel: string;
+  }
+> = {
+  en: {
+    placeholder: 'Search lessons…',
+    noResults: 'No results.',
+    loading: 'Searching…',
+    unavailable: 'Search is unavailable in this preview.',
+    resultsLabel: 'Search results',
+    closeLabel: 'Close search',
+  },
+  tr: {
+    placeholder: 'Derslerde ara…',
+    noResults: 'Sonuç bulunamadı.',
+    loading: 'Aranıyor…',
+    unavailable: 'Arama bu önizlemede kullanılamıyor.',
+    resultsLabel: 'Arama sonuçları',
+    closeLabel: 'Aramayı kapat',
+  },
+};
+
+const t = strings[lang] ?? strings.en;
+---
+
+<dialog
+  id="cc-search-dialog"
+  class="cc-search-dialog"
+  aria-label={t.resultsLabel}
+  data-strings={JSON.stringify({
+    unavailable: t.unavailable,
+    loading: t.loading,
+    noResults: t.noResults,
+  })}
+>
+  <div class="cc-search-input-row">
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.75"
+      stroke-linecap="round"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="11" cy="11" r="7"></circle>
+      <path d="M20 20l-3.5-3.5"></path>
+    </svg>
+    <input
+      type="text"
+      id="cc-search-input"
+      class="cc-search-input"
+      placeholder={t.placeholder}
+      aria-label={t.placeholder}
+      autocomplete="off"
+      spellcheck="false"
+    />
+    <button type="button" id="cc-search-close" class="cc-search-close" aria-label={t.closeLabel}>
+      Esc
+    </button>
+  </div>
+  <ul id="cc-search-results" class="cc-search-results"></ul>
+  <p id="cc-search-status" class="cc-search-status" role="status" aria-live="polite"></p>
+</dialog>
+
+<style>
+  .cc-search-dialog {
+    width: min(560px, calc(100vw - 2 * var(--space-4)));
+    max-height: min(70vh, 560px);
+    margin: 10vh auto auto;
+    padding: 0;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-4);
+    background: var(--color-bg-2);
+    color: var(--color-ink);
+    /* A keyword color-mix, not a raw literal — scripts/check-raw-colors.mjs
+       bans those outside tokens.css, and the tokens don't define a plain
+       shadow-scrim color. */
+    box-shadow: 0 20px 60px color-mix(in srgb, black 35%, transparent);
+    overflow: hidden;
+  }
+
+  .cc-search-dialog::backdrop {
+    background: color-mix(in srgb, black 50%, transparent);
+  }
+
+  .cc-search-input-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--color-line);
+    color: var(--color-ink-muted);
+  }
+
+  .cc-search-input {
+    flex: 1;
+    height: var(--tap-target);
+    border: none;
+    background: transparent;
+    color: var(--color-ink);
+    font-size: var(--text-16);
+    outline: none;
+  }
+
+  .cc-search-input::placeholder {
+    color: var(--color-ink-muted);
+  }
+
+  .cc-search-close {
+    border: 1px solid var(--color-line-strong);
+    border-bottom-width: 2px;
+    border-radius: var(--radius-1);
+    background: transparent;
+    color: var(--color-ink-soft);
+    font-size: var(--text-11);
+    padding: 2px 6px;
+    cursor: pointer;
+  }
+
+  .cc-search-results {
+    list-style: none;
+    margin: 0;
+    padding: var(--space-2);
+    max-height: 50vh;
+    overflow-y: auto;
+  }
+
+  .cc-search-results:empty {
+    padding: 0;
+  }
+
+  .cc-search-result {
+    margin: 0 0 var(--space-1);
+  }
+
+  .cc-search-result a {
+    display: block;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-2);
+    color: var(--color-ink);
+    text-decoration: none;
+  }
+
+  .cc-search-result a:hover,
+  .cc-search-result a:focus-visible {
+    background: var(--color-bg-3);
+  }
+
+  .cc-search-result-title {
+    font-size: var(--text-14);
+    font-weight: 500;
+  }
+
+  .cc-search-result-excerpt {
+    margin-top: 2px;
+    font-size: var(--text-13);
+    color: var(--color-ink-muted);
+  }
+
+  .cc-search-result-excerpt mark {
+    background: none;
+    color: var(--color-accent-text);
+    font-weight: 600;
+  }
+
+  .cc-search-status {
+    margin: 0;
+    padding: var(--space-2) var(--space-4) var(--space-4);
+    font-size: var(--text-13);
+    color: var(--color-ink-muted);
+  }
+
+  .cc-search-status:empty {
+    display: none;
+  }
+</style>
+
+<script>
+  // Pagefind's built bundle lives at `/pagefind/pagefind.js` in the emitted
+  // site (a real static file, written by the `pagefind --site dist`
+  // postbuild step) — not a package this file can statically import, so
+  // this loads it at runtime with a plain string specifier. It 404s in
+  // `astro dev` (Pagefind only runs against `dist/`); that failure is
+  // caught below and surfaced as a status message, never an uncaught
+  // console error.
+  type PagefindResult = { data: () => Promise<PagefindResultData> };
+  interface PagefindResultData {
+    url: string;
+    excerpt: string;
+    meta: { title?: string };
+  }
+  interface PagefindModule {
+    init: () => Promise<void>;
+    search: (term: string) => Promise<{ results: PagefindResult[] }>;
+  }
+
+  const dialog = document.getElementById('cc-search-dialog') as HTMLDialogElement | null;
+  const input = document.getElementById('cc-search-input') as HTMLInputElement | null;
+  const closeButton = document.getElementById('cc-search-close');
+  const resultsEl = document.getElementById('cc-search-results');
+  const statusEl = document.getElementById('cc-search-status');
+  // Localized strings rendered server-side (Astro's `t()`), passed to this
+  // external script via a data attribute — the script itself has no access
+  // to the component's frontmatter scope.
+  const strings = JSON.parse(dialog?.dataset.strings ?? '{}') as {
+    unavailable: string;
+    loading: string;
+    noResults: string;
+  };
+
+  let pagefind: PagefindModule | null = null;
+  let pagefindLoadFailed = false;
+  let requestId = 0;
+
+  async function ensurePagefind(): Promise<PagefindModule | null> {
+    if (pagefind || pagefindLoadFailed) return pagefind;
+    try {
+      // Same-origin runtime import — allowed by `script-src 'self'
+      // 'wasm-unsafe-eval'` (Pagefind's search runs via WebAssembly). This
+      // file only exists in `dist/` after the `pagefind` postbuild step, so
+      // TS can never resolve it as a module.
+      // @ts-expect-error -- runtime-only path, not a module on disk
+      const mod = (await import(/* @vite-ignore */ '/pagefind/pagefind.js')) as PagefindModule;
+      await mod.init();
+      pagefind = mod;
+    } catch {
+      pagefindLoadFailed = true;
+    }
+    return pagefind;
+  }
+
+  function clearResults() {
+    if (resultsEl) resultsEl.innerHTML = '';
+  }
+
+  function setStatus(text: string) {
+    if (statusEl) statusEl.textContent = text;
+  }
+
+  async function runSearch(term: string) {
+    const id = ++requestId;
+    if (!term.trim()) {
+      clearResults();
+      setStatus('');
+      return;
+    }
+
+    const pf = await ensurePagefind();
+    if (id !== requestId) return; // a newer keystroke superseded this search
+
+    if (!pf) {
+      clearResults();
+      setStatus(strings.unavailable);
+      return;
+    }
+
+    setStatus(strings.loading);
+    const search = await pf.search(term);
+    if (id !== requestId) return;
+
+    const entries = await Promise.all(search.results.slice(0, 8).map((r) => r.data()));
+    if (id !== requestId) return;
+
+    clearResults();
+    if (entries.length === 0) {
+      setStatus(strings.noResults);
+      return;
+    }
+    setStatus('');
+
+    if (!resultsEl) return;
+    for (const entry of entries) {
+      const li = document.createElement('li');
+      li.className = 'cc-search-result';
+      const a = document.createElement('a');
+      a.href = entry.url;
+      const title = document.createElement('div');
+      title.className = 'cc-search-result-title';
+      title.textContent = entry.meta.title ?? entry.url;
+      const excerpt = document.createElement('div');
+      excerpt.className = 'cc-search-result-excerpt';
+      // Pagefind's own excerpt HTML — the only markup it emits is `<mark>`
+      // around the matched term, from this build's own indexed pages.
+      excerpt.innerHTML = entry.excerpt;
+      a.append(title, excerpt);
+      li.append(a);
+      resultsEl.append(li);
+    }
+  }
+
+  function openDialog() {
+    if (!dialog) return;
+    if (!dialog.open) dialog.showModal();
+    input?.focus();
+  }
+
+  function closeDialog() {
+    if (dialog?.open) dialog.close();
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+      event.preventDefault();
+      openDialog();
+    }
+  });
+
+  document.addEventListener('click', (event) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('[data-search-trigger]')) {
+      event.preventDefault();
+      openDialog();
+    }
+  });
+
+  closeButton?.addEventListener('click', closeDialog);
+
+  // Clicking the ::backdrop (a click that lands on the <dialog> element
+  // itself, not one of its children) closes it, matching common dialog UX.
+  dialog?.addEventListener('click', (event) => {
+    if (event.target === dialog) closeDialog();
+  });
+
+  let debounceHandle: ReturnType<typeof setTimeout> | undefined;
+  input?.addEventListener('input', () => {
+    clearTimeout(debounceHandle);
+    const term = input.value;
+    debounceHandle = setTimeout(() => void runSearch(term), 120);
+  });
+
+  dialog?.addEventListener('close', () => {
+    if (input) input.value = '';
+    clearResults();
+    setStatus('');
+  });
+</script>

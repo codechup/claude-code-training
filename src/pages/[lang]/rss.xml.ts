@@ -1,6 +1,7 @@
 import rss from '@astrojs/rss';
 import { getCollection } from 'astro:content';
 import type { APIContext } from 'astro';
+import { buildFeedItems } from './_rss-items.ts';
 
 export async function getStaticPaths() {
   return [{ params: { lang: 'en' } }, { params: { lang: 'tr' } }];
@@ -18,25 +19,12 @@ const descriptions: Record<string, string> = {
 
 export async function GET(context: APIContext) {
   const lang = context.params.lang as string;
-  const lessons = await getCollection(
-    'lessons',
-    ({ id, data }) => !data.draft && id.startsWith(`${lang}/`),
-  );
+  const lessons = await getCollection('lessons');
 
   return rss({
     title: titles[lang] ?? titles.en,
     description: descriptions[lang] ?? descriptions.en,
     site: context.site ?? 'https://cc.codechup.com',
-    items: lessons
-      .sort((a, b) => b.data.updated.getTime() - a.data.updated.getTime())
-      .map((entry) => {
-        const [, level, module, slug] = entry.id.split('/');
-        return {
-          title: entry.data.title,
-          description: entry.data.description,
-          pubDate: entry.data.updated,
-          link: `/${lang}/${level}/${module}/${slug}/`,
-        };
-      }),
+    items: buildFeedItems(lang, lessons),
   });
 }

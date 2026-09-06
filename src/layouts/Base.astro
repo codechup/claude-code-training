@@ -41,6 +41,21 @@ const canonicalUrl = new URL(path, site).toString();
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="generator" content={Astro.generator} />
     <script is:inline src="/theme-init.js"></script>
+    {
+      /* P09 (D066): Cloudflare Web Analytics beacon. Renders nothing —
+      not a script tag with an empty token — until the owner sets
+      PUBLIC_CF_BEACON_TOKEN (O7); CSP already allows this origin. */
+    }
+    {
+      import.meta.env.PUBLIC_CF_BEACON_TOKEN && (
+        <script
+          is:inline
+          src="https://static.cloudflareinsights.com/beacon.min.js"
+          data-cf-beacon={`{"token": "${import.meta.env.PUBLIC_CF_BEACON_TOKEN}"}`}
+          defer
+        />
+      )
+    }
   </head>
   <body class="min-h-screen bg-bg text-fg">
     <slot />
