@@ -9,14 +9,7 @@ model_hint: sonnet
 effort_hint: medium
 depends_on: [P03]
 owned_paths:
-  - README.md
-  - LICENSE
-  - BUGS.md
-  - package.json
-  - tsconfig.json
-  - src/**
-  - test/**
-  - .claude/**
+  - docs/lab/**
 shared_paths: []
 estimate: M
 updated_at: 2026-09-06T00:00:00Z
@@ -28,6 +21,9 @@ open_questions: []
 Create and populate a second, small, public GitHub repository, `codechup/claude-code-lab`: a TypeScript/Node CLI plus a tiny HTTP API, seeded with intentional, documented bugs, tagged once per lesson so every content plan (P13 onward) can check out a known-good starting point and a known-good solution for its lesson's hands-on lab (D007). This plan's `owned_paths` above describe files **inside that second repository**, not inside `claude-code-training` — this plan is executed from a checkout of the new repo, created with `gh repo create codechup/claude-code-lab --public` (confirm-before-run, D089), and its own MIT license (D052).
 
 ## Context
+
+> **Path note (lead, 2026-09-06):** this plan\'s deliverables live in the separate repository `codechup/claude-code-lab`; in this repository it owns only `docs/lab/**` (a README-style description of the lab repo, its tags and how lessons reference it). The lab repo\'s own files (README, LICENSE, BUGS.md, package.json, src/**, test/**, .claude/**) are created there, not here.
+
 
 Read `docs/CURRICULUM.md` (P03) for the full lesson list across every module that names a hands-on lab (nearly every lesson, per D006) — this plan's tag list must cover every one of them. Read `DECISIONS.md` D007 (lab stack TS/Node, one tag per lesson, D053/D054 folded in: verification = expected result + checklist + real transcript), D093 (every lab must actually run and produce real output — this repo's bugs must be genuinely reproducible, not decorative). This plan does not write any lesson content or transcript — it only builds the substrate every lesson's `Lab`/`Transcript` components point at.
 

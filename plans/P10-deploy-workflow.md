@@ -2,8 +2,8 @@
 id: P10
 title: Deploy workflow and static host runbook
 milestone: M0
-status: todo
-owner: null
+status: review
+owner: sonnet-p10-2026-09-06
 branch: plan/10-deploy-workflow
 model_hint: sonnet
 effort_hint: medium
@@ -14,7 +14,7 @@ owned_paths:
   - docs/deploy/**
 shared_paths: []
 estimate: M
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-06T20:06:43Z
 open_questions: []
 ---
 
@@ -89,4 +89,21 @@ A reviewer reads `deploy.yml` end to end and confirms no literal host/path/IP ap
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+- **What changed:** `.github/workflows/deploy.yml` (push-to-main + `workflow_dispatch`, `DEPLOY_ENABLED` kill-switch `gate` job, reuses `ci.yml` via `workflow_call`, downloads `site-dist`, two-phase rsync, edge smoke); `scripts/smoke/edge.sh` (parameterized smoke script, `SMOKE_SKIP_EDGE=1` for local runs); `docs/deploy/README.md` (flow, secrets table, edge-smoke explanation, O1–O8 checklist verbatim from this plan).
+- **Job wiring:** `gate` (`if: vars.DEPLOY_ENABLED == 'true'`) → `ci` (`needs: gate`, `uses: ./.github/workflows/ci.yml`, passes only `HYGIENE_EXTRA_PATTERNS`) → `deploy` (`needs: [gate, ci]`). Because `ci` depends on `gate`, an unset/false `DEPLOY_ENABLED` skips every job — the whole run is a genuine no-op, not just an unbuilt one.
+- **`edge.sh` bug found and fixed during local testing:** the header-lookup helper piped through `grep` under `set -e -o pipefail`; when a header was absent, `grep`'s exit 1 propagated through the pipeline and silently killed the whole script (no FAIL line, no summary) before any redirect/header assertion could run. Fixed by wrapping that `grep` in `{ ... || true; }` and by dropping `-e` entirely (kept `-u -o pipefail`) — `FAIL_COUNT` already drives the exit code, and a smoke test's job is to report a broken/unreachable origin as FAIL lines, not to die on the first non-2xx. Verified against an unreachable host (`http://localhost:9`): 14 clean FAIL lines and exit 1, not a silent abort.
+- **Local verification performed** (`npm run build && npm run preview`, actual port 4399 — `4321` was already held by another process, pid 10828, left untouched since it belongs to a different concurrent worktree/session):
+  - `SMOKE_SKIP_EDGE=1 bash scripts/smoke/edge.sh http://localhost:4399` → 7 passed, 0 failed, 7 skipped, exit 0.
+  - `bash scripts/smoke/edge.sh http://localhost:4399` (no skip flag) → 7 passed, 7 failed (the production-only checks, as expected — this failure is the intended signal that the flag was omitted), exit 1.
+  - `bash scripts/smoke/edge.sh http://localhost:9` (unreachable) → 0 passed, 14 failed, exit 1 — confirms graceful reporting instead of a silent crash.
+  - The 7 assertions that only nginx/Cloudflare can satisfy and are therefore skipped locally: the default `/` → `/en/` redirect, the `Accept-Language: tr` → `/tr/` redirect, the `cc_lang=en` cookie overriding `Accept-Language: tr`, the CSP header (giscus.app + wasm-unsafe-eval), the HSTS header, `X-Content-Type-Options: nosniff`, and the `immutable` Cache-Control on the first `/_astro/*.css` asset. `src/pages/index.astro` documents that nginx owns `/` in production; `astro preview` has none of these.
+  - `npm run lint` → clean (eslint + prettier + no-inline-script guard). Note: per `STATE.md`'s existing open question (from P04), `npm run lint` does **not** itself run `check-public-hygiene.mjs` or `check-raw-colors.mjs` — those were run directly and separately: `node scripts/check-public-hygiene.mjs --staged` → `public-hygiene: OK (staged)`; `node scripts/check-raw-colors.mjs` → `check-raw-colors: OK (22 files scanned)`.
+  - `npm run typecheck` → 0 errors, 0 warnings (pre-existing hints in unrelated files).
+  - `node tools/plan/cli.ts check` → `ok: 48 plans, frontmatter valid, DAG acyclic, no owned_paths overlap, STATE.md fresh`.
+  - Forbidden-word grep (IPv4 pattern and `/opt/...` absolute-path pattern) over all three deliverables → both empty (`grep` exit 1 = no match).
+  - `npx --yes @action-validator/cli .github/workflows/deploy.yml` → passes with one benign `WARNING: Glob validation is not yet supported` on `paths-ignore` (no errors); same tool against `ci.yml` produces zero output, used as a baseline. `actionlint` itself was not available in this environment (no network access to its release binary from this sandbox) — `@action-validator/cli` was used instead, per the plan's "or an equivalent" allowance.
+- **Unverified end-to-end:** the `deploy` job's SSH/rsync/live-smoke steps cannot be exercised for real until the owner completes O1 and O5 (DNS + the deploy secrets) and sets `DEPLOY_ENABLED=true` — they were reviewed structurally (`action-validator`, manual read-through) but never run against a real host. The `gate`/kill-switch behavior was verified by reading the `if:`/`needs:` chain, not by triggering a workflow run.
+- **Divergence from the plan text (intentional, matches the work order given to this session):** the plan body's Scope section says a `cc_lang=tr` cookie also forces `/tr/`; the assertion actually implemented (and specified by this session's more detailed work order) is the stronger case — `Cookie: cc_lang=en` together with `Accept-Language: tr` still resolves to `/en/`, proving the cookie overrides Accept-Language rather than merely matching it. Both are consistent with "the cookie wins"; this session implemented the version that actually distinguishes cookie-precedence from coincidence.
+- **Follow-up for whoever next owns `package.json`** (already flagged by P04/P05 as an open question, reaffirmed here): add `check-public-hygiene.mjs` and `check-raw-colors.mjs` to the `lint` script for local/pre-commit parity with CI.
+- **Follow-up for `ci.yml`'s owner (P04):** with `DEPLOY_ENABLED=true`, every push to `main` now runs the `quality`/`e2e`/`lighthouse` jobs twice — once from `ci.yml`'s own `push: branches: [main]` trigger, once via `deploy.yml`'s `workflow_call`. Consider dropping the direct `push` trigger from `ci.yml` for `main` (PRs already cover `pull_request`), or accept the duplication as a deliberate belt-and-suspenders check — flagging it rather than changing `ci.yml`, which is outside this plan's `owned_paths`.
+- **No `SSH_PORT` secret** — the workflow assumes the deploy host's SSH port is the default (22), consistent with the plan's exact secret list (`SSH_HOST`, `SSH_USER`, `SSH_KEY`, `DEPLOY_PATH`). If the real host uses a non-default port, a follow-up should add `SSH_PORT` to both `deploy.yml` and the secrets table in `docs/deploy/README.md`.

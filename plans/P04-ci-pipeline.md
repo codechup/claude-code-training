@@ -2,7 +2,7 @@
 id: P04
 title: Continuous integration pipeline
 milestone: M0
-status: review
+status: done
 owner: sonnet-p04-2026-09-06
 branch: plan/04-ci-pipeline
 model_hint: sonnet
@@ -25,7 +25,7 @@ owned_paths:
   - lychee.toml
 shared_paths: []
 estimate: L
-updated_at: 2026-09-06T19:27:52Z
+updated_at: 2026-09-06T19:48:07Z
 open_questions:
   - "package.json's `lint` script does not actually run check-public-hygiene.mjs or check-raw-colors.mjs (the public-hygiene rule doc claims lint already covers it — it doesn't). package.json is outside P04's owned_paths, so ci.yml's quality job runs both checkers as their own steps instead. Whoever next owns package.json (or a small follow-up plan) should add both to the `lint` script for local/pre-commit parity with CI."
 ---

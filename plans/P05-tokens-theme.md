@@ -2,7 +2,7 @@
 id: P05
 title: Tokens and theme from the approved canvas
 milestone: M0
-status: review
+status: done
 owner: sonnet-p05-2026-09-06
 branch: plan/05-tokens-theme
 model_hint: sonnet
@@ -15,7 +15,7 @@ owned_paths:
   - src/pages/design/**
 shared_paths: []
 estimate: M
-updated_at: 2026-09-06T19:37:26Z
+updated_at: 2026-09-06T19:48:08Z
 open_questions:
   - "docs/design/CANVAS.md §6 says P05 implements the sigil and lockup from build.mjs, but this plan's own owned_paths does not list src/components/brand/** (nor does public/** beyond the single file public/theme-init.js). Per the conservative-reading rule (plans/README.md §8), P05 did NOT create src/components/brand/{Sigil,Lockup}.astro or edit public/favicon.svg — it inlined the exact build.mjs sigil()/lockup() geometry directly into src/pages/design/index.astro's brand section instead (a page-local, non-reusable copy). A follow-up plan (P06, which owns src/layouts/** and the header/footer chrome that will need the sigil/lockup, or a new small plan) should own extracting src/components/brand/Sigil.astro and Lockup.astro and updating public/favicon.svg to the sigil on a bg-0 rounded square. Whoever picks this up should reuse the exact cell coordinates in src/pages/design/index.astro's `sigil()` helper (24-unit grid, cell 6, gap 2, margin 1) so the design page and the real component never drift."
   - "scripts/check-raw-colors.mjs does not exist yet and scripts/** is outside P05's owned_paths, so P05 could not add it. tokens.css documents the no-raw-colour rule in a comment and P05 self-checked manually (grep for hex/rgb literals outside src/styles/tokens.css found none), but there is no automated CI gate for it yet. P04 (continuous integration pipeline) owns scripts/** — flagging this so P04 (or a small follow-up) adds scripts/check-raw-colors.mjs and wires it into `npm run lint`."

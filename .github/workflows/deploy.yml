@@ -1,0 +1,104 @@
+name: Deploy
+
+# Deploys the site built by ci.yml to the static host via a two-phase rsync,
+# then runs the edge smoke test against the live URL. See docs/deploy/README.md
+# for the full picture (secrets, owner checklist, how this fits together).
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'plans/**'
+      - 'STATE.md'
+      - 'docs/**'
+      - '**.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  # Kill switch (D089-adjacent: nothing here deploys until the owner has done
+  # the O1-O8 checklist in docs/deploy/README.md and flipped the repository
+  # variable). With DEPLOY_ENABLED unset or not "true", this job is skipped
+  # and, because `ci` and `deploy` both depend on it, so is everything else —
+  # the whole run finishes green having done nothing.
+  gate:
+    name: gate
+    if: vars.DEPLOY_ENABLED == 'true'
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - name: Deploy enabled
+        run: echo "vars.DEPLOY_ENABLED is true — proceeding to build and deploy."
+
+  # Reuse the exact quality gate from ci.yml (P04) — never duplicate it here.
+  ci:
+    name: ci
+    needs: gate
+    uses: ./.github/workflows/ci.yml
+    secrets:
+      HYGIENE_EXTRA_PATTERNS: ${{ secrets.HYGIENE_EXTRA_PATTERNS }}
+
+  deploy:
+    name: deploy
+    needs: [gate, ci]
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: site-dist
+          path: dist
+
+      - name: Assert the build produced the English home page
+        run: test -f dist/en/index.html
+
+      - name: Install deploy SSH key and known_hosts
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SSH_HOST:-}" ] || [ -z "${SSH_KEY:-}" ]; then
+            echo "::error::secrets.SSH_HOST and secrets.SSH_KEY must both be set — see docs/deploy/README.md (O5)." >&2
+            exit 1
+          fi
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+          printf '%s\n' "$SSH_KEY" > "$HOME/.ssh/deploy_key"
+          chmod 600 "$HOME/.ssh/deploy_key"
+          ssh-keyscan -H "$SSH_HOST" >> "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+      - name: 'Phase 1: sync content-addressed assets (no delete)'
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SSH_USER:-}" ] || [ -z "${DEPLOY_PATH:-}" ]; then
+            echo "::error::secrets.SSH_USER and secrets.DEPLOY_PATH must both be set — see docs/deploy/README.md (O5)." >&2
+            exit 1
+          fi
+          export RSYNC_RSH="ssh -i $HOME/.ssh/deploy_key -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+          rsync -az --chmod=D755,F644 dist/_astro/ "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/_astro/"
+          rsync -az --chmod=D755,F644 dist/pagefind/ "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/pagefind/"
+
+      - name: 'Phase 2: sync full site (delete stale files)'
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+        run: |
+          set -euo pipefail
+          export RSYNC_RSH="ssh -i $HOME/.ssh/deploy_key -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+          rsync -az --delete --chmod=D755,F644 dist/ "$SSH_USER@$SSH_HOST:$DEPLOY_PATH/"
+
+      - name: Edge smoke test
+        run: bash scripts/smoke/edge.sh https://cc.codechup.com
