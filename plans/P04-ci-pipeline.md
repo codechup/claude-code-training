@@ -2,7 +2,7 @@
 id: P04
 title: Continuous integration pipeline
 milestone: M0
-status: in_progress
+status: review
 owner: sonnet-p04-2026-09-06
 branch: plan/04-ci-pipeline
 model_hint: sonnet
@@ -12,8 +12,12 @@ owned_paths:
   - .github/workflows/ci.yml
   - .github/workflows/links-weekly.yml
   - scripts/content-gate.ts
+  - scripts/content-gate.test.ts
   - scripts/check-no-inline-script.mjs
+  - scripts/check-no-inline-script.test.ts
   - scripts/check-raw-colors.mjs
+  - scripts/check-raw-colors.test.ts
+  - scripts/__fixtures__/**
   - src/integrations/content-gates.ts
   - e2e/**
   - playwright.config.ts
@@ -21,8 +25,9 @@ owned_paths:
   - lychee.toml
 shared_paths: []
 estimate: L
-updated_at: 2026-09-06T18:55:09Z
-open_questions: []
+updated_at: 2026-09-06T19:27:52Z
+open_questions:
+  - "package.json's `lint` script does not actually run check-public-hygiene.mjs or check-raw-colors.mjs (the public-hygiene rule doc claims lint already covers it — it doesn't). package.json is outside P04's owned_paths, so ci.yml's quality job runs both checkers as their own steps instead. Whoever next owns package.json (or a small follow-up plan) should add both to the `lint` script for local/pre-commit parity with CI."
 ---
 
 ## Goal
@@ -96,3 +101,45 @@ A reviewer opens the CI run for this plan's own PR, confirms all four jobs (`qua
 - Owner request 2026-09-06: CI must run `node scripts/check-public-hygiene.mjs` (already inside `npm run lint`) with the repo secret `HYGIENE_EXTRA_PATTERNS` exported (project-specific private names; the owner mirrors the machine-local `.hygiene.local.json` into it), plus gitleaks with `.gitleaks.toml`. Add `HYGIENE_EXTRA_PATTERNS` to the owner checklist in `docs/deploy/README.md` (P10).
 
 - _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+
+**Executed 2026-09-06 by sonnet-p04-2026-09-06.**
+
+What changed:
+- Added `.github/workflows/ci.yml` (`quality`, `e2e`, `links`, `lighthouse` jobs; triggers `pull_request` / `push: main` / `workflow_call`) and `.github/workflows/links-weekly.yml` (Monday 06:17 UTC cron + `workflow_dispatch`, full-repo lychee sweep, opens a GitHub issue via `gh issue create` on failure, never fails the run itself).
+- Added `scripts/check-raw-colors.mjs` (fails on a raw hex/`rgb()`/`rgba()`/`hsl()`/`hsla()` literal anywhere under `src/**` outside `src/styles/tokens.css`; a negative lookbehind keeps it from misreading HTML numeric entities like `&#9788;` as hex colors — caught this against the real `ThemeToggle.astro` sun/moon glyph during testing).
+- Refactored `scripts/check-no-inline-script.mjs` (and wrote `check-raw-colors.mjs` from the start) to export a `check*(root)` function used by both the CLI entry point and Vitest, matching `content-gate.ts`'s existing testable shape. CLI behavior/output is unchanged.
+- Added Vitest fixture-based unit tests: `scripts/content-gate.test.ts`, `scripts/check-no-inline-script.test.ts`, `scripts/check-raw-colors.test.ts`, with fixtures under `scripts/__fixtures__/{content-gate,inline-script,raw-colors}/`. `content-gate.test.ts` covers: empty content root (ok), a valid EN/TR pair (ok), a fence missing its language tag (fails), an EN lesson with no TR counterpart (fails), and `draft: true` allowed/rejected with/without `--no-drafts`.
+- Added `e2e/shell.spec.ts` (header/footer/`html[lang]`/lang-switch across en+tr, theme toggle click + reload persistence — real tests, not fixme, since P01 already shipped a working `ThemeToggle`/`LangSwitch`) and `e2e/lesson.spec.ts` (level/module/lesson pages against the one real seed lesson P01 shipped, plus the TR counterpart's `draft: true` gating). Added `e2e/search.spec.ts` (fully `test.fixme()` — no search UI exists yet). `test.fixme()` only for: OS-tab component (naming P07 — `OSTabs` doesn't exist yet), lesson prev/next nav and a TOC (naming P07/P08), and full curriculum navigation (naming P13+, to be un-skipped by P12 per this plan's Context). Updated `e2e/a11y.spec.ts` to add `/` to the checked routes (with a `waitForURL` guard so axe doesn't run mid-navigation on the 0-second meta-refresh page).
+- Updated this plan's own `owned_paths` to add `scripts/content-gate.test.ts`, `scripts/check-no-inline-script.test.ts`, `scripts/check-raw-colors.test.ts`, and `scripts/__fixtures__/**` — the original list only named the three `.mjs`/`.ts` implementation files, not the test/fixture files the plan's own "Tests required" section calls for. Verified no other plan's `owned_paths` overlaps these before adding them.
+
+Decisions taken (repo state had moved ahead of / behind this plan's written text — built against actual repo state per D045, discrepancies below):
+- **Content already exists.** This plan's Context says "content does not exist yet" and that lesson/level-page specs should be `test.fixme()`'d until P06. In reality P01's scaffold already shipped one real EN lesson + its `draft: true` TR stub, with working level/module/lesson routing. Wrote real (non-fixme) tests against that seed instead of fixme-ing working functionality — fixme is reserved for things that genuinely don't exist yet (OSTabs, prev/next nav, TOC, search UI, full curriculum).
+- **ThemeToggle already exists.** The plan's Scope describes it as "P05's eventual `ThemeToggle`" to be fixme'd; P01 already shipped a working one (`src/components/shell/ThemeToggle.astro` + `public/theme-init.js`). Wrote a real test (click flips `data-theme`, persists across reload) rather than fixme-ing it.
+- **gitleaks: action, not raw CLI.** The plan's Scope literally says `gitleaks detect --no-git -v`; the task's action-pinning instructions asked me to resolve `gitleaks/gitleaks-action`. Used the pinned action (`@v3.0.0`, SHA `e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e`) with `GITLEAKS_CONFIG: .gitleaks.toml` instead of a raw CLI call — it's the maintained, SHA-pinnable path and scans git history (via `fetch-depth: 0`) rather than only the working tree. Confirmed via `gh api users/codechup --jq .type` → `User`, so no `GITLEAKS_LICENSE` secret is required (that's only for GitHub Organization accounts) — could not otherwise test gitleaks locally (binary isn't installed in this sandbox); this needs confirming green on the real PR's CI run.
+- **package.json left untouched.** The Handoff note below (owner request) assumes `check-public-hygiene.mjs` is "already inside `npm run lint`" — it isn't (`package.json`'s `lint` script is `eslint . && prettier --check . && node scripts/check-no-inline-script.mjs`, no hygiene or raw-colors call). `package.json` is outside P04's `owned_paths` and not listed in its `shared_paths`, so rather than edit a shared file this plan doesn't own, `ci.yml`'s `quality` job runs `node scripts/check-public-hygiene.mjs` and `node scripts/check-raw-colors.mjs` as their own steps (both with `HYGIENE_EXTRA_PATTERNS` set only on the steps that need it, never job-wide, so it isn't exposed to the gitleaks/setup-node third-party actions). Filed as an `open_questions` entry for whoever next touches `package.json`.
+- **`workflow_call` secrets.** Declared `on.workflow_call.secrets.HYGIENE_EXTRA_PATTERNS` (`required: false`) so P10's `deploy.yml` gets it automatically only if it passes `secrets: inherit` or names it explicitly — P10 should do one of those or its reused `quality` job will silently run without the private hygiene patterns (still safe, just less thorough).
+- **`links` job scope.** Gated with `if: github.event_name == 'pull_request'` (per-PR changed-file diff against `github.event.pull_request.base.sha`) rather than trying to special-case `push`/`workflow_call` events where there is no PR diff to compute; guarded with `if: steps.changed.outputs.files != ''` so an empty diff is a correct no-op rather than lychee falling back to scanning the whole repo.
+- **Coverage threshold enforced via CLI flag, not `vitest.config.ts`.** `vitest.config.ts` has no `coverage.thresholds` block and isn't in this plan's `owned_paths`; `ci.yml` runs `npm test -- --coverage.thresholds.lines=70`. Verified locally that this flag both passes at the real ~72–90% line coverage and genuinely fails (exit 1) when set above the actual number.
+
+Verified locally (see PR body for pasted output):
+- `npm run typecheck`, `npm run lint`, `npm run gate`, `node tools/plan/cli.ts check`, `node scripts/check-raw-colors.mjs`, `node scripts/check-public-hygiene.mjs` — all green.
+- `npm test -- --coverage.thresholds.lines=70` — 58/58 tests pass, 89.77% lines overall (72.52% on `content-gate.ts` alone, still above 70%).
+- `npm run build` — builds cleanly; `dist/en/index.html`, `dist/tr/index.html`, `dist/design/index.html` all present.
+- `npx playwright install chromium` (no `--with-deps` — Windows) then `npx playwright test` — 32 passed, 10 `fixme`'d (skipped), 0 failed, both `phone` and `desktop` projects.
+- `npx @lhci/cli@0.15.1 autorun` against `dist/` with the real `lighthouserc.json` budgets: all four categories scored 1.0 on `/en/`, `/design/`, and `/tr/` when run one URL at a time. The multi-URL run in one pass crashed on this Windows sandbox during Chrome-process cleanup between URLs (`EPERM` removing a temp dir — a known Windows-only `chrome-launcher` issue, unrelated to Lighthouse scoring); this doesn't reproduce on Linux, but the real multi-job `lighthouse` job on `ubuntu-latest` in this PR's own CI run is the actual proof and should be checked.
+
+Could not verify locally / needs confirming on the real CI run (Ubuntu, this PR):
+- `gitleaks/gitleaks-action` (no local gitleaks binary in this sandbox).
+- `lycheeverse/lychee-action` (both the PR `links` job and `links-weekly.yml`'s full sweep) — not invoked locally; `lychee.toml`'s config was reused as-is from the P01 scaffold (already present in `owned_paths`, no changes made to it).
+- The full multi-URL `lighthouse` job in one pass (see above — verified per-URL instead due to a local Windows-only crash).
+- `treosh/lighthouse-ci-action` and `gh issue create` in `links-weekly.yml` (schedule-triggered; only exercised via local `@lhci/cli`/`gh` equivalents, not the actual Action wrapper).
+
+Follow-ups for later plans:
+- P10 (`deploy.yml`): reuse `ci.yml` via `workflow_call`, download the `site-dist` artifact this plan uploads, pass/inherit `HYGIENE_EXTRA_PATTERNS` if the reused `quality` job should have it, and add `HYGIENE_EXTRA_PATTERNS` to the owner secrets checklist in `docs/deploy/README.md` (per the owner's request below).
+- Whoever next touches `package.json`: add `check-public-hygiene.mjs` and `check-raw-colors.mjs` to the `lint` script for local/pre-commit parity with CI (see `open_questions`).
+- P12 (M0 release): un-skip the `test.fixme()`'d "full curriculum navigation" spec in `e2e/lesson.spec.ts` once real lesson content exists, per this plan's own Context/Acceptance criteria.
+- P07/P08: un-skip the OSTabs and prev/next-nav/TOC `fixme` specs once those MDX components land.
+- P09: un-skip `e2e/search.spec.ts` once a search UI is wired to the already-working `pagefind` postbuild step.
+- Consider adding `.lighthouseci/` to `.gitignore` (a local LHCI run creates it) — not done here since `.gitignore` is outside `owned_paths`; this session deleted its local copy before committing rather than editing a shared file.
+
+Blockers: none.
