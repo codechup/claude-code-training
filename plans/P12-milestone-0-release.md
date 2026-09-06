@@ -2,7 +2,7 @@
 id: P12
 title: Milestone M0 release
 milestone: M0
-status: review
+status: blocked
 owner: fable-lead-2026-09-07
 branch: plan/12-milestone-0-release
 model_hint: sonnet
@@ -18,7 +18,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: M
-updated_at: 2026-09-06T22:24:06Z
+updated_at: 2026-09-06T22:35:46Z
 open_questions:
   - "P13: the M0 sample lesson's hands-on lab is a self-contained exercise (claude --version, claude doctor, a headless first session on a two-line file) with `repoTag: none` because codechup/claude-code-lab (P22) does not exist yet — reconcile with the real lab repo and tags when P22 lands."
   - "P42: the lesson's Changed callout (MultiEdit → Edit) needs its playbook/06-changed-since-2025 entry once that page exists."
@@ -88,3 +88,4 @@ A reviewer opens the live (or, if the owner gate is not yet met, the CI-built pr
 - **Review pipeline (D071):** fact-checker → 1 contradiction fixed (TodoWrite → Task* tools; deprecations row added); reviewer → glossary links, owned_paths, Academy source, heading wording applied; per-language transcript choice kept and documented.
 - **Evidence:** `docs/release/M0-release.md` (gate, LHCI medians en 0.98 / tr 0.96 / design 0.92 perf with 1.0 a11y/bp/seo, axe 0, restricted deploy key + real rsync test).
 - **Gate status:** the static-host vhost is not live yet (owner: origin cert secrets, host deploy switch, DNS record). After this PR merges with `DEPLOY_ENABLED=true`, the rsync step will succeed and the edge smoke will fail by design; P12 then goes `blocked` with that exact reason until the gate is met.
+- Blocked (2026-09-06): static host vhost not live — owner gate: origin certificate secrets for the host-side vhost change, that repository's deploy switch, and the DNS record for cc; everything else in the acceptance criteria is met (docs/release/M0-release.md)

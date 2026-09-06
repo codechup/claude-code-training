@@ -60,13 +60,24 @@ Assertions: all passed (budgets perf ≥ 0.9, a11y ≥ 0.95, best-practices ≥ 
 `DEPLOY_ENABLED`:
 
 ```
-DEPLOY_FLIP_PLACEHOLDER
+gh variable set DEPLOY_ENABLED --body true      # 2026-09-07, after PR #16's CI was green (D089: proceed-to-live instruction from the owner)
+gh variable list → DEPLOY_ENABLED  true
 ```
 
 Static-host gate (vhost live, on-box `/healthz` → 200): **not met at release time** — the host-side vhost change is prepared and green in its own private repository but cannot be merged until the owner (a) creates the origin certificate for `cc.codechup.com` and stores it as that repository's secrets, (b) enables that repository's deploy switch, and (c) adds the DNS record for `cc`. Until then `deploy.yml`'s rsync step succeeds and the edge smoke step fails by design.
 
 ```
-DEPLOY_RUN_PLACEHOLDER
+deploy.yml run 34064306489 (push of the P12 squash-merge to main, 2026-09-06 22:34 UTC)
+  gate                 success
+  ci / quality         success · ci / e2e success · ci / lighthouse success · ci / links skipped (no content diff on push)
+  deploy               failure — only the last step failed:
+    Phase 1: sync content-addressed assets (no delete)   ✓  (rsync dist/_astro, dist/pagefind)
+    Phase 2: sync full site (delete stale files)          ✓  (rsync --delete dist/)
+    Edge smoke test                                       ✗  https://cc.codechup.com does not resolve yet (owner gate: DNS record + origin certificate)
+On-box check through the low-privilege deploy account (D088), 2026-09-07:
+  cc static root: 273 files — 404.html _astro/ design/ en/ favicon.svg index.html og/ pagefind/ robots.txt sitemap-0.xml sitemap-index.xml theme-init.js tr/
+  en/l1-beginner/m01-start/what-claude-code-is/index.html → "<title>What Claude Code is and how it works — CodeChup Claude Code Academy…"
+Conclusion: the full pipeline (CI → artifact → restricted-key rsync → files on the host) works end to end; only the public edge is missing.
 ```
 
 ## 7. Review pipeline (D071)
