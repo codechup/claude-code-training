@@ -50,6 +50,20 @@ describe('check-public-hygiene --stdin', () => {
     expect(r.status).toBe(1);
     expect(r.stderr).toContain('private-env-1');
   });
+  it('--secrets-only ignores infrastructure details but still catches credentials', () => {
+    const cmd = spawnSync(
+      process.execPath,
+      ['scripts/check-public-hygiene.mjs', '--stdin', '--label', 'Bash', '--secrets-only'],
+      { input: `ssh user@${ip} ls ${optPath}`, encoding: 'utf8' },
+    );
+    expect(cmd.status).toBe(0);
+    const key = spawnSync(
+      process.execPath,
+      ['scripts/check-public-hygiene.mjs', '--stdin', '--label', 'Bash', '--secrets-only'],
+      { input: ['echo -----BEGIN', 'PRIVATE KEY----- > k'].join(' '), encoding: 'utf8' },
+    );
+    expect(key.status).toBe(1);
+  });
   it('exempts the files that describe the patterns', () => {
     const r = run(`${ip} ${optPath}`, '.claude/rules/public-hygiene.md');
     expect(r.status).toBe(0);

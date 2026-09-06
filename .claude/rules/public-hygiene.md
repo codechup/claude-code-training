@@ -17,7 +17,7 @@ This repository is **public**. Nothing that identifies or grants access to priva
 **Enforcement (all three must stay green):**
 
 1. `node scripts/check-public-hygiene.mjs` — runs in `npm run lint`, the `pre-commit` git hook (`sh scripts/install-hooks.sh`) and CI.
-2. `.claude/hooks/guard-hygiene.mjs` — PreToolUse hook that blocks a Write/Edit/Bash carrying such content before it touches the tree.
+2. `.claude/hooks/guard-hygiene.mjs` — PreToolUse hook that blocks a Write/Edit carrying such content before it touches the tree; for Bash/PowerShell commands it blocks only credential material (a command that _reads_ a private system is legitimate — the value must simply never land in a tracked file, which the file-level scans enforce).
 3. `gitleaks` in CI with the custom rules in `.gitleaks.toml`.
 
 If a plan seems to need a private value, it does not: write the owner action into the plan's Handoff notes / `open_questions` and use a secret or placeholder.

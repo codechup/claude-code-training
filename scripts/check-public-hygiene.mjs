@@ -24,23 +24,37 @@ const RULES = [
   },
   {
     id: 'private-key',
+    secret: true,
     re: /-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----/g,
     why: 'private key material',
   },
   {
     id: 'cert',
+    secret: true,
     re: /-----BEGIN CERTIFICATE-----/g,
     why: 'certificate material (deliver via secrets)',
   },
   {
     id: 'ssh-authorized',
+    secret: true,
     re: /\bssh-(?:ed25519|rsa) AAAA[0-9A-Za-z+/]{40,}/g,
     why: 'SSH public key blob',
   },
-  { id: 'anthropic-key', re: /\bsk-ant-[A-Za-z0-9_-]{20,}/g, why: 'Anthropic API key' },
-  { id: 'github-token', re: /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{30,}\b/g, why: 'GitHub token' },
+  {
+    id: 'anthropic-key',
+    secret: true,
+    re: /\bsk-ant-[A-Za-z0-9_-]{20,}/g,
+    why: 'Anthropic API key',
+  },
+  {
+    id: 'github-token',
+    secret: true,
+    re: /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{30,}\b/g,
+    why: 'GitHub token',
+  },
   {
     id: 'cloudflare-token',
+    secret: true,
     re: /\bCLOUDFLARE_API_TOKEN\s*[=:]\s*["']?[A-Za-z0-9_-]{30,}/g,
     why: 'Cloudflare API token value',
   },
@@ -85,10 +99,15 @@ RULES.push(...extraRules());
 const args = process.argv.slice(2);
 const mode = args.includes('--stdin') ? 'stdin' : args.includes('--staged') ? 'staged' : 'tracked';
 const label = args[args.indexOf('--label') + 1] || '<stdin>';
+// --secrets-only: scan a shell command rather than file content — only credential material counts,
+// because a command that *reads* a private system (ssh, gh -R, curl) is legitimate; what must never
+// happen is that value landing in a tracked file, and the file-level scans catch that.
+const secretsOnly = args.includes('--secrets-only');
 
 function scanText(text, name) {
   const hits = [];
   for (const r of RULES) {
+    if (secretsOnly && !r.secret) continue;
     if (r.path) {
       if (r.path.test(name)) hits.push({ id: r.id, why: r.why, line: 0, match: name });
       continue;

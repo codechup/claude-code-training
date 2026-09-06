@@ -40,16 +40,23 @@ if (label !== tool) {
 }
 if (!text) process.exit(0);
 
-const r = spawnSync(process.execPath, [checker, '--stdin', '--label', label], {
+// Shell commands are scanned for credential material only (see the checker's --secrets-only note);
+// file writes get the full rule set.
+const extra = label === tool ? ['--secrets-only'] : [];
+const r = spawnSync(process.execPath, [checker, '--stdin', '--label', label, ...extra], {
   input: text,
   encoding: 'utf8',
 });
 if (r.status === 0) process.exit(0);
 
+// Current PreToolUse contract: hookSpecificOutput.permissionDecision (exit 2 blocks regardless).
 console.log(
   JSON.stringify({
-    decision: 'block',
-    reason: `Blocked by public-hygiene: this repository is public. ${r.stderr.trim()} Move the value to a secret/env var or describe it generically (see .claude/rules/public-hygiene.md).`,
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: `Blocked by public-hygiene: this repository is public. ${r.stderr.trim()} Move the value to a secret/env var or describe it generically (see .claude/rules/public-hygiene.md).`,
+    },
   }),
 );
 process.exit(2);
