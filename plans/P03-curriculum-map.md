@@ -2,8 +2,8 @@
 id: P03
 title: Curriculum map and currency research
 milestone: M0
-status: todo
-owner: null
+status: in_progress
+owner: fable-lead-2026-09-06
 branch: plan/03-curriculum-map
 model_hint: fable
 effort_hint: high
@@ -13,7 +13,7 @@ owned_paths:
   - research/**
 shared_paths: []
 estimate: L
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-06T18:55:09Z
 open_questions: []
 ---
 

@@ -2,7 +2,7 @@
 id: P00
 title: "Design canvas: brand, tokens, and screen layouts"
 milestone: M0
-status: review
+status: done
 owner: fable-lead-2026-09-06
 branch: plan/00-design-canvas
 model_hint: fable
@@ -13,7 +13,7 @@ owned_paths:
   - docs/design/canvas/**
 shared_paths: []
 estimate: M
-updated_at: 2026-09-06T20:15:00Z
+updated_at: 2026-09-06T18:55:09Z
 open_questions: []
 ---
 
@@ -75,6 +75,8 @@ None — this plan produces design artifacts and documentation, not code. The ev
 The owner (or a reviewing session standing in for them) opens each exported artboard at both the 1280 and 390 captures, reads `docs/design/CANVAS.md` end to end, confirms the prompts are in order and match what was exported, and checks the AA contrast ratio claim against one token pair by eye.
 
 ## Handoff notes
+
+- **Approval (2026-09-06):** the owner did not annotate the canvas but instructed the lead session (`/goal`) to proceed through P11 and take the site live; the lead session treats this as approval-to-proceed. Owner edits on the canvas remain welcome and flow into `tokens.css` via a follow-up.
 
 - **Canvas:** `CodeChup Claude Code Academy` — https://claude.ai/code/artifact/ff75de02-137e-4821-9894-22a66afc049a (owner's account, private). Source of truth for regeneration: `docs/design/canvas-src/build.mjs` → `docs/design/canvas-out/` (9 artboards + `canvas.json`); prompts/decisions/token table/handoff per plan in `docs/design/CANVAS.md`.
 - **Second-look review** found and fixed: an unclosed `div` on the `/design` artboard, zero-slack frame heights, and two light-theme contrast failures → `ink-muted` lifted in both themes, new `accent-text` token; contrast matrix is now computed in the generator (all six pairs ≥ 4.5:1).

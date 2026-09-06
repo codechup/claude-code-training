@@ -2,8 +2,8 @@
 id: P04
 title: Continuous integration pipeline
 milestone: M0
-status: todo
-owner: null
+status: in_progress
+owner: sonnet-p04-2026-09-06
 branch: plan/04-ci-pipeline
 model_hint: sonnet
 effort_hint: medium
@@ -21,7 +21,7 @@ owned_paths:
   - lychee.toml
 shared_paths: []
 estimate: L
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-06T18:55:09Z
 open_questions: []
 ---
 
