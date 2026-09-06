@@ -1,5 +1,6 @@
 ---
 import '../styles/app.css';
+import { ogImagePath } from '../lib/seo.ts';
 
 export interface HrefLangAlternate {
   /** BCP-47 language tag, e.g. "en" or "tr". Use "x-default" for the fallback. */
@@ -17,12 +18,24 @@ interface Props {
   path: string;
   /** hreflang alternates (en/tr + x-default). Omit for locale-agnostic pages. */
   alternates?: HrefLangAlternate[];
+  /**
+   * Absolute path of this page's Open Graph card (D065). Defaults to
+   * `ogImagePath(lang, path)` — the build-time card rendered by
+   * `src/pages/og/[lang]/[...slug].png.ts` for every lesson and section.
+   * Pass `null` to suppress the tags on a page that has no card; pass a
+   * path to override. Locale landing pages and `/design/` resolve to
+   * `null` on their own, so nothing here points at a PNG that was never
+   * generated.
+   */
+  ogImage?: string | null;
 }
 
-const { title, description, lang, path, alternates } = Astro.props;
+const { title, description, lang, path, alternates, ogImage } = Astro.props;
 
 const site = Astro.site ?? new URL('https://cc.codechup.com/');
 const canonicalUrl = new URL(path, site).toString();
+const ogImageRelative = ogImage === undefined ? ogImagePath(lang, path) : ogImage;
+const ogImageUrl = ogImageRelative ? new URL(ogImageRelative, site).toString() : null;
 ---
 
 <!doctype html>
@@ -38,6 +51,24 @@ const canonicalUrl = new URL(path, site).toString();
         <link rel="alternate" hreflang={alt.lang} href={new URL(alt.path, site).toString()} />
       ))
     }
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:locale" content={lang === 'tr' ? 'tr_TR' : 'en_US'} />
+    {
+      ogImageUrl ? (
+        <>
+          <meta property="og:image" content={ogImageUrl} />
+          <meta name="twitter:card" content="summary_large_image" />
+          <meta name="twitter:image" content={ogImageUrl} />
+        </>
+      ) : (
+        <meta name="twitter:card" content="summary" />
+      )
+    }
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="generator" content={Astro.generator} />
     <script is:inline src="/theme-init.js"></script>

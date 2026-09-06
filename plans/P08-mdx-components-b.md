@@ -2,7 +2,7 @@
 id: P08
 title: "'MDX components B: quiz, decision trees, feedback'"
 milestone: M0
-status: review
+status: done
 owner: session-p08-2026-09-06
 branch: plan/08-mdx-components-b
 model_hint: sonnet
@@ -17,7 +17,7 @@ owned_paths:
   - worker/**
 shared_paths: []
 estimate: M
-updated_at: 2026-09-06T21:17:00Z
+updated_at: 2026-09-06T21:44:10Z
 open_questions:
   - "src/pages/design/index.astro (the /design/ gallery) is P05's owned_paths, not this plan's, and P05 is already done — so this plan could not add its five components' gallery entries there. It verified them by temporarily wiring Quiz/DecisionTree/Helpful/Giscus/YouTubeCard into that file locally (real `npm run build` + Playwright runs against the real rendered output — see Handoff notes for exact evidence), then reverted the file before committing. P12 (the M0 release plan, which depends on P07/P08/P09 and whose own acceptance criteria already say '/design/ shows every M0 component (P05, P07, P08, P09) populated') is the plan that should paste the ready-made snippet in this plan's Handoff notes into that page's '#components' section, replacing the 'lands in P07/P08' pending note for the five components this plan owns."
   - "The lesson page (src/pages/[lang]/[level]/[module]/[slug]/index.astro, P06's owned_paths) has two marked insertion points ('P08 drops its <Helpful /> thumbs row in here' replacing .cc-helpful-slot, and a comment marking where <Giscus /> goes) that this plan cannot wire up itself. Exact snippets are in Handoff notes; P06 (if it reopens) or P12 should paste them in."

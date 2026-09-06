@@ -3,10 +3,14 @@
 // exports, principles, a11y rules, plus working components — and it is
 // EN-only, outside the locale prefix (route is /design/, not /en/design/).
 //
-// This plan (P05) owns src/styles/**, public/theme-init.js,
-// ThemeToggle.astro and src/pages/design/**. The MDX component vocabulary
-// (Callout, CodeBlock, Transcript, Quiz, DecisionTree, …) is P07/P08's —
-// this page marks their sections as pending rather than faking them.
+// P05 owns src/styles/**, public/theme-init.js, ThemeToggle.astro and
+// src/pages/design/**. The MDX component vocabulary (Callout, CodeBlock,
+// OSTabs, Transcript, Sources, WhenNotToUse, Lab from P07; Quiz,
+// DecisionTree, Helpful, Giscus, YouTubeCard from P08) is mounted here by
+// P12 (the M0 release): P07 shipped a ready-made working demo of its seven
+// as src/components/mdx/design-entries/Gallery.mdx, and P08 handed over the
+// ready-to-paste snippet for its five in that plan's Handoff notes. Both
+// are live below — nothing on this page is faked or pending any more.
 // `src/components/brand/{Sigil,Lockup}.astro` are outside this plan's
 // owned_paths (not listed in plans/P05-tokens-theme.md frontmatter even
 // though docs/design/CANVAS.md §6 describes P05 building them) — the sigil
@@ -16,6 +20,12 @@
 // should extract it into a reusable component.
 import Base from '../../layouts/Base.astro';
 import ThemeToggle from '../../components/shell/ThemeToggle.astro';
+import Gallery from '../../components/mdx/design-entries/Gallery.mdx';
+import DecisionTree from '../../components/mdx/DecisionTree.astro';
+import Giscus from '../../components/mdx/Giscus.astro';
+import Helpful from '../../components/mdx/Helpful.astro';
+import Quiz from '../../components/mdx/Quiz.astro';
+import YouTubeCard from '../../components/mdx/YouTubeCard.astro';
 
 // -- sigil: 24-unit grid, cell 6, gap 2, margin 1, gold cell top-right.
 // Verbatim geometry from docs/design/canvas-src/build.mjs `sigil()`, with
@@ -437,7 +447,7 @@ const turkishSample = 'Değişiklik: çşğıöü ÇŞĞİÖÜ — ışık, gün
       <!-- ============================================================ -->
       <section id="components" class="flex flex-col gap-4 scroll-mt-6">
         <span class="eyebrow">Components</span>
-        <h2>Primitives only — the MDX vocabulary lands in P07/P08.</h2>
+        <h2>The full MDX vocabulary, rendered live.</h2>
         <div class="card flex flex-col gap-3 p-5">
           <div class="flex flex-wrap items-center gap-2" style="font-size: var(--text-13);">
             <span
@@ -460,18 +470,87 @@ const turkishSample = 'Değişiklik: çşğıöü ÇŞĞİÖÜ — ışık, gün
             >
           </div>
         </div>
-        <div
-          class="callout-placeholder rounded-[var(--radius-3)] border border-dashed p-5"
-          style="border-color: var(--color-line-strong); color: var(--color-ink-muted);"
-        >
-          <p class="eyebrow mb-1">Pending</p>
-          <p style="font-size: var(--text-14);">
-            Callout (note / when-not-to-use / changed), CodeBlock with OS tabs and annotations, Quiz
-            option states and the DecisionTree SVG land in <strong>P07</strong>/<strong>P08</strong> —
-            see
-            <code class="mono">docs/design/CANVAS.md</code> §6. This section intentionally does not fake
-            them.
-          </p>
+        <p class="muted" style="font-size: var(--text-14);">
+          The MDX vocabulary every lesson body is written from. Everything below is the real
+          component, rendered live on this page — not a screenshot and not a mock. Sample data is
+          labelled as such. See <code class="mono">docs/design/CANVAS.md</code> §6 for the spec these
+          were drawn from.
+        </p>
+
+        <Gallery />
+
+        <div class="card flex flex-col gap-3 p-5">
+          <span class="eyebrow">Quiz</span>
+          <Quiz
+            lessonId="_design-gallery"
+            questionId="q1"
+            lang="en"
+            prompt="Which scope can set bypassPermissions?"
+            options={[
+              { text: 'Project .claude/settings.json', explanation: 'Ignored there.' },
+              {
+                text: 'User or managed settings',
+                correct: true,
+                explanation: 'Correct — project scope cannot set it.',
+              },
+              { text: 'Any scope' },
+            ]}
+          />
+        </div>
+
+        <div class="card flex flex-col gap-3 p-5">
+          <span class="eyebrow">DecisionTree</span>
+          <DecisionTree
+            title="Hook, skill, or agent?"
+            desc="A short decision tree for choosing between a hook and a skill."
+            lang="en"
+            nodes={[
+              {
+                id: 'start',
+                x: 10,
+                y: 70,
+                width: 150,
+                height: 44,
+                lines: ['Should it run', 'every time?'],
+              },
+              { id: 'hook', x: 220, y: 20, width: 130, height: 40, lines: ['Write a hook'] },
+              {
+                id: 'needs-tools',
+                x: 220,
+                y: 120,
+                width: 130,
+                height: 40,
+                lines: ['Needs tools?'],
+              },
+              { id: 'skill', x: 390, y: 120, width: 120, height: 40, lines: ['Skill'] },
+            ]}
+            edges={[
+              { from: 'start', to: 'hook', label: 'yes' },
+              { from: 'start', to: 'needs-tools', label: 'no' },
+              { from: 'needs-tools', to: 'skill', label: 'yes' },
+            ]}
+          />
+        </div>
+
+        <div class="card flex flex-col gap-3 p-5">
+          <span class="eyebrow">Helpful (backend not deployed — fallback shown, O8)</span>
+          <Helpful lessonId="_design-gallery" lang="en" />
+        </div>
+
+        <div class="card flex flex-col gap-3 p-5">
+          <span class="eyebrow">Giscus (not yet enabled — O6)</span>
+          <Giscus lang="en" />
+        </div>
+
+        <div class="card flex flex-col gap-3 p-5">
+          <span class="eyebrow">YouTubeCard — sample data, not a real citation</span>
+          <YouTubeCard
+            videoId="dQw4w9WgXcQ"
+            title="Sample video card"
+            channel="Sample channel"
+            duration="12:04"
+            lang="en"
+          />
         </div>
       </section>
 
@@ -479,21 +558,18 @@ const turkishSample = 'Değişiklik: çşğıöü ÇŞĞİÖÜ — ışık, gün
       <section id="transcript" class="flex flex-col gap-4 scroll-mt-6">
         <span class="eyebrow">Transcript</span>
         <h2>Real sessions, never fabricated.</h2>
-        <div
-          class="callout-placeholder rounded-[var(--radius-3)] border border-dashed p-5"
-          style="border-color: var(--color-line-strong); color: var(--color-ink-muted);"
-        >
-          <p class="eyebrow mb-1">Pending</p>
-          <p style="font-size: var(--text-14);">
-            The Transcript component (roles <span class="mono">›</span> prompt, <span class="mono"
-              >⏺</span
-            > tool,
-            <span class="mono">✓</span>/<span class="mono">✗</span> result — see
-            <code class="mono">docs/design/CANVAS.md</code> §6) lands in <strong>P07</strong>. Every
-            transcript shown by a lesson is captured from a real session (D093) — none is invented
-            here.
-          </p>
-        </div>
+        <p class="muted" style="font-size: var(--text-14);">
+          Roles: <span class="mono">›</span> prompt, <span class="mono">⏺</span> tool,
+          <span class="mono">✓</span>/<span class="mono">✗</span> result (<code class="mono"
+            >docs/design/CANVAS.md</code
+          > §6). The component is rendered in the Components section above, from
+          <code class="mono">src/components/mdx/__fixtures__/transcripts/sample-session.txt</code> — a
+          formatting fixture that says so on its own first line. Every transcript in a real lesson points
+          at a captured session under <code class="mono">content/_shared/transcripts/</code>, and <code
+            class="mono">transcript.ts</code
+          > will not resolve a path outside those two directories: there is no inline prop to paste invented
+          output into (D019/D070/D093/D099).
+        </p>
       </section>
 
       <!-- ============================================================ -->
@@ -601,8 +677,8 @@ const turkishSample = 'Değişiklik: çşğıöü ÇŞĞİÖÜ — ışık, gün
             Tokens (dark + light, system default + manual toggle), self-hosted Inter + JetBrains
             Mono (latin + latin-ext), dual-theme Shiki wiring, and this <code class="mono"
               >/design</code
-            > skeleton — brand, tokens, type, space, motion, a11y and canvas sections live now; components
-            and transcript are placeholders for P07/P08.
+            > skeleton — brand, tokens, type, space, motion, a11y and canvas sections live now; the components
+            and transcript sections were filled in by P12 with P07's and P08's real components.
           </span>
         </div>
       </section>

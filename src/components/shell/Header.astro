@@ -5,9 +5,13 @@
 //
 // Slots left for other plans:
 //   * Search  — P09 owns the Pagefind-backed `Search` component and its
-//     Ctrl+K binding (D061). Until it lands, the desktop bar shows the
-//     inert placeholder the canvas draws, marked aria-hidden.
+//     Ctrl+K binding (D061). Mounted here by P12: the canvas placeholder is
+//     now a real `data-search-trigger` button (the selector Search.astro
+//     listens for) and `<Search>` renders its dialog at the end of the
+//     header. It stays desktop-only in the bar, exactly as the canvas draws
+//     it; Ctrl/Cmd+K opens it at every width.
 //   * ThemeToggle — P05's component, imported as-is, never re-implemented.
+import Search from './Search.astro';
 import ThemeToggle from './ThemeToggle.astro';
 import LangSwitch from './LangSwitch.astro';
 import { t } from '../../lib/i18n/ui.ts';
@@ -89,8 +93,12 @@ const SIGIL_CELLS: [number, number][] = [
     </nav>
 
     <div class="cc-actions">
-      {/* P09 (seo-search) replaces this placeholder with the real <Search /> */}
-      <div class="cc-search-placeholder" aria-hidden="true">
+      <button
+        type="button"
+        class="cc-search-placeholder"
+        data-search-trigger
+        aria-label={strings.searchLessons}
+      >
         <svg
           width="16"
           height="16"
@@ -99,13 +107,15 @@ const SIGIL_CELLS: [number, number][] = [
           stroke="currentColor"
           stroke-width="1.75"
           stroke-linecap="round"
+          aria-hidden="true"
+          focusable="false"
         >
           <circle cx="11" cy="11" r="7"></circle>
           <path d="M20 20l-3.5-3.5"></path>
         </svg>
         <span>{strings.searchLessons}</span>
-        <span class="cc-kbd mono">{strings.searchHint}</span>
-      </div>
+        <span class="cc-kbd mono" aria-hidden="true">{strings.searchHint}</span>
+      </button>
       <LangSwitch currentLang={lang} targetPath={altPath} />
       <ThemeToggle />
     </div>
@@ -130,6 +140,8 @@ const SIGIL_CELLS: [number, number][] = [
       {links.map((link) => <a href={link.href}>{link.label}</a>)}
     </nav>
   </details>
+
+  <Search lang={lang} />
 </header>
 
 <style>
@@ -207,6 +219,10 @@ const SIGIL_CELLS: [number, number][] = [
 
   .cc-search-placeholder {
     display: none;
+    background: none;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
     align-items: center;
     gap: var(--space-2);
     height: 36px;

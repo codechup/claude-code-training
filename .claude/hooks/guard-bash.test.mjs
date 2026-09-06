@@ -1,12 +1,14 @@
 // Unit test for the guard-bash matching logic.
 //
-// Why node:test and not Vitest: `vitest.config.ts` only collects `tools/**`, `scripts/**` and
-// `src/**`, and both that config and `scripts/` are outside plan P11's `owned_paths`. Node's
-// built-in runner needs no configuration and gives the same real pass/fail evidence:
+// Originally written against `node:test` because `vitest.config.ts` did not collect `.claude/**`
+// and that file was outside plan P11's `owned_paths` (see P11's Handoff notes, follow-up 1).
+// P12 added `.claude/**/*.test.mjs` to that config, so this now runs in CI with everything else:
 //
-//   node --test .claude/hooks/guard-bash.test.mjs
+//   npm test
+//
+// Only the two imports below changed; `node:test` reported the same 9 tests passing beforehand.
 import assert from 'node:assert/strict';
-import { test } from 'node:test';
+import { test } from 'vitest';
 import { assess, root } from './guard-bash.mjs';
 
 const blocked = (cmd) => assert.notEqual(assess(cmd), null, `expected BLOCK: ${cmd}`);

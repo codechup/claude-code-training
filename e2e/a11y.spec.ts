@@ -8,6 +8,8 @@ const paths = [
   '/design/',
   '/404/',
   '/en/l1-beginner/m01-start/what-claude-code-is/',
+  // The M0 release lesson in both languages (P12 acceptance criteria).
+  '/tr/l1-beginner/m01-start/what-claude-code-is/',
 ];
 
 // Routes whose status isn't asserted 200 exactly:

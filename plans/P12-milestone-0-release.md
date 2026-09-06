@@ -2,24 +2,26 @@
 id: P12
 title: Milestone M0 release
 milestone: M0
-status: todo
-owner: null
+status: review
+owner: fable-lead-2026-09-07
 branch: plan/12-milestone-0-release
 model_hint: sonnet
 effort_hint: medium
 depends_on: [P07, P08, P09, P10, P11]
 owned_paths:
-  - content/en/l1-beginner/m01-start/00-placeholder.mdx
-  - content/tr/l1-beginner/m01-start/00-placeholder.mdx
-  - content/en/l1-beginner/m01-start/01-what-is-claude-code-and-how-it-works.mdx
-  - content/tr/l1-beginner/m01-start/01-what-is-claude-code-and-how-it-works.mdx
+  - content/en/l1-beginner/m01-start/01-what-claude-code-is.mdx
+  - content/tr/l1-beginner/m01-start/01-what-claude-code-is.mdx
   - content/_shared/transcripts/m01-start/**
-  - docs/release/M0-release.md
+  - content/_shared/sources.json
+  - content/tr/playbook/glossary.mdx
+  - docs/release/**
 shared_paths:
   - content/_shared/sources.json
 estimate: M
-updated_at: 2026-09-06T00:00:00Z
-open_questions: []
+updated_at: 2026-09-06T22:24:06Z
+open_questions:
+  - "P13: the M0 sample lesson's hands-on lab is a self-contained exercise (claude --version, claude doctor, a headless first session on a two-line file) with `repoTag: none` because codechup/claude-code-lab (P22) does not exist yet — reconcile with the real lab repo and tags when P22 lands."
+  - "P42: the lesson's Changed callout (MultiEdit → Edit) needs its playbook/06-changed-since-2025 entry once that page exists."
 ---
 
 ## Goal
@@ -81,4 +83,8 @@ A reviewer opens the live (or, if the owner gate is not yet met, the CI-built pr
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+- **2026-09-07 (lead session, with an Opus authoring sub-session):** real bilingual lesson `01-what-claude-code-is` (slug per CURRICULUM, superseding the plan text's longer name) replaces the placeholder pair; 5 real transcripts under `content/_shared/transcripts/m01-start/01-what-claude-code-is/` (captured on 2026-09-06/07, Claude Code 2.1.263); `content/_shared/sources.json` seeded; TR glossary seeded with 12 terms and linked from the TR lesson.
+- **Integration wiring done here (release scope):** lesson page uses `<Sources>`, `<Helpful>`, `<Giscus>` and passes a components map to `<Content>`; Header mounts `<Search>`; Base emits og:image/twitter meta; `/design/` shows P07's gallery and P08's five components; `src/env.d.ts`; vitest collects `.claude/**/*.test.mjs`; remaining e2e fixmes un-skipped (OSTabs, full curriculum); `Lab` gained a `repoTag="none"` mode (no lab repo yet — see open_questions).
+- **Review pipeline (D071):** fact-checker → 1 contradiction fixed (TodoWrite → Task* tools; deprecations row added); reviewer → glossary links, owned_paths, Academy source, heading wording applied; per-language transcript choice kept and documented.
+- **Evidence:** `docs/release/M0-release.md` (gate, LHCI medians en 0.98 / tr 0.96 / design 0.92 perf with 1.0 a11y/bp/seo, axe 0, restricted deploy key + real rsync test).
+- **Gate status:** the static-host vhost is not live yet (owner: origin cert secrets, host deploy switch, DNS record). After this PR merges with `DEPLOY_ENABLED=true`, the rsync step will succeed and the edge smoke will fail by design; P12 then goes `blocked` with that exact reason until the gate is met.

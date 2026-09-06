@@ -60,12 +60,18 @@ const repoHref = labRepoTreeUrl(repoTag);
     <h3 class="cc-lab-title">{title}</h3>
   </div>
 
-  <p class="cc-lab-tag">
-    <span class="mono muted">git checkout {repoTag}</span>
-    <a class="mono cc-lab-repo-link" href={repoHref} target="_blank" rel="noopener noreferrer">
-      codechup/claude-code-lab
-    </a>
-  </p>
+  {
+    /* `repoTag="none"` (or empty) = a self-contained exercise that needs no lab repository
+       (the M0 sample lesson, before codechup/claude-code-lab exists — P22). */
+    repoTag && repoTag !== 'none' && (
+      <p class="cc-lab-tag">
+        <span class="mono muted">git checkout {repoTag}</span>
+        <a class="mono cc-lab-repo-link" href={repoHref} target="_blank" rel="noopener noreferrer">
+          codechup/claude-code-lab
+        </a>
+      </p>
+    )
+  }
 
   <ol class="cc-lab-steps">
     {

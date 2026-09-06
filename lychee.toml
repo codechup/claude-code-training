@@ -2,6 +2,8 @@
 accept = [200, 201, 202, 203, 204, 429]
 
 exclude = [
+  # <Transcript src="content/_shared/..."> attributes are component props, not links.
+  "content/_shared/transcripts/",
   # Not deployed yet / avoid self-referential checks during authoring.
   "^https://cc\\.codechup\\.com",
 ]
@@ -9,3 +11,6 @@ exclude = [
 exclude_all_private = true
 max_retries = 3
 timeout = 20
+
+# Root-relative site links (/en/..., /tr/...) resolve against the site origin (excluded above until launch).
+base_url = "https://cc.codechup.com"

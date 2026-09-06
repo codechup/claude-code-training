@@ -1,31 +1,307 @@
 ---
-title: 'What is Claude Code?'
-description: 'A first look at Claude Code: what it is, how it works, and what makes it different from a chat window.'
+title: 'What Claude Code is and how it works'
+description: 'Claude Code is an agentic coding tool that reads your codebase, edits files and runs commands. Learn the agentic loop, the built-in tools, and the surfaces it runs on — then prove your install works.'
 level: 1
 module: 'm01-start'
 order: 1
 duration_min: 10
 difficulty: intro
-tags: ['overview', 'cli']
+tags: ['basics', 'agent-loop']
 verified_version: '2.1.263'
-updated: 2026-09-06
+updated: 2026-09-07
 draft: false
 sources:
   - type: official
     title: 'Claude Code overview'
     url: 'https://code.claude.com/docs/en/overview.md'
-    verified_at: 2026-09-06
+    verified_at: 2026-09-07
+  - type: official
+    title: 'How Claude Code works'
+    url: 'https://code.claude.com/docs/en/how-claude-code-works.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Quickstart'
+    url: 'https://code.claude.com/docs/en/quickstart.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Advanced setup'
+    url: 'https://code.claude.com/docs/en/setup.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Tools available to Claude'
+    url: 'https://code.claude.com/docs/en/tools-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code in Action (Anthropic Academy course)'
+    url: 'https://academy.claude.com/courses/claude-code-in-action'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
 ---
 
-Claude Code is an agentic coding tool that runs in your terminal. Instead of
-copy-pasting code between a chat window and your editor, you point it at
-your project and it reads files, runs commands, and makes edits directly —
-with your permission at every step.
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say in one sentence what Claude Code is, and what makes it different from pasting code into a chat window.
+- Describe the agentic loop — gather context, take action, verify results — and point at which part of a real session is doing which.
+- Name the categories of built-in tools Claude reaches for, and say which one you would expect it to use for a given request.
+- List the surfaces Claude Code runs on: terminal, IDE extensions, the desktop app, and the web.
+- Prove your own install is healthy with `claude --version` and `claude doctor`, and get an answer out of a first, read-only session.
+
+**Prerequisites.** A terminal you are comfortable opening, and a Claude subscription (Pro, Max, Team or Enterprise) or an Anthropic Console account — the free Claude.ai plan does not include Claude Code. You do not need Claude Code installed yet: the lab below covers checking or getting an install.
+
+<WhenNotToUse>
+  Claude Code is an agent that reads, edits and runs things in a real working directory. Reach for
+  something else when you only want a paragraph of prose or a snippet with no project attached (a
+  plain chat window is faster), when the work is a one-line change you can type quicker than you can
+  describe, when you are not allowed to let a tool read the repository you are sitting in, or when
+  the task has no way to be verified — an agent's value comes from running the check afterwards, and
+  a task with no check is a task where you cannot tell whether it worked.
+</WhenNotToUse>
+
+## Concept
+
+### What it is
+
+Claude Code is an **agentic coding tool that reads your codebase, edits files, runs commands, and integrates with your development tools**. You point it at a project directory and talk to it in plain language; it decides which files to open, which commands to run, and what to change.
+
+The difference from a chat window is not the model — it is the harness around it. Claude Code provides the tools, the context management and the execution environment that turn a language model into something that can act on your project. The docs call it the **agentic harness**.
+
+### The agentic loop
+
+Given a task, Claude works through three phases that blend into each other:
+
+1. **Gather context** — search the project, read the files that look relevant, run a command to see the current state.
+2. **Take action** — edit files, create them, run a build or a script.
+3. **Verify results** — run the tests, re-read the file, check the output actually changed.
+
+The loop repeats until the task is done, and each step's result informs the next one. A question about your codebase might only ever gather context; a bug fix cycles through all three several times. You are inside the loop too: press `Esc` to stop Claude mid-action, or type a correction and press `Enter` to steer without stopping the running tool.
+
+Every lesson on this site carries one worked example prompt. Here is this lesson's — a task shaped so the loop has something to verify against:
+
+```text
+The checkout flow is broken for users with expired cards.
+The relevant code is in src/payments/. Can you investigate and fix it?
+```
+
+Notice what it does _not_ say: which files to read, which commands to run, or what the fix should look like. That is the point — you delegate the goal and the constraints, and Claude works out the steps.
+
+### Where it runs
+
+The loop, the tools and the capabilities are the same everywhere; what changes is where your code executes and how you look at it.
+
+| Surface             | What it is                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------ |
+| Terminal            | The full-featured CLI. Run `claude` in a project directory.                                      |
+| VS Code / JetBrains | IDE extensions: inline diffs, `@`-mentions, plan review, selection context.                      |
+| Desktop app         | A standalone app — visual diffs, several sessions side by side, scheduled tasks, cloud sessions. |
+| Web                 | `claude.ai/code` in a browser, plus the Claude mobile app. No local setup.                       |
+
+Beyond those, Claude Code also reaches into CI/CD (GitHub Actions, GitLab), Slack, and the browser via Chrome. Each surface talks to the same engine, so your project's `CLAUDE.md`, settings and MCP servers work across all of them.
+
+Code executes in one of three environments: **local** (your machine — the default), **cloud** (Anthropic-managed VMs, or self-hosted ones your organisation runs), or **Remote Control** (execution stays on your machine while you drive it from a browser).
+
+### The built-in tools
+
+Tools are what make it agentic — without them Claude can only reply with text. The built-in set falls into five categories:
+
+| Category          | What Claude can do                                                                                   |
+| ----------------- | ---------------------------------------------------------------------------------------------------- |
+| File operations   | Read files, edit code, create new files, rename and reorganise                                       |
+| Search            | Find files by pattern, search content with regex, explore codebases                                  |
+| Execution         | Run shell commands, start servers, run tests, use git                                                |
+| Web               | Search the web, fetch documentation, look up error messages                                          |
+| Code intelligence | See type errors after edits, jump to definitions, find references (needs a code-intelligence plugin) |
+
+In practice the names you will see scroll past in a session are `Read`, `Edit`, `Write`, `Glob`, `Grep`, `Bash` (or `PowerShell` on native Windows), `WebFetch` and `WebSearch`. There are more — `Agent` for spawning a subagent, `Skill`, the `Task*` checklist tools (`TaskCreate`, `TaskUpdate`, …; the older `TodoWrite` is disabled by default), `Monitor` and others — and the full list lives in the tools reference. Claude picks them itself, based on your prompt and on what the previous tool call returned.
+
+### Models at a glance
+
+Claude Code runs on several Claude models with different trade-offs. Sonnet handles most coding work; Opus gives stronger reasoning for hard architectural calls. Switch mid-session with `/model`, or start with `claude --model <name>`. Choosing deliberately between them — and choosing an effort level — is a level 2 topic; for now, the default is a good default.
+
+## Hands-on lab
+
+<Callout>
+  This lab is deliberately self-contained: it runs in a scratch folder on your own machine, not
+  against this course's sandbox repository, which does not exist yet at this point in the
+  curriculum. Every later lab checks out a real lab-repo tag.
+</Callout>
+
+<Lab
+  title="Lab · prove the install, then run a read-only first session"
+  lessonId="en/l1-beginner/m01-start/what-claude-code-is"
+  repoTag="none"
+  steps={[
+    'Open a terminal and run `claude --version`. If it prints nothing, install Claude Code with the command for your OS from the tabs below, then run it again.',
+    'Run `claude doctor` and read the report: install method, platform, update channel, and whether any settings file failed to parse.',
+    'Make a scratch folder outside any repository you care about, and put one tiny buggy file in it — a `math.js` whose `add()` returns `a - b` instead of `a + b`, with a comment admitting the bug.',
+    'From that folder, run a read-only headless session: `claude -p "Read math.js and tell me in two sentences, in English, whether add() is correct. Do not edit anything." --output-format text`',
+    'Run the same prompt again with `--output-format json` and look at the envelope: `num_turns`, `duration_ms`, `total_cost_usd` and the `result` string.',
+  ]}
+  expected="claude --version prints a version followed by (Claude Code); claude doctor reports 'No installation issues found.'; the headless run reports that add() subtracts instead of adding, and leaves math.js untouched."
+  checklist={[
+    '`claude --version` prints a version number',
+    '`claude doctor` reports no installation issues',
+    'The headless session found the bug without being told where it was',
+    '`git status` / the file timestamp confirm nothing was edited',
+    'The JSON envelope shows num_turns, duration_ms and total_cost_usd',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m01-start/01-what-claude-code-is/01-version.txt"
+    range="2-3"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m01-start/01-what-claude-code-is/02-doctor.txt"
+    range="2-22"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m01-start/01-what-claude-code-is/03-first-session-en.txt"
+    range="2-5"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m01-start/01-what-claude-code-is/04-first-session-json.txt"
+    range="2-10"
+  />
+</Lab>
+
+Two things in that recording are worth stopping on.
+
+The third transcript is a real capture, and the machine that produced it has global Claude Code preferences asking for Turkish answers — so the model answered in Turkish and said so in its first line, even though the prompt asked for English. That is not a mistake in the recording; it is a genuine and very useful lesson. Your standing preferences and memory files shape every session, including ones you thought were stateless.
+
+The fourth is the same task with `--output-format json`. `claude -p` is the headless entry point, and JSON output is what makes it scriptable: you get the answer plus the turn count, duration and cost in one envelope you can pipe into something else.
+
+### Install and verify, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
 
 ```bash
+brew install --cask claude-code
 claude --version
 ```
 
-This lesson is a placeholder seeded by the repo scaffold (plan P01); the
-full lesson lands in wave M1 (plan P13) with a hands-on lab, anti-patterns,
-a quiz, and a verified source list.
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+claude --version
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+irm https://claude.ai/install.ps1 | iex
+claude --version
+```
+
+  </Fragment>
+</OSTabs>
+
+The Windows (WSL) tab reuses the Linux panel on purpose: inside a WSL distribution you run the Linux installer and launch `claude` from the WSL terminal, not from PowerShell. On native Windows, installing Git for Windows is optional but recommended — with it Claude Code uses Git Bash for the `Bash` tool; without it, it uses the `PowerShell` tool instead. macOS Homebrew installs do not auto-update, so `brew upgrade claude-code` is on you; native installs update themselves in the background.
+
+## Anti-patterns
+
+**Treating it like a chat window.** Pasting a file's contents into the prompt and asking for a rewrite throws away the whole point: Claude Code reads your project files as needed, and you do not have to add context manually. _Fix:_ name the file or the area and let it read.
+
+**Asking for a change you have no way to check.** The loop's third phase is verification. A task with no test, no build and no observable output leaves both of you guessing. _Fix:_ say what "done" looks like — a passing test, a command that exits 0, a specific line that should change.
+
+**Over-specifying the steps.** Dictating which files to open and which commands to run turns an agent into a slow macro. The docs' own advice is to delegate rather than dictate: give context and direction, and let Claude work out the details. _Fix:_ state the goal, the constraints and the evidence you want back.
+
+**Assuming a session starts blank.** A session loads your `CLAUDE.md`, your auto-memory and your settings before it reads your first word — as the lab's third transcript shows, that can change the language of the answer. _Fix:_ when a result surprises you, check what is loaded (`/context`) before blaming the prompt.
+
+**Trusting a claim without the output.** "The tests pass" is not evidence; the test runner's output is. _Fix:_ ask for the command and its output, and read it.
+
+<Callout variant="changed">
+  The old `MultiEdit` tool is gone — it is not in the current tools reference. `Edit`, with
+  `replace_all: true`, covers multi-occurrence edits; verified against `tools-reference.md` for
+  Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/what-claude-code-is"
+  questionId="q1"
+  lang="en"
+  prompt="Which three phases describe the agentic loop?"
+  options={[
+    {
+      text: 'Prompt, response, retry',
+      explanation: 'That is a chat exchange, not an agent loop — nothing acts or verifies.',
+    },
+    {
+      text: 'Gather context, take action, verify results',
+      correct: true,
+      explanation: 'Exactly — and the phases blend and repeat until the task is done.',
+    },
+    {
+      text: 'Plan, approve, deploy',
+      explanation: 'Plan mode is one permission mode, not the loop itself.',
+    },
+    {
+      text: 'Read, compile, ship',
+      explanation: 'Claude Code is not tied to a compile step; many tasks never build anything.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/what-claude-code-is"
+  questionId="q2"
+  lang="en"
+  prompt="You want a one-off answer from Claude Code that a script can parse. Which is the right shape?"
+  options={[
+    {
+      text: 'claude -p "…" --output-format json',
+      correct: true,
+      explanation:
+        'Headless mode with a JSON envelope carrying the result plus turn count, duration and cost.',
+    },
+    {
+      text: 'claude, then copy the answer out of the terminal',
+      explanation: 'Works for a human, not for a script.',
+    },
+    {
+      text: 'claude --version',
+      explanation: 'That only prints the installed version.',
+    },
+    {
+      text: 'claude doctor',
+      explanation: 'That prints install and settings diagnostics, not an answer to a prompt.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/what-claude-code-is"
+  questionId="q3"
+  lang="en"
+  prompt="Which statement about where Claude Code runs is correct?"
+  options={[
+    {
+      text: 'It is terminal-only; the IDE and web versions are separate products.',
+      explanation:
+        'Every surface — terminal, IDE extensions, desktop, web — connects to the same engine.',
+    },
+    {
+      text: 'The terminal, IDE extensions, the desktop app and the web all drive the same engine, and share your CLAUDE.md, settings and MCP servers.',
+      correct: true,
+      explanation: 'Right — the surface changes the interface, not the loop.',
+    },
+    {
+      text: 'Your code always executes on Anthropic-managed machines.',
+      explanation:
+        'Local execution on your own machine is the default; cloud is one option of three.',
+    },
+    {
+      text: 'The web version cannot run commands.',
+      explanation: 'Cloud sessions run the same tools, just on a managed VM.',
+    },
+  ]}
+/>
+
+**Next:** `02-install` walks through every install path — native installer, Homebrew, WinGet, npm and the Linux package managers — and what to do when one of them fails.

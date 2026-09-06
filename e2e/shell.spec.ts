@@ -30,25 +30,19 @@ for (const lang of ['en', 'tr'] as const) {
   });
 }
 
-// LangSwitch's draft mechanism (P06): when the sibling-language page is
-// `draft: true` there is no page to link to, so the switch renders static
-// text instead of a link into a 404. content/tr/l1-beginner/m01-start/
-// 01-what-claude-code-is.mdx is still a draft, so the EN lesson shows the
-// Turkish notice; the placeholder pair is live in both languages, so the
-// same control there is a working link.
-test.describe('lang switch: draft target', () => {
-  test('shows "Türkçesi hazırlanıyor" instead of a link into a 404', async ({ page }) => {
+// LangSwitch (P06): when the sibling-language page is `draft: true` there is
+// no page to link to, so the switch renders static text instead of a link
+// into a 404. P12 translated the one lesson the repository has, so nothing
+// is a draft at M0 and the drafted-target branch has no live subject left to
+// drive — the unit coverage for it lives in `src/lib/nav`'s tests, and this
+// spec asserts the working-link branch against the real bilingual lesson.
+test.describe('lang switch: live target', () => {
+  test('round-trips EN <-> TR on the bilingual lesson', async ({ page }) => {
     await page.goto('/en/l1-beginner/m01-start/what-claude-code-is/');
-    await expect(page.locator('#cc-lang-switch')).toHaveCount(0);
-    await expect(page.locator('#cc-lang-switch-draft')).toContainText('Türkçesi hazırlanıyor');
-  });
-
-  test('round-trips EN <-> TR when both languages are live', async ({ page }) => {
-    await page.goto('/en/l1-beginner/m01-start/placeholder/');
     const toTr = page.locator('#cc-lang-switch');
-    await expect(toTr).toHaveAttribute('href', '/tr/l1-beginner/m01-start/placeholder/');
+    await expect(toTr).toHaveAttribute('href', '/tr/l1-beginner/m01-start/what-claude-code-is/');
     await toTr.click();
-    await page.waitForURL('**/tr/l1-beginner/m01-start/placeholder/');
+    await page.waitForURL('**/tr/l1-beginner/m01-start/what-claude-code-is/');
     await expect(page.locator('html')).toHaveAttribute('lang', 'tr');
 
     // The choice is remembered for the origin's `/` redirect (D017).
@@ -57,14 +51,14 @@ test.describe('lang switch: draft target', () => {
 
     await expect(page.locator('#cc-lang-switch')).toHaveAttribute(
       'href',
-      '/en/l1-beginner/m01-start/placeholder/',
+      '/en/l1-beginner/m01-start/what-claude-code-is/',
     );
   });
 });
 
 test('nav tree renders the whole curriculum on a lesson page', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto('/en/l1-beginner/m01-start/placeholder/');
+  await page.goto('/en/l1-beginner/m01-start/what-claude-code-is/');
   const sidebar = page.getByRole('navigation', { name: 'Curriculum' });
   await expect(sidebar.locator('a[href="/en/l1-beginner/"]')).toBeVisible();
   await expect(sidebar.locator('a[href="/en/l4-master/m21-scale/"]')).toBeVisible();
@@ -91,7 +85,44 @@ test.describe('theme toggle', () => {
   });
 });
 
-// OS-specific command tabs (macOS/Windows/Linux) are a lesson MDX component
-// that doesn't exist yet — P07 (mdx-components-a) owns `OSTabs`. Un-skip
-// this once that component lands and pick a lesson page that renders one.
-test.fixme('OS-tab persistence — pending P07 (OSTabs MDX component)', async () => {});
+// OS-specific command tabs: P07 ships `OSTabs` (four tabs, D002) and P12's
+// M0 release lesson is the first page that renders one, so this is no longer
+// a fixme. The macro OS lives in the shared `cc:os` key and the Windows
+// PowerShell/WSL sub-choice in `cc:os:shell` (src/components/mdx/os-tabs.ts).
+test.describe('OS tabs', () => {
+  const LESSON_EN = '/en/l1-beginner/m01-start/what-claude-code-is/';
+  const LESSON_TR = '/tr/l1-beginner/m01-start/what-claude-code-is/';
+
+  test('shows all four tabs and switches panels', async ({ page }) => {
+    await page.goto(LESSON_EN);
+    const tablist = page.getByRole('tablist', { name: 'Operating system' });
+    await expect(tablist.getByRole('tab')).toHaveCount(4);
+
+    const linux = tablist.getByRole('tab', { name: 'Linux' });
+    await linux.click();
+    await expect(linux).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('tabpanel')).toContainText(
+      'curl -fsSL https://claude.ai/install.sh',
+    );
+  });
+
+  test('the choice persists across a real navigation', async ({ page }) => {
+    await page.goto(LESSON_EN);
+    const tablist = page.getByRole('tablist', { name: 'Operating system' });
+    await tablist.getByRole('tab', { name: 'Windows (WSL)' }).click();
+
+    const stored = await page.evaluate(() => ({
+      os: window.localStorage.getItem('cc:os'),
+      shell: window.localStorage.getItem('cc:os:shell'),
+    }));
+    expect(stored).toEqual({ os: 'windows', shell: 'wsl' });
+
+    // Navigate to the TR twin — a different page, same stored preference.
+    await page.goto(LESSON_TR);
+    await expect(
+      page.getByRole('tablist', { name: 'Operating system' }).getByRole('tab', {
+        name: 'Windows (WSL)',
+      }),
+    ).toHaveAttribute('aria-selected', 'true');
+  });
+});

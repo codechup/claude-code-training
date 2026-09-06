@@ -2,7 +2,7 @@
 id: P11
 title: Dogfooded .claude/ setup
 milestone: M0
-status: review
+status: done
 owner: session-p11-2026-09-06
 branch: plan/11-dogfood-claude-setup
 model_hint: opus
@@ -13,7 +13,7 @@ owned_paths:
   - .claude/**
 shared_paths: []
 estimate: L
-updated_at: 2026-09-06T21:01:42Z
+updated_at: 2026-09-06T21:44:27Z
 open_questions: []
 ---
 

@@ -1,31 +1,310 @@
 ---
-title: 'Claude Code nedir?'
-description: "Claude Code'a ilk bakış: ne olduğu, nasıl çalıştığı ve bir sohbet penceresinden farkı."
+title: 'Claude Code nedir ve nasıl çalışır'
+description: 'Claude Code, kod tabanınızı okuyan, dosyaları düzenleyen ve komut çalıştıran agent tabanlı bir kodlama aracıdır. Agentic loop’u, yerleşik tool’ları ve çalıştığı ortamları öğrenin — sonra kendi kurulumunuzu kanıtlayın.'
 level: 1
 module: 'm01-start'
 order: 1
 duration_min: 10
 difficulty: intro
-tags: ['genel-bakis', 'cli']
+tags: ['temeller', 'agent-döngüsü']
 verified_version: '2.1.263'
-updated: 2026-09-06
-draft: true
+updated: 2026-09-07
+draft: false
 sources:
   - type: official
-    title: 'Claude Code genel bakış'
+    title: 'Claude Code overview'
     url: 'https://code.claude.com/docs/en/overview.md'
-    verified_at: 2026-09-06
+    verified_at: 2026-09-07
+  - type: official
+    title: 'How Claude Code works'
+    url: 'https://code.claude.com/docs/en/how-claude-code-works.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Quickstart'
+    url: 'https://code.claude.com/docs/en/quickstart.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Advanced setup'
+    url: 'https://code.claude.com/docs/en/setup.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Tools available to Claude'
+    url: 'https://code.claude.com/docs/en/tools-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code in Action (Anthropic Academy kursu)'
+    url: 'https://academy.claude.com/courses/claude-code-in-action'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
 ---
 
-Claude Code, terminalinizde çalışan bir ajan tabanlı kodlama aracıdır. Kodu
-bir sohbet penceresi ile editörünüz arasında kopyalayıp yapıştırmak yerine,
-onu projenize yönlendirirsiniz; dosyaları okur, komutları çalıştırır ve her
-adımda izninizi alarak doğrudan düzenlemeler yapar.
+## Hedefler ve ön koşullar
+
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Claude Code'un ne olduğunu tek cümlede söylemek ve bir sohbet penceresine kod yapıştırmaktan farkını anlatmak.
+- Agentic loop'u ([agent](/tr/playbook/glossary/#agent)'ın çalışma döngüsü: bağlam topla, harekete geç, sonucu doğrula) tarif etmek ve gerçek bir oturumda hangi adımın hangi aşamaya karşılık geldiğini göstermek.
+- Claude'un başvurduğu yerleşik [tool](/tr/playbook/glossary/#tool) (Claude'un dosya okumak, komut çalıştırmak gibi işleri yapmasını sağlayan araç) kategorilerini saymak ve belirli bir istek için hangisinin kullanılacağını tahmin etmek.
+- Claude Code'un çalıştığı ortamları listelemek: terminal, IDE eklentileri, masaüstü uygulaması ve web.
+- `claude --version` ve `claude doctor` ile kendi kurulumunuzun sağlıklı olduğunu kanıtlamak ve ilk salt-okunur oturumunuzdan bir cevap almak.
+
+**Ön koşullar.** Açmaktan çekinmediğiniz bir terminal ve bir Claude aboneliği (Pro, Max, Team veya Enterprise) ya da bir Anthropic Console hesabı — ücretsiz Claude.ai planı Claude Code'u kapsamaz. Claude Code'un kurulu olması gerekmez: aşağıdaki laboratuvar kurulumu kontrol etmeyi ya da yapmayı da kapsıyor.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Claude Code, gerçek bir çalışma dizininde okuyan, düzenleyen ve komut çalıştıran bir agent'tır
+  (kendi başına adım adım karar verip araç kullanan bir yapay zekâ). Yalnızca birkaç paragraf metin
+  ya da hiçbir projeye bağlı olmayan bir kod parçası istiyorsanız, sıradan bir sohbet penceresi daha
+  hızlıdır. Anlatmaktan daha kısa sürede yazabileceğiniz tek satırlık bir değişiklikte, içinde
+  bulunduğunuz depoyu bir aracın okumasına izniniz olmadığında ya da işin doğrulanabilecek bir
+  sonucu hiç yoksa da başka bir yol seçin: bir agent'ın değeri işi bitirdikten sonra kontrolü
+  çalıştırmasından gelir ve kontrolü olmayan bir işte çalışıp çalışmadığını anlayamazsınız.
+</WhenNotToUse>
+
+## Kavram
+
+### Nedir
+
+Claude Code, **kod tabanınızı okuyan, dosyaları düzenleyen, komut çalıştıran ve geliştirme araçlarınızla bütünleşen agent tabanlı bir kodlama aracıdır**. Onu bir proje dizinine yöneltir ve gündelik dille konuşursunuz; hangi dosyaları açacağına, hangi komutları çalıştıracağına ve neyi değiştireceğine kendisi karar verir.
+
+Sohbet penceresinden farkı model değil, modelin etrafındaki koşum takımıdır. Claude Code; tool'ları, bağlam yönetimini ve çalıştırma ortamını sağlayarak bir dil modelini projenizde iş yapabilen bir şeye dönüştürür. Resmî dokümantasyon buna **agentic harness** (agent koşumu) diyor.
+
+### Agentic loop
+
+Bir görev verildiğinde Claude, birbirine geçen üç aşamadan geçer:
+
+1. **Bağlam topla** (gather context) — projede arama yapar, ilgili görünen dosyaları okur, mevcut durumu görmek için bir komut çalıştırır.
+2. **Harekete geç** (take action) — dosyaları düzenler, yenilerini oluşturur, bir derleme ya da betik çalıştırır.
+3. **Sonucu doğrula** (verify results) — testleri çalıştırır, dosyayı yeniden okur, çıktının gerçekten değiştiğini kontrol eder.
+
+Döngü, iş bitene kadar tekrarlanır ve her adımın sonucu bir sonrakini belirler. Kod tabanınıza dair bir soru yalnızca bağlam toplamayla kalabilir; bir hata düzeltmesi üç aşamayı da defalarca döner. Siz de bu döngünün içindesiniz: Claude'u işin ortasında durdurmak için `Esc`'e basın ya da çalışan tool'u durdurmadan yön vermek için bir düzeltme yazıp `Enter`'a basın.
+
+Bu sitedeki her ders, işlenmiş tek bir örnek [prompt](/tr/playbook/glossary/#prompt) (modele verilen istem) taşır. Bu dersin örneği — döngünün doğrulayabileceği bir şeyin olduğu bir görev:
+
+```text
+The checkout flow is broken for users with expired cards.
+The relevant code is in src/payments/. Can you investigate and fix it?
+```
+
+Nelerin _söylenmediğine_ dikkat edin: hangi dosyaların okunacağı, hangi komutların çalıştırılacağı ya da düzeltmenin nasıl görüneceği. Aslolan da bu: hedefi ve kısıtları devredersiniz, adımları Claude çıkarır.
+
+### Nerede çalışır
+
+Döngü, tool'lar ve yetenekler her yerde aynıdır; değişen şey kodunuzun nerede çalıştığı ve ona nasıl baktığınızdır.
+
+| Ortam               | Nedir                                                                                                    |
+| ------------------- | -------------------------------------------------------------------------------------------------------- |
+| Terminal            | Tam donanımlı CLI. Bir proje dizininde `claude` çalıştırın.                                              |
+| VS Code / JetBrains | IDE eklentileri: satır içi diff, `@` ile dosya çağırma, plan incelemesi, seçim bağlamı.                  |
+| Masaüstü uygulaması | Bağımsız bir uygulama — görsel diff, yan yana birden çok oturum, zamanlanmış görevler, cloud oturumları. |
+| Web                 | Tarayıcıda `claude.ai/code` ve Claude mobil uygulaması. Yerel kurulum gerekmez.                          |
+
+Bunların ötesinde Claude Code; CI/CD'ye (GitHub Actions, GitLab), Slack'e ve Chrome üzerinden tarayıcıya da uzanır. Her ortam aynı motorla konuşur; bu yüzden projenizin `CLAUDE.md` dosyası, ayarlarınız ve [MCP server](/tr/playbook/glossary/#mcp-server)'larınız (Claude'a dış veri ve araç bağlayan sunucular) hepsinde geçerlidir.
+
+Kod üç ortamdan birinde çalışır: **local** (kendi makineniz — varsayılan), **cloud** (Anthropic'in yönettiği sanal makineler ya da kurumunuzun kendi barındırdıkları) veya **Remote Control** (çalıştırma sizin makinenizde kalırken siz onu tarayıcıdan sürersiniz).
+
+### Yerleşik tool'lar
+
+Aracı "agentic" yapan şey tool'lardır — onlar olmadan Claude yalnızca metinle cevap verebilir. Yerleşik küme beş kategoriye ayrılır:
+
+| Kategori        | Claude ne yapabilir                                                                                                   |
+| --------------- | --------------------------------------------------------------------------------------------------------------------- |
+| Dosya işlemleri | Dosya okumak, kod düzenlemek, yeni dosya oluşturmak, yeniden adlandırmak ve düzenlemek                                |
+| Arama           | Desene göre dosya bulmak, regex ile içerik aramak, kod tabanını keşfetmek                                             |
+| Çalıştırma      | Kabuk komutları çalıştırmak, sunucu başlatmak, test çalıştırmak, git kullanmak                                        |
+| Web             | Web'de arama yapmak, dokümantasyon getirmek, hata mesajı aramak                                                       |
+| Kod zekâsı      | Düzenlemeden sonra tip hatalarını görmek, tanıma gitmek, referansları bulmak (bir code-intelligence plugin'i gerekir) |
+
+Uygulamada bir oturumda akıp giderken göreceğiniz adlar şunlardır: `Read`, `Edit`, `Write`, `Glob`, `Grep`, `Bash` (ya da yerel Windows'ta `PowerShell`), `WebFetch` ve `WebSearch`. Daha fazlası da var — [subagent](/tr/playbook/glossary/#subagent) (ana oturumdan ayrı, kendi bağlamında çalışan yardımcı agent) başlatan `Agent`, ayrıca `Skill`, `Task*` görev listesi tool'ları (`TaskCreate`, `TaskUpdate`, …; eski `TodoWrite` varsayılan olarak kapalıdır), `Monitor` ve diğerleri — ve tam liste tool referansındadır. Claude bunları, prompt'unuza ve bir önceki tool çağrısının döndürdüğüne bakarak kendisi seçer.
+
+### Modellere kısa bakış
+
+Claude Code, farklı ödünleşimlere sahip birkaç Claude modeli üzerinde çalışır. Sonnet çoğu kodlama işini iyi götürür; Opus, zor mimari kararlarda daha güçlü akıl yürütme sağlar. Oturum ortasında `/model` ile geçiş yapın ya da `claude --model <ad>` ile başlayın. İkisi arasında bilinçli seçim yapmak — ve bir [effort](/tr/playbook/glossary/#effort) (çaba) seviyesi seçmek — 2. seviyenin konusu; şimdilik varsayılan iyi bir varsayılandır.
+
+## Uygulamalı laboratuvar
+
+<Callout label="Not">
+  Bu laboratuvar bilinçli olarak kendi kendine yeterlidir: kendi makinenizdeki geçici bir klasörde
+  çalışır, bu kursun kum havuzu deposunda değil — o depo müfredatın bu noktasında henüz yoktur.
+  Sonraki her laboratuvar gerçek bir lab-repo tag'ini checkout eder.
+</Callout>
+
+<Lab
+  title="Laboratuvar · kurulumu kanıtlayın, sonra salt-okunur bir ilk oturum çalıştırın"
+  lessonId="tr/l1-beginner/m01-start/what-claude-code-is"
+  repoTag="none"
+  steps={[
+    'Bir terminal açın ve `claude --version` çalıştırın. Hiçbir şey yazmıyorsa, aşağıdaki sekmelerden işletim sisteminize uygun komutla Claude Code’u kurun ve tekrar çalıştırın.',
+    '`claude doctor` çalıştırın ve raporu okuyun: kurulum yöntemi, platform, güncelleme kanalı ve herhangi bir ayar dosyasının okunamayıp okunamadığı.',
+    'Önemsediğiniz hiçbir deponun içinde olmayan geçici bir klasör açın ve içine tek bir küçük hatalı dosya koyun: `add()` fonksiyonu `a + b` yerine `a - b` döndüren, hatayı itiraf eden bir yorum satırı taşıyan bir `math.js`.',
+    'O klasörden salt-okunur bir headless (arayüzsüz, tek seferlik) oturum çalıştırın: `claude -p "Read math.js and tell me in two sentences whether add() is correct. Do not edit anything." --output-format text`',
+    'Aynı prompt’u bir de `--output-format json` ile çalıştırın ve zarfa bakın: `num_turns`, `duration_ms`, `total_cost_usd` ve `result` metni.',
+  ]}
+  expected="claude --version bir sürüm numarasının ardından (Claude Code) yazar; claude doctor “No installation issues found.” bildirir; [headless](/tr/playbook/glossary/#headless) çalıştırma add() fonksiyonunun toplama yerine çıkarma yaptığını bildirir ve math.js dosyasına dokunmaz."
+  checklist={[
+    '`claude --version` bir sürüm numarası yazdırdı',
+    '`claude doctor` hiçbir kurulum sorunu bildirmedi',
+    'Headless oturum, nerede olduğu söylenmeden hatayı buldu',
+    '`git status` / dosya zaman damgası hiçbir şeyin düzenlenmediğini doğruluyor',
+    'JSON zarfı num_turns, duration_ms ve total_cost_usd alanlarını gösteriyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m01-start/01-what-claude-code-is/01-version.txt"
+    range="2-3"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m01-start/01-what-claude-code-is/02-doctor.txt"
+    range="2-22"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m01-start/01-what-claude-code-is/03-first-session.txt"
+    range="2-3"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m01-start/01-what-claude-code-is/04-first-session-json.txt"
+    range="2-10"
+  />
+</Lab>
+
+Bu kayıtta durup düşünmeye değer iki şey var.
+
+Üçüncü [transcript](/tr/playbook/glossary/#transcript) (kaydedilmiş gerçek bir oturum dökümü) gerçek bir yakalamadır ve onu üreten makinenin genel Claude Code tercihleri Türkçe cevap istiyor — bu yüzden model Türkçe cevap verdi. Prompt İngilizce yazılmıştı; cevabın dilini belirleyen prompt değil, oturuma yüklenen tercihlerdi. Aynı komutun İngilizce cevap isteyen bir varyantında model yine Türkçe cevap verdi ve ilk satırında bunu açıkça söyledi (`03-first-session-en.txt`). Bu bir kayıt hatası değil, çok işe yarar bir ders: yerleşik tercihleriniz ve memory dosyalarınız, durumsuz sandığınız oturumlar dâhil her oturumu şekillendirir.
+
+Dördüncüsü aynı işin `--output-format json` ile yapılmış hâli. `claude -p` headless giriş noktasıdır ve JSON çıktısı onu betiklenebilir yapan şeydir: cevabın yanında tur sayısını, süreyi ve maliyeti tek bir zarfta alırsınız.
+
+### İşletim sistemine göre kurulum ve doğrulama
+
+<OSTabs>
+  <Fragment slot="macos">
 
 ```bash
+brew install --cask claude-code
 claude --version
 ```
 
-Bu ders, depo iskeletinin (plan P01) bıraktığı bir yer tutucudur; tam ders,
-uygulamalı bir laboratuvar, anti-pattern örnekleri, bir quiz ve doğrulanmış
-kaynak listesiyle birlikte M1 dalgasında (plan P25) yayınlanacaktır.
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+claude --version
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+irm https://claude.ai/install.ps1 | iex
+claude --version
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows (WSL) sekmesi Linux panelini bilerek yeniden kullanır: bir WSL dağıtımının içinde Linux kurucusunu çalıştırır ve `claude`'u PowerShell'den değil WSL terminalinden başlatırsınız. Yerel Windows'ta Git for Windows kurmak isteğe bağlıdır ama önerilir — kuruluysa Claude Code `Bash` tool'u için Git Bash kullanır, değilse onun yerine `PowerShell` tool'unu kullanır. macOS'ta Homebrew kurulumları kendi kendine güncellenmez, `brew upgrade claude-code` size kalır; yerel (native) kurulumlar arka planda kendini günceller.
+
+## Anti-pattern'ler
+
+**Onu bir sohbet penceresi gibi kullanmak.** Bir dosyanın içeriğini prompt'a yapıştırıp yeniden yazmasını istemek bütün anlamı çöpe atar: Claude Code proje dosyalarınızı gerektikçe kendisi okur, bağlamı elle eklemeniz gerekmez. _Düzeltme:_ dosyanın ya da alanın adını verin, okumasına izin verin.
+
+**Kontrol edemeyeceğiniz bir değişiklik istemek.** Döngünün üçüncü aşaması doğrulamadır. Testi, derlemesi ve gözlemlenebilir çıktısı olmayan bir görevde ikiniz de tahmin yürütürsünüz. _Düzeltme:_ "bitti"nin neye benzediğini söyleyin — geçen bir test, 0 ile çıkan bir komut, değişmesi gereken belirli bir satır.
+
+**Adımları fazla ayrıntılı yazmak.** Hangi dosyanın açılacağını ve hangi komutun çalıştırılacağını dikte etmek, agent'ı yavaş bir makroya çevirir. Resmî dokümantasyonun tavsiyesi de dikte etmek değil devretmektir: bağlamı ve yönü verin, ayrıntıları Claude çıkarsın. _Düzeltme:_ hedefi, kısıtları ve geri istediğiniz kanıtı yazın.
+
+**Oturumun boş başladığını varsaymak.** Bir oturum, sizin ilk kelimenizi okumadan önce `CLAUDE.md` dosyanızı, auto-memory'nizi (Claude'un çalışırken kendiliğinden kaydettiği notlar) ve ayarlarınızı yükler — laboratuvarın üçüncü transcript'inin gösterdiği gibi, bu cevabın dilini bile değiştirebilir. _Düzeltme:_ bir sonuç sizi şaşırttığında prompt'u suçlamadan önce neyin yüklü olduğuna bakın (`/context`).
+
+**Çıktısı olmayan bir iddiaya güvenmek.** "Testler geçiyor" bir kanıt değildir; test koşucusunun çıktısı kanıttır. _Düzeltme:_ komutu ve çıktısını isteyin ve okuyun.
+
+<Callout variant="changed" label="Değişti">
+  Eski `MultiEdit` tool'u kalktı — güncel tool referansında yer almıyor. Çok sayıda eşleşmeyi
+  değiştiren düzenlemeleri artık `replace_all: true` ile `Edit` karşılıyor; Claude Code 2.1.263 için
+  `tools-reference.md` üzerinden doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/what-claude-code-is"
+  questionId="q1"
+  lang="tr"
+  prompt="Agentic loop'u tanımlayan üç aşama hangisidir?"
+  options={[
+    {
+      text: 'Prompt, cevap, tekrar deneme',
+      explanation:
+        'Bu bir sohbet alışverişidir, agent döngüsü değil — hiçbir şey harekete geçmez ya da doğrulanmaz.',
+    },
+    {
+      text: 'Bağlam topla, harekete geç, sonucu doğrula',
+      correct: true,
+      explanation: 'Doğru — ve bu aşamalar iş bitene kadar birbirine geçerek tekrarlanır.',
+    },
+    {
+      text: 'Planla, onayla, dağıt',
+      explanation: 'Plan mode bir permission mode’dur, döngünün kendisi değil.',
+    },
+    {
+      text: 'Oku, derle, gönder',
+      explanation:
+        'Claude Code bir derleme adımına bağlı değildir; birçok görev hiçbir şey derlemez.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/what-claude-code-is"
+  questionId="q2"
+  lang="tr"
+  prompt="Claude Code'dan, bir betiğin ayrıştırabileceği tek seferlik bir cevap istiyorsunuz. Doğru biçim hangisi?"
+  options={[
+    {
+      text: 'claude -p "…" --output-format json',
+      correct: true,
+      explanation:
+        'Headless mod, cevabın yanında tur sayısı, süre ve maliyeti taşıyan bir JSON zarfıyla.',
+    },
+    {
+      text: 'claude çalıştırıp cevabı terminalden kopyalamak',
+      explanation: 'İnsan için olur, betik için olmaz.',
+    },
+    {
+      text: 'claude --version',
+      explanation: 'Bu yalnızca kurulu sürümü yazar.',
+    },
+    {
+      text: 'claude doctor',
+      explanation: 'Bu, bir prompt’un cevabını değil kurulum ve ayar tanılamalarını yazar.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/what-claude-code-is"
+  questionId="q3"
+  lang="tr"
+  prompt="Claude Code'un nerede çalıştığına dair hangi ifade doğrudur?"
+  options={[
+    {
+      text: 'Yalnızca terminaldedir; IDE ve web sürümleri ayrı ürünlerdir.',
+      explanation: 'Her ortam — terminal, IDE eklentileri, masaüstü, web — aynı motora bağlanır.',
+    },
+    {
+      text: 'Terminal, IDE eklentileri, masaüstü uygulaması ve web aynı motoru sürer; CLAUDE.md dosyanızı, ayarlarınızı ve MCP server’larınızı paylaşırlar.',
+      correct: true,
+      explanation: 'Doğru — ortam arayüzü değiştirir, döngüyü değil.',
+    },
+    {
+      text: 'Kodunuz her zaman Anthropic’in yönettiği makinelerde çalışır.',
+      explanation:
+        'Varsayılan, kendi makinenizdeki local çalıştırmadır; cloud üç seçenekten biridir.',
+    },
+    {
+      text: 'Web sürümü komut çalıştıramaz.',
+      explanation:
+        'Cloud oturumları aynı tool’ları, sadece yönetilen bir sanal makinede çalıştırır.',
+    },
+  ]}
+/>
+
+**Sırada:** `02-install`, kurulumun her yolunu — yerel kurucu, Homebrew, WinGet, npm ve Linux paket yöneticileri — ve biri başarısız olduğunda ne yapılacağını anlatır.

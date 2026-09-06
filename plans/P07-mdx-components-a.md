@@ -2,7 +2,7 @@
 id: P07
 title: "'MDX components A: prose and code presentation'"
 milestone: M0
-status: review
+status: done
 owner: session-p07-2026-09-06
 branch: plan/07-mdx-components-a
 model_hint: sonnet
@@ -18,7 +18,7 @@ owned_paths:
   - src/components/mdx/Lab.astro
 shared_paths: []
 estimate: M
-updated_at: 2026-09-06T21:35:38Z
+updated_at: 2026-09-06T21:44:10Z
 open_questions:
   - "OSTabs needs 4 tabs (macOS/Linux/Windows-PowerShell/Windows-WSL, D002) but src/lib/os-pref.ts (P06, outside owned_paths, shared_paths: []) only stores 3 macro values (macos/linux/windows). Could not extend it. OSTabs keeps writing the existing cc:os key for the macro OS and adds its own cc:os:shell key (src/components/mdx/os-tabs.ts) for the PowerShell/WSL sub-choice. Whoever next owns os-pref.ts should consider folding cc:os:shell into a real 4-value contract."
   - "/design/'s component gallery (src/pages/design/**) is P05's owned_paths, and the lesson page (src/pages/[lang]/[level]/[module]/[slug]/index.astro) is P06's -- neither is in P07's owned_paths, so this plan could not wire the seven components into either page directly, contrary to the Scope text's 'a working entry for all seven components in /design/'s gallery section'. Provided src/components/mdx/design-entries/Gallery.mdx instead (a real, working, populated demo of all seven) plus src/components/mdx/design-entries/sample-sources.ts. P05 (or whoever next owns /design/) should import it: `import Gallery from '../../components/mdx/design-entries/Gallery.mdx'` then `<Gallery />` in the placeholder gallery section. P12 (or whoever wires the lesson page to real MDX) should swap the lesson page's inline Sources block for `<Sources sources={entry.data.sources} lang={lang} />` and consider registering all seven as default MDX components (an Astro `components` map passed to `<Content components={...} />`) so lessons write `<Callout>` etc. without importing them per-file."

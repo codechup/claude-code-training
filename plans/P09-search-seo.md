@@ -2,7 +2,7 @@
 id: P09
 title: Search and SEO
 milestone: M0
-status: review
+status: done
 owner: session-p09-2026-09-06
 branch: plan/09-search-seo
 model_hint: sonnet
@@ -18,7 +18,7 @@ shared_paths:
   - astro.config.ts
   - src/layouts/Base.astro
 estimate: M
-updated_at: 2026-09-06T21:26:17Z
+updated_at: 2026-09-06T21:44:11Z
 open_questions:
   - "No active plan owns `src/components/shell/Header.astro` after P06 (done): its `owned_paths` only lists content files. `Search.astro` (this plan) is built, tested, and ready to mount, but P09's own `owned_paths`/non-goals forbid editing `Header.astro` — so the visible header search placeholder stays an inert, aria-hidden box (Ctrl+K itself was verified end-to-end by temporarily mounting `<Search>` in `Base.astro`, then reverting — see Handoff notes). Whoever next claims a plan touching `src/components/shell/**` (P12, or a small follow-up) should add `import Search from './Search.astro'` + `<Search lang={lang} />` next to the placeholder in `Header.astro`'s `.cc-actions` div, and add `data-search-trigger` to the placeholder `<div class=\"cc-search-placeholder\">` so clicking it opens the dialog (the component already listens for clicks on any `[data-search-trigger]` element) — then un-skip `e2e/search.spec.ts`'s two `test.fixme`s (P04 flagged this exact follow-up)."
 ---

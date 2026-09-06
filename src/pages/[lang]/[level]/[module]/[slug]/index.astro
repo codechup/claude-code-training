@@ -14,6 +14,18 @@ import LessonLayout from '../../../../../layouts/Lesson.astro';
 import LessonMeta from '../../../../../components/lesson/LessonMeta.astro';
 import PrevNext from '../../../../../components/lesson/PrevNext.astro';
 import ProgressBar from '../../../../../components/lesson/ProgressBar.astro';
+import Callout from '../../../../../components/mdx/Callout.astro';
+import CodeBlock from '../../../../../components/mdx/CodeBlock.astro';
+import DecisionTree from '../../../../../components/mdx/DecisionTree.astro';
+import Giscus from '../../../../../components/mdx/Giscus.astro';
+import Helpful from '../../../../../components/mdx/Helpful.astro';
+import Lab from '../../../../../components/mdx/Lab.astro';
+import OSTabs from '../../../../../components/mdx/OSTabs.astro';
+import Quiz from '../../../../../components/mdx/Quiz.astro';
+import Sources from '../../../../../components/mdx/Sources.astro';
+import Transcript from '../../../../../components/mdx/Transcript.astro';
+import WhenNotToUse from '../../../../../components/mdx/WhenNotToUse.astro';
+import YouTubeCard from '../../../../../components/mdx/YouTubeCard.astro';
 import { buildNav, lessonNeighbours } from '../../../../../lib/nav.ts';
 import { t } from '../../../../../lib/i18n/ui.ts';
 import { editUrl } from '../../../../../lib/repo.ts';
@@ -46,6 +58,27 @@ const twin = allLessons.find((l) => l.id === `${other}/${level}/${module}/${slug
 const altPath = twin && !twin.data.draft ? `/${other}/${level}/${module}/${slug}/` : null;
 
 const { Content, headings } = await render(entry);
+
+// The MDX component vocabulary (P07 + P08), registered as the default set
+// for every lesson body so a lesson writes `<Callout>` / `<Lab>` / `<Quiz>`
+// without a per-file import block (P07's Handoff notes asked for exactly
+// this). Astro's MDX integration takes the map through `<Content
+// components={…} />`; a lesson may still import a component explicitly to
+// override one of these.
+const mdxComponents = {
+  Callout,
+  CodeBlock,
+  DecisionTree,
+  Giscus,
+  Helpful,
+  Lab,
+  OSTabs,
+  Quiz,
+  Sources,
+  Transcript,
+  WhenNotToUse,
+  YouTubeCard,
+};
 
 const isPlaceholder = entry.data.tags.includes('placeholder');
 const levelNumber = neighbours?.level.number ?? entry.data.level;
@@ -101,54 +134,20 @@ const editHref = editUrl(entry.filePath ?? `content/${entry.id}.mdx`);
     verifiedVersion={entry.data.verified_version}
   />
 
-  {
-    /*
-    The MDX body. P07 (Callout, CodeBlock, OSTabs, Transcript, Sources,
-    WhenNotToUse, Lab) and P08 (Quiz, DecisionTree, Helpful, Giscus,
-    YouTubeCard) register their components for MDX; nothing here fakes them.
-  */
-  }
+  {/* The MDX body, with P07/P08's component vocabulary registered above. */}
   <article class="cc-body">
-    <Content />
+    <Content components={mdxComponents} />
   </article>
 
-  {
-    /*
-    Sources list — a plain, honest rendering of the frontmatter (D041). P07's
-    `<Sources />` component replaces this block wholesale; keep the heading
-    text and the `verified_at` date when it does.
-  */
-  }
-  {
-    entry.data.sources.length > 0 && (
-      <section class="cc-sources" aria-labelledby="sources-heading">
-        <h2 id="sources-heading">{strings.sources}</h2>
-        <ul>
-          {entry.data.sources.map((source) => (
-            <li>
-              <span class="mono cc-chip">{source.type}</span>
-              <span class="cc-source-main">
-                <a href={source.url}>{source.title}</a>
-                {source.channel && <span class="mono muted"> {source.channel}</span>}
-                {source.duration && <span class="mono muted"> · {source.duration}</span>}
-              </span>
-              <span class="mono muted cc-source-date">
-                {strings.verifiedOn} {source.verified_at.toISOString().slice(0, 10)}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
-    )
-  }
+  {/* Sources block (D041), rendered by P07's component from the frontmatter. */}
+  {entry.data.sources.length > 0 && <Sources sources={entry.data.sources} lang={lang} />}
 
   <div class="cc-footer-row">
-    {/* P08 (mdx-components-b) drops its <Helpful /> thumbs row in here. */}
-    <span class="muted cc-helpful-slot">{strings.wasThisHelpful}</span>
+    <Helpful lessonId={entry.id} lang={lang} />
     <a class="mono muted cc-edit" href={editHref}>{strings.editOnGitHub}</a>
   </div>
 
-  {/* P08 also owns <Giscus />; this comment is the agreed insertion point. */}
+  <Giscus lang={lang} />
 
   <hr />
 
@@ -228,47 +227,6 @@ const editHref = editUrl(entry.filePath ?? `content/${entry.id}.mdx`);
   .cc-body :global(code) {
     font-family: var(--font-family-mono);
     font-size: var(--text-14);
-  }
-
-  .cc-sources h2 {
-    font-size: var(--text-20);
-    margin: 0 0 var(--space-2);
-  }
-
-  .cc-sources ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-
-  .cc-sources li {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    flex-wrap: wrap;
-    padding: 10px 0;
-    border-top: 1px solid var(--color-line);
-  }
-
-  .cc-source-main a {
-    color: var(--color-ink);
-    font-size: var(--text-14);
-  }
-
-  .cc-source-date {
-    margin-left: auto;
-    font-size: var(--text-11);
-  }
-
-  .cc-chip {
-    display: inline-flex;
-    align-items: center;
-    height: 26px;
-    padding: 0 10px;
-    border-radius: var(--radius-1);
-    background: var(--color-bg-3);
-    color: var(--color-ink-soft);
-    font-size: var(--text-12);
   }
 
   .cc-footer-row {
