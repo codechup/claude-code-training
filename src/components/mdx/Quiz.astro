@@ -1,0 +1,282 @@
+---
+// Multiple-choice quiz question with instant feedback (D064). Results are
+// stored in `localStorage['cc:quiz:<lessonId>']` via `src/lib/progress.ts`
+// (P06) — no accounts (D020).
+//
+// Authoring: pass `options` as a plain array (works from MDX's `{}` prop
+// syntax) with exactly one `correct: true` entry; the question prompt is
+// either the `prompt` string prop or, for richer markup (code, emphasis),
+// the component's default slot/children — "props or MDX children" per this
+// plan's brief. A lesson can use several `<Quiz>` blocks; each needs its
+// own stable `questionId` — all of a lesson's quizzes on the page combine
+// into one `{ answers, score, total }` record for that `lessonId`.
+//
+// Accessibility: options are real `<input type="radio">`s inside a
+// `<fieldset>`/`<legend>` — native keyboard support (Tab, Arrow keys,
+// Space/Enter), grouped and labelled for assistive tech without any custom
+// ARIA widget. No inline script body: the behaviour below is a normal
+// hoisted `<script>`, bundled by Astro into an external file (CSP-clean).
+export interface QuizOption {
+  text: string;
+  correct?: boolean;
+  /** One-line reveal shown once this option (or the correct one) is highlighted. */
+  explanation?: string;
+}
+
+interface Props {
+  lessonId: string;
+  questionId: string;
+  lang?: string;
+  prompt?: string;
+  options: QuizOption[];
+}
+
+const { lessonId, questionId, lang = 'en', prompt, options } = Astro.props;
+
+if (options.length < 2) {
+  throw new Error(`Quiz "${questionId}": at least two options are required.`);
+}
+
+let correctIndex = options.findIndex((o) => o.correct);
+if (correctIndex === -1) {
+  // Defensive default so the page still renders and works during authoring;
+  // this is a content bug, not a runtime one, so it only warns at build time.
+  console.warn(`Quiz "${questionId}": no option marked correct — defaulting to option 0.`);
+  correctIndex = 0;
+}
+
+const groupName = `cc-quiz-${lessonId}-${questionId}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+
+const strings = {
+  correct: lang === 'tr' ? 'Doğru.' : 'Correct.',
+  incorrect:
+    lang === 'tr'
+      ? 'Doğru değil — doğru cevap işaretlendi.'
+      : 'Not quite — the correct answer is highlighted.',
+};
+---
+
+<div
+  class="cc-quiz"
+  data-cc-quiz
+  data-lesson-id={lessonId}
+  data-question-id={questionId}
+  data-correct-index={correctIndex}
+  data-label-correct={strings.correct}
+  data-label-incorrect={strings.incorrect}
+>
+  <fieldset class="cc-quiz-fieldset">
+    <legend class="cc-quiz-prompt">{prompt ?? <slot />}</legend>
+    <div class="cc-quiz-options">
+      {
+        options.map((opt, i) => (
+          <label class="cc-quiz-option" data-cc-quiz-option>
+            <input
+              class="cc-quiz-radio"
+              type="radio"
+              name={groupName}
+              value={i}
+              data-cc-quiz-input
+            />
+            <span class="cc-quiz-option-text">{opt.text}</span>
+            {opt.explanation && (
+              <span class="mono cc-quiz-explanation" data-cc-quiz-explanation hidden>
+                {opt.explanation}
+              </span>
+            )}
+          </label>
+        ))
+      }
+    </div>
+  </fieldset>
+  <p class="cc-quiz-status" data-cc-quiz-status aria-live="polite"></p>
+</div>
+
+<style>
+  .cc-quiz {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-3);
+    background: var(--color-bg-2);
+  }
+
+  .cc-quiz-fieldset {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .cc-quiz-prompt {
+    padding: 0;
+    font-size: var(--text-16);
+    font-weight: 600;
+    color: var(--color-ink);
+  }
+
+  .cc-quiz-options {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .cc-quiz-option {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    padding: 12px 14px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-2);
+    cursor: pointer;
+  }
+
+  .cc-quiz-option:hover {
+    border-color: var(--color-line-strong);
+  }
+
+  .cc-quiz-radio {
+    appearance: none;
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    border: 2px solid var(--color-line-strong);
+    border-radius: 999px;
+    align-self: center;
+  }
+
+  .cc-quiz-radio:checked {
+    border-color: var(--color-accent);
+  }
+
+  .cc-quiz-option-text {
+    font-size: var(--text-14);
+    color: var(--color-ink);
+  }
+
+  .cc-quiz-explanation {
+    margin-left: auto;
+    font-size: var(--text-12);
+    color: var(--color-ink-muted);
+  }
+
+  .cc-quiz-option.is-correct {
+    border-color: var(--color-success);
+  }
+
+  .cc-quiz-option.is-correct .cc-quiz-radio {
+    border-color: var(--color-success);
+    background: var(--color-success);
+    box-shadow: inset 0 0 0 3px var(--color-bg-2);
+  }
+
+  .cc-quiz-option.is-correct .cc-quiz-explanation {
+    color: var(--color-success);
+  }
+
+  .cc-quiz-option.is-wrong {
+    border-color: var(--color-danger);
+  }
+
+  .cc-quiz-option.is-wrong .cc-quiz-radio {
+    border-color: var(--color-danger);
+  }
+
+  .cc-quiz-option.is-wrong .cc-quiz-explanation {
+    color: var(--color-danger);
+  }
+
+  .cc-quiz-status {
+    margin: 0;
+    min-height: 1em;
+    font-size: var(--text-13);
+    color: var(--color-ink-soft);
+  }
+</style>
+
+<script>
+  import { readQuiz, writeQuiz, type QuizState } from '../../lib/progress.ts';
+
+  function cssEscape(value: string): string {
+    return typeof CSS !== 'undefined' && CSS.escape
+      ? CSS.escape(value)
+      : value.replace(/"/g, '\\"');
+  }
+
+  function applyFeedback(root: HTMLElement, chosenIndex: number): void {
+    const correctIndex = Number(root.dataset.correctIndex ?? '0');
+    const options = root.querySelectorAll<HTMLElement>('[data-cc-quiz-option]');
+    options.forEach((opt, i) => {
+      opt.classList.remove('is-correct', 'is-wrong');
+      const explanation = opt.querySelector<HTMLElement>('[data-cc-quiz-explanation]');
+      const reveal = i === chosenIndex || i === correctIndex;
+      if (explanation) explanation.hidden = !reveal;
+      if (i === correctIndex) opt.classList.add('is-correct');
+      else if (i === chosenIndex) opt.classList.add('is-wrong');
+    });
+
+    const status = root.querySelector<HTMLElement>('[data-cc-quiz-status]');
+    if (status) {
+      status.textContent =
+        chosenIndex === correctIndex
+          ? (root.dataset.labelCorrect ?? '')
+          : (root.dataset.labelIncorrect ?? '');
+    }
+  }
+
+  function recomputeScoreTotal(lessonId: string, state: QuizState): void {
+    const widgets = document.querySelectorAll<HTMLElement>(
+      `[data-cc-quiz][data-lesson-id="${cssEscape(lessonId)}"]`,
+    );
+    let score = 0;
+    let total = 0;
+    widgets.forEach((widget) => {
+      const qid = widget.dataset.questionId;
+      if (!qid || !(qid in state.answers)) return;
+      total += 1;
+      if (state.answers[qid] === Number(widget.dataset.correctIndex ?? '-1')) score += 1;
+    });
+    state.score = score;
+    state.total = total;
+  }
+
+  function persist(root: HTMLElement, chosenIndex: number): void {
+    const lessonId = root.dataset.lessonId ?? '';
+    const questionId = root.dataset.questionId ?? '';
+    if (!lessonId || !questionId) return;
+    const state: QuizState = readQuiz(lessonId) ?? { answers: {}, score: 0, total: 0 };
+    state.answers[questionId] = chosenIndex;
+    recomputeScoreTotal(lessonId, state);
+    writeQuiz(lessonId, state);
+  }
+
+  function hydrate(root: HTMLElement): void {
+    const lessonId = root.dataset.lessonId ?? '';
+    const questionId = root.dataset.questionId ?? '';
+    const state = readQuiz(lessonId);
+    const chosen = state?.answers[questionId];
+    if (chosen === undefined) return;
+    const inputs = root.querySelectorAll<HTMLInputElement>('[data-cc-quiz-input]');
+    const input = inputs[chosen];
+    if (input) input.checked = true;
+    applyFeedback(root, chosen);
+  }
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-cc-quiz]')) {
+    hydrate(root);
+    const inputs = root.querySelectorAll<HTMLInputElement>('[data-cc-quiz-input]');
+    inputs.forEach((input, i) => {
+      input.addEventListener('change', () => {
+        if (!input.checked) return;
+        applyFeedback(root, i);
+        persist(root, i);
+      });
+    });
+  }
+</script>

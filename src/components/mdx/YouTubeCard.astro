@@ -1,0 +1,145 @@
+---
+// YouTube sources are always link cards, never embedded players (D042) —
+// this component renders no <iframe> and loads no player script, ever.
+//
+// Thumbnail note: this is a fully static site (`output: 'static'` in
+// astro.config.ts). Astro's `<Image>`/`astro:assets` would fetch each
+// remote `i.ytimg.com` thumbnail over the network at BUILD time to
+// optimise it locally — fragile in a sandboxed/offline CI build and it
+// would re-fetch on every build for every YouTube source in the whole
+// site. A plain `<img>` instead loads the thumbnail directly from
+// YouTube's own CDN in the visitor's browser (which already serves a
+// pre-optimised JPEG), with ordinary lazy-loading and explicit
+// width/height to avoid layout shift — no build-time network dependency.
+// `astro.config.ts`'s `image.domains: ['i.ytimg.com']` allow-list is left
+// in place for the day a future plan wants build-time optimisation.
+interface Props {
+  videoId: string;
+  title: string;
+  channel: string;
+  /** e.g. "12:04". */
+  duration: string;
+  lang?: string;
+  /** Override the default `hqdefault.jpg` thumbnail if a specific still is nicer. */
+  thumbnailUrl?: string;
+}
+
+const { videoId, title, channel, duration, lang = 'en', thumbnailUrl } = Astro.props;
+
+const href = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
+const thumbnail =
+  thumbnailUrl ?? `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`;
+
+const watchLabel =
+  lang === 'tr' ? "YouTube'da izle (yeni sekmede açılır)" : 'Watch on YouTube (opens in a new tab)';
+const videoChip = lang === 'tr' ? 'video' : 'video';
+---
+
+<a
+  class="cc-yt"
+  href={href}
+  target="_blank"
+  rel="noopener noreferrer"
+  aria-label={`${watchLabel}: ${title}`}
+>
+  <img
+    class="cc-yt-thumb"
+    src={thumbnail}
+    alt=""
+    width="320"
+    height="180"
+    loading="lazy"
+    decoding="async"
+  />
+  <span class="cc-yt-body">
+    <span class="mono cc-yt-chip">{videoChip}</span>
+    <span class="cc-yt-title">{title}</span>
+    <span class="mono cc-yt-meta">{channel} · {duration}</span>
+  </span>
+  <svg
+    class="cc-yt-external"
+    aria-hidden="true"
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.75"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M14 3h7v7"></path>
+    <path d="M10 14 21 3"></path>
+    <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"></path>
+  </svg>
+</a>
+
+<style>
+  .cc-yt {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-3);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-3);
+    background: var(--color-bg-2);
+    color: var(--color-ink);
+    text-decoration: none;
+  }
+
+  .cc-yt:hover {
+    border-color: var(--color-line-strong);
+  }
+
+  .cc-yt:hover .cc-yt-title {
+    color: var(--color-accent-text);
+  }
+
+  .cc-yt-thumb {
+    flex: 0 0 auto;
+    width: 120px;
+    height: 68px;
+    border-radius: var(--radius-2);
+    object-fit: cover;
+    background: var(--color-bg-3);
+  }
+
+  .cc-yt-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  .cc-yt-chip {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: var(--radius-1);
+    background: var(--color-bg-3);
+    color: var(--color-ink-soft);
+    font-size: var(--text-11);
+    letter-spacing: 0.04em;
+  }
+
+  .cc-yt-title {
+    font-size: var(--text-14);
+    color: var(--color-ink);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cc-yt-meta {
+    font-size: var(--text-12);
+    color: var(--color-ink-muted);
+  }
+
+  .cc-yt-external {
+    flex: 0 0 auto;
+    margin-left: auto;
+    color: var(--color-ink-muted);
+  }
+</style>

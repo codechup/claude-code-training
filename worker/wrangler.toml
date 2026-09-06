@@ -1,0 +1,30 @@
+# Cloudflare Worker for `/api/feedback` (D067/D069) — the backend behind
+# `src/components/mdx/Helpful.astro`. This file ships the Worker's
+# configuration; it is NOT deployed by this plan (P08). Deploying it is an
+# owner action (O8) — see README.md for exactly what that involves. No
+# account id, zone id, or KV namespace id is committed here (public-repo
+# hygiene): the owner fills those in locally or via `wrangler` prompts when
+# they deploy, never in this file.
+
+name = "cc-feedback"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Bound as `env.FEEDBACK_KV` in src/index.ts. Create the namespace with
+# `wrangler kv namespace create FEEDBACK_KV` and paste the id it prints
+# here (or pass `--var` at deploy time) — never commit a real id.
+kv_namespaces = [
+  { binding = "FEEDBACK_KV", id = "REPLACE_WITH_KV_NAMESPACE_ID" },
+]
+
+# Once deployed, route this Worker at the static site's own origin so
+# `Helpful.astro`'s same-origin `fetch('/api/feedback')` reaches it (the
+# origin host answers 404 for `/api/*` otherwise, which is the fallback
+# path this plan is built to degrade into). Uncomment and fill in after
+# O8; the zone name is public (it's this site's own domain), so it is not
+# itself a secret — but is left commented so the Worker is inert /
+# unrouted until the owner deliberately turns it on.
+# routes = [
+#   { pattern = "cc.codechup.com/api/*", zone_name = "codechup.com" },
+# ]

@@ -1,0 +1,119 @@
+---
+// giscus (GitHub Discussions) comments wrapper (D067). Repo/category IDs
+// come from owner-set `PUBLIC_*` env vars (O6); until those exist this
+// renders a clearly-labeled "not yet enabled" note instead of a script tag
+// pointed at placeholder IDs. The CSP already allows `https://giscus.app`
+// for script-src and frame-src.
+//
+// `import.meta.env`'s `ImportMetaEnv` interface (Astro's ambient env
+// typings) has no index signature for arbitrary custom keys, and this repo
+// has no `src/env.d.ts` yet to add one (that file is outside this plan's
+// owned_paths — see this plan's Handoff notes). Reading the three custom
+// `PUBLIC_GISCUS_*` vars is therefore done through an explicit `Record`
+// cast rather than typed dot access, scoped to this file only.
+interface Props {
+  lang?: string;
+}
+
+const { lang = 'en' } = Astro.props;
+
+const env = import.meta.env as unknown as Record<string, string | undefined>;
+const repo = env.PUBLIC_GISCUS_REPO;
+const repoId = env.PUBLIC_GISCUS_REPO_ID;
+const categoryId = env.PUBLIC_GISCUS_CATEGORY_ID;
+const enabled = Boolean(repo && repoId && categoryId);
+
+const giscusLang = lang === 'tr' ? 'tr' : 'en';
+const disabledNote =
+  lang === 'tr'
+    ? 'Yorumlar henüz etkin değil (GitHub Discussions kurulumu bekleniyor).'
+    : 'Comments are not yet enabled (GitHub Discussions setup pending).';
+---
+
+{
+  enabled ? (
+    <section class="cc-giscus" aria-label="Comments" data-cc-giscus>
+      <script
+        is:inline
+        src="https://giscus.app/client.js"
+        data-repo={repo}
+        data-repo-id={repoId}
+        data-category-id={categoryId}
+        data-mapping="pathname"
+        data-strict="0"
+        data-reactions-enabled="1"
+        data-emit-metadata="0"
+        data-input-position="bottom"
+        data-theme="light"
+        data-lang={giscusLang}
+        crossorigin="anonymous"
+        async
+      />
+    </section>
+  ) : (
+    <p class="mono muted cc-giscus-disabled" data-cc-giscus-disabled role="note">
+      {disabledNote}
+    </p>
+  )
+}
+{
+  /*
+    This sync script is always rendered (never nested inside the `enabled`
+    conditional above) — Astro's hoisted-script bundling wants a `<script>`
+    as literal top-level markup, and the astro-formatting tooling this repo
+    runs under `npm run lint` does not parse one nested inside a JS `&&`
+    expression. It is a correct no-op on a page where giscus is disabled:
+    `document.querySelector('[data-cc-giscus] iframe')` simply finds
+    nothing and every call below returns immediately.
+  */
+}
+<script>
+  // Keep giscus's embedded iframe theme in sync with this site's toggle.
+  // data-theme on the html element is always resolved to a concrete
+  // 'light' or 'dark' before paint (see public/theme-init.js) -- never
+  // "system" -- so reading it directly here is safe. Sent via postMessage
+  // per giscus's documented client protocol: the parent page can push a
+  // setConfig/theme message to the iframe at any time, and giscus itself
+  // posts an empty "ready" message once its own iframe has finished
+  // loading, which this also uses as the signal that it is now safe to
+  // sync. No-op when this page has no [data-cc-giscus] section (comments
+  // not yet enabled).
+  function currentTheme(): 'light' | 'dark' {
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  }
+
+  function sendGiscusTheme(theme: 'light' | 'dark'): void {
+    const iframe = document.querySelector<HTMLIFrameElement>(
+      '[data-cc-giscus] iframe.giscus-frame',
+    );
+    if (!iframe?.contentWindow) return;
+    iframe.contentWindow.postMessage({ giscus: { setConfig: { theme } } }, 'https://giscus.app');
+  }
+
+  if (document.querySelector('[data-cc-giscus]')) {
+    new MutationObserver(() => sendGiscusTheme(currentTheme())).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
+    });
+
+    window.addEventListener('message', (event: MessageEvent) => {
+      if (event.origin !== 'https://giscus.app') return;
+      const data = event.data as { giscus?: unknown } | null;
+      if (!data?.giscus) return;
+      sendGiscusTheme(currentTheme());
+    });
+  }
+</script>
+
+<style>
+  .cc-giscus {
+    margin-top: var(--space-4);
+  }
+
+  .cc-giscus-disabled {
+    padding: var(--space-3) var(--space-4);
+    border: 1px dashed var(--color-line-strong);
+    border-radius: var(--radius-3);
+    font-size: var(--text-13);
+  }
+</style>

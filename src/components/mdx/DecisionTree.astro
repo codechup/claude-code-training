@@ -1,0 +1,219 @@
+---
+// Inline, theme-aware SVG decision tree (D091, D092). No external image, no
+// diagramming library: every node/edge is real SVG text content (selectable,
+// Ctrl+F-searchable, read by screen readers) and every colour is a CSS
+// custom property from tokens.css, so the diagram repaints correctly when
+// `data-theme` flips without a second asset or any client JS.
+//
+// Authors declare a small, explicit layout: absolute node boxes (`x`, `y`,
+// optional `width`/`height`) and edges that reference node ids by string.
+// Edge geometry (a gentle S-curve connecting the "from" node's right edge to
+// the "to" node's left edge, and the label's midpoint) is computed here so
+// lesson authors never hand-write path data.
+export interface DecisionTreeNode {
+  id: string;
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  /** One or two short lines of label text, rendered as separate <text> rows. */
+  lines: string[];
+}
+
+export interface DecisionTreeEdge {
+  from: string;
+  to: string;
+  /** Short mono label on the connector, e.g. "yes" / "no". */
+  label?: string;
+}
+
+interface Props {
+  /** Disambiguates multiple trees with the same title on one page; slugified from `title` when omitted. */
+  id?: string;
+  title: string;
+  desc?: string;
+  lang?: string;
+  nodes: DecisionTreeNode[];
+  edges: DecisionTreeEdge[];
+}
+
+const { id, title, desc, lang = 'en', nodes, edges } = Astro.props;
+
+if (nodes.length === 0) {
+  throw new Error('DecisionTree: at least one node is required.');
+}
+
+const DEFAULT_WIDTH = 140;
+const DEFAULT_HEIGHT = 44;
+const LINE_HEIGHT = 16;
+
+const slugBase = (id ?? title)
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '-')
+  .replace(/(^-|-$)/g, '');
+const slug = slugBase.length > 0 ? slugBase : 'decision-tree';
+const titleId = `cc-dt-title-${slug}`;
+const descId = desc ? `cc-dt-desc-${slug}` : undefined;
+
+const byId = new Map(nodes.map((n) => [n.id, n]));
+
+function box(n: DecisionTreeNode) {
+  return {
+    x: n.x,
+    y: n.y,
+    w: n.width ?? DEFAULT_WIDTH,
+    h: n.height ?? DEFAULT_HEIGHT,
+  };
+}
+
+const maxX = Math.max(...nodes.map((n) => box(n).x + box(n).w));
+const maxY = Math.max(...nodes.map((n) => box(n).y + box(n).h));
+const viewW = Math.round(maxX + 20);
+const viewH = Math.round(maxY + 20);
+
+interface EdgeGeom {
+  d: string;
+  labelX: number;
+  labelY: number;
+  label?: string;
+  fromLabel: string;
+  toLabel: string;
+}
+
+const edgeGeoms: EdgeGeom[] = edges.map((e) => {
+  const from = byId.get(e.from);
+  const to = byId.get(e.to);
+  if (!from || !to) {
+    throw new Error(`DecisionTree: edge references an unknown node id ("${e.from}" -> "${e.to}").`);
+  }
+  const fb = box(from);
+  const tb = box(to);
+  const fromPt = { x: fb.x + fb.w, y: fb.y + fb.h / 2 };
+  const toPt = { x: tb.x, y: tb.y + tb.h / 2 };
+  const midX = (fromPt.x + toPt.x) / 2;
+  return {
+    d: `M${fromPt.x} ${fromPt.y} C ${midX} ${fromPt.y}, ${midX} ${toPt.y}, ${toPt.x} ${toPt.y}`,
+    labelX: midX,
+    labelY: (fromPt.y + toPt.y) / 2 - 6,
+    label: e.label,
+    fromLabel: from.lines.join(' '),
+    toLabel: to.lines.join(' '),
+  };
+});
+
+const decisionListLabel = lang === 'tr' ? 'Karar adımları' : 'Decision steps';
+---
+
+<figure class="cc-dt" data-cc-decision-tree>
+  <svg
+    class="cc-dt-svg"
+    role="img"
+    aria-labelledby={titleId}
+    aria-describedby={descId}
+    viewBox={`0 0 ${viewW} ${viewH}`}
+    preserveAspectRatio="xMidYMid meet"
+  >
+    <title id={titleId}>{title}</title>
+    {desc && <desc id={descId}>{desc}</desc>}
+    <g class="cc-dt-edges">
+      {edgeGeoms.map((e) => <path class="cc-dt-edge" d={e.d} />)}
+    </g>
+    <g class="cc-dt-nodes">
+      {
+        nodes.map((n) => {
+          const b = box(n);
+          const cx = b.x + b.w / 2;
+          const startY = b.y + b.h / 2 - ((n.lines.length - 1) * LINE_HEIGHT) / 2 + 4;
+          return (
+            <g>
+              <rect class="cc-dt-node" x={b.x} y={b.y} width={b.w} height={b.h} rx="6" />
+              {n.lines.map((line, i) => (
+                <text
+                  class="cc-dt-node-text"
+                  x={cx}
+                  y={startY + i * LINE_HEIGHT}
+                  text-anchor="middle"
+                >
+                  {line}
+                </text>
+              ))}
+            </g>
+          );
+        })
+      }
+    </g>
+    <g class="cc-dt-edge-labels">
+      {
+        edgeGeoms
+          .filter((e) => e.label)
+          .map((e) => (
+            <text class="cc-dt-edge-label" x={e.labelX} y={e.labelY} text-anchor="middle">
+              {e.label}
+            </text>
+          ))
+      }
+    </g>
+  </svg>
+  <figcaption class="cc-dt-sr-list">
+    <span>{decisionListLabel}:</span>
+    <ul>
+      {
+        edgeGeoms.map((e) => (
+          <li>
+            {e.fromLabel} {e.label ? `— ${e.label} → ` : '→ '} {e.toLabel}
+          </li>
+        ))
+      }
+    </ul>
+  </figcaption>
+</figure>
+
+<style>
+  .cc-dt {
+    margin: 0;
+  }
+
+  .cc-dt-svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    font-family: var(--font-family-sans);
+  }
+
+  .cc-dt-node {
+    fill: var(--color-bg-3);
+    stroke: var(--color-line-strong);
+    stroke-width: 1;
+  }
+
+  .cc-dt-node-text {
+    fill: var(--color-ink);
+    font-size: 12px;
+  }
+
+  .cc-dt-edge {
+    fill: none;
+    stroke: var(--color-ink-muted);
+    stroke-width: 1.5;
+  }
+
+  .cc-dt-edge-label {
+    fill: var(--color-accent-text);
+    font-family: var(--font-family-mono);
+    font-size: 11px;
+  }
+
+  /* Visually hidden, but present for screen readers and Ctrl+F: a plain
+     linear list of every decision the SVG draws graphically. */
+  .cc-dt-sr-list {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+</style>

@@ -1,0 +1,203 @@
+---
+// "Was this helpful?" feedback control (D067/D069). Posts
+// `{ lessonId, lang, vote }` to the same-origin `/api/feedback` route,
+// served (once deployed — owner action O8) by the Cloudflare Worker under
+// `worker/**`. Until then the origin has no such route and the POST
+// 404s — that is an *expected* state, not a bug: on any non-2xx response
+// or network error this component hides its buttons and reveals a
+// templated GitHub Issues link instead, with no console error and no
+// stuck spinner. One vote per lesson is remembered in
+// `localStorage['cc:helpful:<lessonId>']` so a returning visitor sees the
+// thank-you state immediately instead of being asked again.
+import { REPO_URL } from '../../lib/repo.ts';
+
+interface Props {
+  lessonId: string;
+  lang?: string;
+}
+
+const { lessonId, lang = 'en' } = Astro.props;
+
+const strings = {
+  question: lang === 'tr' ? 'Bu sayfa yardımcı oldu mu?' : 'Was this helpful?',
+  yes: lang === 'tr' ? 'Evet, yardımcı oldu' : 'Yes, helpful',
+  no: lang === 'tr' ? 'Hayır, yardımcı olmadı' : 'Not helpful',
+  thanks: lang === 'tr' ? 'Geri bildiriminiz için teşekkürler.' : 'Thanks for the feedback.',
+  fallback: lang === 'tr' ? "GitHub'da bize bildirin" : 'Tell us on GitHub',
+};
+
+function githubFeedbackUrl(): string {
+  const title = encodeURIComponent(`Feedback: ${lessonId}`);
+  const body = encodeURIComponent(
+    `Lesson: ${lessonId}\nLanguage: ${lang}\n\nWhat did you find confusing, wrong, or missing?`,
+  );
+  return `${REPO_URL}/issues/new?title=${title}&body=${body}&labels=feedback`;
+}
+
+const fallbackHref = githubFeedbackUrl();
+---
+
+<div class="cc-helpful" data-cc-helpful data-lesson-id={lessonId} data-lang={lang}>
+  <span class="muted cc-helpful-question">{strings.question}</span>
+  <span class="cc-helpful-buttons" data-cc-helpful-buttons>
+    <button type="button" class="cc-helpful-btn" data-cc-helpful-vote="up" aria-label={strings.yes}>
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <path d="M7 10v11H3V10zM7 10l4-7a2 2 0 0 1 3 2v4h5a2 2 0 0 1 2 2l-1 8a2 2 0 0 1-2 2H7"
+        ></path>
+      </svg>
+    </button>
+    <button
+      type="button"
+      class="cc-helpful-btn"
+      data-cc-helpful-vote="down"
+      aria-label={strings.no}
+    >
+      <svg
+        aria-hidden="true"
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        style="transform: rotate(180deg);"
+      >
+        <path d="M7 10v11H3V10zM7 10l4-7a2 2 0 0 1 3 2v4h5a2 2 0 0 1 2 2l-1 8a2 2 0 0 1-2 2H7"
+        ></path>
+      </svg>
+    </button>
+  </span>
+  <span class="muted cc-helpful-thanks" data-cc-helpful-thanks hidden>{strings.thanks}</span>
+  <a class="mono cc-helpful-fallback" data-cc-helpful-fallback href={fallbackHref} hidden>
+    {strings.fallback}
+  </a>
+</div>
+
+<style>
+  .cc-helpful {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    font-size: var(--text-14);
+  }
+
+  .cc-helpful-buttons {
+    display: inline-flex;
+    gap: var(--space-2);
+  }
+
+  .cc-helpful-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--tap-target);
+    height: var(--tap-target);
+    padding: 0;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-2);
+    background: transparent;
+    color: var(--color-ink-soft);
+    cursor: pointer;
+  }
+
+  .cc-helpful-btn:hover {
+    color: var(--color-accent-text);
+    border-color: var(--color-accent-text);
+  }
+
+  .cc-helpful-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .cc-helpful-fallback {
+    color: var(--color-accent-text);
+    font-size: var(--text-12);
+  }
+</style>
+
+<script>
+  const VOTES = new Set(['up', 'down']);
+
+  function safeGet(key: string): string | null {
+    try {
+      return window.localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  }
+
+  function safeSet(key: string, value: string): void {
+    try {
+      window.localStorage.setItem(key, value);
+    } catch {
+      // Private browsing / disabled storage: the vote still posts, it just
+      // won't be remembered as "already voted" on the next visit.
+    }
+  }
+
+  function showThanks(root: HTMLElement): void {
+    root.querySelector<HTMLElement>('[data-cc-helpful-buttons]')?.setAttribute('hidden', '');
+    root.querySelector<HTMLElement>('[data-cc-helpful-thanks]')?.removeAttribute('hidden');
+    root.querySelector<HTMLElement>('[data-cc-helpful-fallback]')?.setAttribute('hidden', '');
+  }
+
+  function showFallback(root: HTMLElement): void {
+    root.querySelector<HTMLElement>('[data-cc-helpful-buttons]')?.setAttribute('hidden', '');
+    root.querySelector<HTMLElement>('[data-cc-helpful-thanks]')?.setAttribute('hidden', '');
+    root.querySelector<HTMLElement>('[data-cc-helpful-fallback]')?.removeAttribute('hidden');
+  }
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-cc-helpful]')) {
+    const lessonId = root.dataset.lessonId ?? '';
+    const lang = root.dataset.lang ?? 'en';
+    const storeKey = `cc:helpful:${lessonId}`;
+
+    const existing = safeGet(storeKey);
+    if (existing && VOTES.has(existing)) {
+      showThanks(root);
+      continue;
+    }
+
+    const buttons = root.querySelectorAll<HTMLButtonElement>('[data-cc-helpful-vote]');
+    for (const button of buttons) {
+      button.addEventListener('click', () => {
+        const vote = button.dataset.ccHelpfulVote;
+        if (!vote || !VOTES.has(vote)) return;
+
+        for (const b of buttons) b.disabled = true;
+
+        fetch('/api/feedback', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ lessonId, lang, vote }),
+        })
+          .then((res) => {
+            if (!res.ok) throw new Error(`feedback endpoint responded ${res.status}`);
+            safeSet(storeKey, vote);
+            showThanks(root);
+          })
+          .catch(() => {
+            // Network error, or a non-2xx (the expected 404 before the
+            // Worker is deployed) — never a console error the visitor
+            // notices, never a stuck disabled button: fall back to the
+            // GitHub link.
+            showFallback(root);
+          });
+      });
+    }
+  }
+</script>
