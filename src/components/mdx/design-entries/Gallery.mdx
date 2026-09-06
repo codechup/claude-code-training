@@ -1,0 +1,114 @@
+import Callout from '../Callout.astro';
+import WhenNotToUse from '../WhenNotToUse.astro';
+import CodeBlock from '../CodeBlock.astro';
+import OSTabs from '../OSTabs.astro';
+import Transcript from '../Transcript.astro';
+import Sources from '../Sources.astro';
+import Lab from '../Lab.astro';
+import { sampleSources } from './sample-sources.ts';
+
+{/* Working demo of this plan's seven MDX components, for /design/'s gallery section (P07 Handoff notes explain why this is .mdx not .astro, the ownership handoff to P05, and a fenced-code-in-JSX formatting gotcha found while writing it). */}
+
+<div class="flex flex-col gap-[var(--space-8)]">
+
+<section class="flex flex-col gap-[var(--space-3)]">
+  <h3 class="eyebrow">Callout</h3>
+  <div class="flex flex-col gap-[var(--space-3)]">
+    <Callout>Neutral information the reader should not skip.</Callout>
+    <Callout variant="when-not-to-use">
+      A permission deny rule in <code>settings.json</code> is simpler when you only need to block a
+      fixed command pattern.
+    </Callout>
+    <Callout variant="changed">
+      Project-scope <code>defaultMode: bypassPermissions</code> is ignored since 2.1.x.
+    </Callout>
+  </div>
+</section>
+
+<section class="flex flex-col gap-[var(--space-3)]">
+  <h3 class="eyebrow">WhenNotToUse</h3>
+  <WhenNotToUse>
+    A permission deny rule is simpler when you only need to block a fixed command pattern. Reach for
+    a hook when the decision depends on arguments or repository state.
+  </WhenNotToUse>
+</section>
+
+<section class="flex flex-col gap-[var(--space-3)]">
+  <h3 class="eyebrow">CodeBlock · OSTabs · highlight · annotations</h3>
+  <OSTabs>
+    <Fragment slot="macos">
+      <CodeBlock title="install.sh" highlight="1" annotations={{ 1: 'native installer' }}>
+
+```bash
+brew install --cask claude-code
+claude --version
+```
+
+      </CodeBlock>
+    </Fragment>
+    <Fragment slot="linux">
+      <CodeBlock title="install.sh" highlight="1" annotations={{ 1: 'official script' }}>
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+claude --version
+```
+
+      </CodeBlock>
+    </Fragment>
+    <Fragment slot="windows">
+      <CodeBlock title="install.ps1" highlight="1" annotations={{ 1: 'PowerShell installer' }}>
+
+```powershell
+irm https://claude.ai/install.ps1 | iex
+claude --version
+```
+
+      </CodeBlock>
+    </Fragment>
+
+  </OSTabs>
+  <p class="muted m-0 text-[length:var(--text-12)]">
+    The tab choice is remembered site-wide (<code>localStorage cc:os</code>, and{' '}
+    <code>cc:os:shell</code> for the PowerShell/WSL split — see <code>os-tabs.ts</code>). Windows
+    (WSL) is omitted above on purpose to demonstrate the fallback: it reuses the Linux panel's real
+    content instead of inventing a separate one.
+  </p>
+</section>
+
+<section class="flex flex-col gap-[var(--space-3)]">
+  <h3 class="eyebrow">Transcript · real session, simplified</h3>
+  <Transcript src="src/components/mdx/__fixtures__/transcripts/sample-session.txt" />
+  <p class="muted m-0 text-[length:var(--text-12)]">
+    This file is a formatting sample (see its own first line) — a real lesson points{' '}
+    <code>src</code> at a file under <code>content/_shared/transcripts/</code>, captured from an
+    actual lab run (D070/D093/D099).
+  </p>
+</section>
+
+<section class="flex flex-col gap-[var(--space-3)]">
+  <h3 class="eyebrow">Sources</h3>
+  <Sources sources={sampleSources} lang="en" />
+</section>
+
+<section class="flex flex-col gap-[var(--space-3)]">
+  <h3 class="eyebrow">Lab</h3>
+  <Lab
+    lessonId="design-gallery-lab"
+    repoTag="lesson/m07-02-start"
+    steps={[
+      'Register the hook in .claude/settings.json under PreToolUse',
+      'Ask Claude to delete the build folder and watch it get blocked',
+    ]}
+    expected="exit 2, Claude picks an alternative"
+    checklist={[
+      'Hook script is executable and reads stdin as JSON',
+      'Blocked command shows the "reason" text',
+      'Claude falls back to an allowed alternative',
+    ]}
+  >
+    <Transcript src="src/components/mdx/__fixtures__/transcripts/sample-session.txt" />
+  </Lab>
+</section>
+
+</div>

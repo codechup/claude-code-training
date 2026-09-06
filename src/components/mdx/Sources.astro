@@ -1,0 +1,121 @@
+---
+// The per-lesson Sources block (D041–D043): a mandatory official-docs
+// link (visually marked as such), YouTube/video entries as link cards
+// (title + duration + channel, NEVER an embedded player — D042), article
+// and repo links, and each entry's "last verified" date.
+//
+// This is the MDX-usable, standalone version of the inline block already
+// in `src/pages/[lang]/[level]/[module]/[slug]/index.astro` (P06, outside
+// this plan's `owned_paths`) — see this plan's Handoff notes for the
+// one-line swap P12 (or whichever plan next touches that file) can make
+// to replace that inline markup with `<Sources sources={entry.data.sources} lang={lang} />`.
+import type { Source } from '../../content/schema.ts';
+import { hostOf, verifiedDate, videoMeta } from './sources.ts';
+import { t } from '../../lib/i18n/ui.ts';
+
+interface Props {
+  sources: Source[];
+  lang: string;
+}
+
+const { sources, lang } = Astro.props as Props;
+const strings = t(lang);
+---
+
+<section class="cc-mdx-sources" aria-labelledby="cc-mdx-sources-heading">
+  <h2 id="cc-mdx-sources-heading">{strings.sources}</h2>
+  <ul>
+    {
+      sources.map((source) => {
+        const meta = source.type === 'video' ? videoMeta(source) : null;
+        return (
+          <li class={source.type === 'official' ? 'cc-mdx-sources-official' : ''}>
+            <span class="mono cc-mdx-sources-chip">
+              {source.type === 'official' && (
+                <span aria-hidden="true" class="cc-mdx-sources-star">
+                  ★{' '}
+                </span>
+              )}
+              {source.type}
+            </span>
+            <span class="cc-mdx-sources-main">
+              <a href={source.url} target="_blank" rel="noopener noreferrer">
+                {source.title}
+              </a>
+              <span class="mono muted cc-mdx-sources-detail">
+                {hostOf(source.url)}
+                {meta && ` · ${meta}`}
+              </span>
+            </span>
+            <span class="mono muted cc-mdx-sources-date">
+              {strings.verifiedOn} {verifiedDate(source)}
+            </span>
+          </li>
+        );
+      })
+    }
+  </ul>
+</section>
+
+<style>
+  .cc-mdx-sources h2 {
+    font-size: var(--text-20);
+    margin: 0 0 var(--space-2);
+  }
+
+  .cc-mdx-sources ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .cc-mdx-sources li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    padding: 10px 0;
+    border-top: 1px solid var(--color-line);
+  }
+
+  .cc-mdx-sources-official {
+    background: var(--color-bg-1);
+  }
+
+  .cc-mdx-sources-star {
+    color: var(--color-accent-text);
+  }
+
+  .cc-mdx-sources-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-1);
+    background: var(--color-bg-3);
+    color: var(--color-ink-soft);
+    font-size: var(--text-12);
+  }
+
+  .cc-mdx-sources-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .cc-mdx-sources-main a {
+    color: var(--color-ink);
+    font-size: var(--text-14);
+  }
+
+  .cc-mdx-sources-detail {
+    font-size: var(--text-12);
+  }
+
+  .cc-mdx-sources-date {
+    margin-left: auto;
+    font-size: var(--text-11);
+    white-space: nowrap;
+  }
+</style>

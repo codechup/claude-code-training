@@ -1,0 +1,207 @@
+---
+// Per-OS command tabs (D002, D019): macOS, Linux, Windows (PowerShell) and
+// Windows (WSL) — all four, equal weight, never dropped (see this plan's
+// Non-goals). The macro OS choice persists in the shared `cc:os` key
+// (`src/lib/os-pref.ts`, P06) so it survives navigating to another lesson
+// page; the Windows-shell sub-choice persists in this component's own
+// `cc:os:shell` key (`os-tabs.ts` — see that file's header comment for why
+// a second key exists). Every `OSTabs` instance on a page reacts to every
+// other instance's click (one hoisted script, run once per page by Astro
+// regardless of how many `<OSTabs>` are used — see astro.build docs on
+// script deduplication).
+//
+// Usage in MDX — four named slots, `wsl` optional (falls back to the
+// `linux` slot's content: WSL runs Linux commands, so reusing it is
+// accurate, never fabricated):
+//
+//   <OSTabs>
+//     <Fragment slot="macos">`brew install --cask claude-code`</Fragment>
+//     <Fragment slot="linux">`curl -fsSL https://claude.ai/install.sh | bash`</Fragment>
+//     <Fragment slot="windows">`irm https://claude.ai/install.ps1 | iex`</Fragment>
+//   </OSTabs>
+//
+// Progressive enhancement: server-rendered with every panel visible (a
+// no-JS reader gets all four command variants stacked, not just one —
+// genuinely equal weight); the script below collapses to a real
+// single-panel tablist once it runs.
+import { guessOsPref } from '../../lib/os-pref.ts';
+import { resolveActiveTab, TAB_IDS, TAB_LABELS, type TabId } from './os-tabs.ts';
+
+// Static, server-side guess only (no request-time platform data available
+// at build time) — the client script re-resolves against real
+// localStorage + navigator.platform on load and corrects the DOM before
+// the reader can interact with it.
+const initialTab: TabId = resolveActiveTab(guessOsPref(undefined), null);
+
+const hasWsl = Astro.slots.has('wsl');
+---
+
+<div class="cc-ostabs" data-os-tabs data-initial-tab={initialTab}>
+  <div class="cc-ostabs-list" role="tablist" aria-label="Operating system">
+    {
+      TAB_IDS.map((tab) => (
+        <button
+          type="button"
+          role="tab"
+          id={`cc-ostabs-tab-${tab}`}
+          aria-controls={`cc-ostabs-panel-${tab}`}
+          aria-selected={tab === initialTab ? 'true' : 'false'}
+          tabindex={tab === initialTab ? 0 : -1}
+          class="mono cc-ostabs-tab"
+          data-os-tab={tab}
+        >
+          {TAB_LABELS[tab]}
+        </button>
+      ))
+    }
+  </div>
+  <div class="cc-ostabs-panels">
+    <div
+      id="cc-ostabs-panel-macos"
+      role="tabpanel"
+      aria-labelledby="cc-ostabs-tab-macos"
+      data-os-panel="macos"
+    >
+      <slot name="macos" />
+    </div>
+    <div
+      id="cc-ostabs-panel-linux"
+      role="tabpanel"
+      aria-labelledby="cc-ostabs-tab-linux"
+      data-os-panel="linux"
+    >
+      <slot name="linux" />
+    </div>
+    <div
+      id="cc-ostabs-panel-windows-powershell"
+      role="tabpanel"
+      aria-labelledby="cc-ostabs-tab-windows-powershell"
+      data-os-panel="windows-powershell"
+    >
+      <slot name="windows" />
+    </div>
+    <div
+      id="cc-ostabs-panel-windows-wsl"
+      role="tabpanel"
+      aria-labelledby="cc-ostabs-tab-windows-wsl"
+      data-os-panel="windows-wsl"
+    >
+      {hasWsl ? <slot name="wsl" /> : <slot name="linux" />}
+    </div>
+  </div>
+</div>
+
+<style>
+  .cc-ostabs-list {
+    display: flex;
+    gap: 2px;
+    flex-wrap: wrap;
+  }
+
+  .cc-ostabs-tab {
+    height: 32px;
+    padding: 0 var(--space-3);
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: var(--radius-2) var(--radius-2) 0 0;
+    background: transparent;
+    color: var(--color-ink-muted);
+    font-size: var(--text-12);
+    cursor: pointer;
+  }
+
+  .cc-ostabs-tab[aria-selected='true'] {
+    color: var(--color-ink);
+    background: var(--color-bg-1);
+    border-color: var(--color-line);
+  }
+
+  /* Before JS runs every panel is visible (progressive enhancement); once
+     the script attaches it marks the root ready and hides inactive
+     panels via this attribute selector, never inline `style`. */
+  .cc-ostabs[data-os-ready] [data-os-panel] {
+    display: none;
+  }
+
+  .cc-ostabs[data-os-ready] [data-os-panel][data-os-active] {
+    display: block;
+  }
+
+  .cc-ostabs:not([data-os-ready]) .cc-ostabs-panels > div + div {
+    margin-top: var(--space-2);
+  }
+</style>
+
+<script>
+  import { guessOsPref } from '../../lib/os-pref.ts';
+  import { persistTab, resolveActiveTab, TAB_IDS, type TabId } from './os-tabs.ts';
+
+  function isTabId(value: string | undefined): value is TabId {
+    return !!value && (TAB_IDS as readonly string[]).includes(value);
+  }
+
+  function activate(tab: TabId, { focus = false }: { focus?: boolean } = {}) {
+    for (const group of document.querySelectorAll<HTMLElement>('[data-os-tabs]')) {
+      group.setAttribute('data-os-ready', '');
+      const buttons = group.querySelectorAll<HTMLButtonElement>('[data-os-tab]');
+      for (const button of buttons) {
+        const isActive = button.dataset.osTab === tab;
+        button.setAttribute('aria-selected', String(isActive));
+        button.tabIndex = isActive ? 0 : -1;
+        if (isActive && focus) button.focus();
+      }
+      const panels = group.querySelectorAll<HTMLElement>('[data-os-panel]');
+      for (const panel of panels) {
+        if (panel.dataset.osPanel === tab) panel.setAttribute('data-os-active', '');
+        else panel.removeAttribute('data-os-active');
+      }
+    }
+  }
+
+  function selectAndPersist(tab: TabId, opts?: { focus?: boolean }) {
+    activate(tab, opts);
+    try {
+      persistTab(tab, window.localStorage);
+    } catch {
+      // localStorage unavailable — the choice still applies for this
+      // page load, it just will not survive navigation.
+    }
+  }
+
+  const initial =
+    document.querySelector<HTMLElement>('[data-os-tabs][data-initial-tab]')?.dataset.initialTab ??
+    'macos';
+  let resolved: TabId = isTabId(initial) ? initial : 'macos';
+  try {
+    resolved = resolveActiveTab(guessOsPref(navigator.platform), window.localStorage);
+  } catch {
+    // navigator/localStorage unavailable — keep the server-guessed tab.
+  }
+  activate(resolved);
+
+  for (const group of document.querySelectorAll<HTMLElement>('[data-os-tabs]')) {
+    const buttons = Array.from(group.querySelectorAll<HTMLButtonElement>('[data-os-tab]'));
+    for (const button of buttons) {
+      button.addEventListener('click', () => {
+        const tab = button.dataset.osTab;
+        if (isTabId(tab)) selectAndPersist(tab);
+      });
+    }
+    // Roving-tabindex keyboard support (WAI-ARIA tabs pattern): Left/Right
+    // move and activate; Home/End jump to the first/last tab.
+    group.addEventListener('keydown', (event) => {
+      const key = (event as KeyboardEvent).key;
+      const current = buttons.findIndex((b) => b.getAttribute('aria-selected') === 'true');
+      if (current === -1) return;
+      let nextIndex: number | null = null;
+      if (key === 'ArrowRight') nextIndex = (current + 1) % buttons.length;
+      else if (key === 'ArrowLeft') nextIndex = (current - 1 + buttons.length) % buttons.length;
+      else if (key === 'Home') nextIndex = 0;
+      else if (key === 'End') nextIndex = buttons.length - 1;
+      if (nextIndex === null) return;
+      event.preventDefault();
+      const tab = buttons[nextIndex]?.dataset.osTab;
+      if (isTabId(tab)) selectAndPersist(tab, { focus: true });
+    });
+  }
+</script>

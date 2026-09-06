@@ -1,0 +1,232 @@
+---
+// The lesson code block (D019): a terminal frame (title bar with three
+// decorative dots + a filename/title, a copy-to-clipboard button), line
+// numbers, optional `highlight` lines, and gold `annotations` — wrapped
+// around Shiki's own dual-theme output from the *existing* markdown
+// pipeline (`astro.config.ts`'s `markdown.shikiConfig`, dual-theme
+// `github-light`/`github-dark-dimmed`, `defaultColor: false`, rendered by
+// `src/styles/shiki.css`, P05). `CodeBlock` never re-highlights code
+// itself — it renders a real fenced code block as its default slot (MDX
+// already turns that into `<pre class="astro-code">…<code><span
+// class="line">…</span></code></pre>` with correct dual-theme colors) and
+// post-processes that HTML for the gutter/highlight/annotation chrome.
+// Verified against this repo's actual build output, not assumed — see
+// this plan's Handoff notes for the exact `<pre>` shape confirmed.
+//
+// Usage in MDX:
+//
+//   <CodeBlock title="install" highlight="1" annotations={{ 1: 'native installer' }}>
+//   ```bash
+//   brew install --cask claude-code
+//   claude --version
+//   ```
+//   </CodeBlock>
+//
+// A real `{3,7-9}`-style meta string on the fence itself
+// (```bash {3,7-9}) would need a Shiki transformer registered in
+// `astro.config.ts`'s `shikiConfig.transformers`, which is outside this
+// plan's `owned_paths` — `highlight` accepts the identical range syntax as
+// a prop instead (see `codeblock.ts`'s `parseLineRanges`), same visual
+// result, no config change needed. Likewise `annotations` is a prop
+// (`Record<lineNumber, text>`) rather than an in-code `// ← text` magic
+// comment: scanning arbitrary source text for a marker string risks
+// false positives across languages, where a prop cannot.
+import { extractLines, joinRawCode, parseLineRanges } from './codeblock.ts';
+
+interface Props {
+  /** Shown in the terminal title bar — a filename ("install.sh") or a
+   *  short label ("install"), matching `Components.dc.html`/`Lesson1280.dc.html`. */
+  title?: string;
+  /** `{3,7-9}`-style 1-indexed line range to visually highlight. */
+  highlight?: string;
+  /** 1-indexed line number -> gold annotation text appended to that line. */
+  annotations?: Record<number, string>;
+}
+
+const { title, highlight, annotations = {} } = Astro.props as Props;
+
+const rendered = await Astro.slots.render('default');
+const lines = extractLines(rendered);
+const highlighted = parseLineRanges(highlight);
+const rawCode = joinRawCode(lines);
+---
+
+<div class="cc-codeblock">
+  <div class="cc-codeblock-bar">
+    <span class="cc-codeblock-dots" aria-hidden="true"><span></span><span></span><span></span></span
+    >
+    {title && <span class="mono cc-codeblock-title">{title}</span>}
+    <button type="button" class="mono cc-codeblock-copy" data-cc-copy data-code={rawCode}>
+      <svg
+        aria-hidden="true"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+      >
+        <rect x="9" y="9" width="11" height="11" rx="2"></rect>
+        <path d="M5 15V6a2 2 0 0 1 2-2h9"></path>
+      </svg>
+      <span data-cc-copy-label>copy</span>
+    </button>
+  </div>
+  <pre
+    class="cc-codeblock-body mono"
+    tabindex="0"><code>{
+    lines.map((line, i) => {
+      const n = i + 1;
+      const annotation = annotations[n];
+      return (
+        <span class:list={['cc-codeblock-line', { 'cc-codeblock-line--hl': highlighted.has(n) }]}>
+          <span class="cc-codeblock-gutter" aria-hidden="true">
+            {n}
+          </span>
+          <span class="cc-codeblock-code" set:html={line.html} />
+          {annotation && (
+            <span class="cc-codeblock-annotation" aria-hidden="true">
+              {' '}
+              ← {annotation}
+            </span>
+          )}
+        </span>
+      );
+    })
+  }</code></pre>
+</div>
+
+<style>
+  .cc-codeblock {
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-3);
+    background: var(--color-bg-1);
+    overflow: hidden;
+  }
+
+  .cc-codeblock-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 36px;
+    padding: 0 var(--space-3);
+    border-bottom: 1px solid var(--color-line);
+    color: var(--color-ink-muted);
+    font-size: var(--text-12);
+  }
+
+  .cc-codeblock-dots {
+    display: inline-flex;
+    gap: 5px;
+  }
+
+  .cc-codeblock-dots span {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--color-bg-3);
+  }
+
+  .cc-codeblock-title {
+    color: var(--color-ink-muted);
+  }
+
+  .cc-codeblock-copy {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-1);
+    background: transparent;
+    color: var(--color-ink-muted);
+    font-size: var(--text-12);
+    cursor: pointer;
+  }
+
+  .cc-codeblock-copy:hover {
+    color: var(--color-ink);
+    background: var(--color-bg-3);
+  }
+
+  .cc-codeblock-copy[data-copied='true'] {
+    /* --color-ink, not --color-success: the success token fails WCAG 2.2
+       AA 4.5:1 as text against the light theme's card backgrounds
+       (measured ~3.9-4.2:1) — see this plan's Handoff notes. The "copied"
+       text change is itself sufficient confirmation. */
+    color: var(--color-ink);
+    background: var(--color-bg-3);
+  }
+
+  .cc-codeblock-body {
+    margin: 0;
+    padding: var(--space-4) 0;
+    overflow-x: auto;
+    font-size: var(--text-13);
+    line-height: 1.6;
+  }
+
+  .cc-codeblock-body code {
+    display: block;
+  }
+
+  .cc-codeblock-line {
+    display: block;
+    padding: 0 var(--space-4);
+  }
+
+  .cc-codeblock-line--hl {
+    background: var(--color-bg-3);
+    box-shadow: inset 2px 0 0 var(--color-accent);
+  }
+
+  .cc-codeblock-gutter {
+    display: inline-block;
+    width: 2em;
+    margin-right: var(--space-3);
+    color: var(--color-ink-muted);
+    text-align: right;
+    user-select: none;
+  }
+
+  .cc-codeblock-annotation {
+    color: var(--color-accent-text);
+  }
+</style>
+
+<script>
+  // Copy the raw code (data-code, already stripped of gutter/annotation
+  // chrome by codeblock.ts) — never the rendered line's decorated markup.
+  const buttons = document.querySelectorAll<HTMLButtonElement>('[data-cc-copy]');
+
+  for (const button of buttons) {
+    const label = button.querySelector<HTMLElement>('[data-cc-copy-label]');
+    button.addEventListener('click', () => {
+      const code = button.dataset.code ?? '';
+      try {
+        void navigator.clipboard.writeText(code).then(
+          () => showCopied(button, label),
+          () => {
+            // Clipboard write refused (permissions, insecure context) —
+            // the button simply does nothing rather than throwing.
+          },
+        );
+      } catch {
+        // navigator.clipboard unavailable — no-op, never breaks the page.
+      }
+    });
+  }
+
+  function showCopied(button: HTMLButtonElement, label: HTMLElement | null) {
+    const original = label?.textContent ?? 'copy';
+    button.dataset.copied = 'true';
+    if (label) label.textContent = 'copied';
+    window.setTimeout(() => {
+      delete button.dataset.copied;
+      if (label) label.textContent = original;
+    }, 1500);
+  }
+</script>

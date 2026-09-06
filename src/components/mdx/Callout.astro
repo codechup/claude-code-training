@@ -1,0 +1,109 @@
+---
+// The lesson-template callout (D006, D019, D044): a mono `//` eyebrow
+// (reuses app.css's `.eyebrow` utility, P05) over one line of prose.
+// Three variants only, matching `docs/design/canvas-out/Components.dc.html`
+// exactly:
+//   - "note"              neutral information the reader should not skip.
+//   - "when-not-to-use"   the D006/D090 lesson-template section (warning
+//                          border) — `WhenNotToUse.astro` is a thin preset
+//                          over this variant.
+//   - "changed"           a deprecated/superseded-feature note (D044),
+//                          caret-red border, one line: old -> new + version.
+//
+// Token-only styling (CLAUDE.md: "Design only through tokens"): the canvas
+// borders warning/changed callouts with a roughly 40%-alpha tint of
+// --color-warning/--color-caret over the dark card background, baked into
+// the canvas's own literal palette as a translucent color function.
+// tokens.css has no pre-mixed alpha variant of those tokens, so this
+// component borders with the solid token color instead — slightly higher
+// contrast than the canvas mock, never a raw literal. Noted in this
+// plan's Handoff notes as a token gap for P05 to consider (an alpha
+// variant of the warning/caret tokens for borders like this one).
+export type CalloutVariant = 'note' | 'when-not-to-use' | 'changed';
+
+interface Props {
+  variant?: CalloutVariant;
+  /** Eyebrow text. Defaults to a sensible label per variant. */
+  label?: string;
+}
+
+const DEFAULT_LABEL: Record<CalloutVariant, string> = {
+  note: 'Note',
+  'when-not-to-use': 'When not to use this',
+  changed: 'Changed',
+};
+
+const { variant = 'note', label = DEFAULT_LABEL[variant] } = Astro.props as Props;
+---
+
+<aside class={`cc-callout cc-callout--${variant}`} role="note" aria-label={label}>
+  <span class="cc-callout-icon" aria-hidden="true"></span>
+  <div class="cc-callout-body">
+    <span class="eyebrow">{label}</span>
+    <div class="cc-callout-content">
+      <slot />
+    </div>
+  </div>
+</aside>
+
+<style>
+  .cc-callout {
+    display: flex;
+    gap: var(--space-3);
+    padding: 14px var(--space-4);
+    background: var(--color-bg-1);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-3);
+  }
+
+  .cc-callout--when-not-to-use {
+    border-color: var(--color-warning);
+  }
+
+  .cc-callout--changed {
+    border-color: var(--color-caret);
+  }
+
+  .cc-callout-icon {
+    flex: none;
+    width: 8px;
+    height: 8px;
+    margin-top: 6px;
+    border-radius: var(--radius-1);
+    background: var(--color-ink-muted);
+  }
+
+  .cc-callout--when-not-to-use .cc-callout-icon {
+    background: var(--color-warning);
+  }
+
+  .cc-callout--changed .cc-callout-icon {
+    background: var(--color-caret);
+  }
+
+  .cc-callout-body {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .cc-callout-content {
+    font-size: var(--text-14);
+    color: var(--color-ink-soft);
+    line-height: var(--leading-body);
+  }
+
+  .cc-callout-content :global(p) {
+    margin: 0;
+  }
+
+  .cc-callout-content :global(p + p) {
+    margin-top: var(--space-2);
+  }
+
+  .cc-callout-content :global(code) {
+    font-family: var(--font-family-mono);
+    font-size: 0.92em;
+  }
+</style>

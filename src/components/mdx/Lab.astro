@@ -1,0 +1,260 @@
+---
+// The D006 hands-on-lab section wrapper: numbered steps, an expected
+// result line, a checklist (persisted per lesson in `localStorage['cc:lab:<lessonId>']`,
+// D020), and room for an embedded `<Transcript>` of the real run (D099).
+//
+// MDX components render standalone — they cannot read the enclosing
+// lesson's frontmatter (`lab.repo_tag`, `src/content/schema.ts`, P06) — so
+// the lesson body passes it explicitly:
+//
+//   <Lab
+//     repoTag={frontmatter.lab.repo_tag}
+//     steps={['git checkout lesson/m07-02-start', '…']}
+//     expected="exit 2, Claude picks an alternative"
+//     checklist={['Hook registered in .claude/settings.json', '…']}
+//   >
+//     <Transcript src="content/_shared/transcripts/m07-hooks/block-dangerous-commands.txt" />
+//   </Lab>
+//
+// `lessonId` (the `cc:lab:<lessonId>` suffix) defaults to the current
+// page's path at runtime (`location.pathname`) so no lesson needs to wire
+// it by hand; pass it explicitly for a stable id outside a real lesson
+// route (e.g. this component's `/design/` gallery entry).
+import { labRepoTreeUrl } from './lab.ts';
+
+interface Props {
+  repoTag: string;
+  title?: string;
+  steps: string[];
+  expected: string;
+  checklist: string[];
+  lessonId?: string;
+}
+
+const {
+  repoTag,
+  title = 'Lab · run it against the sandbox repo',
+  steps,
+  expected,
+  checklist,
+  lessonId,
+} = Astro.props as Props;
+
+const repoHref = labRepoTreeUrl(repoTag);
+---
+
+<div class="cc-lab" data-cc-lab data-lesson-id={lessonId}>
+  <div class="cc-lab-header">
+    <svg
+      aria-hidden="true"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.75"
+      stroke-linecap="round"
+    >
+      <path d="M9 3v7L4 19a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-5-9V3M8 3h8"></path>
+    </svg>
+    <h3 class="cc-lab-title">{title}</h3>
+  </div>
+
+  <p class="cc-lab-tag">
+    <span class="mono muted">git checkout {repoTag}</span>
+    <a class="mono cc-lab-repo-link" href={repoHref} target="_blank" rel="noopener noreferrer">
+      codechup/claude-code-lab
+    </a>
+  </p>
+
+  <ol class="cc-lab-steps">
+    {
+      steps.map((step, i) => (
+        <li>
+          <span class="mono cc-lab-step-index" aria-hidden="true">
+            {i + 1}
+          </span>
+          <span>{step}</span>
+        </li>
+      ))
+    }
+  </ol>
+
+  <div class="cc-lab-slot">
+    <slot />
+  </div>
+
+  <p class="cc-lab-expected">
+    <span class="cc-lab-expected-icon" aria-hidden="true">
+      <svg
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+      >
+        <path d="M5 12l5 5L20 7"></path>
+      </svg>
+    </span>
+    <span><strong>Expected:</strong> {expected}</span>
+  </p>
+
+  <fieldset class="cc-lab-checklist">
+    <legend class="mono eyebrow">Checklist</legend>
+    {
+      checklist.map((item, i) => (
+        <label class="cc-lab-check">
+          <input type="checkbox" data-cc-lab-check value={String(i)} />
+          <span>{item}</span>
+        </label>
+      ))
+    }
+  </fieldset>
+</div>
+
+<style>
+  .cc-lab {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: 18px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-3);
+    background: var(--color-bg-2);
+  }
+
+  .cc-lab-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--color-ink);
+  }
+
+  .cc-lab-title {
+    margin: 0;
+  }
+
+  .cc-lab-tag {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    margin: 0;
+    font-size: var(--text-13);
+  }
+
+  .cc-lab-repo-link {
+    color: var(--color-ink-muted);
+  }
+
+  .cc-lab-repo-link:hover {
+    color: var(--color-accent-text);
+  }
+
+  .cc-lab-steps {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--text-14);
+  }
+
+  .cc-lab-steps li {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+
+  .cc-lab-step-index {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    flex: none;
+    border-radius: var(--radius-1);
+    background: var(--color-bg-3);
+    font-size: var(--text-11);
+  }
+
+  .cc-lab-slot:empty {
+    display: none;
+  }
+
+  .cc-lab-expected {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    /* Text stays --color-ink-soft (not --color-success): the success
+       token fails WCAG 2.2 AA 4.5:1 as body text against the light
+       theme's card backgrounds (measured ~3.9-4.2:1) — see this plan's
+       Handoff notes. The checkmark icon alone carries the success color. */
+    color: var(--color-ink-soft);
+    font-size: var(--text-13);
+  }
+
+  .cc-lab-expected-icon {
+    display: inline-flex;
+    color: var(--color-success);
+  }
+
+  .cc-lab-checklist {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    margin: 0;
+    padding: var(--space-3) 0 0;
+    border: 0;
+    border-top: 1px solid var(--color-line);
+  }
+
+  .cc-lab-check {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-14);
+    color: var(--color-ink-soft);
+  }
+
+  .cc-lab-check input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--color-success);
+  }
+</style>
+
+<script>
+  import { readLabChecklist, writeLabChecklist } from './lab.ts';
+
+  for (const root of document.querySelectorAll<HTMLElement>('[data-cc-lab]')) {
+    const lessonId = root.dataset.lessonId || window.location.pathname;
+    const boxes = Array.from(root.querySelectorAll<HTMLInputElement>('[data-cc-lab-check]'));
+
+    let checked: readonly string[] = [];
+    try {
+      checked = readLabChecklist(lessonId, window.localStorage);
+    } catch {
+      // localStorage unavailable — the checklist still works for this
+      // page load, it just starts unchecked and won't persist.
+    }
+    for (const box of boxes) {
+      box.checked = checked.includes(box.value);
+    }
+
+    for (const box of boxes) {
+      box.addEventListener('change', () => {
+        const next = boxes.filter((b) => b.checked).map((b) => b.value);
+        try {
+          writeLabChecklist(lessonId, next, window.localStorage);
+        } catch {
+          // Same as above: the click still visibly toggles the box.
+        }
+      });
+    }
+  }
+</script>

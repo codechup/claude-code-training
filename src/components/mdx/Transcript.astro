@@ -1,0 +1,173 @@
+---
+// A real, previously-captured Claude Code session, rendered read-only
+// (D019, D070, D093, D099). `src` is a repo-root-relative path and MUST
+// resolve to a real file under `content/_shared/transcripts/` (a lesson's
+// real lab recording) or this component's own
+// `src/components/mdx/__fixtures__/transcripts/` (a clearly-labelled
+// formatting sample, never a lesson's evidence) — see `transcript.ts`'s
+// `ALLOWED_PREFIXES`. There is deliberately no inline/freeform prop for
+// transcript content: that would be exactly the fabrication path D093
+// forbids. A missing or disallowed path throws here, in the component's
+// own frontmatter, which Astro turns into a build error naming the file —
+// never a silently empty block.
+import { loadTranscript, sliceRange, type TranscriptLine } from './transcript.ts';
+import { REPO_URL } from '../../lib/repo.ts';
+
+interface Props {
+  /** Repo-root-relative path, e.g.
+   *  "content/_shared/transcripts/m07-hooks/guard-bash.txt". */
+  src: string;
+  /** Optional 1-indexed inclusive line range, e.g. "2-6", to show only
+   *  part of a longer captured session. */
+  range?: string;
+}
+
+const { src, range } = Astro.props as Props;
+
+// Not wrapped in try/catch: a bad path must fail the build loudly.
+const allLines = loadTranscript(src);
+const lines = sliceRange(allLines, range);
+
+const ROLE_LABEL: Record<TranscriptLine['role'], string> = {
+  prompt: 'prompt',
+  tool: 'tool call',
+  'result-ok': 'result: success',
+  'result-fail': 'result: failed',
+  text: '',
+};
+
+const rawHref = `${REPO_URL}/blob/main/${src}`;
+---
+
+<figure class="cc-transcript">
+  <pre
+    class="cc-transcript-body mono"
+    tabindex="0"><code>{
+    lines.map((line) => (
+      <span class={`cc-transcript-line cc-transcript-line--${line.role}`}>
+        {line.role === 'prompt' && (
+          <span class="cc-transcript-glyph" aria-hidden="true">
+            ›
+          </span>
+        )}
+        {line.role === 'tool' && (
+          <span class="cc-transcript-glyph" aria-hidden="true">
+            ⏺
+          </span>
+        )}
+        {line.role === 'result-ok' && (
+          <span class="cc-transcript-glyph" aria-hidden="true">
+            ✓
+          </span>
+        )}
+        {line.role === 'result-fail' && (
+          <span class="cc-transcript-glyph" aria-hidden="true">
+            ✗
+          </span>
+        )}
+        <span class="sr-only">{ROLE_LABEL[line.role] && `${ROLE_LABEL[line.role]}: `}</span>
+        <span class="cc-transcript-text">{line.text}</span>
+      </span>
+    ))
+  }</code></pre>
+  <figcaption class="cc-transcript-caption">
+    <span class="muted">Roles: prompt (›), tool (⏺), result (✓/✗). Captured, never fabricated.</span
+    >
+    <a class="mono cc-transcript-raw" href={rawHref} target="_blank" rel="noopener noreferrer">
+      raw transcript
+    </a>
+  </figcaption>
+</figure>
+
+<style>
+  .cc-transcript {
+    margin: 0;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-3);
+    background: var(--color-bg-1);
+    overflow: hidden;
+  }
+
+  .cc-transcript-body {
+    margin: 0;
+    padding: var(--space-4);
+    overflow-x: auto;
+    font-size: var(--text-13);
+    line-height: 1.6;
+    color: var(--color-ink-muted);
+    white-space: pre-wrap;
+  }
+
+  .cc-transcript-body code {
+    display: block;
+  }
+
+  .cc-transcript-line {
+    display: block;
+  }
+
+  .cc-transcript-line--prompt {
+    color: var(--color-prompt);
+  }
+
+  .cc-transcript-line--tool {
+    color: var(--color-ink-muted);
+  }
+
+  /* The line's own text stays a legible ink tone in both themes — only the
+     role glyph (below) carries the semantic success/failure color.
+     --color-success/--color-caret as body TEXT fail WCAG 2.2 AA 4.5:1
+     against the light theme's --color-bg-1/--color-bg-2 (measured 3.9-4.2:1,
+     confirmed with axe against a real render) even though both tokens are
+     fine as icon/border accents (>3:1, and fine as text in the dark theme) —
+     see this plan's Handoff notes. */
+  .cc-transcript-line--result-ok,
+  .cc-transcript-line--result-fail,
+  .cc-transcript-line--text {
+    color: var(--color-ink-soft);
+  }
+
+  .cc-transcript-glyph {
+    display: inline-block;
+    width: 1.4em;
+  }
+
+  .cc-transcript-line--result-ok .cc-transcript-glyph {
+    color: var(--color-success);
+  }
+
+  .cc-transcript-line--result-fail .cc-transcript-glyph {
+    color: var(--color-caret);
+  }
+
+  .cc-transcript-caption {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: 10px var(--space-4);
+    border-top: 1px solid var(--color-line);
+    font-size: var(--text-12);
+  }
+
+  .cc-transcript-raw {
+    color: var(--color-ink-muted);
+    white-space: nowrap;
+  }
+
+  .cc-transcript-raw:hover {
+    color: var(--color-accent-text);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+</style>
