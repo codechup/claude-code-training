@@ -81,4 +81,6 @@ A reviewer runs the `/new-lesson` smoke test live, triggers `guard-bash.mjs` wit
 
 ## Handoff notes
 
+- Bootstrap already present (lead session, 2026-09-06, owner request): `.claude/settings.json` with a PreToolUse hook `.claude/hooks/guard-hygiene.mjs` (blocks Write/Edit/Bash carrying private infra details or secrets; delegates to `scripts/check-public-hygiene.mjs`), and `.claude/rules/public-hygiene.md`. Keep both when building the full `.claude/`; add the formatter/guard-bash/session-start hooks alongside, do not replace the hygiene hook.
+
 - _Filled by the executing session: what changed, decisions, follow-ups, blockers._

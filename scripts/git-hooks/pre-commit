@@ -1,0 +1,8 @@
+#!/bin/sh
+# pre-commit — public-repository hygiene gate (see .claude/rules/public-hygiene.md).
+# Installed by scripts/install-hooks.sh. Blocks the commit if staged content contains private
+# infrastructure details or secrets.
+node scripts/check-public-hygiene.mjs --staged || {
+  echo "pre-commit: blocked — remove the private value or move it to a secret (see .claude/rules/public-hygiene.md)." >&2
+  exit 1
+}

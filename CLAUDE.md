@@ -18,7 +18,7 @@ Work is plan-driven and parallel: `node tools/plan/cli.ts next` → `claim PNN -
 
 - **Evidence rule (D093):** every command you claim to have run was run; paste real output in the PR. Lesson transcripts are captured from real sessions in the lab repo — never invented.
 - **Stay current (D004, D044):** cite `research/feature-inventory.md`; anything marked UNVERIFIED goes to `open_questions`, not into a lesson. Old behaviour appears only as a short "Changed" callout.
-- **Public-repo hygiene:** no hosting IPs, no private paths, no references to other CodeChup projects or their infrastructure. Deploy targets come from secrets (`DEPLOY_PATH`, `SSH_*`). Case studies are anonymous (D026).
+- **Public-repo hygiene (enforced):** no hosting IPs, no private paths, no references to other CodeChup projects or their infrastructure, no secrets. Deploy targets come from secrets (`DEPLOY_PATH`, `SSH_*`). Case studies are anonymous (D026). Enforced three ways — `scripts/check-public-hygiene.mjs` (lint, pre-commit, CI), the PreToolUse hook `.claude/hooks/guard-hygiene.mjs`, and gitleaks; rule text in `.claude/rules/public-hygiene.md`.
 - **Languages:** EN is the source; TR is a translation with correct diacritics and English technical terms kept (D016, D018). Every EN lesson has a TR twin (a `draft: true` stub is acceptable until the TR wave).
 - **Design only through tokens** (`src/styles/tokens.css`); no raw colours elsewhere; mobile-first at 390 px; WCAG 2.2 AA; no inline `<script>` bodies (CSP).
 - **Stay inside `owned_paths`;** shared files are append-only. PR-only `main`, squash merges, conventional commits (`feat(content): …`, `chore(plans): …`).
@@ -27,6 +27,7 @@ Work is plan-driven and parallel: `node tools/plan/cli.ts next` → `claim PNN -
 ## Commands
 
 ```bash
+sh scripts/install-hooks.sh          # once per clone/worktree: pre-commit hygiene + pre-push main guard
 npm ci && npm run dev              # Astro dev server
 npm run typecheck && npm run lint && npm run gate && npm test && npm run build
 npx playwright test                # e2e + axe (CI installs browsers)

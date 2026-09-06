@@ -93,4 +93,6 @@ A reviewer opens the CI run for this plan's own PR, confirms all four jobs (`qua
 
 ## Handoff notes
 
+- Owner request 2026-09-06: CI must run `node scripts/check-public-hygiene.mjs` (already inside `npm run lint`) with the repo secret `HYGIENE_EXTRA_PATTERNS` exported (project-specific private names; the owner mirrors the machine-local `.hygiene.local.json` into it), plus gitleaks with `.gitleaks.toml`. Add `HYGIENE_EXTRA_PATTERNS` to the owner checklist in `docs/deploy/README.md` (P10).
+
 - _Filled by the executing session: what changed, decisions, follow-ups, blockers._
