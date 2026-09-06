@@ -4,7 +4,7 @@ Lesson rule (D044): a removed or changed behaviour appears only as a short **Cha
 
 | Old (2025-era tutorials) | Now | Note for lessons |
 |---|---|---|
-| `MultiEdit` tool | Removed; `Edit` only (with `replace_all`) | Tools lesson (L1 m02) |
+| `MultiEdit` tool | Not in the current tools reference; `Edit` (with `replace_all: true`) covers multi-occurrence edits — verified against `tools-reference.md` 2026-09-06 | Tools lesson (L1 m02) |
 | `keybindingFlavor` setting | Ignored; word keys are always Bash-style (Ctrl+W, Alt+F/D) | Keybindings lesson |
 | `defaultMode: bypassPermissions` / `auto` in project `.claude/settings.json` | Silently ignored; only user or managed scope | Permissions lesson, security lesson |
 | `/btw` history with `←/→` | `Shift+←/→` | Commands reference |

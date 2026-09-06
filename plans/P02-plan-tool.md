@@ -3,7 +3,7 @@ id: P02
 title: Plan tool port and first STATE.md
 milestone: M0
 status: done
-owner: null
+owner: fable-lead-2026-09-06
 branch: plan/02-plan-tool
 model_hint: sonnet
 effort_hint: medium
