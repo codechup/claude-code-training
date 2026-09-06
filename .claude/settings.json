@@ -1,4 +1,18 @@
 {
+  "permissions": {
+    "allow": [
+      "Bash(node tools/plan/cli.ts:*)",
+      "Bash(npm run plan:*)",
+      "Bash(node scripts/check-public-hygiene.mjs:*)",
+      "Bash(npm run lint)",
+      "Bash(npm run gate)",
+      "Bash(npm run typecheck)",
+      "Bash(npm test)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -7,6 +21,36 @@
           {
             "type": "command",
             "command": "node .claude/hooks/guard-hygiene.mjs"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/guard-bash.mjs"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/format.mjs"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/session-start.mjs"
           }
         ]
       }
