@@ -1,19 +1,732 @@
 ---
-// D034: /design lives outside the locale prefix and is EN-only. This is a
-// placeholder skeleton — P05 fills it in with the token dump, live
-// component library, canvas exports, and a11y/principles docs from the
-// approved design canvas.
+// D033/D034: `/design` is a living component library — tokens, canvas
+// exports, principles, a11y rules, plus working components — and it is
+// EN-only, outside the locale prefix (route is /design/, not /en/design/).
+//
+// This plan (P05) owns src/styles/**, public/theme-init.js,
+// ThemeToggle.astro and src/pages/design/**. The MDX component vocabulary
+// (Callout, CodeBlock, Transcript, Quiz, DecisionTree, …) is P07/P08's —
+// this page marks their sections as pending rather than faking them.
+// `src/components/brand/{Sigil,Lockup}.astro` are outside this plan's
+// owned_paths (not listed in plans/P05-tokens-theme.md frontmatter even
+// though docs/design/CANVAS.md §6 describes P05 building them) — the sigil
+// below is inlined on this page only, from the exact geometry in
+// docs/design/canvas-src/build.mjs's `sigil()`/`lockup()`, as a stopgap;
+// see this plan's Handoff notes / open_questions for the follow-up that
+// should extract it into a reusable component.
 import Base from '../../layouts/Base.astro';
+import ThemeToggle from '../../components/shell/ThemeToggle.astro';
+
+// -- sigil: 24-unit grid, cell 6, gap 2, margin 1, gold cell top-right.
+// Verbatim geometry from docs/design/canvas-src/build.mjs `sigil()`, with
+// `currentColor` for the ink cells (instead of a per-theme literal) so one
+// markup works in both themes without duplication.
+const SIGIL_CELLS: [number, number][] = [
+  [1, 1],
+  [9, 1],
+  [1, 9],
+  [9, 9],
+  [17, 9],
+  [1, 17],
+  [9, 17],
+  [17, 17],
+];
+
+function sigil(size: number, opts: { mono?: boolean } = {}) {
+  const cells = SIGIL_CELLS.map(
+    ([x, y]) => `<rect x="${x}" y="${y}" width="6" height="6" rx="1"/>`,
+  ).join('');
+  const gold = opts.mono
+    ? `<rect x="17.75" y="1.75" width="4.5" height="4.5" rx="0.75" fill="none" stroke="currentColor" stroke-width="1.5"/>`
+    : `<rect x="17" y="1" width="6" height="6" rx="1" fill="var(--color-accent)"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${size}" height="${size}" role="img" aria-label="CodeChup"><g fill="currentColor">${cells}</g>${gold}</svg>`;
+}
+
+// -- token dump metadata: names + roles only. VALUES are never hand-typed
+// here — the swatch script below reads them live from
+// getComputedStyle(document.documentElement), so this list can never drift
+// from tokens.css (see this plan's non-goals).
+const colorTokens = [
+  { v: '--color-bg-0', role: 'page ground' },
+  { v: '--color-bg-1', role: 'code, terminal' },
+  { v: '--color-bg-2', role: 'cards' },
+  { v: '--color-bg-3', role: 'raised, chips' },
+  { v: '--color-ink', role: 'primary text' },
+  { v: '--color-ink-soft', role: 'secondary' },
+  { v: '--color-ink-muted', role: 'meta, placeholders' },
+  { v: '--color-line', role: 'hairlines' },
+  { v: '--color-line-strong', role: 'input borders, ghost buttons' },
+  { v: '--color-accent', role: 'primary CTA, sigil cell, progress' },
+  { v: '--color-accent-ink', role: 'text on accent' },
+  { v: '--color-accent-text', role: 'gold as text: annotations, links' },
+  { v: '--color-caret', role: 'prompt caret, "Changed"' },
+  { v: '--color-prompt', role: 'shell prompt glyph' },
+  { v: '--color-success', role: 'states, level badges' },
+  { v: '--color-warning', role: 'states, level badges' },
+  { v: '--color-danger', role: 'states, level badges' },
+  { v: '--color-info', role: 'states, level badges' },
+] as const;
+
+// -- contrast pairs: the exact six from docs/design/CANVAS.md §3 / §6 and
+// docs/design/canvas-src/build.mjs `pairs()`. Computed live, client-side,
+// from the SAME computed custom properties as the swatches above — never
+// a second, hand-typed copy of a hex value.
+const contrastPairs = [
+  { label: 'ink on bg-0', fg: '--color-ink', bg: '--color-bg-0' },
+  { label: 'ink-soft on bg-2', fg: '--color-ink-soft', bg: '--color-bg-2' },
+  { label: 'ink-muted on bg-2', fg: '--color-ink-muted', bg: '--color-bg-2' },
+  { label: 'accent-ink on accent', fg: '--color-accent-ink', bg: '--color-accent' },
+  { label: 'accent-text on bg-1', fg: '--color-accent-text', bg: '--color-bg-1' },
+  { label: 'caret on bg-0', fg: '--color-caret', bg: '--color-bg-0' },
+] as const;
+
+const toc = [
+  ['brand', 'Brand'],
+  ['tokens', 'Tokens'],
+  ['type', 'Type'],
+  ['space', 'Space'],
+  ['motion', 'Motion'],
+  ['components', 'Components'],
+  ['transcript', 'Transcript'],
+  ['a11y', 'Accessibility'],
+  ['canvas', 'Canvas'],
+  ['changelog', 'Changelog'],
+] as const;
+
+const turkishSample = 'Değişiklik: çşğıöü ÇŞĞİÖÜ — ışık, güneş, hüzün.';
 ---
 
 <Base
-  title="Design system — CodeChup Claude Code Academy"
-  description="Design tokens, components, and principles for the CodeChup Claude Code Academy site."
+  title="Design — CodeChup Claude Code Academy"
+  description="Design tokens, brand, type, motion, accessibility rules and the living component library for CodeChup Claude Code Academy, generated from the approved design canvas."
   lang="en"
   path="/design/"
 >
-  <main class="mx-auto max-w-3xl px-4 py-16">
-    <h1 class="font-mono text-3xl font-bold">Design system</h1>
-    <p class="mt-4 text-fg-muted">Coming with P05 — tokens, components, and principles.</p>
-  </main>
+  <div
+    class="mx-auto grid max-w-[1100px] grid-cols-1 gap-8 px-4 py-10 lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-12 lg:px-8"
+  >
+    <aside
+      aria-label="On this page"
+      class="mono order-2 flex flex-col gap-1 self-start lg:sticky lg:top-6 lg:order-1"
+    >
+      <span class="eyebrow mb-2">/design</span>
+      {
+        toc.map(([id, label]) => (
+          <a
+            href={`#${id}`}
+            class="border-l py-1 pl-3 text-[13px]"
+            style="border-color: var(--color-line); color: var(--color-ink-muted);"
+          >
+            {label}
+          </a>
+        ))
+      }
+    </aside>
+
+    <main class="order-1 flex flex-col gap-16 lg:order-2">
+      <!-- ============================================================ -->
+      <header class="flex flex-col gap-3">
+        <div class="flex items-center justify-between gap-4">
+          <div
+            class="flex items-center gap-3"
+            style="color: var(--color-ink);"
+            set:html={sigil(32)}
+          />
+          <ThemeToggle />
+        </div>
+        <h1 class="mt-2">Design</h1>
+        <p class="mono text-[12px]" style="color: var(--color-ink-muted);">
+          design version 2026.09.1 · living page · EN only (D034)
+        </p>
+        <p
+          class="italic"
+          style="color: var(--color-ink-soft); font-size: var(--text-18); max-width: 56ch;"
+        >
+          If a screen disagrees with this page, the screen is wrong.
+        </p>
+      </header>
+
+      <!-- ============================================================ -->
+      <section id="brand" class="flex flex-col gap-4 scroll-mt-6">
+        <span class="eyebrow">Brand</span>
+        <h2>Sigil, lockup, voice</h2>
+        <div class="grid gap-6 sm:grid-cols-2">
+          <div class="card flex flex-col gap-4 p-5">
+            <span class="mono text-[12px]" style="color: var(--color-ink-muted);">Sigil</span>
+            <div class="flex flex-wrap items-end gap-6" style="color: var(--color-ink);">
+              {[16, 24, 32, 64].map((s) => <span set:html={sigil(s)} />)}
+            </div>
+            <p class="text-[13px]" style="color: var(--color-ink-soft); max-width: 60ch;">
+              Shared with the CodeChup family: 3×3 rounded cells on a 24-unit grid (cell 6, gap 2,
+              margin 1), one gold cell top-right. Never rotated, recoloured or moved. Minimum 16 px.
+            </p>
+            <div class="flex items-center gap-3" style="color: var(--color-ink);">
+              <span set:html={sigil(40, { mono: true })} />
+              <span class="mono text-[11px]" style="color: var(--color-ink-muted);"
+                >one-colour / mono variant</span
+              >
+            </div>
+          </div>
+          <div class="card flex flex-col gap-4 p-5">
+            <span class="mono text-[12px]" style="color: var(--color-ink-muted);">Lockup</span>
+            <div class="flex items-center gap-3" style="color: var(--color-ink);">
+              <span set:html={sigil(28)} />
+              <span
+                class="mono"
+                style="font-size: 14px; font-weight: 500; letter-spacing: 0.02em; color: var(--color-ink);"
+              >
+                codechup<span class="caret" style="margin-left: 2px;"></span>
+              </span>
+            </div>
+            <div
+              class="mono"
+              style="font-size: 11px; letter-spacing: var(--tracking-academy); text-transform: uppercase; color: var(--color-ink-soft); margin-left: 40px;"
+            >
+              claude code academy
+            </div>
+            <p class="text-[13px]" style="color: var(--color-ink-soft); max-width: 60ch;">
+              Wordmark is lowercase JetBrains Mono with the CodeChup signal-red caret; the academy
+              line is uppercase mono at 0.18em tracking. Clear space of one cell module on all
+              sides.
+            </p>
+          </div>
+        </div>
+        <p class="text-[13px]" style="color: var(--color-ink-muted); max-width: 70ch;">
+          Reusable <code class="mono">Sigil.astro</code>/<code class="mono">Lockup.astro</code> components
+          and the favicon update are tracked as a follow-up — <code class="mono"
+            >src/components/brand/**</code
+          > and
+          <code class="mono">public/favicon.svg</code> are outside this plan's <code class="mono"
+            >owned_paths</code
+          >
+          (see this plan's Handoff notes).
+        </p>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="tokens" class="flex flex-col gap-4 scroll-mt-6">
+        <span class="eyebrow">Tokens · live from tokens.css</span>
+        <h2>Dark and light from one set.</h2>
+        <p class="text-[13px]" style="color: var(--color-ink-muted);">
+          Every value below is read from <code class="mono"
+            >getComputedStyle(document.documentElement)</code
+          > at view time — toggle the theme above and watch them change. Nothing on this page hand-copies
+          a hex value.
+        </p>
+        <div
+          class="grid gap-3"
+          style="grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));"
+          data-token-grid
+        >
+          {
+            colorTokens.map((t) => (
+              <div
+                class="swatch flex flex-col gap-1.5 rounded-[var(--radius-2)] border p-2.5"
+                style="border-color: var(--color-line);"
+              >
+                <div
+                  class="h-11 rounded-[var(--radius-1)] border"
+                  style={`background: var(${t.v}); border-color: var(--color-line);`}
+                />
+                <span class="mono text-[11px]" style="color: var(--color-ink-soft);">
+                  {t.v}
+                </span>
+                <span
+                  class="mono text-[11px]"
+                  data-token-value={t.v}
+                  style="color: var(--color-ink-muted);"
+                >
+                  …
+                </span>
+                <span class="text-[11px]" style="color: var(--color-ink-muted);">
+                  {t.role}
+                </span>
+              </div>
+            ))
+          }
+        </div>
+
+        <div
+          class="mt-2 overflow-x-auto rounded-[var(--radius-3)] border"
+          style="border-color: var(--color-line);"
+          tabindex="0"
+          role="region"
+          aria-label="Contrast matrix table (scrolls horizontally on narrow screens)"
+        >
+          <table class="mono w-full min-w-[480px] border-collapse text-[13px]">
+            <thead>
+              <tr style="border-bottom: 1px solid var(--color-line);">
+                <th class="p-3 text-left font-normal" style="color: var(--color-ink-muted);"
+                  >pair</th
+                >
+                <th class="p-3 text-left font-normal" style="color: var(--color-ink-muted);"
+                  >ratio</th
+                >
+                <th class="p-3 text-left font-normal" style="color: var(--color-ink-muted);"
+                  >result</th
+                >
+              </tr>
+            </thead>
+            <tbody data-contrast-body>
+              {
+                contrastPairs.map((p) => (
+                  <tr
+                    style="border-top: 1px solid var(--color-line);"
+                    data-contrast-row
+                    data-fg={p.fg}
+                    data-bg={p.bg}
+                  >
+                    <td class="p-3">{p.label}</td>
+                    <td class="p-3" data-contrast-ratio>
+                      …
+                    </td>
+                    <td class="p-3">
+                      <span class="inline-flex items-center gap-2">
+                        <span
+                          aria-hidden="true"
+                          class="inline-block h-2 w-2 rounded-full"
+                          data-contrast-dot
+                        />
+                        <span style="color: var(--color-ink);" data-contrast-result>
+                          …
+                        </span>
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+        <p class="text-[12px]" style="color: var(--color-ink-muted);">
+          WCAG 2.2 AA (D036): ≥ 4.5∶1 for normal text, ≥ 3∶1 for large text/UI. Every pair used as
+          normal body/UI text (ink, ink-soft, ink-muted, accent-ink, accent-text) passes ≥ 4.5∶1 in
+          both themes; <span class="mono">caret</span> is a large glyph/UI marker (the terminal caret,
+          callout border), so its ≥ 3∶1 large-text/UI floor is the applicable one — see this plan's PR
+          for the pasted, reviewer-checkable numbers.
+        </p>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="type" class="flex flex-col gap-4 scroll-mt-6">
+        <span class="eyebrow">Type</span>
+        <h2>Inter for reading, JetBrains Mono for the terminal.</h2>
+        <div class="card flex flex-col gap-3 p-5">
+          <div
+            style="font-size: var(--text-40); font-weight: 700; letter-spacing: -0.02em; line-height: 1.05;"
+          >
+            Inter 700 · 40
+          </div>
+          <div style="font-size: var(--text-32); font-weight: 600; letter-spacing: -0.015em;">
+            Inter 600 · 32
+          </div>
+          <div style="font-size: var(--text-20); font-weight: 600;">Inter 600 · 20</div>
+          <div style="font-size: var(--text-16);">Inter 400 · 16 body, line 1.5, measure 65ch</div>
+          <div style="font-size: var(--text-14); color: var(--color-ink-soft);">
+            Inter 400 · 14 secondary
+          </div>
+          <div class="mono" style="font-size: var(--text-14);">JetBrains Mono 400 · 14 code</div>
+          <div class="eyebrow">Mono 500 · 12 eyebrow, 0.08em tracked</div>
+          <p class="mono text-[11px]" style="color: var(--color-ink-muted);">
+            Scale: 11 12 13 14 16 18 20 24 32 40 56
+          </p>
+        </div>
+        <div class="card flex flex-col gap-2 p-5">
+          <span class="mono text-[12px]" style="color: var(--color-ink-muted);"
+            >Turkish glyph check (latin-ext) — ş ğ ı İ ö ü ç</span
+          >
+          <p lang="tr" style="font-size: var(--text-18);">{turkishSample}</p>
+          <p lang="tr" class="mono" style="font-size: var(--text-16);">{turkishSample}</p>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="space" class="flex flex-col gap-4 scroll-mt-6">
+        <span class="eyebrow">Shape &amp; space</span>
+        <h2>4-pt scale, four radii.</h2>
+        <div class="card flex flex-col gap-5 p-5">
+          <div class="flex flex-wrap items-end gap-4">
+            {
+              [1, 2, 3, 4].map((n) => (
+                <div class="flex flex-col items-center gap-1">
+                  <div
+                    class="h-11 w-11 border"
+                    style={`border-radius: var(--radius-${n}); background: var(--color-bg-3); border-color: var(--color-line-strong);`}
+                  />
+                  <span class="mono text-[11px]" style="color: var(--color-ink-muted);">
+                    r{n}
+                  </span>
+                </div>
+              ))
+            }
+          </div>
+          <div class="flex flex-wrap items-end gap-2">
+            {
+              [1, 2, 3, 4, 6, 8, 12].map((n) => (
+                <div class="flex flex-col items-center gap-1">
+                  <div
+                    style={`width: var(--space-${n}); height: var(--space-${n}); background: var(--color-accent); opacity: 0.8;`}
+                  />
+                  <span class="mono text-[10px]" style="color: var(--color-ink-muted);">
+                    {n}
+                  </span>
+                </div>
+              ))
+            }
+          </div>
+          <p class="text-[13px]" style="color: var(--color-ink-soft);">
+            4-pt scale. Gutter 16 px on phone, 32–64 px on desktop. Sections 48–80 px apart.
+            Hairlines over boxes.
+          </p>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="motion" class="flex flex-col gap-4 scroll-mt-6">
+        <span class="eyebrow">Motion &amp; focus</span>
+        <h2>Only the caret moves.</h2>
+        <div class="card flex flex-col gap-3 p-5">
+          <p class="mono" style="font-size: var(--text-13); color: var(--color-ink-soft);">
+            --dur-1 120ms · --dur-2 200ms · --dur-3 320ms
+          </p>
+          <p class="mono" style="font-size: var(--text-13); color: var(--color-ink-soft);">
+            --ease-out cubic-bezier(.2,0,0,1)
+          </p>
+          <p style="font-size: var(--text-13); color: var(--color-ink-soft);">
+            The terminal caret (<span class="caret" aria-hidden="true"></span>) blinks; nothing else
+            animates by default. <code class="mono">prefers-reduced-motion</code> stops it — verified
+            by hand with devtools' "Emulate CSS prefers-reduced-motion: reduce".
+          </p>
+          <div class="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              class="btn-primary"
+              style="height: 44px; padding: 0 18px; border-radius: var(--radius-2); font-weight: 500;"
+            >
+              Rest
+            </button>
+            <button
+              type="button"
+              class="btn-primary"
+              style="height: 44px; padding: 0 18px; border-radius: var(--radius-2); font-weight: 500; filter: brightness(1.06);"
+            >
+              Hover
+            </button>
+            <button
+              type="button"
+              class="btn-primary focus-demo"
+              style="height: 44px; padding: 0 18px; border-radius: var(--radius-2); font-weight: 500; outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: var(--focus-ring-offset);"
+            >
+              Focus
+            </button>
+            <button
+              type="button"
+              class="btn-primary"
+              disabled
+              style="height: 44px; padding: 0 18px; border-radius: var(--radius-2); font-weight: 500; opacity: 0.45;"
+            >
+              Disabled
+            </button>
+          </div>
+          <p style="font-size: var(--text-12); color: var(--color-ink-muted);">
+            Touch targets ≥ 44 px on phone.
+          </p>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="components" class="flex flex-col gap-4 scroll-mt-6">
+        <span class="eyebrow">Components</span>
+        <h2>Primitives only — the MDX vocabulary lands in P07/P08.</h2>
+        <div class="card flex flex-col gap-3 p-5">
+          <div class="flex flex-wrap items-center gap-2" style="font-size: var(--text-13);">
+            <span
+              class="mono rounded-[var(--radius-1)] px-2.5 py-1"
+              style="background: var(--color-bg-3); color: var(--color-ink-soft);">hooks</span
+            >
+            <span
+              class="mono rounded-[var(--radius-1)] px-2.5 py-1"
+              style="background: var(--color-bg-3); color: var(--color-ink-soft);">mcp</span
+            >
+            <kbd
+              class="mono rounded-[var(--radius-1)] border px-1.5 py-0.5 text-[12px]"
+              style="border-color: var(--color-line-strong); color: var(--color-ink-soft);"
+              >Shift</kbd
+            >
+            <span style="color: var(--color-ink-muted);">+</span>
+            <kbd
+              class="mono rounded-[var(--radius-1)] border px-1.5 py-0.5 text-[12px]"
+              style="border-color: var(--color-line-strong); color: var(--color-ink-soft);">Tab</kbd
+            >
+          </div>
+        </div>
+        <div
+          class="callout-placeholder rounded-[var(--radius-3)] border border-dashed p-5"
+          style="border-color: var(--color-line-strong); color: var(--color-ink-muted);"
+        >
+          <p class="eyebrow mb-1">Pending</p>
+          <p style="font-size: var(--text-14);">
+            Callout (note / when-not-to-use / changed), CodeBlock with OS tabs and annotations, Quiz
+            option states and the DecisionTree SVG land in <strong>P07</strong>/<strong>P08</strong> —
+            see
+            <code class="mono">docs/design/CANVAS.md</code> §6. This section intentionally does not fake
+            them.
+          </p>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="transcript" class="flex flex-col gap-4 scroll-mt-6">
+        <span class="eyebrow">Transcript</span>
+        <h2>Real sessions, never fabricated.</h2>
+        <div
+          class="callout-placeholder rounded-[var(--radius-3)] border border-dashed p-5"
+          style="border-color: var(--color-line-strong); color: var(--color-ink-muted);"
+        >
+          <p class="eyebrow mb-1">Pending</p>
+          <p style="font-size: var(--text-14);">
+            The Transcript component (roles <span class="mono">›</span> prompt, <span class="mono"
+              >⏺</span
+            > tool,
+            <span class="mono">✓</span>/<span class="mono">✗</span> result — see
+            <code class="mono">docs/design/CANVAS.md</code> §6) lands in <strong>P07</strong>. Every
+            transcript shown by a lesson is captured from a real session (D093) — none is invented
+            here.
+          </p>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="a11y" class="flex flex-col gap-4 scroll-mt-6">
+        <span class="eyebrow">Accessibility</span>
+        <h2>WCAG 2.2 AA, checked with axe (D036).</h2>
+        <div
+          class="card flex flex-col gap-2 p-5"
+          style="font-size: var(--text-14); color: var(--color-ink-soft);"
+        >
+          <ul class="flex flex-col gap-2 pl-5" style="list-style: disc;">
+            <li>
+              Every text/surface pair meets ≥ 4.5∶1 (normal text) or ≥ 3∶1 (large text/UI) — see the <a
+                href="#tokens"
+                style="color: var(--color-ink); text-decoration: underline;">tokens</a
+              > contrast matrix, computed live in both themes.
+            </li>
+            <li>Touch targets are ≥ 44 px on phone (D035, mobile-first at 390 px).</li>
+            <li>
+              Every interactive element has a visible 2 px accent focus outline with a 2 px offset
+              on keyboard focus (never only on hover) — see <a
+                href="#motion"
+                style="color: var(--color-ink); text-decoration: underline;">motion</a
+              >.
+            </li>
+            <li>
+              The only default animation, the terminal caret blink, stops under <code class="mono"
+                >prefers-reduced-motion: reduce</code
+              >.
+            </li>
+            <li>
+              Body and UI text is Inter, code and terminal text is JetBrains Mono; both self-hosted
+              with latin + latin-ext subsets so Turkish diacritics (ş ğ ı İ ö ü ç) never fall back
+              to tofu (D031) — see <a
+                href="#type"
+                style="color: var(--color-ink); text-decoration: underline;">type</a
+              >.
+            </li>
+            <li>
+              Theme follows the system preference by default and a manual toggle overrides it
+              without a flash of the wrong theme (D030) — see <code class="mono"
+                >public/theme-init.js</code
+              >.
+            </li>
+            <li>
+              Checked with axe-core against <code class="mono">/design/</code> at 390 px and 1280 px —
+              see this plan's PR for the pasted result.
+            </li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="canvas" class="flex flex-col gap-4 scroll-mt-6">
+        <span class="eyebrow">Canvas</span>
+        <h2>The approved design canvas.</h2>
+        <div class="card flex flex-col gap-3 p-5 sm:flex-row sm:items-center">
+          <div
+            class="h-[100px] w-[160px] shrink-0 rounded-[var(--radius-2)] border p-2"
+            style="background: var(--color-bg-1); border-color: var(--color-line); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px;"
+          >
+            {
+              Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  style={`border-radius: 3px; background: ${i === 2 ? 'var(--color-accent)' : 'var(--color-bg-3)'};`}
+                />
+              ))
+            }
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <span style="font-size: var(--text-16);">Approved design canvas · 2026-09</span>
+            <p style="font-size: var(--text-13); color: var(--color-ink-soft); max-width: 60ch;">
+              Nine artboards: brand, tokens, landing 1280/390, lesson 1280/390 (dark and light),
+              components, this page. Generated from <code class="mono"
+                >docs/design/canvas-src/build.mjs</code
+              > — see
+              <code class="mono">docs/design/CANVAS.md</code>.
+            </p>
+            <a
+              href="https://claude.ai/code/artifact/ff75de02-137e-4821-9894-22a66afc049a"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="mono text-[12px]"
+              style="color: var(--color-accent-text);"
+            >
+              open the canvas →
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <section id="changelog" class="flex flex-col gap-3 pb-10 scroll-mt-6">
+        <span class="eyebrow">Changelog</span>
+        <h2>Design version 2026.09.1</h2>
+        <div
+          class="flex items-start gap-3 border-t pt-3"
+          style="border-color: var(--color-line); font-size: var(--text-14);"
+        >
+          <span
+            class="mono rounded-[var(--radius-1)] px-2.5 py-1"
+            style="background: var(--color-bg-3); color: var(--color-ink-soft);">2026.09.1</span
+          >
+          <span>
+            Tokens (dark + light, system default + manual toggle), self-hosted Inter + JetBrains
+            Mono (latin + latin-ext), dual-theme Shiki wiring, and this <code class="mono"
+              >/design</code
+            > skeleton — brand, tokens, type, space, motion, a11y and canvas sections live now; components
+            and transcript are placeholders for P07/P08.
+          </span>
+        </div>
+      </section>
+    </main>
+  </div>
 </Base>
+
+<style>
+  .card {
+    background: var(--color-bg-2);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-3);
+  }
+
+  .btn-primary {
+    background: var(--color-accent);
+    color: var(--color-accent-ink);
+    border: 1px solid transparent;
+  }
+
+  h2 {
+    font-size: var(--text-24);
+  }
+</style>
+
+<script>
+  // Reads every token value LIVE from computed style — this is what keeps
+  // the dump (and the contrast matrix) from ever drifting away from
+  // tokens.css. Re-runs whenever `data-theme` changes (the toggle) or the
+  // OS preference changes while "system" is selected, so the numbers on
+  // screen always match whichever theme is actually showing.
+  function parseColor(raw: string): [number, number, number] | null {
+    const value = raw.trim();
+    // 6-digit hex (#rrggbb).
+    const hex6 = value.match(/^#([0-9a-f]{6})$/i);
+    if (hex6) {
+      const n = parseInt(hex6[1], 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+    // 3-digit shorthand hex (#rgb) — the CSS minifier shortens six-digit values
+    // (e.g. pure white) to the three-digit form in the compiled stylesheet, so getComputedStyle can return
+    // either form depending on the token's actual value.
+    const hex3 = value.match(/^#([0-9a-f])([0-9a-f])([0-9a-f])$/i);
+    if (hex3) {
+      return [
+        parseInt(hex3[1] + hex3[1], 16),
+        parseInt(hex3[2] + hex3[2], 16),
+        parseInt(hex3[3] + hex3[3], 16),
+      ];
+    }
+    const rgb = value.match(/rgba?\(([^)]+)\)/i);
+    if (rgb) {
+      const parts = rgb[1].split(',').map((p) => parseFloat(p));
+      if (parts.length >= 3) return [parts[0], parts[1], parts[2]];
+    }
+    return null;
+  }
+
+  function relLuminance([r, g, b]: [number, number, number]): number {
+    const [R, G, B] = [r, g, b].map((v) => {
+      const s = v / 255;
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    });
+    return 0.2126 * R + 0.7152 * G + 0.0722 * B;
+  }
+
+  function contrastRatio(a: [number, number, number], b: [number, number, number]): number {
+    const [l1, l2] = [relLuminance(a), relLuminance(b)].sort((p, q) => q - p);
+    return (l1 + 0.05) / (l2 + 0.05);
+  }
+
+  function refresh() {
+    const styles = getComputedStyle(document.documentElement);
+
+    document.querySelectorAll<HTMLElement>('[data-token-value]').forEach((el) => {
+      const name = el.dataset.tokenValue;
+      if (!name) return;
+      el.textContent = styles.getPropertyValue(name).trim() || '—';
+    });
+
+    document.querySelectorAll<HTMLTableRowElement>('[data-contrast-row]').forEach((row) => {
+      const fgVar = row.dataset.fg;
+      const bgVar = row.dataset.bg;
+      const ratioCell = row.querySelector<HTMLElement>('[data-contrast-ratio]');
+      const resultCell = row.querySelector<HTMLElement>('[data-contrast-result]');
+      const dot = row.querySelector<HTMLElement>('[data-contrast-dot]');
+      if (!fgVar || !bgVar || !ratioCell || !resultCell || !dot) return;
+
+      const fg = parseColor(styles.getPropertyValue(fgVar));
+      const bg = parseColor(styles.getPropertyValue(bgVar));
+      if (!fg || !bg) {
+        ratioCell.textContent = '—';
+        resultCell.textContent = 'unknown';
+        dot.style.background = 'var(--color-ink-muted)';
+        return;
+      }
+
+      // The result is always readable as TEXT in `--color-ink` (verified
+      // AA pass against bg-0/bg-2 in both themes) — the dot is a
+      // decorative, non-text reinforcement only, not the only way the
+      // pass/fail state is conveyed (axe: color-contrast, WCAG 1.4.1).
+      const ratio = contrastRatio(fg, bg);
+      ratioCell.textContent = `${ratio.toFixed(1)}:1`;
+      resultCell.textContent = ratio >= 4.5 ? 'AA pass' : ratio >= 3 ? 'AA large only' : 'fail';
+      dot.style.background =
+        ratio >= 4.5
+          ? 'var(--color-success)'
+          : ratio >= 3
+            ? 'var(--color-warning)'
+            : 'var(--color-danger)';
+    });
+  }
+
+  refresh();
+
+  // The toggle sets data-theme synchronously on click; a MutationObserver
+  // catches that (and any other future writer of the same attribute).
+  new MutationObserver(refresh).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme'],
+  });
+
+  // Also catch a live OS-preference change while "system" is selected —
+  // theme-init.js/ThemeToggle already update data-theme in that case, but
+  // this covers the fallback no-JS-attribute state too.
+  window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', refresh);
+</script>

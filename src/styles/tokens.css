@@ -1,55 +1,167 @@
 /*
- * PLACEHOLDER token set.
+ * Design tokens (D029–D036, D092) — copied verbatim from the approved
+ * design canvas, `docs/design/CANVAS.md` §3 (P00), which is itself
+ * generated from `docs/design/canvas-src/build.mjs` (`sigil()`, `lockup()`,
+ * the `T.dark`/`T.light` palettes and the shared CSS block).
  *
- * These values are a minimal, functional dark/light palette so the scaffold
- * builds and is legible. Plan P05 replaces every value here with the
- * palette approved on the P00 design canvas — do not treat these colors as
- * final or reference them from a lesson.
+ * Theme-authoring rule: every token is declared on bare `:root` with its
+ * LIGHT value, then overridden — never defined ONLY — for dark, in two
+ * places:
+ *   1. `@media (prefers-color-scheme: dark)` guarded by
+ *      `:root:not([data-theme="light"])` — system preference, works with
+ *      no JS at all.
+ *   2. `:root[data-theme="dark"]` — the explicit toggle (see
+ *      `public/theme-init.js` and `ThemeToggle.astro`), which always wins
+ *      because it is a higher-specificity attribute selector applied after
+ *      the media-query block in source order.
+ * A token must never be defined only inside a dark block — that would
+ * leave no light value at all (breaks the light default) and no override
+ * for the explicit `data-theme="dark"` toggle path.
+ *
+ * `--color-*` are the only color custom properties in the codebase — no
+ * raw color literal may appear outside this file (enforced by
+ * scripts/check-raw-colors.mjs once P04 wires it in; see this plan's
+ * Handoff notes).
  */
 
 :root {
   color-scheme: light;
 
-  --cc-color-bg: #ffffff;
-  --cc-color-bg-raised: #f5f5f5;
-  --cc-color-fg: #16181d;
-  --cc-color-fg-muted: #52565f;
-  --cc-color-border: #d7dae0;
-  --cc-color-accent: #2563eb;
-  --cc-color-accent-fg: #ffffff;
-  --cc-color-link: #2563eb;
-  --cc-color-code-bg: #f5f5f5;
+  /* -- color: surfaces ---------------------------------------------------- */
+  --color-bg-0: #f6f3ec; /* page ground */
+  --color-bg-1: #fbf9f4; /* code, terminal */
+  --color-bg-2: #ffffff; /* cards */
+  --color-bg-3: #efece4; /* raised, chips */
 
-  --cc-font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --cc-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
-}
+  /* -- color: text ---------------------------------------------------------*/
+  --color-ink: #16181d; /* primary text */
+  --color-ink-soft: #4c4f57; /* secondary */
+  --color-ink-muted: #666a72; /* meta, placeholders */
 
-:root[data-theme='dark'] {
-  color-scheme: dark;
+  /* -- color: lines ----------------------------------------------------------*/
+  --color-line: rgba(22, 24, 29, 0.12); /* hairlines */
+  --color-line-strong: rgba(22, 24, 29, 0.36); /* input borders, ghost buttons */
 
-  --cc-color-bg: #0d0f13;
-  --cc-color-bg-raised: #16181d;
-  --cc-color-fg: #e6e8ec;
-  --cc-color-fg-muted: #9aa0ab;
-  --cc-color-border: #2b2f38;
-  --cc-color-accent: #60a5fa;
-  --cc-color-accent-fg: #0d0f13;
-  --cc-color-link: #60a5fa;
-  --cc-color-code-bg: #16181d;
+  /* -- color: accent + semantic states ----------------------------------------*/
+  --color-accent: #c99a12; /* primary CTA, sigil cell, progress */
+  --color-accent-ink: #1c1503; /* text on accent */
+  --color-accent-text: #7a5c00; /* gold used as text: code annotations, links */
+  --color-caret: #e63b2c; /* prompt caret, "Changed" callout */
+  --color-prompt: #1d6fa8; /* shell prompt glyph */
+  --color-success: #1f8f45;
+  --color-warning: #c4620b;
+  --color-danger: #d0362a;
+  --color-info: #1d7fb0;
+
+  /* -- type: scale 11 12 13 14 16 18 20 24 32 40 56 (rem, so user zoom still
+        works; px value noted per line) --------------------------------------*/
+  --text-11: 0.6875rem; /* 11px */
+  --text-12: 0.75rem; /* 12px — eyebrow, meta */
+  --text-13: 0.8125rem; /* 13px */
+  --text-14: 0.875rem; /* 14px — secondary */
+  --text-16: 1rem; /* 16px — body */
+  --text-18: 1.125rem; /* 18px */
+  --text-20: 1.25rem; /* 20px — h3 */
+  --text-24: 1.5rem; /* 24px */
+  --text-32: 2rem; /* 32px — h2 */
+  --text-40: 2.5rem; /* 40px */
+  --text-56: 3.5rem; /* 56px — h1 */
+  --leading-body: 1.5;
+  --measure-body: 65ch;
+  --tracking-eyebrow: 0.08em;
+  --tracking-academy: 0.18em;
+
+  /* -- fonts (named --font-family-* here, not --font-*, so app.css's
+        Tailwind @theme block can bridge `--font-sans`/`--font-mono` to
+        these without a self-referencing var() cycle) ------------------------*/
+  --font-family-sans:
+    'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-family-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* -- radii: 4 chips/tabs · 6 buttons/inputs · 10 cards/code · 16 dialogs -- */
+  --radius-1: 4px;
+  --radius-2: 6px;
+  --radius-3: 10px;
+  --radius-4: 16px;
+
+  /* -- spacing: 4-pt scale; gutter 16 phone / 32–64 desktop; sections 48–80 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px; /* phone gutter */
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px; /* desktop gutter (min) */
+  --space-10: 40px;
+  --space-12: 48px; /* section gap (min) */
+  --space-16: 64px; /* desktop gutter (max) */
+  --space-20: 80px; /* section gap (max) */
+
+  /* -- motion: only the caret blinks; prefers-reduced-motion stops it ------- */
+  --dur-1: 120ms;
+  --dur-2: 200ms;
+  --dur-3: 320ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+
+  /* -- focus: 2px accent outline, 2px offset -------------------------------- */
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --focus-ring-color: var(--color-accent);
+
+  /* -- targets: ≥44px on phone ------------------------------------------------*/
+  --tap-target: 44px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     color-scheme: dark;
 
-    --cc-color-bg: #0d0f13;
-    --cc-color-bg-raised: #16181d;
-    --cc-color-fg: #e6e8ec;
-    --cc-color-fg-muted: #9aa0ab;
-    --cc-color-border: #2b2f38;
-    --cc-color-accent: #60a5fa;
-    --cc-color-accent-fg: #0d0f13;
-    --cc-color-link: #60a5fa;
-    --cc-color-code-bg: #16181d;
+    --color-bg-0: #0b0d12;
+    --color-bg-1: #11141b;
+    --color-bg-2: #171b24;
+    --color-bg-3: #1f2430;
+
+    --color-ink: #efe9dc;
+    --color-ink-soft: #b9b3a6;
+    --color-ink-muted: #958f84;
+
+    --color-line: rgba(239, 233, 220, 0.1);
+    --color-line-strong: rgba(239, 233, 220, 0.32);
+
+    --color-accent: #e6b731;
+    --color-accent-ink: #22190a;
+    --color-accent-text: #e6b731;
+    --color-caret: #ff4d3d;
+    --color-prompt: #8fd3ff;
+    --color-success: #61cb7c;
+    --color-warning: #fe8c2c;
+    --color-danger: #f75e51;
+    --color-info: #6ac5e8;
   }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --color-bg-0: #0b0d12;
+  --color-bg-1: #11141b;
+  --color-bg-2: #171b24;
+  --color-bg-3: #1f2430;
+
+  --color-ink: #efe9dc;
+  --color-ink-soft: #b9b3a6;
+  --color-ink-muted: #958f84;
+
+  --color-line: rgba(239, 233, 220, 0.1);
+  --color-line-strong: rgba(239, 233, 220, 0.32);
+
+  --color-accent: #e6b731;
+  --color-accent-ink: #22190a;
+  --color-accent-text: #e6b731;
+  --color-caret: #ff4d3d;
+  --color-prompt: #8fd3ff;
+  --color-success: #61cb7c;
+  --color-warning: #fe8c2c;
+  --color-danger: #f75e51;
+  --color-info: #6ac5e8;
 }

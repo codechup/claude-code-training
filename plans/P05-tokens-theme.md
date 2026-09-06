@@ -2,8 +2,8 @@
 id: P05
 title: Tokens and theme from the approved canvas
 milestone: M0
-status: todo
-owner: null
+status: review
+owner: sonnet-p05-2026-09-06
 branch: plan/05-tokens-theme
 model_hint: sonnet
 effort_hint: medium
@@ -15,8 +15,10 @@ owned_paths:
   - src/pages/design/**
 shared_paths: []
 estimate: M
-updated_at: 2026-09-06T00:00:00Z
-open_questions: []
+updated_at: 2026-09-06T19:37:26Z
+open_questions:
+  - "docs/design/CANVAS.md §6 says P05 implements the sigil and lockup from build.mjs, but this plan's own owned_paths does not list src/components/brand/** (nor does public/** beyond the single file public/theme-init.js). Per the conservative-reading rule (plans/README.md §8), P05 did NOT create src/components/brand/{Sigil,Lockup}.astro or edit public/favicon.svg — it inlined the exact build.mjs sigil()/lockup() geometry directly into src/pages/design/index.astro's brand section instead (a page-local, non-reusable copy). A follow-up plan (P06, which owns src/layouts/** and the header/footer chrome that will need the sigil/lockup, or a new small plan) should own extracting src/components/brand/Sigil.astro and Lockup.astro and updating public/favicon.svg to the sigil on a bg-0 rounded square. Whoever picks this up should reuse the exact cell coordinates in src/pages/design/index.astro's `sigil()` helper (24-unit grid, cell 6, gap 2, margin 1) so the design page and the real component never drift."
+  - "scripts/check-raw-colors.mjs does not exist yet and scripts/** is outside P05's owned_paths, so P05 could not add it. tokens.css documents the no-raw-colour rule in a comment and P05 self-checked manually (grep for hex/rgb literals outside src/styles/tokens.css found none), but there is no automated CI gate for it yet. P04 (continuous integration pipeline) owns scripts/** — flagging this so P04 (or a small follow-up) adds scripts/check-raw-colors.mjs and wires it into `npm run lint`."
 ---
 
 ## Goal
@@ -79,4 +81,36 @@ A reviewer opens `/design/` at 390 and 1280, toggles the theme three ways (syste
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+**What changed**
+
+- `src/styles/tokens.css`: full replacement. Every token from `docs/design/CANVAS.md` §3 (18 colors) plus type scale (11/12/13/14/16/18/20/24/32/40/56, as rem), radii (4/6/10/16), 4-pt spacing scale (4→80), motion (`--dur-1/2/3`, `--ease-out`) and focus (2px/2px, accent) as `--color-*`/`--text-*`/`--radius-*`/`--space-*`/`--dur-*`/`--ease-out`/`--focus-ring-*` custom properties. Light values on bare `:root`, dark values overridden in `@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {...} }` and in `:root[data-theme="dark"] {...}` — literally per this plan's own Scope wording (light on `:root`, dark as the override), not the dark-on-`:root` phrasing in some paraphrases of this plan; both blocks are byte-identical for the color tokens by construction.
+- `src/styles/fonts.css`: left as the P01 stub wrote it — already correct (verified against the actual `@font-face` `unicode-range` blocks in `node_modules/@fontsource-variable/inter` and `@fontsource/jetbrains-mono`: the base + "latin-ext" ranges together cover ş ğ ı İ ö ü ç).
+- `src/styles/app.css`: full replacement. Imports tokens/fonts/shiki, a minimal Tailwind v4 `@theme` bridge, and base resets/typography wired to the tokens (headings, `.eyebrow`, `.mono`, `.caret` with a blink keyframe stopped under `prefers-reduced-motion`, focus-visible ring).
+- `src/styles/shiki.css` (new): dual-theme Shiki wiring for `defaultColor: false` (`--shiki-light`/`--shiki-dark` per the two-block pattern), chrome (background/border/radius/font) from `--color-bg-1`/`--color-line`/`--radius-3`/`--font-family-mono`, not from Shiki's own theme background.
+- `public/theme-init.js`: kept the P01 logic (already correct) and expanded the comment to document the three-state contract with `ThemeToggle.astro` (`'light'|'dark'` always win; `'system'` or anything else/missing resolves via `matchMedia` — `tokens.css` has no `[data-theme="system"]` block, this file is where "system" always gets resolved to a concrete value before paint).
+- `src/components/shell/ThemeToggle.astro`: full replacement — three real `<button>`s (system/dark/light, not one cycling button) with `aria-pressed`, `role="group"`, writes `localStorage['cc:theme']`, live-updates `data-theme`, and follows OS changes live while "system" is selected.
+- `src/pages/design/index.astro`: full replacement. Sticky TOC (brand, tokens, type, space, motion, components, transcript, a11y, canvas, changelog — exact order from `docs/design/CANVAS.md` §6/`DesignPage.dc.html`), principles quote, live token swatches + a live 6-pair contrast matrix (both read from `getComputedStyle(document.documentElement)` at view time via a client `<script>`, re-run on `data-theme` mutation and on OS-preference change — never a hand-typed value, so it cannot drift from `tokens.css`), type scale + Turkish glyph check (rendered in both Inter and JetBrains Mono), spacing/radii swatches, motion tokens + button rest/hover/focus/disabled states, `components`/`transcript` sections left as explicit "pending — lands in P07/P08" placeholders (per this plan's non-goals — no fake Callout/CodeBlock/Quiz/Transcript), a11y rules list, a link to the canvas artifact, and a changelog entry `2026.09.1`.
+
+**Decisions taken**
+
+- Light-on-`:root`, dark-as-override (not the reverse) — followed this plan's own literal Scope wording over a paraphrase that said the opposite; CSS behavior is identical either way once `theme-init.js` resolves `data-theme` before paint, so this is a documentation-fidelity choice, not a product one.
+- Tailwind v4 `@theme` bridge only re-exposes the *old* placeholder names still used by other-plans' already-merged files (`bg-bg`, `text-fg`, `text-fg-muted`, `border-border`, `text-link`, `font-mono`/`font-sans` — see `Header.astro`, `Footer.astro`, `LangSwitch.astro`, `Base.astro`, `404.astro`, `src/pages/[lang]/**`, all outside `owned_paths`), each mapped to a *differently-named* canvas token (e.g. `--color-bg: var(--color-bg-0)`). Deliberately did **not** also declare `--color-bg-0: var(--color-bg-0)` etc. for the canvas names themselves — that is a self-referencing CSS custom property (a real cycle, invalid at computed-value time; verified empirically by inspecting the compiled `dist/_astro/*.css`, where Tailwind's `@theme` output lives in `@layer theme` and tokens.css's plain `:root` — unlayered — correctly wins the cascade). Canvas-named tokens (`--color-bg-0`, `--color-ink`, …) are used directly via `var()` everywhere including `/design/`; nothing needed a same-named Tailwind utility class.
+- `--font-sans`/`--font-mono` in tokens.css would have collided with Tailwind's own default theme keys of the same name, so the raw properties are named `--font-family-sans`/`--font-family-mono` in tokens.css, bridged to Tailwind's `--font-sans`/`--font-mono` in `app.css`'s `@theme` block (safe: different names, no cycle).
+- Brand (sigil/lockup) and `public/favicon.svg`: **not built as reusable components** — see `open_questions` above; inlined once, page-locally, in `/design/`'s brand section instead, using the exact cell geometry from `docs/design/canvas-src/build.mjs`'s `sigil()` (with `currentColor` for ink cells and `var(--color-accent)` for the gold cell, so one markup works in both themes without a per-theme literal export).
+- The "components"/"transcript" TOC sections show real button/chip/kbd primitives (matching `DesignPage.dc.html`'s own "Components · every state" — rest/hover/focus/disabled) but explicitly mark the full MDX vocabulary (Callout, CodeBlock, Quiz, Transcript, DecisionTree) as pending for P07/P08, per this plan's non-goals.
+- The tokens-section copy originally claimed all 6 contrast pairs must hit ≥4.5:1; corrected after computing real ratios — `caret` (prompt caret / "Changed" callout border, a large glyph/UI marker, not paragraph text) is 3.8:1 in the light theme, clearing only the ≥3:1 large-text/UI floor, not ≥4.5:1. This is inherited verbatim from the approved `CANVAS.md` §3 values (not something this plan changed) and matches `build.mjs`'s own two-tier "AA pass"/"AA large only" badge logic — flagged transparently on the page and here rather than silently rounded up.
+
+**Verification performed (real output, see PR body for full transcripts)**
+
+- `npm run typecheck && npm run lint && npm run gate && npm test && npm run build` all green.
+- `node tools/plan/cli.ts check` → `ok: 48 plans, frontmatter valid, DAG acyclic, no owned_paths overlap, STATE.md fresh`.
+- Playwright (chromium, already a devDependency) against `astro preview`'s static output, both viewports (390/1280) × both `colorScheme` preferences: `document.documentElement.scrollWidth <= clientWidth` in all four combinations (no horizontal overflow).
+- No-FOUC: fresh context, `colorScheme: 'dark'`, no stored key → `data-theme="dark"` and the correct dark `body` background color are already present at first evaluated paint (no client-side flash observed). Explicit override (clicking "Light") persists across `page.reload()` even though the OS preference stayed dark; switching back to "System" restores OS-driven behavior.
+- Live contrast matrix cross-checked against an independent Node computation of the same WCAG relative-luminance formula from `build.mjs`: dark theme 16.1/8.3/5.4/9.2/9.8/5.9 (:1), light theme 16.0/8.2/5.4/7.0/5.9/3.8 (:1) — all pass ≥4.5:1 except light-theme `caret` (3.8, ≥3:1 only — see Decisions above).
+- `@axe-core/playwright` against `/design/` at 390px and 1280px: 0 violations at both (42 and 41 passing checks respectively) after fixing three issues this plan introduced: two inline links relying on color alone inside a sentence (`link-in-text-block` — added `text-decoration: underline` and switched to `--color-ink`), a horizontally-scrollable contrast-table wrapper with no keyboard access (`scrollable-region-focusable` — added `tabindex="0" role="region" aria-label="…"`), and the AA-result badge text using `--color-success`/`--color-warning` directly as small text on `bg-0` in the light theme, which is below 4.5:1 (`color-contrast` — result text now always renders in `--color-ink`, the semantic color is now a decorative, non-text status dot only).
+- Turkish glyph check: `Değişiklik: çşğıöü ÇŞĞİÖÜ — ışık, güneş, hüzün.` renders in both Inter and JetBrains Mono on `/design/` (confirmed present, no tofu, in the built `dist/design/index.html`).
+
+**Follow-ups / blockers**
+
+- See `open_questions` above: reusable `src/components/brand/{Sigil,Lockup}.astro` + `public/favicon.svg` update (candidate owner: P06 or a new small plan), and `scripts/check-raw-colors.mjs` + wiring into `npm run lint` (candidate owner: P04).
+- Not blocked. No changes needed to `docs/design/CANVAS.md` (not in this plan's `shared_paths`) or `src/layouts/Base.astro` (P06's file; already wires `theme-init.js` and `favicon.svg` correctly, no change requested).

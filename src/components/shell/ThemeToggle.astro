@@ -1,32 +1,129 @@
 ---
-// Toggles data-theme on <html> and persists the choice to
-// localStorage["cc:theme"]. public/theme-init.js reads the same key before
-// paint on every subsequent load.
+// Three-state theme control (D030): system / dark / light. Writes the
+// chosen state verbatim to localStorage["cc:theme"] — public/theme-init.js
+// reads the same key before paint on every subsequent load and resolves
+// "system" (or anything unset/invalid) to the OS preference. The client
+// script below does the same resolution live, and re-resolves whenever
+// the OS preference changes while "system" is selected and the page
+// stays open.
+//
+// Three real <button> elements — not a single cycling button — so every
+// state is independently reachable by keyboard (Tab + Enter/Space) and
+// its current selection is exposed to assistive tech via
+// `aria-pressed`, not just a visual style.
+const options = [
+  { value: 'system', label: 'System', glyph: '◐' },
+  { value: 'dark', label: 'Dark', glyph: '☽' },
+  { value: 'light', label: 'Light', glyph: '☀' },
+] as const;
 ---
 
-<button
+<div
   id="cc-theme-toggle"
-  type="button"
-  aria-label="Toggle color theme"
-  class="rounded border border-border px-2 py-1 text-sm"
+  role="group"
+  aria-label="Color theme"
+  class="mono inline-flex items-center gap-1 rounded-[var(--radius-2)] border p-1"
+  style={`border-color: var(--color-line-strong); background: var(--color-bg-2);`}
 >
-  <span aria-hidden="true">&#9788;/&#9789;</span>
-</button>
+  {
+    options.map((opt) => (
+      <button
+        type="button"
+        data-theme-choice={opt.value}
+        aria-pressed="false"
+        title={opt.label}
+        class="inline-flex h-8 min-w-8 items-center justify-center gap-1 rounded-[var(--radius-1)] px-2 text-[13px]"
+      >
+        <span aria-hidden="true">{opt.glyph}</span>
+        <span class="sr-only">{opt.label}</span>
+      </button>
+    ))
+  }
+</div>
+
+<style>
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  #cc-theme-toggle button {
+    color: var(--color-ink-soft);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+  }
+
+  #cc-theme-toggle button[aria-pressed='true'] {
+    color: var(--color-ink);
+    background: var(--color-bg-3);
+  }
+</style>
 
 <script>
   const STORAGE_KEY = 'cc:theme';
-  const button = document.getElementById('cc-theme-toggle');
+  const root = document.documentElement;
+  const group = document.getElementById('cc-theme-toggle');
+  const buttons = group
+    ? Array.from(group.querySelectorAll<HTMLButtonElement>('button[data-theme-choice]'))
+    : [];
+  const media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
-  button?.addEventListener('click', () => {
-    const root = document.documentElement;
-    const current = root.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
-    const next = current === 'dark' ? 'light' : 'dark';
-    root.setAttribute('data-theme', next);
+  function readStored(): 'system' | 'dark' | 'light' {
     try {
-      window.localStorage.setItem(STORAGE_KEY, next);
+      const stored = window.localStorage.getItem(STORAGE_KEY);
+      if (stored === 'dark' || stored === 'light') return stored;
     } catch {
-      // localStorage may be unavailable (private mode, disabled storage) — the
-      // toggle still works for the current page load, it just won't persist.
+      // localStorage unavailable (private browsing, disabled storage) —
+      // fall through to "system".
+    }
+    return 'system';
+  }
+
+  function resolve(choice: 'system' | 'dark' | 'light'): 'dark' | 'light' {
+    if (choice === 'dark' || choice === 'light') return choice;
+    return media?.matches ? 'dark' : 'light';
+  }
+
+  function applyUi(choice: 'system' | 'dark' | 'light') {
+    for (const button of buttons) {
+      button.setAttribute('aria-pressed', String(button.dataset.themeChoice === choice));
+    }
+  }
+
+  function setChoice(choice: 'system' | 'dark' | 'light') {
+    root.setAttribute('data-theme', resolve(choice));
+    applyUi(choice);
+    try {
+      window.localStorage.setItem(STORAGE_KEY, choice);
+    } catch {
+      // The toggle still works for the current page load; it just will
+      // not persist across a reload.
+    }
+  }
+
+  // Reflect the choice theme-init.js already resolved before paint.
+  applyUi(readStored());
+
+  for (const button of buttons) {
+    button.addEventListener('click', () => {
+      const choice = button.dataset.themeChoice as 'system' | 'dark' | 'light';
+      setChoice(choice);
+    });
+  }
+
+  // While "system" is selected, follow live OS-preference changes without
+  // requiring a reload.
+  media?.addEventListener?.('change', () => {
+    if (readStored() === 'system') {
+      root.setAttribute('data-theme', resolve('system'));
     }
   });
 </script>

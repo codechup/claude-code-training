@@ -1,0 +1,66 @@
+/*
+ * Dual-theme Shiki output (astro.config.mjs sets
+ * `markdown.shikiConfig.themes = { light: 'github-light', dark:
+ * 'github-dark-dimmed' }` with `defaultColor: false`). With
+ * `defaultColor: false`, Shiki does NOT pick one theme's colors inline —
+ * every highlighted token instead carries BOTH sets of colors as CSS
+ * custom properties (`--shiki-light[-bg]`, `--shiki-dark[-bg]`), and it is
+ * the page's job to say which one is currently showing. That selection
+ * follows the exact same two-block pattern as tokens.css (system
+ * preference, then the explicit `data-theme` toggle winning last) so code
+ * blocks always match the rest of the site's theme, never Shiki's own
+ * class-based switch.
+ *
+ * The block chrome (background, border, radius, font, padding) comes from
+ * our own tokens — `--color-bg-1` ("code, terminal"), `--color-line`,
+ * `--radius-3` — not from Shiki's theme background, so a code block reads
+ * as one of our terminal frames regardless of which Shiki theme lit its
+ * syntax colors.
+ */
+
+.astro-code,
+.astro-code span {
+  color: var(--shiki-light);
+  background-color: transparent;
+  font-style: var(--shiki-light-font-style, normal);
+  font-weight: var(--shiki-light-font-weight, normal);
+  text-decoration: var(--shiki-light-text-decoration, none);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .astro-code,
+  :root:not([data-theme='light']) .astro-code span {
+    color: var(--shiki-dark);
+    font-style: var(--shiki-dark-font-style, normal);
+    font-weight: var(--shiki-dark-font-weight, normal);
+    text-decoration: var(--shiki-dark-text-decoration, none);
+  }
+}
+
+:root[data-theme='dark'] .astro-code,
+:root[data-theme='dark'] .astro-code span {
+  color: var(--shiki-dark);
+  font-style: var(--shiki-dark-font-style, normal);
+  font-weight: var(--shiki-dark-font-weight, normal);
+  text-decoration: var(--shiki-dark-text-decoration, none);
+}
+
+.astro-code {
+  display: block;
+  margin: 0;
+  padding: var(--space-4);
+  overflow-x: auto;
+  background-color: var(--color-bg-1);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-3);
+  font-family: var(--font-family-mono);
+  font-size: var(--text-13);
+  line-height: 1.6;
+}
+
+.astro-code code {
+  font-family: inherit;
+  font-size: inherit;
+  background: none;
+  padding: 0;
+}
