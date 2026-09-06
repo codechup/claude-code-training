@@ -1,0 +1,79 @@
+---
+// The right-hand "On this page" rail (D061), per `Lesson1280.dc.html`'s
+// `aside.toc`: 200–220px, mono eyebrow, hairline left border, gold border on
+// the current entry.
+//
+// Headings come from Astro's `render(entry)` — it auto-generates the `id`
+// attributes the anchors point at, so nothing here has to parse the MDX.
+import { t } from '../../lib/i18n/ui.ts';
+
+export interface TocHeading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface Props {
+  lang: string;
+  headings: TocHeading[];
+  /** Deepest heading level to list (default: h3). */
+  maxDepth?: number;
+}
+
+const { lang, headings, maxDepth = 3 } = Astro.props;
+const strings = t(lang);
+const items = headings.filter((h) => h.depth >= 2 && h.depth <= maxDepth);
+---
+
+{
+  items.length > 0 && (
+    <nav class="cc-toc" aria-labelledby="cc-toc-title">
+      <span class="eyebrow" id="cc-toc-title">
+        {strings.onThisPage}
+      </span>
+      <ul>
+        {items.map((heading) => (
+          <li data-depth={heading.depth}>
+            <a href={`#${heading.slug}`}>{heading.text}</a>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  )
+}
+
+<style>
+  .cc-toc {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-6) 0 0 var(--space-5);
+  }
+
+  .cc-toc ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .cc-toc a {
+    display: block;
+    padding: 4px 0 4px 12px;
+    border-left: 1px solid var(--color-line);
+    font-size: var(--text-13);
+    color: var(--color-ink-muted);
+    text-decoration: none;
+  }
+
+  .cc-toc a:hover {
+    color: var(--color-ink);
+    border-left-color: var(--color-accent);
+  }
+
+  .cc-toc li[data-depth='3'] a {
+    padding-left: 24px;
+  }
+</style>

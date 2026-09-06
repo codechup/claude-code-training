@@ -1,0 +1,184 @@
+---
+// The progress bar drawn on the landing level cards (`Main.dc.html`) and at
+// the foot of a lesson next to "2 / 7 in m07" (`Lesson1280.dc.html`).
+//
+// Progress lives entirely in `localStorage` — there are no accounts (D020) —
+// so the server renders the empty state and a hoisted script (bundled by
+// Astro into an external file: CSP-clean, no inline script body) fills it in
+// on load. `src/lib/progress.ts` owns the storage contract.
+import { t } from '../../lib/i18n/ui.ts';
+import { levelAccentStyle } from '../../lib/levels.ts';
+
+interface Props {
+  lang: string;
+  /** Lesson entry ids this bar measures. */
+  ids: string[];
+  /** "42%" (level cards) or "2 / 7 in m07" (lesson foot). */
+  labelMode?: 'percent' | 'count';
+  /** Short module id used by the count label, e.g. "m07". */
+  moduleId?: string;
+  /** When set, renders a "mark as done" toggle for this lesson. */
+  lessonId?: string;
+  /** Tints the fill with the level colour; omit for the accent default. */
+  level?: number | null;
+}
+
+const { lang, ids, labelMode = 'percent', moduleId = '', lessonId, level } = Astro.props;
+const strings = t(lang);
+
+// `{done}` / `{total}` placeholders so the client script can re-render the
+// label without knowing anything about the locale.
+const template = labelMode === 'count' ? strings.inModule('{done}', '{total}', moduleId) : '{pct}%';
+
+const initial =
+  labelMode === 'count'
+    ? template.replace('{done}', '0').replace('{total}', String(ids.length))
+    : '0%';
+
+const doneLabel = lang === 'tr' ? 'Tamamlandı olarak işaretle' : 'Mark as done';
+---
+
+<div class="cc-progress-row">
+  <div
+    class="cc-progress"
+    data-cc-progress
+    data-lang={lang}
+    data-ids={JSON.stringify(ids)}
+    data-label-template={template}
+    role="progressbar"
+    aria-valuemin="0"
+    aria-valuemax={ids.length}
+    aria-valuenow="0"
+    aria-label={strings.progressNote}
+  >
+    <div class="cc-progress-fill" style={`width: 0%; ${levelAccentStyle(level ?? null)}`}></div>
+  </div>
+  <span class="mono muted cc-progress-label" data-cc-progress-label>{initial}</span>
+  {
+    lessonId && (
+      <button
+        type="button"
+        class="mono cc-progress-toggle"
+        data-cc-progress-toggle
+        data-lang={lang}
+        data-lesson-id={lessonId}
+        aria-pressed="false"
+      >
+        <span data-cc-progress-toggle-label>{doneLabel}</span>
+      </button>
+    )
+  }
+</div>
+
+<style>
+  .cc-progress-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .cc-progress {
+    flex: 1 1 120px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--color-bg-3);
+    overflow: hidden;
+  }
+
+  .cc-progress-fill {
+    height: 100%;
+    transition: width var(--dur-2) var(--ease-out);
+  }
+
+  .cc-progress-label {
+    font-size: var(--text-12);
+  }
+
+  .cc-progress-toggle {
+    min-height: var(--tap-target);
+    padding: 0 var(--space-3);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-2);
+    background: transparent;
+    color: var(--color-ink);
+    font-size: var(--text-12);
+    cursor: pointer;
+  }
+
+  .cc-progress-toggle[aria-pressed='true'] {
+    background: var(--color-bg-3);
+    color: var(--color-accent-text);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cc-progress-fill {
+      transition: none;
+    }
+  }
+</style>
+
+<script>
+  import { completedCount, isComplete, toggleComplete } from '../../lib/progress.ts';
+
+  function render(): void {
+    for (const bar of document.querySelectorAll<HTMLElement>('[data-cc-progress]')) {
+      let ids: string[] = [];
+      try {
+        const parsed: unknown = JSON.parse(bar.dataset.ids ?? '[]');
+        if (Array.isArray(parsed)) ids = parsed.filter((v): v is string => typeof v === 'string');
+      } catch {
+        ids = [];
+      }
+      const lang = bar.dataset.lang ?? 'en';
+      const done = completedCount(lang, ids);
+      const total = ids.length;
+      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+      const fill = bar.querySelector<HTMLElement>('.cc-progress-fill');
+      if (fill) fill.style.width = `${pct}%`;
+      bar.setAttribute('aria-valuenow', String(done));
+
+      const label = bar.parentElement?.querySelector<HTMLElement>('[data-cc-progress-label]');
+      const template = bar.dataset.labelTemplate ?? '{pct}%';
+      if (label) {
+        label.textContent = template
+          .replace('{done}', String(done))
+          .replace('{total}', String(total))
+          .replace('{pct}', String(pct));
+      }
+    }
+  }
+
+  function syncToggles(): void {
+    for (const button of document.querySelectorAll<HTMLButtonElement>(
+      '[data-cc-progress-toggle]',
+    )) {
+      const lang = button.dataset.lang ?? 'en';
+      const lessonId = button.dataset.lessonId ?? '';
+      const done = isComplete(lang, lessonId);
+      button.setAttribute('aria-pressed', String(done));
+      const label = button.querySelector<HTMLElement>('[data-cc-progress-toggle-label]');
+      if (label) {
+        label.textContent = done
+          ? lang === 'tr'
+            ? 'Tamamlandı'
+            : 'Done'
+          : lang === 'tr'
+            ? 'Tamamlandı olarak işaretle'
+            : 'Mark as done';
+      }
+    }
+  }
+
+  for (const button of document.querySelectorAll<HTMLButtonElement>('[data-cc-progress-toggle]')) {
+    button.addEventListener('click', () => {
+      toggleComplete(button.dataset.lang ?? 'en', button.dataset.lessonId ?? '');
+      syncToggles();
+      render();
+    });
+  }
+
+  render();
+  syncToggles();
+</script>

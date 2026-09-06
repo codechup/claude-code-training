@@ -1,9 +1,23 @@
 ---
+// The lesson page (`/[lang]/[level]/[module]/[slug]/`), composed exactly as
+// `docs/design/canvas-out/Lesson1280.dc.html` draws it: meta header, MDX
+// body, Sources, helpful/edit row, prev/next + module progress; sidebar tree
+// and "On this page" rail come from the Lesson layout.
+//
+// Draft lessons get no route at all (D015 parity is a FILE-level rule, not a
+// page-level one): `getStaticPaths` filters them, so a `draft: true` TR twin
+// simply has no page until its translation wave lands, and `LangSwitch`
+// renders "Türkçesi hazırlanıyor" instead of linking into a 404.
 import type { InferGetStaticParamsType } from 'astro';
-import { getCollection, render } from 'astro:content';
-import Base from '../../../../../layouts/Base.astro';
-import Header from '../../../../../components/shell/Header.astro';
-import Footer from '../../../../../components/shell/Footer.astro';
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import LessonLayout from '../../../../../layouts/Lesson.astro';
+import LessonMeta from '../../../../../components/lesson/LessonMeta.astro';
+import PrevNext from '../../../../../components/lesson/PrevNext.astro';
+import ProgressBar from '../../../../../components/lesson/ProgressBar.astro';
+import { buildNav, lessonNeighbours } from '../../../../../lib/nav.ts';
+import { t } from '../../../../../lib/i18n/ui.ts';
+import { editUrl } from '../../../../../lib/repo.ts';
+import { levelBadgeStyle } from '../../../../../lib/levels.ts';
 
 export async function getStaticPaths() {
   const lessons = await getCollection('lessons', ({ data }) => !data.draft);
@@ -15,44 +29,264 @@ export async function getStaticPaths() {
 
 type Params = InferGetStaticParamsType<typeof getStaticPaths>;
 const { lang, level, module, slug } = Astro.params as Params;
-const { entry } = Astro.props;
-const { Content } = await render(entry);
+const { entry } = Astro.props as { entry: CollectionEntry<'lessons'> };
+
+const sections = await getCollection('sections');
+const allLessons = await getCollection('lessons');
+const tree = buildNav(lang, sections, allLessons);
+const neighbours = lessonNeighbours(tree, entry.id);
+
+const strings = t(lang);
+const path = `/${lang}/${level}/${module}/${slug}/`;
+
+// The sibling-language lesson only counts as "available" when it exists AND
+// is not a draft — this is the build-time draft set LangSwitch consumes.
+const other = lang === 'en' ? 'tr' : 'en';
+const twin = allLessons.find((l) => l.id === `${other}/${level}/${module}/${slug}`);
+const altPath = twin && !twin.data.draft ? `/${other}/${level}/${module}/${slug}/` : null;
+
+const { Content, headings } = await render(entry);
+
+const isPlaceholder = entry.data.tags.includes('placeholder');
+const levelNumber = neighbours?.level.number ?? entry.data.level;
+const editHref = editUrl(entry.filePath ?? `content/${entry.id}.mdx`);
 ---
 
-<Base
-  title={`${entry.data.title} — CodeChup Claude Code Academy`}
-  description={entry.data.description}
+<LessonLayout
   lang={lang}
-  path={`/${lang}/${level}/${module}/${slug}/`}
-  alternates={[
-    { lang: 'en', path: `/en/${level}/${module}/${slug}/` },
-    { lang: 'tr', path: `/tr/${level}/${module}/${slug}/` },
-    { lang: 'x-default', path: `/en/${level}/${module}/${slug}/` },
+  title={`${entry.data.title} — ${strings.siteName}`}
+  description={entry.data.description}
+  path={path}
+  altPath={altPath}
+  tree={tree}
+  activeLevel={level}
+  activeModule={module}
+  activeLessonId={entry.id}
+  headings={headings}
+  crumbs={[
+    {
+      label: levelNumber ? `L${levelNumber}` : (neighbours?.level.title ?? level),
+      href: `/${lang}/${level}/`,
+    },
+    {
+      label: `${neighbours?.module.shortId ?? module} ${neighbours?.module.title ?? ''}`.trim(),
+      href: `/${lang}/${level}/${module}/`,
+    },
+    { label: entry.data.title },
   ]}
 >
-  <Header lang={lang} />
-  <main class="prose mx-auto max-w-3xl px-4 py-16">
-    <h1 class="font-mono text-3xl font-bold">{entry.data.title}</h1>
-    <p class="text-fg-muted">
-      {entry.data.duration_min} min · {entry.data.difficulty} · verified against Claude Code {
-        entry.data.verified_version
-      }
-    </p>
+  {
+    isPlaceholder && (
+      <aside class="cc-placeholder" role="note">
+        <span class="mono cc-placeholder-badge" style={levelBadgeStyle(null)}>
+          {strings.placeholderBadge}
+        </span>
+        <p>{strings.placeholderNote}</p>
+      </aside>
+    )
+  }
+
+  <LessonMeta
+    lang={lang}
+    title={entry.data.title}
+    level={levelNumber}
+    moduleShortId={neighbours?.module.shortId ?? module}
+    moduleTitle={neighbours?.module.title ?? ''}
+    position={neighbours?.position ?? 1}
+    moduleTotal={neighbours?.moduleTotal ?? 1}
+    durationMin={entry.data.duration_min}
+    difficulty={entry.data.difficulty}
+    tags={entry.data.tags}
+    updated={entry.data.updated}
+    verifiedVersion={entry.data.verified_version}
+  />
+
+  {
+    /*
+    The MDX body. P07 (Callout, CodeBlock, OSTabs, Transcript, Sources,
+    WhenNotToUse, Lab) and P08 (Quiz, DecisionTree, Helpful, Giscus,
+    YouTubeCard) register their components for MDX; nothing here fakes them.
+  */
+  }
+  <article class="cc-body">
     <Content />
-    <hr class="border-border" />
-    <h2 class="font-mono text-xl font-bold">Sources</h2>
-    <ul>
-      {
-        entry.data.sources.map((source) => (
-          <li>
-            <a class="text-link underline" href={source.url}>
-              {source.title}
-            </a>{' '}
-            ({source.type})
-          </li>
-        ))
-      }
-    </ul>
-  </main>
-  <Footer lang={lang} />
-</Base>
+  </article>
+
+  {
+    /*
+    Sources list — a plain, honest rendering of the frontmatter (D041). P07's
+    `<Sources />` component replaces this block wholesale; keep the heading
+    text and the `verified_at` date when it does.
+  */
+  }
+  {
+    entry.data.sources.length > 0 && (
+      <section class="cc-sources" aria-labelledby="sources-heading">
+        <h2 id="sources-heading">{strings.sources}</h2>
+        <ul>
+          {entry.data.sources.map((source) => (
+            <li>
+              <span class="mono cc-chip">{source.type}</span>
+              <span class="cc-source-main">
+                <a href={source.url}>{source.title}</a>
+                {source.channel && <span class="mono muted"> {source.channel}</span>}
+                {source.duration && <span class="mono muted"> · {source.duration}</span>}
+              </span>
+              <span class="mono muted cc-source-date">
+                {strings.verifiedOn} {source.verified_at.toISOString().slice(0, 10)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )
+  }
+
+  <div class="cc-footer-row">
+    {/* P08 (mdx-components-b) drops its <Helpful /> thumbs row in here. */}
+    <span class="muted cc-helpful-slot">{strings.wasThisHelpful}</span>
+    <a class="mono muted cc-edit" href={editHref}>{strings.editOnGitHub}</a>
+  </div>
+
+  {/* P08 also owns <Giscus />; this comment is the agreed insertion point. */}
+
+  <hr />
+
+  <PrevNext lang={lang} prev={neighbours?.prev ?? null} next={neighbours?.next ?? null} />
+
+  <ProgressBar
+    lang={lang}
+    ids={(neighbours?.module.lessons ?? []).map((l) => l.id)}
+    labelMode="count"
+    moduleId={neighbours?.module.shortId ?? module}
+    lessonId={entry.id}
+    level={levelNumber}
+  />
+</LessonLayout>
+
+<style>
+  .cc-placeholder {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: 14px 16px;
+    margin-bottom: var(--space-5);
+    border: 1px dashed var(--color-line-strong);
+    border-radius: var(--radius-3);
+    background: var(--color-bg-1);
+  }
+
+  .cc-placeholder p {
+    margin: 0;
+    font-size: var(--text-14);
+    color: var(--color-ink-soft);
+  }
+
+  .cc-placeholder-badge {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: var(--radius-1);
+    font-size: var(--text-11);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .cc-body {
+    margin: var(--space-6) 0;
+  }
+
+  .cc-body :global(h2) {
+    margin-top: var(--space-8);
+    font-size: var(--text-24);
+  }
+
+  .cc-body :global(h3) {
+    margin-top: var(--space-6);
+  }
+
+  .cc-body :global(p),
+  .cc-body :global(ul),
+  .cc-body :global(ol) {
+    margin: var(--space-4) 0;
+  }
+
+  .cc-body :global(a) {
+    color: var(--color-accent-text);
+  }
+
+  .cc-body :global(pre) {
+    padding: var(--space-4);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-3);
+    background: var(--color-bg-1);
+    overflow-x: auto;
+  }
+
+  .cc-body :global(code) {
+    font-family: var(--font-family-mono);
+    font-size: var(--text-14);
+  }
+
+  .cc-sources h2 {
+    font-size: var(--text-20);
+    margin: 0 0 var(--space-2);
+  }
+
+  .cc-sources ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .cc-sources li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    padding: 10px 0;
+    border-top: 1px solid var(--color-line);
+  }
+
+  .cc-source-main a {
+    color: var(--color-ink);
+    font-size: var(--text-14);
+  }
+
+  .cc-source-date {
+    margin-left: auto;
+    font-size: var(--text-11);
+  }
+
+  .cc-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-1);
+    background: var(--color-bg-3);
+    color: var(--color-ink-soft);
+    font-size: var(--text-12);
+  }
+
+  .cc-footer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    flex-wrap: wrap;
+    margin-top: var(--space-6);
+    font-size: var(--text-14);
+  }
+
+  .cc-edit {
+    font-size: var(--text-12);
+    color: var(--color-ink-muted);
+  }
+
+  hr {
+    margin: var(--space-5) 0;
+  }
+</style>

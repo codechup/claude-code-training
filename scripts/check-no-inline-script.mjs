@@ -75,8 +75,31 @@ function isDirectRun() {
   }
 }
 
+/**
+ * Post-build mode (`--dist`): scan the emitted HTML under `dist/` for ANY `<script>` tag without
+ * `src=`. Astro can inline small hoisted scripts into the page; with a `script-src 'self'` CSP the
+ * browser would refuse them, so the build must emit every script as an external file
+ * (`vite.build.assetsInlineLimit: 0` in astro.config.ts).
+ */
+export async function checkDistNoInlineScript(root = join(process.cwd(), 'dist')) {
+  const files = (await walk(root)).filter((f) => f.endsWith('.html'));
+  const offenders = [];
+  for (const file of files) {
+    const rel = toPosix(relative(root, file));
+    const text = await readFile(file, 'utf8');
+    for (const match of text.matchAll(SCRIPT_TAG)) {
+      if (!/\bsrc\s*=/.test(match[1])) {
+        offenders.push(`${rel}: <script${match[1]}> without src= in emitted HTML`);
+        break;
+      }
+    }
+  }
+  return { ok: offenders.length === 0, offenders, filesChecked: files.length };
+}
+
 if (isDirectRun()) {
-  const result = await checkNoInlineScript();
+  const dist = process.argv.includes('--dist');
+  const result = dist ? await checkDistNoInlineScript() : await checkNoInlineScript();
   if (!result.ok) {
     console.error(`check-no-inline-script: found ${result.offenders.length} problem(s):\n`);
     for (const o of result.offenders) console.error(`  - ${o}`);
@@ -85,5 +108,7 @@ if (isDirectRun()) {
     );
     process.exit(1);
   }
-  console.log(`check-no-inline-script: OK (${result.filesChecked} files scanned)`);
+  console.log(
+    `check-no-inline-script${dist ? ' (dist)' : ''}: OK (${result.filesChecked} files scanned)`,
+  );
 }

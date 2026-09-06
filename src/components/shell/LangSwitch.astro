@@ -1,42 +1,109 @@
 ---
 // Swaps the first path segment between "en" and "tr" and remembers the
-// choice in a `cc_lang` cookie (1 year) that the origin's `/` redirect
-// honours over Accept-Language (see docs/deploy for the nginx side — not
-// part of this repo's build).
+// choice in a `cc_lang` cookie (1 year, SameSite=Lax) that the origin's `/`
+// redirect honours over Accept-Language (D017; nginx side lives in
+// docs/deploy, not in this repo — src/pages/index.astro is the static
+// fallback for the same rule).
+//
+// Draft handling (plans/P06 Scope): whether the target-language page exists
+// as a live page is decided at BUILD time by the page that renders this
+// component (it holds the collections and therefore the set of `draft: true`
+// ids). When `targetPath` is null the switch renders as static text —
+// "Türkçesi hazırlanıyor" when the missing page is Turkish, "English version
+// coming" the other way around — instead of a link into a 404.
+import { draftNotice, otherLang, t } from '../../lib/i18n/ui.ts';
+
 interface Props {
   currentLang: string;
+  /** Absolute path of the sibling-language page, or null when it is a draft. */
+  targetPath?: string | null;
 }
 
-const { currentLang } = Astro.props;
-const other = currentLang === 'en' ? 'tr' : 'en';
-const label = other === 'en' ? 'English' : 'Türkçe';
+const { currentLang, targetPath } = Astro.props;
+const target = otherLang(currentLang);
+const strings = t(currentLang);
+const label = target === 'en' ? 'EN' : 'TR';
+const current = currentLang === 'en' ? 'EN' : 'TR';
+const available = typeof targetPath === 'string' && targetPath.length > 0;
 ---
 
-<a
-  id="cc-lang-switch"
-  href="#"
-  data-target-lang={other}
-  class="rounded border border-border px-2 py-1 text-sm no-underline"
->
-  {label}
-</a>
+{
+  available ? (
+    <a
+      id="cc-lang-switch"
+      href={targetPath}
+      hreflang={target}
+      lang={target}
+      data-target-lang={target}
+      class="cc-lang"
+      aria-label={`${strings.language}: ${label}`}
+    >
+      <span class="mono" aria-hidden="true">
+        {current}
+      </span>
+      <span class="muted" aria-hidden="true">
+        /
+      </span>
+      <span class="mono muted" aria-hidden="true">
+        {label}
+      </span>
+    </a>
+  ) : (
+    <span
+      id="cc-lang-switch-draft"
+      class="cc-lang cc-lang-draft mono"
+      lang={target}
+      data-target-lang={target}
+      data-draft="true"
+    >
+      {draftNotice(target)}
+    </span>
+  )
+}
+
+<style>
+  .cc-lang {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: var(--tap-target);
+    padding: 0 10px;
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-2);
+    font-size: var(--text-13);
+    text-decoration: none;
+    color: var(--color-ink);
+    white-space: nowrap;
+  }
+
+  .cc-lang-draft {
+    color: var(--color-ink-muted);
+    font-size: var(--text-12);
+    border-style: dashed;
+    max-width: 12rem;
+  }
+
+  @media (min-width: 640px) {
+    .cc-lang {
+      min-height: 36px;
+    }
+  }
+</style>
 
 <script>
-  const link = document.getElementById('cc-lang-switch') as HTMLAnchorElement | null;
-  if (link) {
+  // Remember the reader's language choice so the origin redirect at `/`
+  // (and src/pages/index.astro's JS fallback) can honour it next time.
+  // Hoisted — Astro bundles this into an external module, so no inline
+  // script body reaches the page (CSP: script-src 'self').
+  const link = document.getElementById('cc-lang-switch');
+  link?.addEventListener('click', () => {
     const target = link.dataset.targetLang;
-    const segments = window.location.pathname.split('/').filter(Boolean);
-    if (target && segments.length > 0) {
-      segments[0] = target;
-      link.href = `/${segments.join('/')}/`;
+    if (!target) return;
+    try {
+      document.cookie = `cc_lang=${target}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`;
+    } catch {
+      // Cookie writes can fail under strict privacy settings — the link's
+      // navigation still works without the preference being saved.
     }
-    link.addEventListener('click', () => {
-      try {
-        document.cookie = `cc_lang=${target}; path=/; max-age=${60 * 60 * 24 * 365}`;
-      } catch {
-        // Cookie writes can fail under strict privacy settings — the link's
-        // href navigation still works without the preference being saved.
-      }
-    });
-  }
+  });
 </script>

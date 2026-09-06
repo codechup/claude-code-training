@@ -1,21 +1,64 @@
 ---
-// nginx owns "/" in production (it 302s based on Accept-Language / the
-// cc_lang cookie — see docs/deploy). This page is a JS-free fallback for
-// anywhere that static file serving happens without that redirect (e.g.
-// `astro preview`, a CDN edge miss, or opening the file directly).
+// `/` — locale dispatch (D017).
+//
+// In production nginx owns this path and 302s on the `cc_lang` cookie /
+// Accept-Language before Astro is ever consulted (see docs/deploy). This
+// page is the fallback for everywhere that doesn't happen: `astro preview`,
+// a CDN edge miss, or the file opened directly.
+//
+// Two mechanisms, in order of trust:
+//   1. `<meta http-equiv="refresh">` to `/en/` — works with JavaScript off.
+//   2. A hoisted (bundled, external — CSP-clean) script that runs first and
+//      prefers the `cc_lang` cookie, then a `tr`-prefixed `navigator.language`.
+// The refresh delay is 1s so the script always wins when scripting is on.
 ---
 
 <!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta http-equiv="refresh" content="0; url=/en/" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="refresh" content="1; url=/en/" />
     <title>CodeChup Claude Code Academy</title>
+    <meta name="robots" content="noindex" />
     <link rel="canonical" href="https://cc.codechup.com/en/" />
+    <link rel="alternate" hreflang="en" href="https://cc.codechup.com/en/" />
+    <link rel="alternate" hreflang="tr" href="https://cc.codechup.com/tr/" />
+    <link rel="alternate" hreflang="x-default" href="https://cc.codechup.com/en/" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script is:inline src="/theme-init.js"></script>
   </head>
   <body>
-    <p>
-      Redirecting to <a href="/en/">the English site</a> — <a href="/tr/">Türkçe için tıklayın</a>.
-    </p>
+    <main>
+      <h1>CodeChup Claude Code Academy</h1>
+      <p>
+        Redirecting to <a href="/en/">the English site</a> — <a href="/tr/" lang="tr"
+          >Türkçe için tıklayın</a
+        >.
+      </p>
+    </main>
+    <script>
+      // Cookie first (the reader's own LangSwitch choice), then the browser's
+      // language list. Anything else falls through to the meta refresh.
+      function preferred(): string {
+        try {
+          const cookie = document.cookie
+            .split(';')
+            .map((part) => part.trim())
+            .find((part) => part.startsWith('cc_lang='));
+          const stored = cookie?.slice('cc_lang='.length);
+          if (stored === 'en' || stored === 'tr') return stored;
+        } catch {
+          // Cookie access can throw under strict privacy settings.
+        }
+        const languages = navigator.languages ?? [navigator.language];
+        for (const tag of languages) {
+          if (typeof tag === 'string' && tag.toLowerCase().startsWith('tr')) return 'tr';
+        }
+        return 'en';
+      }
+
+      window.location.replace(`/${preferred()}/`);
+    </script>
   </body>
 </html>

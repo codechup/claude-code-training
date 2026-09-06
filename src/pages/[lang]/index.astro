@@ -1,63 +1,456 @@
 ---
+// The locale landing page (D062): hero + CTA, level cards with progress,
+// curriculum map, "what changed" feed, playbook card — in the order
+// `docs/design/canvas-out/Main.dc.html` draws them, collapsing to
+// `Landing390.dc.html`'s single column on phone.
 import type { InferGetStaticParamsType } from 'astro';
 import { getCollection } from 'astro:content';
-import Base from '../../layouts/Base.astro';
-import Header from '../../components/shell/Header.astro';
-import Footer from '../../components/shell/Footer.astro';
+import Landing from '../../layouts/Landing.astro';
+import ProgressBar from '../../components/lesson/ProgressBar.astro';
+import Terminal from '../../components/lesson/Terminal.astro';
+import { buildNav, startHref } from '../../lib/nav.ts';
+import { changesFor, VERIFIED_VERSION } from '../../lib/changes.ts';
+import { hoursFromMinutes, levelBadgeStyle } from '../../lib/levels.ts';
+import { t } from '../../lib/i18n/ui.ts';
+import { LANGS, swapLangInPath, type Lang } from '../../lib/slugs.ts';
 
-export async function getStaticPaths() {
-  return [{ params: { lang: 'en' } }, { params: { lang: 'tr' } }] as const;
+export function getStaticPaths() {
+  return LANGS.map((lang) => ({ params: { lang } }));
 }
 
 type Params = InferGetStaticParamsType<typeof getStaticPaths>;
 const { lang } = Astro.params as Params;
 
-const allSections = await getCollection('sections');
-// Level sections have a two-segment id: "<lang>/<level>".
-const levels = allSections
-  .filter((s) => s.id.split('/').length === 2 && s.id.startsWith(`${lang}/`))
-  .sort((a, b) => a.data.order - b.data.order);
+const sections = await getCollection('sections');
+const lessons = await getCollection('lessons');
+const tree = buildNav(lang, sections, lessons);
 
-const copy: Record<string, { title: string; tagline: string }> = {
-  en: {
-    title: 'CodeChup Claude Code Academy',
-    tagline: 'Learn Claude Code from zero to expert — hands-on, source-verified lessons.',
-  },
-  tr: {
-    title: 'CodeChup Claude Code Akademisi',
-    tagline: "Claude Code'u sıfırdan uzmanlığa; uygulamalı ve kaynağı doğrulanmış derslerle.",
-  },
-};
-const t = copy[lang] ?? copy.en;
+const strings = t(lang);
+const path = `/${lang}/`;
+// Both locale landings always exist, so the language switch is never a
+// draft dead-end here.
+const altPath = swapLangInPath(path, lang === 'en' ? 'tr' : 'en');
+
+const start = startHref(tree);
+const changes = changesFor(lang as Lang);
 ---
 
-<Base
-  title={t.title}
-  description={t.tagline}
+<Landing
   lang={lang}
-  path={`/${lang}/`}
-  alternates={[
-    { lang: 'en', path: '/en/' },
-    { lang: 'tr', path: '/tr/' },
-    { lang: 'x-default', path: '/en/' },
-  ]}
+  title={strings.siteName}
+  description={strings.siteTagline}
+  path={path}
+  altPath={altPath}
 >
-  <Header lang={lang} />
-  <main class="mx-auto max-w-3xl px-4 py-16">
-    <h1 class="font-mono text-3xl font-bold">{t.title}</h1>
-    <p class="mt-4 text-fg-muted">{t.tagline}</p>
-    <ul class="mt-8 flex flex-col gap-3">
+  {/* ---- hero -------------------------------------------------------- */}
+  <section class="cc-hero">
+    <div class="cc-hero-copy">
+      <span class="eyebrow">{strings.heroEyebrow}</span>
+      <h1>{strings.heroTitle}</h1>
+      <p class="soft cc-hero-lead">{strings.heroBody}</p>
+      <div class="cc-hero-actions">
+        <a class="cc-btn cc-btn-primary" href={start}>{strings.startLevel1}</a>
+        <a class="cc-btn cc-btn-ghost" href="#curriculum-map">{strings.seeCurriculumMap}</a>
+      </div>
+      <p class="mono muted cc-hero-facts">
+        <span>{strings.verifiedOn} v{VERIFIED_VERSION}</span>
+        <span aria-hidden="true">·</span>
+        <span>EN / TR</span>
+        <span aria-hidden="true">·</span>
+        <span>{strings.free}</span>
+      </p>
+    </div>
+    <Terminal title="~/my-app — claude" />
+  </section>
+
+  {/* ---- level cards ------------------------------------------------- */}
+  <section class="cc-block" aria-labelledby="levels-heading">
+    <div class="cc-block-head">
+      <div>
+        <span class="eyebrow">{strings.fourLevels}</span>
+        <h2 id="levels-heading">{strings.fourLevelsLead}</h2>
+      </div>
+      <p class="muted cc-block-note">{strings.progressNote}</p>
+    </div>
+    <ul class="cc-level-grid">
       {
-        levels.map((level) => (
-          <li>
-            <a class="text-link underline" href={`/${lang}/${level.id.split('/')[1]}/`}>
-              {level.data.title}
-            </a>
-            <span class="text-fg-muted"> — {level.data.description}</span>
+        tree.levels.map((level) => (
+          <li class="cc-card">
+            <div class="cc-card-top">
+              <span class="mono cc-badge" style={levelBadgeStyle(level.number)}>
+                {level.number ? strings.levelLabel(level.number) : level.title}
+              </span>
+              <span class="mono muted cc-card-count">
+                {level.lessonCount} {strings.lessons} · {hoursFromMinutes(level.durationMin)}{' '}
+                {strings.hours}
+              </span>
+            </div>
+            <h3>
+              <a href={level.path}>{level.title}</a>
+            </h3>
+            <p class="soft cc-card-body">{level.description}</p>
+            <ProgressBar
+              lang={lang}
+              ids={level.modules.flatMap((m) => m.lessons.map((l) => l.id))}
+              level={level.number}
+            />
           </li>
         ))
       }
     </ul>
-  </main>
-  <Footer lang={lang} />
-</Base>
+  </section>
+
+  {/* ---- curriculum map ---------------------------------------------- */}
+  <section class="cc-block" id="curriculum-map" aria-labelledby="map-heading">
+    <div class="cc-block-head">
+      <div>
+        <span class="eyebrow">{strings.curriculumMap}</span>
+        <h2 id="map-heading">{strings.curriculumMapLead}</h2>
+      </div>
+    </div>
+    <div class="cc-card cc-map">
+      {
+        tree.levels.map((level) => (
+          <div class="cc-map-col">
+            <span class="mono cc-map-title">
+              {level.number ? strings.levelLabel(level.number) : level.title}
+            </span>
+            <ul>
+              {level.modules.map((mod) => (
+                <li>
+                  <a href={mod.path}>
+                    {mod.shortId} {mod.title}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
+      }
+    </div>
+  </section>
+
+  {/* ---- what changed + playbook card -------------------------------- */}
+  <section class="cc-block cc-changed" aria-labelledby="changed-heading">
+    <div id="what-changed">
+      <span class="eyebrow">{strings.whatChanged}</span>
+      <h2 id="changed-heading">{strings.whatChangedLead}</h2>
+      <ul class="cc-feed">
+        {
+          changes.map((change) => (
+            <li>
+              <span class="mono cc-chip">{change.version}</span>
+              <span class="cc-feed-title">{change.title}</span>
+              <span class="mono muted cc-feed-where">{change.where}</span>
+            </li>
+          ))
+        }
+      </ul>
+      <p class="muted cc-feed-source">
+        Source: <code class="mono">research/deprecations.md</code> (verified {VERIFIED_VERSION}).
+      </p>
+    </div>
+    <div class="cc-card cc-playbook" id="playbook">
+      <span class="eyebrow">{strings.playbook}</span>
+      <h3>{strings.playbookCardTitle}</h3>
+      <p class="soft cc-card-body">{strings.playbookCardBody}</p>
+      <a class="cc-btn cc-btn-soft" href={`/${lang}/playbook/`}>{strings.openThePlaybook}</a>
+    </div>
+  </section>
+</Landing>
+
+<style>
+  .cc-hero {
+    display: grid;
+    gap: var(--space-6);
+    padding: var(--space-10) var(--space-4) var(--space-8);
+  }
+
+  .cc-hero-copy {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+  }
+
+  .cc-hero-copy h1 {
+    margin: 0;
+    font-size: var(--text-40);
+    text-wrap: balance;
+  }
+
+  .cc-hero-lead {
+    margin: 0;
+    font-size: var(--text-16);
+    max-width: 52ch;
+  }
+
+  .cc-hero-actions {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .cc-hero-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    margin: 0;
+    max-width: none;
+    font-size: var(--text-13);
+  }
+
+  .cc-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    min-height: var(--tap-target);
+    padding: 0 18px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-2);
+    font-weight: 500;
+    font-size: var(--text-16);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .cc-btn-primary {
+    background: var(--color-accent);
+    color: var(--color-accent-ink);
+  }
+
+  .cc-btn-ghost {
+    border-color: var(--color-line-strong);
+    color: var(--color-ink);
+  }
+
+  .cc-btn-soft {
+    background: var(--color-bg-3);
+    color: var(--color-ink);
+    align-self: flex-start;
+  }
+
+  .cc-block {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+    padding: 0 var(--space-4) var(--space-12);
+  }
+
+  .cc-block-head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .cc-block-head h2 {
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-24);
+  }
+
+  .cc-block-note {
+    margin: 0;
+    font-size: var(--text-14);
+  }
+
+  .cc-level-grid,
+  .cc-feed,
+  .cc-map ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .cc-level-grid {
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .cc-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: 18px;
+    background: var(--color-bg-2);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-3);
+  }
+
+  .cc-card h3 {
+    margin: 0;
+  }
+
+  .cc-card h3 a {
+    color: var(--color-ink);
+    text-decoration: none;
+  }
+
+  .cc-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  .cc-card-count {
+    font-size: var(--text-12);
+  }
+
+  .cc-card-body {
+    margin: 0;
+    font-size: var(--text-14);
+  }
+
+  .cc-badge {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: var(--radius-1);
+    font-size: var(--text-11);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .cc-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--radius-1);
+    background: var(--color-bg-3);
+    color: var(--color-ink-soft);
+    font-size: var(--text-12);
+    letter-spacing: 0.04em;
+    flex-shrink: 0;
+  }
+
+  .cc-map {
+    display: grid;
+    gap: var(--space-5);
+    padding: var(--space-6);
+  }
+
+  .cc-map-col {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .cc-map-title {
+    font-size: var(--text-12);
+    letter-spacing: var(--tracking-eyebrow);
+    text-transform: uppercase;
+    color: var(--color-ink-muted);
+  }
+
+  .cc-map ul {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .cc-map a {
+    font-size: var(--text-14);
+    color: var(--color-ink-soft);
+    text-decoration: none;
+  }
+
+  .cc-map a:hover {
+    color: var(--color-accent-text);
+  }
+
+  .cc-changed {
+    gap: var(--space-8);
+  }
+
+  .cc-changed h2 {
+    margin: var(--space-1) 0 var(--space-4);
+    font-size: var(--text-24);
+  }
+
+  .cc-feed li {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+    padding: var(--space-3) 0;
+    border-top: 1px solid var(--color-line);
+  }
+
+  .cc-feed-title {
+    font-size: var(--text-15, var(--text-16));
+  }
+
+  .cc-feed-where {
+    margin-left: auto;
+    font-size: var(--text-12);
+  }
+
+  .cc-feed-source {
+    margin: var(--space-3) 0 0;
+    font-size: var(--text-12);
+  }
+
+  .cc-playbook h3 {
+    margin: 0;
+  }
+
+  @media (min-width: 640px) {
+    .cc-hero-actions {
+      flex-direction: row;
+    }
+
+    .cc-level-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .cc-map {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .cc-hero {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--space-12);
+      align-items: center;
+      padding: var(--space-20) var(--space-16) var(--space-16);
+    }
+
+    .cc-hero-copy h1 {
+      font-size: var(--text-56);
+    }
+
+    .cc-hero-lead {
+      font-size: var(--text-18);
+    }
+
+    .cc-block {
+      padding: 0 var(--space-16) var(--space-16);
+    }
+
+    .cc-block-head {
+      flex-direction: row;
+      align-items: flex-end;
+      justify-content: space-between;
+    }
+
+    .cc-level-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .cc-map {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: var(--space-6);
+    }
+
+    .cc-changed {
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: var(--space-8);
+      align-items: start;
+    }
+  }
+</style>

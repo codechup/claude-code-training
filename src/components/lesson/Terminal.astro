@@ -1,0 +1,108 @@
+---
+// The hero terminal from `docs/design/canvas-out/Main.dc.html` /
+// `Landing390.dc.html` — a static, pre-rendered frame, not an animation
+// engine: the only thing that moves is the caret, and `prefers-reduced-
+// motion` stops even that (app.css `.caret`).
+//
+// P07 owns the real `Transcript` MDX component (lesson bodies, captured from
+// genuine sessions — D093). This is the landing-page decoration only, and it
+// reproduces the exact lines the approved canvas draws.
+interface Props {
+  /** Window title in the frame's title bar. */
+  title: string;
+  /** Compact variant used at 390px. */
+  compact?: boolean;
+}
+
+const { title, compact = false } = Astro.props;
+---
+
+<div class:list={['cc-term', compact && 'cc-term-compact']} aria-hidden="true">
+  <div class="cc-term-bar">
+    <span class="cc-term-dot"></span>
+    <span class="cc-term-dot"></span>
+    <span class="cc-term-dot"></span>
+    <span class="cc-term-title">{title}</span>
+  </div>
+  <pre
+    class="cc-term-body"><span class="cc-p">&#10095;</span> <span class="cc-u">claude</span>
+<span class="cc-d">Claude Code v2.1.263 · Fable 5.1 · effort high · plan mode off</span>
+
+<span class="cc-p">&#8250;</span> <span class="cc-u">add a PreToolUse hook that blocks rm -rf outside /tmp</span>
+
+<span class="cc-d">&#9679; Read .claude/settings.json</span>
+<span class="cc-d">&#9679; Write .claude/hooks/guard-bash.mjs</span>
+<span class="cc-d">&#9679; Edit .claude/settings.json  +9 &#8722;0</span>
+<span class="cc-ok">&#10003;</span> Hook registered. Try it: <span class="cc-g">rm -rf ./build</span> &#8594; <span class="cc-r">blocked (exit 2)</span>
+
+<span class="cc-p">&#8250;</span> <span class="caret" /></pre>
+</div>
+
+<style>
+  .cc-term {
+    background: var(--color-bg-1);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-3);
+    font-family: var(--font-family-mono);
+    font-size: var(--text-13);
+    line-height: 1.6;
+    color: var(--color-ink-soft);
+    overflow: hidden;
+  }
+
+  .cc-term-compact {
+    font-size: var(--text-12);
+  }
+
+  .cc-term-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    height: 36px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--color-line);
+    color: var(--color-ink-muted);
+    font-size: var(--text-12);
+  }
+
+  .cc-term-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 999px;
+    background: var(--color-bg-3);
+  }
+
+  .cc-term-title {
+    margin-left: var(--space-2);
+  }
+
+  .cc-term-body {
+    margin: 0;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font: inherit;
+  }
+
+  .cc-p {
+    color: var(--color-prompt);
+  }
+  .cc-u {
+    color: var(--color-ink);
+  }
+  .cc-g {
+    color: var(--color-accent-text);
+  }
+  /* Mixed toward --color-ink so the success/danger greens and reds clear
+     4.5:1 against --color-bg-1 in BOTH themes at this 12–13px size (D036,
+     WCAG 2.2 AA): the raw semantic tokens are tuned for larger UI text and
+     land at ~3.9:1 here in the light theme. */
+  .cc-ok {
+    color: color-mix(in srgb, var(--color-success) 70%, var(--color-ink));
+  }
+  .cc-d {
+    color: var(--color-ink-muted);
+  }
+  .cc-r {
+    color: color-mix(in srgb, var(--color-caret) 70%, var(--color-ink));
+  }
+</style>

@@ -1,0 +1,80 @@
+---
+// The bottom prev/next bar (D061), per `Lesson1280.dc.html`: a ghost button
+// pointing back, a soft button pointing forward, and the module progress bar
+// underneath (rendered by the lesson layout, not here).
+import { t } from '../../lib/i18n/ui.ts';
+import type { NavLesson } from '../../lib/nav.ts';
+
+interface Props {
+  lang: string;
+  prev: NavLesson | null;
+  next: NavLesson | null;
+}
+
+const { lang, prev, next } = Astro.props;
+const strings = t(lang);
+---
+
+<nav class="cc-prevnext" aria-label={`${strings.previous} / ${strings.next}`}>
+  {
+    prev ? (
+      <a class="cc-prevnext-link cc-prevnext-prev" href={prev.path} rel="prev">
+        <span class="mono muted cc-prevnext-kicker">← {strings.previous}</span>
+        <span class="cc-prevnext-title">{prev.title}</span>
+      </a>
+    ) : (
+      <span class="cc-prevnext-spacer" />
+    )
+  }
+  {
+    next ? (
+      <a class="cc-prevnext-link cc-prevnext-next" href={next.path} rel="next">
+        <span class="mono muted cc-prevnext-kicker">{strings.next} →</span>
+        <span class="cc-prevnext-title">{next.title}</span>
+      </a>
+    ) : (
+      <span class="cc-prevnext-spacer" />
+    )
+  }
+</nav>
+
+<style>
+  .cc-prevnext {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+  }
+
+  .cc-prevnext-link {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: var(--tap-target);
+    padding: var(--space-2) var(--space-4);
+    border-radius: var(--radius-2);
+    border: 1px solid var(--color-line-strong);
+    color: var(--color-ink);
+    text-decoration: none;
+    max-width: 48%;
+  }
+
+  .cc-prevnext-next {
+    text-align: right;
+    background: var(--color-bg-3);
+    border-color: transparent;
+  }
+
+  .cc-prevnext-kicker {
+    font-size: var(--text-12);
+  }
+
+  .cc-prevnext-title {
+    font-size: var(--text-14);
+    font-weight: 500;
+  }
+
+  .cc-prevnext-spacer {
+    display: block;
+  }
+</style>

@@ -42,6 +42,9 @@ export default defineConfig({
   ],
   vite: {
     plugins: [tailwindcss()],
+    // Never inline hoisted <script> bodies into HTML: the origin serves a `script-src 'self'` CSP
+    // (no nonces/hashes), so every script must be an external same-origin file.
+    build: { assetsInlineLimit: 0 },
   },
   markdown: {
     shikiConfig: {

@@ -1,0 +1,128 @@
+---
+// The left level -> module -> lesson tree (D061), drawn from
+// `docs/design/canvas-out/Lesson1280.dc.html`'s `aside.nav`: 240px column,
+// mono uppercase level headings, the current module expanded to its lessons.
+//
+// On phone the sidebar is not rendered at all — `Lesson390.dc.html` replaces
+// it with the breadcrumb strip that `Lesson.astro` draws, and the header's
+// menu carries the top-level links.
+import { t } from '../../lib/i18n/ui.ts';
+import type { NavTree } from '../../lib/nav.ts';
+
+interface Props {
+  lang: string;
+  tree: NavTree;
+  activeLevel?: string;
+  activeModule?: string;
+  activeLessonId?: string;
+}
+
+const { lang, tree, activeLevel, activeModule, activeLessonId } = Astro.props;
+const strings = t(lang);
+
+function levelHeading(number: number | null, title: string): string {
+  return number ? `${strings.levelLabel(number)} · ${title}` : title;
+}
+---
+
+<nav class="cc-sidebar" aria-label={strings.curriculum}>
+  <ul class="cc-sidebar-levels">
+    {
+      tree.levels.map((level) => (
+        <li>
+          <a class="cc-sidebar-level" href={level.path}>
+            {levelHeading(level.number, level.title)}
+          </a>
+          <ul class="cc-sidebar-modules">
+            {level.modules.map((mod) => (
+              <li>
+                <a
+                  href={mod.path}
+                  class="cc-sidebar-module"
+                  aria-current={
+                    mod.slug === activeModule && level.slug === activeLevel && !activeLessonId
+                      ? 'page'
+                      : undefined
+                  }
+                  data-current={
+                    mod.slug === activeModule && level.slug === activeLevel ? 'true' : undefined
+                  }
+                >
+                  {mod.shortId} {mod.title}
+                </a>
+                {mod.slug === activeModule &&
+                  level.slug === activeLevel &&
+                  mod.lessons.length > 0 && (
+                    <ul class="cc-sidebar-lessons">
+                      {mod.lessons.map((lesson) => (
+                        <li>
+                          <a
+                            href={lesson.path}
+                            aria-current={lesson.id === activeLessonId ? 'page' : undefined}
+                          >
+                            {lesson.title}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+              </li>
+            ))}
+          </ul>
+        </li>
+      ))
+    }
+  </ul>
+</nav>
+
+<style>
+  .cc-sidebar {
+    padding: var(--space-5) var(--space-3);
+    border-right: 1px solid var(--color-line);
+  }
+
+  .cc-sidebar ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .cc-sidebar a {
+    display: block;
+    padding: 6px 10px;
+    border-radius: var(--radius-2);
+    font-size: var(--text-14);
+    color: var(--color-ink-soft);
+    text-decoration: none;
+  }
+
+  .cc-sidebar a:hover {
+    color: var(--color-accent-text);
+  }
+
+  .cc-sidebar-level {
+    font-family: var(--font-family-mono);
+    font-size: var(--text-11);
+    letter-spacing: var(--tracking-eyebrow);
+    text-transform: uppercase;
+    color: var(--color-ink-muted);
+    margin: 14px 0 6px;
+  }
+
+  .cc-sidebar-module[data-current='true'] {
+    color: var(--color-ink);
+  }
+
+  .cc-sidebar-lessons {
+    padding-left: 10px;
+  }
+
+  .cc-sidebar-lessons a {
+    font-size: var(--text-13);
+  }
+
+  .cc-sidebar a[aria-current='page'] {
+    background: var(--color-bg-3);
+    color: var(--color-ink);
+  }
+</style>

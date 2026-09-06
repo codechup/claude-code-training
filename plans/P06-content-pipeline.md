@@ -2,7 +2,7 @@
 id: P06
 title: "'Content pipeline: collections, routes, and landing'"
 milestone: M0
-status: in_progress
+status: review
 owner: fable-lead-2026-09-06
 branch: plan/06-content-pipeline
 model_hint: fable
@@ -23,7 +23,7 @@ owned_paths:
   - content/**
 shared_paths: []
 estimate: L
-updated_at: 2026-09-06T19:48:09Z
+updated_at: 2026-09-06T20:18:36Z
 open_questions: []
 ---
 
@@ -98,4 +98,8 @@ A reviewer runs `npm run dev`, browses `/en/` → a level → a module → the p
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+- **Done 2026-09-06 (lead session with two supervised sub-sessions: content scaffold on Sonnet, pipeline code on Opus).** Delivered: real schema + collections (lessons `*/*/*/NN-*.mdx`, sections incl. standalone `playbook/`/`meta/` pages), `src/lib/{nav,slugs,progress,os-pref,changes}.ts`, `src/lib/i18n/ui.ts`, layouts Base/Lesson/Section/Landing/Design, routes for locale landing / level / module / lesson / 404 / root fallback, lesson chrome (LessonMeta, PrevNext, ProgressBar, TOC, Sidebar), shell (Header with lockup, Footer, LangSwitch with cookie + draft-aware "Türkçesi hazırlanıyor"), landing (hero transcript, level cards, curriculum map, What changed feed from `src/lib/changes.ts`), and the full `content/` scaffold: 6 level/section indexes + 21 module indexes + glossary per language, one placeholder lesson pair.
+- **Decisions taken:** placeholder lessons are `draft: false` with tag `placeholder` (visible banner) so the route exists and parity holds — P12 deletes them. Seed lesson renamed to `01-what-claude-code-is` to match CURRICULUM. `scripts/content-gate.ts` (P04) extended in this PR to accept depth-3 section pages under `playbook/`/`meta/` (coordinated update, as the plan's Context allowed).
+- **CSP fix (cross-cutting):** Astro inlined small hoisted scripts into HTML, which `script-src 'self'` would block; `astro.config.ts` now sets `vite.build.assetsInlineLimit: 0` and `postbuild` runs `check-no-inline-script.mjs --dist` (0 inline scripts across 64 pages). P09 must keep this when adding search/analytics.
+- **Evidence:** `npm run typecheck` 0 errors · lint green (prettier, inline-script, hygiene, raw colours) · gate OK (60 files) · vitest 12 files / 92 tests · build 64 pages + Pagefind (2 languages) · Playwright shell+lesson+a11y 44 passed / 4 skipped (remaining fixmes: P07 OSTabs, P12 full curriculum), axe serious/critical 0 at 390 and 1280.
+- **Open for later plans:** P07/P08 replace the inline Sources list and fill the Helpful/Giscus slots; P09 owns sitemap/RSS/Pagefind draft exclusion and the search slot in Header; MDX drops HTML comments — placeholder marker is `{/* build-graph placeholder: replaced by P12 */}`.

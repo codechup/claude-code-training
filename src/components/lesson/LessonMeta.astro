@@ -1,0 +1,128 @@
+---
+// The lesson header block from `Lesson1280.dc.html` / `Lesson390.dc.html`:
+// level badge + "m07 Hooks · lesson 2 of 7", the title, then the meta row
+// (duration, difficulty, tags, updated + verified version) — D063.
+import { t } from '../../lib/i18n/ui.ts';
+import { levelBadgeStyle } from '../../lib/levels.ts';
+
+interface Props {
+  lang: string;
+  title: string;
+  level: number | null;
+  moduleShortId: string;
+  moduleTitle: string;
+  position: number;
+  moduleTotal: number;
+  durationMin: number;
+  difficulty: 'intro' | 'core' | 'advanced';
+  tags: string[];
+  updated: Date;
+  verifiedVersion: string;
+}
+
+const {
+  lang,
+  title,
+  level,
+  moduleShortId,
+  moduleTitle,
+  position,
+  moduleTotal,
+  durationMin,
+  difficulty,
+  tags,
+  updated,
+  verifiedVersion,
+} = Astro.props;
+
+const strings = t(lang);
+const updatedIso = updated.toISOString().slice(0, 10);
+---
+
+<div class="cc-meta">
+  <div class="cc-meta-row">
+    {
+      level !== null && (
+        <span class="mono cc-badge" style={levelBadgeStyle(level)}>
+          {strings.levelLabel(level)}
+        </span>
+      )
+    }
+    <span class="mono muted cc-meta-position">
+      {strings.lessonOf(position, moduleTotal, `${moduleShortId} ${moduleTitle}`)}
+    </span>
+  </div>
+
+  <h1 class="cc-meta-title">{title}</h1>
+
+  <div class="cc-meta-row cc-meta-facts">
+    <span class="muted">{durationMin} {strings.min}</span>
+    <span class="muted">{strings.difficulty[difficulty]}</span>
+    {tags.map((tag) => <span class="mono cc-chip">{tag}</span>)}
+    <span class="mono muted">
+      {strings.updated}
+      <time datetime={updatedIso}>{updatedIso}</time> · {strings.verifiedOn} v{verifiedVersion}
+    </span>
+  </div>
+  <hr />
+</div>
+
+<style>
+  .cc-meta {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+  }
+
+  .cc-meta-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+  }
+
+  .cc-meta-facts {
+    gap: 14px;
+    font-size: var(--text-13);
+  }
+
+  .cc-meta-position {
+    font-size: var(--text-12);
+  }
+
+  .cc-meta-title {
+    margin: 0;
+    font-size: var(--text-32);
+    line-height: 1.1;
+    letter-spacing: -0.015em;
+  }
+
+  .cc-badge {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: var(--radius-1);
+    font-size: var(--text-11);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .cc-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 10px;
+    border-radius: var(--radius-1);
+    background: var(--color-bg-3);
+    color: var(--color-ink-soft);
+    font-size: var(--text-12);
+    letter-spacing: 0.04em;
+  }
+
+  @media (min-width: 1024px) {
+    .cc-meta-title {
+      font-size: var(--text-40);
+    }
+  }
+</style>

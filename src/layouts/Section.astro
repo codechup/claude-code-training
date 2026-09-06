@@ -1,0 +1,123 @@
+---
+// Level and module index pages (`/[lang]/[level]/`, `/[lang]/[level]/[module]/`)
+// plus the standalone Playbook/Meta pages. Single centred column with the
+// same header/footer chrome as the rest of the site.
+import Base from './Base.astro';
+import Header from '../components/shell/Header.astro';
+import Footer from '../components/shell/Footer.astro';
+import { t } from '../lib/i18n/ui.ts';
+import { alternatesFor } from '../lib/seo.ts';
+
+export interface Crumb {
+  label: string;
+  href?: string;
+}
+
+interface Props {
+  lang: string;
+  title: string;
+  description: string;
+  path: string;
+  altPath?: string | null;
+  crumbs?: Crumb[];
+}
+
+const { lang, title, description, path, altPath, crumbs = [] } = Astro.props;
+const strings = t(lang);
+---
+
+<Base
+  title={title}
+  description={description}
+  lang={lang}
+  path={path}
+  alternates={alternatesFor(lang, path, altPath)}
+>
+  <a class="cc-skip" href="#main">{strings.skipToContent}</a>
+  <Header lang={lang} altPath={altPath} active="curriculum" />
+  {
+    crumbs.length > 0 && (
+      <nav class="cc-crumbs mono" aria-label={strings.breadcrumb}>
+        <ol>
+          {crumbs.map((crumb) => (
+            <li>
+              {crumb.href ? <a href={crumb.href}>{crumb.label}</a> : <span>{crumb.label}</span>}
+            </li>
+          ))}
+        </ol>
+      </nav>
+    )
+  }
+  <main id="main" class="cc-section">
+    <slot />
+  </main>
+  <Footer lang={lang} />
+</Base>
+
+<style>
+  .cc-skip {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 10;
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-bg-2);
+    color: var(--color-ink);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-2);
+  }
+
+  .cc-skip:focus {
+    left: var(--space-4);
+    top: var(--space-2);
+  }
+
+  .cc-crumbs {
+    padding: 0 var(--space-4);
+    border-bottom: 1px solid var(--color-line);
+    font-size: var(--text-12);
+    color: var(--color-ink-muted);
+  }
+
+  .cc-crumbs ol {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    min-height: 40px;
+  }
+
+  .cc-crumbs li + li::before {
+    content: '/';
+    margin-right: var(--space-2);
+    color: var(--color-ink-muted);
+  }
+
+  .cc-crumbs a {
+    color: var(--color-ink-muted);
+    text-decoration: none;
+  }
+
+  .cc-section {
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: var(--space-8) var(--space-4) var(--space-12);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-8);
+  }
+
+  @media (min-width: 1024px) {
+    .cc-crumbs {
+      padding: 0 var(--space-8);
+    }
+
+    .cc-section {
+      padding: var(--space-12) var(--space-8) var(--space-20);
+    }
+  }
+</style>

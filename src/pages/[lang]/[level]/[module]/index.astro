@@ -1,61 +1,167 @@
 ---
+// Module index (`/[lang]/[level]/[module]/`).
+//
+// The same route shape also serves the standalone, non-numbered reference
+// pages under `playbook/` and `meta/` (e.g. `/en/playbook/glossary/`): they
+// are section entries at the same depth, they just have no lessons under
+// them, so the page renders their MDX body and skips the lesson list.
 import type { InferGetStaticParamsType } from 'astro';
-import { getCollection } from 'astro:content';
-import Base from '../../../../layouts/Base.astro';
-import Header from '../../../../components/shell/Header.astro';
-import Footer from '../../../../components/shell/Footer.astro';
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import Section from '../../../../layouts/Section.astro';
+import ProgressBar from '../../../../components/lesson/ProgressBar.astro';
+import { buildNav, findLevel, findModule } from '../../../../lib/nav.ts';
+import { t } from '../../../../lib/i18n/ui.ts';
+import { swapLangInPath } from '../../../../lib/slugs.ts';
 
 export async function getStaticPaths() {
   const sections = await getCollection('sections');
-  const moduleSections = sections.filter((s) => s.id.split('/').length === 3);
-  return moduleSections.map((s) => {
-    const [lang, level, module] = s.id.split('/');
-    return { params: { lang, level, module }, props: { section: s } };
-  });
+  return sections
+    .filter((s) => s.id.split('/').length === 3)
+    .map((section) => {
+      const [lang, level, module] = section.id.split('/');
+      return { params: { lang, level, module }, props: { section } };
+    });
 }
 
 type Params = InferGetStaticParamsType<typeof getStaticPaths>;
 const { lang, level, module } = Astro.params as Params;
-const { section } = Astro.props;
+const { section } = Astro.props as { section: CollectionEntry<'sections'> };
 
-const lessons = (await getCollection('lessons'))
-  .filter((l) => !l.data.draft && l.id.startsWith(`${lang}/${level}/${module}/`))
-  .sort((a, b) => a.data.order - b.data.order);
+const sections = await getCollection('sections');
+const lessons = await getCollection('lessons');
+const tree = buildNav(lang, sections, lessons);
+const navLevel = findLevel(tree, level);
+const navModule = findModule(tree, level, module);
+
+const strings = t(lang);
+const path = `/${lang}/${level}/${module}/`;
+const altPath = swapLangInPath(path, lang === 'en' ? 'tr' : 'en');
+
+const { Content } = await render(section);
+const moduleLessons = navModule?.lessons ?? [];
 ---
 
-<Base
-  title={`${section.data.title} — CodeChup Claude Code Academy`}
-  description={section.data.description}
+<Section
   lang={lang}
-  path={`/${lang}/${level}/${module}/`}
-  alternates={[
-    { lang: 'en', path: `/en/${level}/${module}/` },
-    { lang: 'tr', path: `/tr/${level}/${module}/` },
-    { lang: 'x-default', path: `/en/${level}/${module}/` },
+  title={`${section.data.title} — ${strings.siteName}`}
+  description={section.data.description}
+  path={path}
+  altPath={altPath}
+  crumbs={[
+    { label: strings.curriculum, href: `/${lang}/` },
+    { label: navLevel?.title ?? level, href: `/${lang}/${level}/` },
+    { label: section.data.title },
   ]}
 >
-  <Header lang={lang} />
-  <main class="mx-auto max-w-3xl px-4 py-16">
-    <h1 class="font-mono text-3xl font-bold">{section.data.title}</h1>
-    <p class="mt-4 text-fg-muted">{section.data.description}</p>
-    <ol class="mt-8 flex flex-col gap-3">
-      {
-        lessons.map((lesson) => (
+  <header class="cc-head">
+    <span class="mono muted cc-kicker">
+      {navModule?.shortId ?? module}
+      {navLevel?.number ? ` · ${strings.levelLabel(navLevel.number)}` : ''}
+    </span>
+    <h1>{section.data.title}</h1>
+    <p class="soft">{section.data.description}</p>
+    {
+      moduleLessons.length > 0 && (
+        <ProgressBar
+          lang={lang}
+          ids={moduleLessons.map((l) => l.id)}
+          labelMode="count"
+          moduleId={navModule?.shortId ?? module}
+          level={navLevel?.number}
+        />
+      )
+    }
+  </header>
+
+  <div class="cc-prose">
+    <Content />
+  </div>
+
+  {
+    moduleLessons.length > 0 ? (
+      <ol class="cc-lesson-list">
+        {moduleLessons.map((lesson) => (
           <li>
-            <a
-              class="text-link underline"
-              href={`/${lang}/${level}/${module}/${lesson.id.split('/')[3]}/`}
-            >
-              {lesson.data.title}
+            <a href={lesson.path}>
+              <span class="cc-lesson-title">{lesson.title}</span>
+              <span class="soft cc-lesson-desc">{lesson.description}</span>
+              <span class="mono muted cc-lesson-meta">
+                {lesson.durationMin} {strings.min} · {strings.difficulty[lesson.difficulty]}
+              </span>
             </a>
-            <span class="text-fg-muted">
-              {' '}
-              — {lesson.data.duration_min} min · {lesson.data.difficulty}
-            </span>
           </li>
-        ))
-      }
-    </ol>
-  </main>
-  <Footer lang={lang} />
-</Base>
+        ))}
+      </ol>
+    ) : (
+      <p class="muted">{strings.noLessonsYet}</p>
+    )
+  }
+</Section>
+
+<style>
+  .cc-head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .cc-head h1 {
+    margin: 0;
+    font-size: var(--text-32);
+  }
+
+  .cc-head p {
+    margin: 0;
+  }
+
+  .cc-kicker {
+    font-size: var(--text-12);
+    letter-spacing: var(--tracking-eyebrow);
+    text-transform: uppercase;
+  }
+
+  .cc-prose {
+    color: var(--color-ink-soft);
+  }
+
+  .cc-lesson-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    counter-reset: lesson;
+  }
+
+  .cc-lesson-list a {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    padding: var(--space-4);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-3);
+    background: var(--color-bg-2);
+    text-decoration: none;
+    color: var(--color-ink);
+    min-height: var(--tap-target);
+  }
+
+  .cc-lesson-title {
+    font-weight: 500;
+  }
+
+  .cc-lesson-desc {
+    font-size: var(--text-14);
+  }
+
+  .cc-lesson-meta {
+    font-size: var(--text-12);
+  }
+
+  @media (min-width: 768px) {
+    .cc-head h1 {
+      font-size: var(--text-40);
+    }
+  }
+</style>

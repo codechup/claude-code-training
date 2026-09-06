@@ -1,0 +1,180 @@
+---
+// The lesson page shell.
+//
+// Desktop (>=1024px) is the three-column grid from
+// `docs/design/canvas-out/Lesson1280.dc.html`: 240px sidebar tree ·
+// min-content body (max 760px) · 220px "On this page" rail.
+//
+// Phone (390px, `Lesson390.dc.html`) drops both rails to a single column and
+// puts a 40px breadcrumb strip (`L2 / m07 Hooks / Block dangerous commands`)
+// directly under the header.
+import Base from './Base.astro';
+import Header from '../components/shell/Header.astro';
+import Footer from '../components/shell/Footer.astro';
+import Sidebar from '../components/lesson/Sidebar.astro';
+import TOC from '../components/lesson/TOC.astro';
+import type { TocHeading } from '../components/lesson/TOC.astro';
+import { t } from '../lib/i18n/ui.ts';
+import { alternatesFor } from '../lib/seo.ts';
+import type { NavTree } from '../lib/nav.ts';
+
+interface Props {
+  lang: string;
+  title: string;
+  description: string;
+  path: string;
+  altPath?: string | null;
+  tree: NavTree;
+  activeLevel: string;
+  activeModule: string;
+  activeLessonId: string;
+  headings: TocHeading[];
+  /** Short strings for the phone breadcrumb strip, e.g. ["L2", "m07 Hooks", "…"]. */
+  crumbs: { label: string; href?: string }[];
+}
+
+const {
+  lang,
+  title,
+  description,
+  path,
+  altPath,
+  tree,
+  activeLevel,
+  activeModule,
+  activeLessonId,
+  headings,
+  crumbs,
+} = Astro.props;
+
+const strings = t(lang);
+---
+
+<Base
+  title={title}
+  description={description}
+  lang={lang}
+  path={path}
+  alternates={alternatesFor(lang, path, altPath)}
+>
+  <a class="cc-skip" href="#main">{strings.skipToContent}</a>
+  <Header lang={lang} altPath={altPath} active="curriculum" />
+
+  <nav class="cc-crumbs mono" aria-label={strings.breadcrumb}>
+    <ol>
+      {
+        crumbs.map((crumb) => (
+          <li>
+            {crumb.href ? <a href={crumb.href}>{crumb.label}</a> : <span>{crumb.label}</span>}
+          </li>
+        ))
+      }
+    </ol>
+  </nav>
+
+  <div class="cc-lesson-grid">
+    <div class="cc-lesson-rail cc-lesson-rail-left">
+      <Sidebar
+        lang={lang}
+        tree={tree}
+        activeLevel={activeLevel}
+        activeModule={activeModule}
+        activeLessonId={activeLessonId}
+      />
+    </div>
+
+    <main id="main" class="cc-lesson-main">
+      <slot />
+    </main>
+
+    <div class="cc-lesson-rail cc-lesson-rail-right">
+      <TOC lang={lang} headings={headings} />
+    </div>
+  </div>
+
+  <Footer lang={lang} />
+</Base>
+
+<style>
+  .cc-skip {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 10;
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-bg-2);
+    color: var(--color-ink);
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-2);
+  }
+
+  .cc-skip:focus {
+    left: var(--space-4);
+    top: var(--space-2);
+  }
+
+  .cc-crumbs {
+    padding: 0 var(--space-4);
+    border-bottom: 1px solid var(--color-line);
+    font-size: var(--text-12);
+    color: var(--color-ink-muted);
+  }
+
+  .cc-crumbs ol {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    min-height: 40px;
+  }
+
+  .cc-crumbs li + li::before {
+    content: '/';
+    margin-right: var(--space-2);
+  }
+
+  .cc-crumbs a {
+    color: var(--color-ink-muted);
+    text-decoration: none;
+  }
+
+  .cc-lesson-grid {
+    display: block;
+  }
+
+  .cc-lesson-rail {
+    display: none;
+  }
+
+  .cc-lesson-main {
+    padding: var(--space-6) var(--space-4) var(--space-8);
+    max-width: 760px;
+  }
+
+  @media (min-width: 1024px) {
+    .cc-lesson-grid {
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr) 220px;
+      align-items: start;
+    }
+
+    .cc-crumbs {
+      display: none;
+    }
+
+    .cc-lesson-rail {
+      display: block;
+      position: sticky;
+      top: 0;
+      max-height: 100vh;
+      overflow-y: auto;
+    }
+
+    .cc-lesson-main {
+      padding: var(--space-8) var(--space-12);
+    }
+  }
+</style>

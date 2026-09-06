@@ -1,56 +1,175 @@
 ---
+// Level index (`/[lang]/[level]/`) — also serves the two non-numbered trees,
+// `playbook` and `meta`, whose "modules" are standalone reference pages.
 import type { InferGetStaticParamsType } from 'astro';
-import { getCollection } from 'astro:content';
-import Base from '../../../layouts/Base.astro';
-import Header from '../../../components/shell/Header.astro';
-import Footer from '../../../components/shell/Footer.astro';
+import { getCollection, render, type CollectionEntry } from 'astro:content';
+import Section from '../../../layouts/Section.astro';
+import ProgressBar from '../../../components/lesson/ProgressBar.astro';
+import { buildNav, findLevel } from '../../../lib/nav.ts';
+import { hoursFromMinutes, levelBadgeStyle } from '../../../lib/levels.ts';
+import { t } from '../../../lib/i18n/ui.ts';
+import { swapLangInPath } from '../../../lib/slugs.ts';
 
 export async function getStaticPaths() {
   const sections = await getCollection('sections');
-  const levelSections = sections.filter((s) => s.id.split('/').length === 2);
-  return levelSections.map((s) => {
-    const [lang, level] = s.id.split('/');
-    return { params: { lang, level }, props: { section: s } };
-  });
+  return sections
+    .filter((s) => s.id.split('/').length === 2)
+    .map((section) => {
+      const [lang, level] = section.id.split('/');
+      return { params: { lang, level }, props: { section } };
+    });
 }
 
 type Params = InferGetStaticParamsType<typeof getStaticPaths>;
 const { lang, level } = Astro.params as Params;
-const { section } = Astro.props;
+const { section } = Astro.props as { section: CollectionEntry<'sections'> };
 
-const allSections = await getCollection('sections');
-const modules = allSections
-  .filter((s) => s.id.split('/').length === 3 && s.id.startsWith(`${lang}/${level}/`))
-  .sort((a, b) => a.data.order - b.data.order);
+const sections = await getCollection('sections');
+const lessons = await getCollection('lessons');
+const tree = buildNav(lang, sections, lessons);
+const navLevel = findLevel(tree, level);
+
+const strings = t(lang);
+const path = `/${lang}/${level}/`;
+// Section indexes exist in both languages by construction (the content gate
+// enforces EN/TR parity), so the switch always has somewhere to go.
+const altPath = swapLangInPath(path, lang === 'en' ? 'tr' : 'en');
+
+const { Content } = await render(section);
+const lessonIds = navLevel?.modules.flatMap((m) => m.lessons.map((l) => l.id)) ?? [];
 ---
 
-<Base
-  title={`${section.data.title} — CodeChup Claude Code Academy`}
-  description={section.data.description}
+<Section
   lang={lang}
-  path={`/${lang}/${level}/`}
-  alternates={[
-    { lang: 'en', path: `/en/${level}/` },
-    { lang: 'tr', path: `/tr/${level}/` },
-    { lang: 'x-default', path: `/en/${level}/` },
-  ]}
+  title={`${section.data.title} — ${strings.siteName}`}
+  description={section.data.description}
+  path={path}
+  altPath={altPath}
+  crumbs={[{ label: strings.curriculum, href: `/${lang}/` }, { label: section.data.title }]}
 >
-  <Header lang={lang} />
-  <main class="mx-auto max-w-3xl px-4 py-16">
-    <h1 class="font-mono text-3xl font-bold">{section.data.title}</h1>
-    <p class="mt-4 text-fg-muted">{section.data.description}</p>
-    <ul class="mt-8 flex flex-col gap-3">
-      {
-        modules.map((mod) => (
-          <li>
-            <a class="text-link underline" href={`/${lang}/${level}/${mod.id.split('/')[2]}/`}>
-              {mod.data.title}
+  <header class="cc-head">
+    {
+      navLevel?.number && (
+        <span class="mono cc-badge" style={levelBadgeStyle(navLevel.number)}>
+          {strings.levelLabel(navLevel.number)}
+        </span>
+      )
+    }
+    <h1>{section.data.title}</h1>
+    <p class="soft">{section.data.description}</p>
+    {
+      lessonIds.length > 0 && (
+        <p class="mono muted cc-head-count">
+          {lessonIds.length} {strings.lessons} · {hoursFromMinutes(navLevel?.durationMin ?? 0)}{' '}
+          {strings.hours}
+        </p>
+      )
+    }
+    {lessonIds.length > 0 && <ProgressBar lang={lang} ids={lessonIds} level={navLevel?.number} />}
+  </header>
+
+  <div class="cc-prose">
+    <Content />
+  </div>
+
+  <ul class="cc-module-list">
+    {
+      (navLevel?.modules ?? []).map((mod) => (
+        <li class="cc-card">
+          <h2>
+            <a href={mod.path}>
+              <span class="mono muted">{mod.shortId}</span> {mod.title}
             </a>
-            <span class="text-fg-muted"> — {mod.data.description}</span>
-          </li>
-        ))
-      }
-    </ul>
-  </main>
-  <Footer lang={lang} />
-</Base>
+          </h2>
+          <p class="soft cc-card-body">{mod.description}</p>
+          <p class="mono muted cc-card-count">
+            {mod.lessons.length > 0
+              ? `${mod.lessons.length} ${strings.lessons}`
+              : strings.noLessonsYet}
+          </p>
+        </li>
+      ))
+    }
+  </ul>
+</Section>
+
+<style>
+  .cc-head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+
+  .cc-head h1 {
+    margin: 0;
+    font-size: var(--text-32);
+  }
+
+  .cc-head p {
+    margin: 0;
+  }
+
+  .cc-head-count,
+  .cc-card-count {
+    font-size: var(--text-12);
+  }
+
+  .cc-badge {
+    align-self: flex-start;
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: var(--radius-1);
+    font-size: var(--text-11);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .cc-prose {
+    color: var(--color-ink-soft);
+  }
+
+  .cc-module-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: var(--space-4);
+  }
+
+  .cc-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: 18px;
+    background: var(--color-bg-2);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-3);
+  }
+
+  .cc-card h2 {
+    margin: 0;
+    font-size: var(--text-20);
+  }
+
+  .cc-card h2 a {
+    color: var(--color-ink);
+    text-decoration: none;
+  }
+
+  .cc-card-body {
+    margin: 0;
+    font-size: var(--text-14);
+  }
+
+  @media (min-width: 768px) {
+    .cc-module-list {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .cc-head h1 {
+      font-size: var(--text-40);
+    }
+  }
+</style>

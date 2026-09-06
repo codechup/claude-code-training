@@ -1,19 +1,89 @@
 ---
+// Bilingual 404. It sits outside the locale prefix (a 404 can be served for
+// any path, including ones with no readable locale segment), so it shows
+// both languages rather than guessing — the same rule `src/pages/index.astro`
+// follows.
 import Base from '../layouts/Base.astro';
+import Footer from '../components/shell/Footer.astro';
+import { t } from '../lib/i18n/ui.ts';
+
+const en = t('en');
+const tr = t('tr');
 ---
 
-<Base title="404 — Not found / Bulunamadı" description="Page not found." lang="en" path="/404/">
-  <main class="mx-auto flex max-w-2xl flex-col gap-6 px-4 py-16 text-center">
-    <div>
-      <h1 class="font-mono text-4xl font-bold">404</h1>
-      <p class="mt-2">This page doesn't exist.</p>
-      <p><a class="text-link underline" href="/en/">Back to the English site</a></p>
-    </div>
-    <hr class="border-border" />
-    <div lang="tr">
-      <h2 class="font-mono text-2xl font-bold">404</h2>
-      <p class="mt-2">Bu sayfa bulunamadı.</p>
-      <p><a class="text-link underline" href="/tr/">Türkçe siteye dön</a></p>
-    </div>
+<Base
+  title="404 — Not found / Bulunamadı"
+  description="Page not found. / Sayfa bulunamadı."
+  lang="en"
+  path="/404/"
+>
+  <main class="cc-404">
+    <p class="mono cc-code" aria-hidden="true">404</p>
+
+    <section class="cc-404-block">
+      <h1>{en.notFoundTitle}</h1>
+      <p class="soft">{en.notFoundBody}</p>
+      <a class="cc-btn" href="/en/">{en.backHome}</a>
+    </section>
+
+    <hr />
+
+    <section class="cc-404-block" lang="tr">
+      <h2>{tr.notFoundTitle}</h2>
+      <p class="soft">{tr.notFoundBody}</p>
+      <a class="cc-btn" href="/tr/">{tr.backHome}</a>
+    </section>
   </main>
+  <Footer lang="en" />
 </Base>
+
+<style>
+  .cc-404 {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+    max-width: 640px;
+    margin: 0 auto;
+    padding: var(--space-16) var(--space-4);
+    min-height: 60vh;
+  }
+
+  .cc-code {
+    margin: 0;
+    font-size: var(--text-56);
+    font-weight: 700;
+    color: var(--color-accent-text);
+  }
+
+  .cc-404-block {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+  }
+
+  .cc-404-block h1 {
+    margin: 0;
+    font-size: var(--text-32);
+  }
+
+  .cc-404-block h2 {
+    margin: 0;
+    font-size: var(--text-24);
+  }
+
+  .cc-404-block p {
+    margin: 0;
+  }
+
+  .cc-btn {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--tap-target);
+    padding: 0 18px;
+    border: 1px solid var(--color-line-strong);
+    border-radius: var(--radius-2);
+    color: var(--color-ink);
+    text-decoration: none;
+  }
+</style>

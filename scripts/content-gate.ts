@@ -122,6 +122,16 @@ export async function runContentGate(options: ContentGateOptions = {}): Promise<
       continue;
     }
 
+    // Standalone section-shaped page under playbook/ or meta/ (e.g. playbook/glossary.mdx):
+    // depth 3, not numbered, validated with the section schema.
+    if (parts.length === 3 && /^(playbook|meta)$/.test(parts[1]) && !/^\d{2}-/.test(filename)) {
+      const parsed = sectionSchema.safeParse(data);
+      if (!parsed.success) {
+        errors.push(`${rel}: invalid section frontmatter — ${parsed.error.message}`);
+      }
+      continue;
+    }
+
     // Lesson file.
     if (parts.length !== 4 || !/^\d{2}-.+\.mdx$/.test(filename)) {
       errors.push(`${rel}: lesson files must be at lang/level/module/NN-slug.mdx`);

@@ -1,26 +1,298 @@
 ---
+// Site header, drawn from `docs/design/canvas-out/Main.dc.html` /
+// `Lesson1280.dc.html` (64px bar, 32px gutter desktop / 16px phone) and
+// `Landing390.dc.html` (phone: 44px targets).
+//
+// Slots left for other plans:
+//   * Search  — P09 owns the Pagefind-backed `Search` component and its
+//     Ctrl+K binding (D061). Until it lands, the desktop bar shows the
+//     inert placeholder the canvas draws, marked aria-hidden.
+//   * ThemeToggle — P05's component, imported as-is, never re-implemented.
 import ThemeToggle from './ThemeToggle.astro';
 import LangSwitch from './LangSwitch.astro';
+import { t } from '../../lib/i18n/ui.ts';
 
 interface Props {
   lang: string;
+  /** Absolute path of the sibling-language page, or null when it is a draft. */
+  altPath?: string | null;
+  /** Which top-level nav item is current, if any. */
+  active?: 'curriculum' | 'playbook' | 'changelog' | 'design';
 }
 
-const { lang } = Astro.props;
-
+const { lang, altPath, active } = Astro.props;
+const strings = t(lang);
 const home = `/${lang}/`;
-const labels: Record<string, string> = {
-  en: 'CodeChup Claude Code Academy',
-  tr: 'CodeChup Claude Code Akademisi',
-};
+
+// Every top-level destination is an anchor on the locale landing page: the
+// Playbook and Changelog PAGES are content plans P42/P43's, and linking at
+// them before they exist would be a dead link (lychee.toml runs in CI).
+const links = [
+  { key: 'curriculum', href: `${home}#curriculum-map`, label: strings.curriculum },
+  { key: 'playbook', href: `${home}#playbook`, label: strings.playbook },
+  { key: 'changelog', href: `${home}#what-changed`, label: strings.changelog },
+  { key: 'design', href: '/design/', label: strings.design },
+] as const;
+
+// Sigil geometry copied from docs/design/canvas-src/build.mjs `sigil()`
+// (24-unit grid, 6-unit cells, gold cell top-right), with `currentColor`
+// for the ink cells so one markup works in both themes.
+const SIGIL_CELLS: [number, number][] = [
+  [1, 1],
+  [9, 1],
+  [1, 9],
+  [9, 9],
+  [17, 9],
+  [1, 17],
+  [9, 17],
+  [17, 17],
+];
 ---
 
-<header class="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
-  <a href={home} class="font-mono font-bold text-fg no-underline">
-    {labels[lang] ?? labels.en}
-  </a>
-  <div class="flex items-center gap-3">
-    <LangSwitch currentLang={lang} />
-    <ThemeToggle />
+<header class="cc-header">
+  <div class="cc-header-bar">
+    <a class="cc-lockup" href={home} aria-label={strings.siteName}>
+      <svg
+        class="cc-sigil"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        width="28"
+        height="28"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <g fill="currentColor">
+          {SIGIL_CELLS.map(([x, y]) => <rect x={x} y={y} width="6" height="6" rx="1" />)}
+        </g>
+        <rect x="17" y="1" width="6" height="6" rx="1" fill="var(--color-accent)"></rect>
+      </svg>
+      <span class="cc-wordmark" aria-hidden="true">
+        <span class="mono cc-wordmark-name">
+          {strings.brandWordmark}<span class="caret"></span>
+        </span>
+        <span class="mono cc-wordmark-academy">{strings.brandAcademy}</span>
+      </span>
+    </a>
+
+    <nav class="cc-nav" aria-label={strings.mainNav}>
+      {
+        links.map((link) => (
+          <a
+            href={link.href}
+            class="cc-nav-link"
+            aria-current={active === link.key ? 'page' : undefined}
+          >
+            {link.label}
+          </a>
+        ))
+      }
+    </nav>
+
+    <div class="cc-actions">
+      {/* P09 (seo-search) replaces this placeholder with the real <Search /> */}
+      <div class="cc-search-placeholder" aria-hidden="true">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.75"
+          stroke-linecap="round"
+        >
+          <circle cx="11" cy="11" r="7"></circle>
+          <path d="M20 20l-3.5-3.5"></path>
+        </svg>
+        <span>{strings.searchLessons}</span>
+        <span class="cc-kbd mono">{strings.searchHint}</span>
+      </div>
+      <LangSwitch currentLang={lang} targetPath={altPath} />
+      <ThemeToggle />
+    </div>
   </div>
+
+  <details class="cc-menu">
+    <summary class="cc-menu-summary" aria-label={strings.openMenu}>
+      <svg
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        aria-hidden="true"
+      >
+        <path d="M4 7h16M4 12h16M4 17h16"></path>
+      </svg>
+    </summary>
+    <nav class="cc-menu-nav" aria-label={`${strings.mainNav} (${strings.openMenu})`}>
+      {links.map((link) => <a href={link.href}>{link.label}</a>)}
+    </nav>
+  </details>
 </header>
+
+<style>
+  .cc-header {
+    border-bottom: 1px solid var(--color-line);
+    background: var(--color-bg-0);
+  }
+
+  .cc-header-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-height: 64px;
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .cc-lockup {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--color-ink);
+    text-decoration: none;
+    flex-shrink: 0;
+  }
+
+  .cc-sigil {
+    width: 24px;
+    height: 24px;
+  }
+
+  .cc-wordmark {
+    display: none;
+    flex-direction: column;
+    gap: 2px;
+    line-height: 1;
+  }
+
+  .cc-wordmark-name {
+    font-size: var(--text-12);
+    font-weight: 500;
+    letter-spacing: 0.02em;
+  }
+
+  .cc-wordmark-academy {
+    font-size: var(--text-11);
+    letter-spacing: var(--tracking-academy);
+    text-transform: uppercase;
+    color: var(--color-ink-soft);
+  }
+
+  .cc-nav {
+    display: none;
+    align-items: center;
+    gap: 22px;
+    font-size: var(--text-14);
+  }
+
+  .cc-nav-link {
+    color: var(--color-ink);
+    text-decoration: none;
+    padding: var(--space-2) 0;
+  }
+
+  .cc-nav-link[aria-current='page'] {
+    color: var(--color-accent-text);
+  }
+
+  .cc-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-shrink: 0;
+  }
+
+  .cc-search-placeholder {
+    display: none;
+    align-items: center;
+    gap: var(--space-2);
+    height: 36px;
+    min-width: 200px;
+    padding: 0 var(--space-3);
+    border: 1px solid var(--color-line);
+    border-radius: var(--radius-2);
+    color: var(--color-ink-muted);
+    font-size: var(--text-13);
+  }
+
+  .cc-kbd {
+    margin-left: auto;
+    padding: 2px 6px;
+    border: 1px solid var(--color-line-strong);
+    border-bottom-width: 2px;
+    border-radius: var(--radius-1);
+    font-size: var(--text-11);
+    color: var(--color-ink-soft);
+  }
+
+  .cc-menu {
+    border-top: 1px solid var(--color-line);
+  }
+
+  .cc-menu-summary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: var(--tap-target);
+    color: var(--color-ink-soft);
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .cc-menu-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .cc-menu-nav {
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-2) var(--space-4) var(--space-4);
+  }
+
+  .cc-menu-nav a {
+    display: flex;
+    align-items: center;
+    min-height: var(--tap-target);
+    color: var(--color-ink);
+    text-decoration: none;
+    font-size: var(--text-16);
+  }
+
+  @media (min-width: 640px) {
+    .cc-sigil {
+      width: 28px;
+      height: 28px;
+    }
+
+    .cc-wordmark {
+      display: flex;
+    }
+
+    .cc-wordmark-name {
+      font-size: var(--text-14);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .cc-header-bar {
+      padding: 0 var(--space-8);
+    }
+
+    .cc-nav,
+    .cc-search-placeholder {
+      display: flex;
+    }
+
+    .cc-actions {
+      gap: 10px;
+    }
+
+    .cc-menu {
+      display: none;
+    }
+  }
+</style>

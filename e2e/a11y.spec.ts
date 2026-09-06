@@ -7,7 +7,7 @@ const paths = [
   '/tr/',
   '/design/',
   '/404/',
-  '/en/l1-beginner/m01-start/what-is-claude-code/',
+  '/en/l1-beginner/m01-start/what-claude-code-is/',
 ];
 
 // Routes whose status isn't asserted 200 exactly:

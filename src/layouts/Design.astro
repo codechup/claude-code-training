@@ -1,0 +1,26 @@
+---
+// Layout for `/design/` — the living component library (D033/D034), which is
+// EN-only and sits OUTSIDE the locale prefix, so it gets no Header nav, no
+// LangSwitch and no hreflang alternates: just the Base document shell plus
+// the page container the design page draws itself into.
+//
+// P05 owns `src/pages/design/index.astro` and it currently composes `Base`
+// directly with its own sticky TOC and `ThemeToggle`. This layout is the
+// prop-compatible home for that chrome so P05 can switch to it in a
+// one-line change (`import Base` -> `import Design`) whenever convenient —
+// it deliberately does NOT wrap anything P05's page already provides.
+import Base from './Base.astro';
+
+interface Props {
+  title: string;
+  description: string;
+  /** Absolute path, e.g. "/design/". */
+  path?: string;
+}
+
+const { title, description, path = '/design/' } = Astro.props;
+---
+
+<Base title={title} description={description} lang="en" path={path}>
+  <slot />
+</Base>

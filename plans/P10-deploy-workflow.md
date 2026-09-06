@@ -2,7 +2,7 @@
 id: P10
 title: Deploy workflow and static host runbook
 milestone: M0
-status: review
+status: done
 owner: sonnet-p10-2026-09-06
 branch: plan/10-deploy-workflow
 model_hint: sonnet
@@ -14,7 +14,7 @@ owned_paths:
   - docs/deploy/**
 shared_paths: []
 estimate: M
-updated_at: 2026-09-06T20:06:43Z
+updated_at: 2026-09-06T20:19:39Z
 open_questions: []
 ---
 
