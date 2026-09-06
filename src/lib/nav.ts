@@ -236,7 +236,11 @@ export function findModule(tree: NavTree, levelSlug: string, moduleSlug: string)
  * index page when no lesson is live yet.
  */
 export function startHref(tree: NavTree): string {
-  const first = flattenLessons(tree)[0];
+  const lessons = flattenLessons(tree);
+  // Never point the landing CTA at the build-graph placeholder (P06's
+  // scaffold lesson, tagged `placeholder`) — it renders a banner saying it is
+  // not finished content. P12 deletes it and this filter stops mattering.
+  const first = lessons.find((l) => !l.tags.includes('placeholder')) ?? null;
   if (first) return first.path;
   return tree.levels[0]?.path ?? `/${tree.lang}/`;
 }

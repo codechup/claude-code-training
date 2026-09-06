@@ -2,8 +2,8 @@
 id: P08
 title: "'MDX components B: quiz, decision trees, feedback'"
 milestone: M0
-status: todo
-owner: null
+status: in_progress
+owner: session-p08-2026-09-06
 branch: plan/08-mdx-components-b
 model_hint: sonnet
 effort_hint: medium
@@ -17,7 +17,7 @@ owned_paths:
   - worker/**
 shared_paths: []
 estimate: M
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-06T20:22:07Z
 open_questions: []
 ---
 

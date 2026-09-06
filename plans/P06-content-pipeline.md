@@ -2,7 +2,7 @@
 id: P06
 title: "'Content pipeline: collections, routes, and landing'"
 milestone: M0
-status: review
+status: done
 owner: fable-lead-2026-09-06
 branch: plan/06-content-pipeline
 model_hint: fable
@@ -23,7 +23,7 @@ owned_paths:
   - content/**
 shared_paths: []
 estimate: L
-updated_at: 2026-09-06T20:18:36Z
+updated_at: 2026-09-06T20:22:06Z
 open_questions: []
 ---
 

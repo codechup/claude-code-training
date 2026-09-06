@@ -132,3 +132,26 @@ describe('lookups', () => {
     expect(startHref(buildNav('de', sections, lessons))).toBe('/de/');
   });
 });
+
+describe('startHref skips the build-graph placeholder', () => {
+  it('points at the first non-placeholder lesson', () => {
+    const withPlaceholder = buildNav(
+      'en',
+      [section('en/l1-beginner', 'Beginner', 1), section('en/l1-beginner/m01-start', 'Start', 1)],
+      [
+        lesson('en/l1-beginner/m01-start/placeholder', 0, { tags: ['placeholder'] }),
+        lesson('en/l1-beginner/m01-start/install', 1),
+      ],
+    );
+    expect(startHref(withPlaceholder)).toBe('/en/l1-beginner/m01-start/install/');
+  });
+
+  it('falls back to the level index when the placeholder is the only lesson', () => {
+    const onlyPlaceholder = buildNav(
+      'en',
+      [section('en/l1-beginner', 'Beginner', 1), section('en/l1-beginner/m01-start', 'Start', 1)],
+      [lesson('en/l1-beginner/m01-start/placeholder', 0, { tags: ['placeholder'] })],
+    );
+    expect(startHref(onlyPlaceholder)).toBe('/en/l1-beginner/');
+  });
+});

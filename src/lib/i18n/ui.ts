@@ -57,6 +57,7 @@ export interface UiStrings {
   heroBodyShort: string;
   free: string;
   noLessonsYet: string;
+  feedSource: string;
   placeholderBadge: string;
   placeholderNote: string;
   notFoundTitle: string;
@@ -119,6 +120,7 @@ const en: UiStrings = {
     'Levelled, hands-on, verified against the current release. Labs run in your own terminal.',
   free: 'free, MIT',
   noLessonsYet: 'Lessons for this module are being written.',
+  feedSource: 'Source:',
   placeholderBadge: 'Placeholder',
   placeholderNote:
     'This page exists to prove the build, routing and content gate work end to end. It is not a finished lesson — the real lesson replaces it.',
@@ -183,6 +185,7 @@ const tr: UiStrings = {
     'Seviyeli, uygulamalı ve güncel sürüme göre doğrulanmış. Laboratuvarlar kendi terminalinde çalışır.',
   free: 'ücretsiz, MIT',
   noLessonsYet: 'Bu modülün dersleri yazılıyor.',
+  feedSource: 'Kaynak:',
   placeholderBadge: 'Yer tutucu',
   placeholderNote:
     'Bu sayfa; derleme, yönlendirme ve içerik kapısının uçtan uca çalıştığını göstermek için var. Tamamlanmış bir ders değildir — gerçek ders bunun yerini alacak.',

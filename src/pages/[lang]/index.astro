@@ -32,6 +32,10 @@ const path = `/${lang}/`;
 const altPath = swapLangInPath(path, lang === 'en' ? 'tr' : 'en');
 
 const start = startHref(tree);
+// D062's "level cards" are the four numbered levels; `playbook` and `meta`
+// are section trees, not levels (they carry no lessons and no level badge),
+// so they appear in the curriculum map and the header, not here.
+const cardLevels = tree.levels.filter((level) => level.number !== null);
 const changes = changesFor(lang as Lang);
 ---
 
@@ -74,7 +78,7 @@ const changes = changesFor(lang as Lang);
     </div>
     <ul class="cc-level-grid">
       {
-        tree.levels.map((level) => (
+        cardLevels.map((level) => (
           <li class="cc-card">
             <div class="cc-card-top">
               <span class="mono cc-badge" style={levelBadgeStyle(level.number)}>
@@ -147,7 +151,9 @@ const changes = changesFor(lang as Lang);
         }
       </ul>
       <p class="muted cc-feed-source">
-        Source: <code class="mono">research/deprecations.md</code> (verified {VERIFIED_VERSION}).
+        {strings.feedSource}
+        <code class="mono">research/deprecations.md</code> ({strings.verifiedOn}
+        {' '}{VERIFIED_VERSION}).
       </p>
     </div>
     <div class="cc-card cc-playbook" id="playbook">

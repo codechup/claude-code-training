@@ -2,8 +2,8 @@
 id: P09
 title: Search and SEO
 milestone: M0
-status: todo
-owner: null
+status: in_progress
+owner: session-p09-2026-09-06
 branch: plan/09-search-seo
 model_hint: sonnet
 effort_hint: medium
@@ -18,7 +18,7 @@ shared_paths:
   - astro.config.ts
   - src/layouts/Base.astro
 estimate: M
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-06T20:22:08Z
 open_questions: []
 ---
 

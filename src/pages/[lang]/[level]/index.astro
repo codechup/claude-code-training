@@ -82,11 +82,13 @@ const lessonIds = navLevel?.modules.flatMap((m) => m.lessons.map((l) => l.id)) ?
             </a>
           </h2>
           <p class="soft cc-card-body">{mod.description}</p>
-          <p class="mono muted cc-card-count">
-            {mod.lessons.length > 0
-              ? `${mod.lessons.length} ${strings.lessons}`
-              : strings.noLessonsYet}
-          </p>
+          {(mod.lessons.length > 0 || navLevel?.number !== null) && (
+            <p class="mono muted cc-card-count">
+              {mod.lessons.length > 0
+                ? `${mod.lessons.length} ${strings.lessons}`
+                : strings.noLessonsYet}
+            </p>
+          )}
         </li>
       ))
     }

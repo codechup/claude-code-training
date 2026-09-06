@@ -2,8 +2,8 @@
 id: P07
 title: "'MDX components A: prose and code presentation'"
 milestone: M0
-status: todo
-owner: null
+status: in_progress
+owner: session-p07-2026-09-06
 branch: plan/07-mdx-components-a
 model_hint: sonnet
 effort_hint: medium
@@ -18,7 +18,7 @@ owned_paths:
   - src/components/mdx/Lab.astro
 shared_paths: []
 estimate: M
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-06T20:22:07Z
 open_questions: []
 ---
 
