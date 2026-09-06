@@ -2,7 +2,7 @@
 id: P03
 title: Curriculum map and currency research
 milestone: M0
-status: in_progress
+status: review
 owner: fable-lead-2026-09-06
 branch: plan/03-curriculum-map
 model_hint: fable
@@ -13,7 +13,7 @@ owned_paths:
   - research/**
 shared_paths: []
 estimate: L
-updated_at: 2026-09-06T18:55:09Z
+updated_at: 2026-09-06T19:03:16Z
 open_questions: []
 ---
 
@@ -73,4 +73,7 @@ A reviewer opens `docs/CURRICULUM.md`, counts the lesson totals against the outl
 
 ## Handoff notes
 
-- Lead session drafted `research/feature-inventory.md` and `research/deprecations.md` on 2026-09-06 from the official docs (Claude Code 2.1.263). Three items are marked UNVERIFIED (Academy/Skilljar URLs, Anthropic YouTube playlist, community list) — resolve them here before W1 and record the answers in `open_questions` if still unresolved.
+- **Done 2026-09-06 (lead session).** `docs/CURRICULUM.md`: 4 levels, 21 modules, 130 lessons (floor was 105), Playbook 7 pages, Meta 3 pages, module→D-number table, source policy, verified-resources table. `research/feature-inventory.md`: hooks/skills/subagents/models re-fetched from the official docs this session and reconciled (new fields: skill `metadata/license/compatibility`, agent `mcpServers/effort/color/initialPrompt/experimental`, built-ins `claude`/`claude-code-guide`, `/effort auto`, `ultrathink`, `hookSpecificOutput.permissionDecision`). `research/deprecations.md` + two rows (hook JSON shape, Skilljar→Academy URL).
+- **UNVERIFIED items resolved:** Academy course verified (academy.claude.com/courses/claude-code-in-action); community list verified (hesreallyhim/awesome-claude-code); YouTube playlists could not be verified programmatically — rule: cite individual videos only after opening them; community blogs: not curated, cite only with an official confirmation.
+- **Link evidence:** every docs slug in the inventory map fetched with curl → 200 (one wrong slug fixed: `environment-variables` → `env-vars`); all absolute URLs in the three files → 200.
+- **For P11:** the bootstrap hook `.claude/hooks/guard-hygiene.mjs` emits the legacy `{decision: 'block'}` JSON; exit 2 blocks anyway, but switch it to `hookSpecificOutput.permissionDecision: 'deny'` so the repo models the current contract.
