@@ -1,0 +1,242 @@
+---
+title: 'The /design canvas: a brief in, artboards out'
+description: 'Run /design with a brief and Claude publishes a canvas of editable artboards as an artifact. Learn what the canvas is for, how approval and export work, how /design-sync feeds your real components in, and how this site turned its own canvas into design tokens.'
+level: 4
+module: 'm19-visual'
+order: 2
+duration_min: 20
+difficulty: core
+tags: ['design', 'artifacts', 'tokens', 'visual']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Share session output as artifacts (Draft a design canvas)'
+    url: 'https://code.claude.com/docs/en/artifacts.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Commands reference (/design, /design-sync, /design-login)'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: "What's new · week 34, 2026 (draft editable UI artboards with /design)"
+    url: 'https://code.claude.com/docs/en/whats-new/2026-w34.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: "This site's own design canvas (docs/design/CANVAS.md)"
+    url: 'https://github.com/codechup/claude-code-training/blob/main/docs/design/CANVAS.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Explain what `/design` produces — a canvas of artboards published as an artifact, not a finished page or a component library.
+- Write a brief that gets you comparable options instead of one plausible screen.
+- Say what happens on the published canvas: editing where saving is enabled, and view-and-export (PNG/PDF) where it is not.
+- Decide when `/design-sync` is worth it, and what `/design-login` is for.
+- Turn an approved canvas into something code can consume — tokens, not screenshots — using this site's own canvas as the worked example.
+
+**Prerequisites.** A session where artifacts are available (lesson 01: `/login`, Pro/Max/Team/Enterprise, Anthropic API) and Claude Code 2.1.234 or later. `/design` is a bundled skill built on artifacts, so it inherits every artifact requirement. It is unavailable on Amazon Bedrock, Google Cloud's Agent Platform, Microsoft Foundry and Claude Platform on AWS, because artifacts are unavailable there.
+
+<WhenNotToUse>
+  `/design` is a research preview aimed at drawing — UI mockups, screen flows, landing pages, and
+  print pieces such as posters, flyers and brochures. It is the wrong tool when the design already
+  exists and you want it built (describe the change and let Claude edit the code), when the artefact
+  you actually need is a document rather than a layout, when the decision is about behaviour rather
+  than appearance, or when your organisation's real design system already answers the question — in
+  that case the useful move is recording the tokens where Claude will find them, not drawing new
+  ones. And a canvas is not a specification: nothing downstream reads a `.dc.html` artboard, so a
+  design that never becomes tokens or code has produced nothing but a picture.
+</WhenNotToUse>
+
+## Concept
+
+### What the command does
+
+`/design [brief]` is a bundled skill. Give it a brief and Claude drafts the design as artboards laid out on one canvas, then publishes that canvas as an artifact that runs a research preview of Claude Design's editor. Claude prints a link; you open it and review the artboards.
+
+This lesson's worked prompt is the documentation's own shape — a brief, not a spec:
+
+```text
+/design a settings screen for a mobile banking app
+```
+
+Because the canvas is an artifact, everything from lesson 01 applies: it lands at a `claude.ai/code/artifact/...` URL, it is private until you share it, republishing keeps the URL and adds a version, and the **Share** control picks which version viewers see.
+
+What you can do on the published canvas depends on your account. Where saving is enabled, you select an element on an artboard, change it, and save — which publishes a new version for everyone. Otherwise you get a view-and-export preview of Claude's draft, exportable as PNG or PDF.
+
+The loop the feature is built for is short: run it with a brief, open the canvas, pick an artboard, then tell Claude which option to implement. The canvas is where you choose; the repository is where the choice lands.
+
+### Writing a brief that produces a decision
+
+A brief that describes one screen gets you one screen, and you have no way to tell whether it is good. The briefs that pay off ask for **comparable variants** — the same content drawn several ways, so the differences are the argument:
+
+```text
+/design four settings screens for a mobile banking app: vary density and grouping,
+same content in each, one line under each saying what it trades away.
+```
+
+Two other things belong in a brief, because Claude cannot guess them: the **frames** you care about (a phone at 390 px and a desktop at 1280 px are different designs, not one design at two sizes) and the **constraints** that are already settled — brand colours, the typeface, the accessibility bar. Anything you leave out, the skill decides for you, and unwinding a decision you did not notice being made is the expensive part.
+
+### /design-sync and /design-login
+
+By default the artboards are drawn from scratch. `/design-sync [hint]` converts your repository's React design system and uploads it to Claude Design, so designs it produces use your real components; you can name the system, as in `/design-sync Acme DS`. A first-time sync verifies every component and can take a few hours on a large repository. `/design-login` authorises that design-system access with your claude.ai account.
+
+Both are worth it exactly once your components are the thing you are laying out. If the question is "what should this look like", drawing from scratch is faster; if it is "how do our existing pieces arrange on this screen", sync first.
+
+### From canvas to code
+
+A canvas is not consumable by a build. The step that makes it real is turning it into named values your stylesheet owns — colours, type scale, spacing, radii, motion — and then never reading the picture again.
+
+This site is the worked example. Its live canvas stays private to the owner's Claude account; what is public is the write-up and the exported artboards checked into the repository. The lead session drafted the design with `/design` on 2026-09-06 and wrote it up in `docs/design/CANVAS.md`: nine artboards (brand, tokens, landing at 1280 and 390, the lesson page at 1280 and 390, the lesson page in the light theme, the component gallery, and the `/design` page itself), each with the frame it settles and the plan that implements it. The token table in that file — `bg-0`, `ink`, `accent`, `caret`, and the rest, in dark and light — was copied into `src/styles/tokens.css`, and this repository's rules then forbid a raw hex literal anywhere else. That is the whole point of the hand-off: after it, the canvas can go stale without breaking anything, because the tokens are the contract.
+
+Two details from that write-up are worth stealing. Contrast was **computed**, not eyeballed: the review lifted the muted-ink token in both themes and added a separate `accent-text` token, because raw gold as text fails WCAG AA on light paper. And the artboards are generated by a checked-in script (`docs/design/canvas-src/build.mjs`), so every value on the canvas traces to a line of code rather than to a memory of a conversation.
+
+### The artboard file
+
+Each artboard is a `.dc.html` file — an HTML document with a `<x-dc>` root and a `<helmet>` block for the fonts and styles the board needs — plus a `canvas.json` that gives every board a title, a frame size and an `x`/`y` position on the shared canvas. Reading them is how you check what was actually drawn:
+
+<Transcript
+  src="content/_shared/transcripts/m19-visual/02-design-canvas/01-canvas-out.txt"
+  range="4-25"
+/>
+
+## Hands-on lab
+
+There is no honest transcript of a canvas being drawn: `/design` publishes an artifact to your account and then hands you a visual editor, and neither of those is something a lesson may do on your behalf or fake. So this lab has two halves — a real, reproducible read of a canvas that already exists in a public repository, and the interactive half you run yourself.
+
+<Lab
+  title="Lab · read a real canvas, then draft your own"
+  lessonId="en/l4-master/m19-visual/design-canvas"
+  repoTag="none"
+  steps={[
+    'Clone this site’s own repository (`git clone https://github.com/codechup/claude-code-training`) and read `docs/design/CANVAS.md` end to end — inputs, artboards, token table, deltas, hand-off.',
+    'List `docs/design/canvas-out/` and read `canvas.json`: nine artboards, each with a frame size and a position. Open `Tokens.dc.html` in a browser and compare its palette with `src/styles/tokens.css`.',
+    'Pick one token — `accent-text`, say — and find the paragraph in CANVAS.md §5 explaining why it exists. That is what a design decision looks like when it is written down.',
+    'Now your own: in a session where artifacts are available, run `/design` with a brief that asks for several variants and names your frames, e.g. `/design three dashboard layouts for a task tracker at 1280 and 390, same metrics in each, one line under each on what it trades away`.',
+    'Open the link Claude prints. Review the artboards; where saving is enabled, change something and save; otherwise export the draft as PNG or PDF.',
+    'Pick one artboard and tell Claude which option to implement. Ask for tokens first — a colour, type and spacing block you can paste into a stylesheet — not for the finished screen.',
+  ]}
+  expected="docs/design/canvas-out/ holds nine .dc.html artboards plus canvas.json, and every colour in CANVAS.md §3 appears in src/styles/tokens.css. Your own /design run prints a claude.ai/code/artifact/... link whose canvas shows one artboard per variant you asked for."
+  checklist={[
+    'You can name what each of the nine artboards settles',
+    'You found a token whose value changed for a stated accessibility reason',
+    'Your brief asked for variants and named its frames',
+    '/design printed a canvas link and the canvas has one artboard per variant',
+    'The implementation step started with tokens, not with a screenshot',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m19-visual/02-design-canvas/01-canvas-out.txt"
+    range="4-16"
+  />
+</Lab>
+
+## Anti-patterns
+
+**Briefing one screen.** One artboard gives you nothing to compare it against, so "is this good?" becomes a matter of taste. _Fix:_ ask for three or four variants of the same content and one line on what each trades away.
+
+**Designing at one width.** A canvas drawn only at 1280 px hides every decision that matters on a phone. _Fix:_ name both frames in the brief; this site's canvas carries a 390 px board beside every 1280 px one.
+
+**Treating the canvas as the source of truth.** Nothing in your build reads a `.dc.html` file. A canvas nobody converts is a screenshot with extra steps. _Fix:_ convert it to tokens in the stylesheet, and record what each token is for.
+
+**Eyeballing contrast.** A palette that looks fine on your monitor can fail AA on paper-coloured backgrounds, and gold text is the classic offender. _Fix:_ compute the contrast matrix from the final tokens, and let it change the tokens.
+
+**Reaching for `/design-sync` on day one.** A first-time sync verifies every component and can take hours on a large repository — that is a poor trade when you are still deciding what the screen is. _Fix:_ sync when you are laying out components you already have.
+
+**Assuming everyone can edit.** Editing on the canvas exists where saving is enabled for the account; otherwise a reviewer gets a view-and-export preview. _Fix:_ collect their feedback as comments on the artifact (lesson 01) rather than expecting edits.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m19-visual/design-canvas"
+  questionId="q1"
+  lang="en"
+  prompt="What does /design actually produce?"
+  options={[
+    {
+      text: 'A set of React components in your repository.',
+      explanation:
+        'That is the implementation step you take afterwards; /design draws, it does not commit code.',
+    },
+    {
+      text: 'A canvas of artboards, published as an artifact that runs a research preview of Claude Design’s editor.',
+      correct: true,
+      explanation:
+        'Exactly — and because it is an artifact, it lives at a claude.ai artifact URL with versions and sharing.',
+    },
+    {
+      text: 'A PNG export saved to your working directory.',
+      explanation:
+        'PNG and PDF are exports you take from the published canvas, not what the command writes locally.',
+    },
+    {
+      text: 'A Figma file.',
+      explanation: 'No third-party design tool is involved.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m19-visual/design-canvas"
+  questionId="q2"
+  lang="en"
+  prompt="Your session authenticates with an API key. You run /design. What happens?"
+  options={[
+    {
+      text: 'It works — /design is a local skill.',
+      explanation:
+        '/design is built on artifacts, and artifacts need a session signed in with /login.',
+    },
+    {
+      text: 'It is unavailable, because the artifact requirements are not met.',
+      correct: true,
+      explanation:
+        'Right. /design requires a session where artifacts are available, plus Claude Code 2.1.234 or later.',
+    },
+    {
+      text: 'It publishes the canvas but you cannot share it.',
+      explanation: 'Nothing is published; the prerequisite fails before that.',
+    },
+    {
+      text: 'It falls back to writing artboards into your repository.',
+      explanation: 'There is no documented local fallback for the canvas.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m19-visual/design-canvas"
+  questionId="q3"
+  lang="en"
+  prompt="What is /design-sync for?"
+  options={[
+    {
+      text: 'Keeping a published canvas in sync with later edits.',
+      explanation:
+        'Saving on the canvas already publishes a new version; no command is needed for that.',
+    },
+    {
+      text: 'Converting your repository’s React design system and uploading it to Claude Design, so designs use your real components.',
+      correct: true,
+      explanation:
+        'And a first-time sync verifies every component — it can take a few hours on a large repository.',
+    },
+    {
+      text: 'Downloading Claude’s palette into your tokens file.',
+      explanation:
+        'That conversion is a human decision, made once and written into the stylesheet.',
+    },
+    {
+      text: 'Syncing artboards between two claude.ai accounts.',
+      explanation: 'Sharing an artifact covers that; /design-sync is about components.',
+    },
+  ]}
+/>
+
+**Next:** `03-chrome-automation` leaves the canvas for the live browser — driving a real page with Claude in Chrome, and recording what happened as a GIF.

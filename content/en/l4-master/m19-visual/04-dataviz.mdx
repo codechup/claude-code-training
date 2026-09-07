@@ -1,0 +1,231 @@
+---
+title: '/dataviz and chart discipline'
+description: 'The bundled /dataviz skill picks the chart form for your data, assigns colour by role, and validates the palette for colourblind safety and contrast with a bundled script. Learn what it decides, when to invoke it, and how to swap its placeholder palette for your own.'
+level: 4
+module: 'm19-visual'
+order: 4
+duration_min: 10
+difficulty: advanced
+tags: ['dataviz', 'charts', 'skills', 'accessibility', 'visual']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Commands reference (/dataviz)'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: "What's new · week 27, 2026 (/dataviz chart and dashboard guidance)"
+    url: 'https://code.claude.com/docs/en/whats-new/2026-w27.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Extend Claude with skills (bundled skills)'
+    url: 'https://code.claude.com/docs/en/skills.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Share session output as artifacts (page constraints)'
+    url: 'https://code.claude.com/docs/en/artifacts.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say what `/dataviz` decides for you: chart form, colour by role, a validated palette, and mark, interaction and accessibility rules.
+- Invoke it at the right moment — before the first line of chart code, not after.
+- Replace its brand-neutral placeholder palette with your own without losing the guarantees.
+- Recognise the two failures a chart review should always catch: the wrong form, and colour carrying meaning it cannot carry.
+
+**Prerequisites.** Claude Code 2.1.198 or later. `/dataviz` is a bundled skill, so it is available unless bundled skills are turned off with `disableBundledSkills`. Lessons 01 and 02 of this module, if you plan to put the chart on an artifact — the CSP there decides which charting library, if any, the page may load.
+
+<WhenNotToUse>
+  `/dataviz` is design guidance for charts. It is not an analysis tool: it will not tell you whether
+  your numbers are right, whether the sample is big enough, or whether the trend is real. Skip it
+  when the honest answer is a number or a sentence — a single value on a slide does not need a
+  chart, and a four-row table is a table. Skip it too when the destination renders charts itself
+  from rows you hand it, because a picture of a chart loses hover, inspection and per-value
+  comments. And do not reach for it to redecorate a chart whose form is wrong: no palette fixes a
+  pie chart of a time series.
+</WhenNotToUse>
+
+## Concept
+
+### What the skill does
+
+`/dataviz [request]` is a bundled skill. Given data and a destination, Claude picks the chart form for the data, assigns colour by role, validates the palette for colourblind safety and contrast with a bundled script, and applies mark, interaction and accessibility rules. It works from a brand-neutral placeholder palette that you replace with your own.
+
+Those four verbs are the whole value, and they map to the four ways charts usually go wrong: the wrong form, colour used decoratively, a palette nobody can read, and a mark that lies (a truncated axis, an area chart of something that does not accumulate).
+
+This lesson's worked prompt names the data, the question and the destination — all three, because each changes the answer:
+
+```text
+/dataviz 30 days of tasks_created, tasks_completed and tasks_overdue from
+artifacts/task-activity.csv, for a dashboard artifact. The question is whether
+the backlog is growing.
+```
+
+The timing matters more than the wording: invoke it **before** the first line of chart code, before choosing colours, and before laying out a dashboard. Applied afterwards, it becomes a repaint of decisions already baked into the markup.
+
+### Colour by role, not by decoration
+
+"Colour by role" is the idea worth taking away, and it is what the skill's advice turns on in practice. Here is a run of `/dataviz` over the lab repository's activity data, invoked for real with writing and publishing denied, so it could only advise:
+
+<Transcript
+  src="content/_shared/transcripts/m19-visual/04-dataviz/01-dataviz-headless.txt"
+  range="8-14"
+/>
+
+Every recommendation there is a role. Three series on one scale — created, completed, overdue — get a **categorical** palette, assigned in a fixed order so a series does not change colour between charts. `avg_priority` sits on a different scale, so it does not get a second axis on the same chart; it gets its own small chart with a **single, sequential hue**. A legend is required once there is more than one series and pointless when there is only one. Text and axes stay neutral ink.
+
+The interesting line is the one about `tasks_overdue`. The skill does not apply a rule mechanically: it points out that overdue is a "bad state" signal rather than a neutral category, and suggests the **status ramp** for it so a rising line reads as a problem instead of "series 3". That is a judgement call you have to make, not a default to accept — spending your status colours on a series means they no longer mean "something is wrong" anywhere else on the page. Decide once, per dashboard, and stay consistent.
+
+That is the discipline: every colour on the chart has a job — identity, magnitude, or status — and no colour has two.
+
+### Validating the palette
+
+The part you cannot do by eye is the last one. Claude validates the palette with a bundled script rather than by judgement, checking colourblind safety and contrast; the week-27 release notes call it a runnable colour-palette validator. Two things follow.
+
+First, **run it again after you swap in your brand palette.** The default is a brand-neutral placeholder, and a validated placebo palette says nothing about the four hues your brand hands you. The swap is the moment the guarantee is at risk.
+
+Second, validation is a build step you can keep. A palette that passed once can fail after a designer nudges a hue, and the failure is invisible to everyone with normal colour vision — which is why it survives review.
+
+### Charts on an artifact
+
+If the chart is going on an artifact, lesson 01's constraints decide the implementation before any design question does. The page may load scripts from four CDN hosts only — `cdnjs.cloudflare.com`, `cdn.jsdelivr.net`, `cdn.tailwindcss.com` and `code.jquery.com` — every external image is blocked, and the rendered page must stay under 16 MiB. In practice that pushes you towards inline SVG for anything simple: no library to load, no blocked request, no size problem, and the text in the chart stays selectable and readable by a screen reader. Reach for a charting library only when the interaction genuinely needs one, and pin an exact version from one of the four hosts.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · one dataset, three destinations"
+  lessonId="en/l4-master/m19-visual/dataviz"
+  repoTag="none"
+  steps={[
+    'Get the sample data: in the lab repo, `git checkout lesson/m19-01-start` then `git checkout lesson/m19-01-solution -- artifacts/`. It is 30 days of tasks_created, tasks_completed, tasks_overdue and avg_priority.',
+    'Ask for advice only, before any code: run `/dataviz` naming the file, the question ("is the backlog growing?") and the destination, and read what it says about form and colour roles.',
+    'Now ask for it three ways and compare: an inline SVG for a static page, a chart in a dashboard artifact, and a matplotlib figure for a report. Note which decisions change and which do not.',
+    'Swap the palette: give Claude your own brand colours and ask it to re-validate the palette rather than assume it still passes.',
+    'Break it on purpose: ask for the same data as a pie chart, and read the objection. That objection is the skill earning its place.',
+    'Check the accessibility claims yourself — is there a legend, does any information depend on colour alone, and is the chart text real text?',
+  ]}
+  expected="The advice-only run recommends a multi-series line chart for the three same-scale series, keeps avg_priority off a second axis, and assigns a categorical palette in fixed order. The form survives all three destinations; only the implementation changes. Re-validating a swapped palette is a real check, not a formality."
+  checklist={[
+    'You invoked /dataviz before writing any chart code',
+    'You can name the role each colour on the chart plays',
+    'avg_priority did not end up on a second axis of the same chart',
+    'The palette was re-validated after the brand swap',
+    'Nothing on the chart depends on colour alone to be understood',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m19-visual/04-dataviz/01-dataviz-headless.txt"
+    range="7-14"
+  />
+</Lab>
+
+The recording is the advice-only step, and that is all it can honestly be: the skill's output is guidance, and the chart it guides is yours to build. Note the flags — `--allowedTools "Read,Skill"` with `Write` and `Artifact` denied — which is a generally useful shape when you want a skill's judgement without a file appearing.
+
+## Anti-patterns
+
+**Calling `/dataviz` after the chart exists.** By then the form, the axes and the palette are already in the markup, and the skill can only suggest repainting. _Fix:_ invoke it before the first line of chart code.
+
+**Two scales, one chart.** A dual axis lets you imply any correlation you like by choosing the ranges. _Fix:_ small multiples — a second, smaller chart sharing the x-axis.
+
+**Colour doing two jobs.** Spending the status red on an ordinary series means red no longer signals a problem anywhere on the page. _Fix:_ categorical hues for identity, one ramp for magnitude, status colours reserved for status — and if a series really is a status signal, say so deliberately and keep every other chart on the page consistent with that choice.
+
+**Swapping in the brand palette and shipping.** The validation you inherited was for the placeholder palette. _Fix:_ re-run the validator on the real colours, and keep it in the build.
+
+**A picture of a chart where live rows were wanted.** Handing a rendered PNG to a destination that renders charts itself throws away hover, inspection and per-value comments. _Fix:_ hand over the rows.
+
+**Trusting a legend to carry the message.** If the reader has to look up which line is which to understand the point, the point is not being made. _Fix:_ label the series you are arguing about directly, on the line.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m19-visual/dataviz"
+  questionId="q1"
+  lang="en"
+  prompt="When should /dataviz be invoked?"
+  options={[
+    {
+      text: 'After the chart is built, to review the colours.',
+      explanation:
+        'By then the form and axes are fixed; the skill is guidance for the decisions, not a repaint.',
+    },
+    {
+      text: 'Before writing the first line of chart code, choosing colours, or laying out a dashboard.',
+      correct: true,
+      explanation:
+        'That is exactly when its four decisions — form, colour roles, palette, marks — are still open.',
+    },
+    {
+      text: 'Only when the destination is an artifact.',
+      explanation:
+        'It applies to any output medium: SVG, a plotting library, an image, a dashboard.',
+    },
+    {
+      text: 'Only for dashboards with more than five charts.',
+      explanation: 'A single chart benefits from the same decisions.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m19-visual/dataviz"
+  questionId="q2"
+  lang="en"
+  prompt="Your dataset has three daily counts on the same scale plus an average priority on a 0–3 scale. What does chart discipline say?"
+  options={[
+    {
+      text: 'Put all four on one chart, with average priority on a secondary axis.',
+      explanation:
+        'A dual axis lets the range choice imply any correlation you like — the classic misleading mark.',
+    },
+    {
+      text: 'Three counts on one multi-series line chart; average priority as a separate small chart with a single hue.',
+      correct: true,
+      explanation:
+        'Same scale shares a chart; a different scale gets its own, and a single-series chart needs one hue, not a categorical palette.',
+    },
+    {
+      text: 'Four pie charts, one per metric.',
+      explanation: 'Pie charts show parts of a whole, not change over time.',
+    },
+    {
+      text: 'A stacked area chart of all four.',
+      explanation: 'Stacking implies the values accumulate, which these do not.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m19-visual/dataviz"
+  questionId="q3"
+  lang="en"
+  prompt="You replace the placeholder palette with your company's four brand colours. What must you do?"
+  options={[
+    {
+      text: 'Nothing — the palette was already validated.',
+      explanation: 'The validation was of the placeholder palette, not yours.',
+    },
+    {
+      text: 'Re-run the palette validation for colourblind safety and contrast on the new colours.',
+      correct: true,
+      explanation:
+        'The swap is exactly where the guarantee is lost, and the failure is invisible to reviewers with normal colour vision.',
+    },
+    {
+      text: 'Reduce the chart to two series so the palette always passes.',
+      explanation: 'Changing the data to fit the colours is the wrong way round.',
+    },
+    {
+      text: 'Add patterns to every series instead of colour.',
+      explanation: 'Redundant encoding can help, but it does not replace validating the palette.',
+    },
+  ]}
+/>
+
+**Next:** `m20-team` moves from artefacts you publish to the settings, allowlists and review processes that let a whole team work this way.

@@ -1,0 +1,14 @@
+# Captured 2026-09-08, Claude Code 2.1.263, in a clone of codechup/claude-code-lab at
+# lesson/m19-01-start with artifacts/ taken from lesson/m19-01-solution. The bundled /dataviz skill
+# was invoked for real; writing files and publishing were both denied, so this is advice only.
+# Verbatim except a deleted workspace-trust warning line that named a local path, and the absolute
+# path passed to --settings (a temp file whose whole content is {"language": "English"}) shown as
+# ./english.json.
+› claude -p "/dataviz Read artifacts/task-activity.csv and recommend the chart form and the color roles for it. Do not write any file and do not publish anything. At most 10 lines." --model sonnet --max-turns 12 --allowedTools "Read,Skill" --disallowedTools "Artifact,Write" --settings ./english.json --append-system-prompt "Always respond in English." --output-format text
+- **Form:** time series (line chart) — one axis, daily cadence. Plot `tasks_created`, `tasks_completed`, `tasks_overdue` as three lines on one chart (all counts, same scale, comparable magnitude/trend). Put `avg_priority` in a **separate small-multiple line chart** below it — different unit/scale, so no dual-axis.
+- **Color roles (counts chart):** three lines get fixed-order **categorical** hues — but since `tasks_overdue` is a "bad state" signal rather than a neutral category, consider recoloring it with the **status ramp** (warning/critical) instead of a categorical hue, so rising overdue counts read as a problem, not just "series 3." `created`/`completed` stay categorical (fixed order, e.g. slots 1–2).
+- **avg_priority chart:** single series → **sequential** single hue, light→dark by value if you add a fill/area; a plain line needs just one ink color plus text-token labels, no legend (single series names itself in the title).
+- Legend: required for the counts chart (≥2 series), skip it for the avg_priority chart.
+- Run `validate_palette.js` on the categorical + status hues chosen before shipping.
+
+That's the recommendation — no files written, nothing published.

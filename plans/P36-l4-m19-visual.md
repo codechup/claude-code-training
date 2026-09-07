@@ -2,7 +2,7 @@
 id: P36
 title: "L4 Master module: Visual (m19-visual)"
 milestone: M2
-status: in_progress
+status: review
 owner: lead-fable
 branch: plan/36-l4-m19-visual
 model_hint: opus
@@ -15,8 +15,14 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T19:26:14Z
-open_questions: []
+updated_at: 2026-09-07T23:42:30Z
+open_questions:
+  - 'Lab tag drift (P22): the m19 sample data `artifacts/` (README.md + task-activity.csv) exists only on `lesson/m19-01-solution`, not on `lesson/m19-01-start`. The 01-artifacts lab therefore instructs `git checkout lesson/m19-01-solution -- artifacts/` after checking out the start tag. Move the directory into `lesson/m19-01-start` (and re-cut `lesson/m19-03-start`) and the extra step can be deleted.'
+  - 'Lab tag drift (P22): `lesson/m19-03-start` and `lesson/m19-03-solution` are byte-identical (empty diff). Intentional for a browser-only lab? If a solution state was meant to exist, it was never committed.'
+  - 'Inventory drift (P03): `research/feature-inventory.md` Artifacts row says "capabilities (db, users, assets)". The live `artifacts.md` (fetched 2026-09-07) documents exactly one runtime capability for a published page - MCP connector calls. The lessons follow the live doc; the inventory row needs updating.'
+  - 'Inventory drift (P03): the built-in slash-command list in `research/feature-inventory.md` omits `/design-login` (documented in the live `commands.md`: authorize design-system access for /design-sync with your claude.ai account).'
+  - 'Registry hygiene (owning plan): `content/_shared/sources.json` entry `docs-computer-use` carries `modules: [m19-visual]` but no m19 lesson cites `computer-use.md`. Left untouched by this plan because the entry belongs to another plan; drop the tag or cite the page.'
+  - 'Curriculum slug drift (resolved in favour of CURRICULUM): this plan file listed longer slugs (01-artifacts-publish-capabilities-and-comments, 03-chrome-automation-and-gif-recordings). `docs/CURRICULUM.md` section 2 is authoritative and uses `01-artifacts`, `02-design-canvas`, `03-chrome-automation`, `04-dataviz`; the files were written at the CURRICULUM slugs.'
 ---
 
 ## Goal
@@ -97,5 +103,43 @@ A reviewer opens `npm run dev`, visits each of the 4 lessons at `/en/l4-master/m
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+Executed by session `opus-p36-2026-09-07` on 2026-09-07/08.
+
+**Written.** Four EN lessons under `content/en/l4-master/m19-visual/`, at the `docs/CURRICULUM.md` §2 slugs (which win over this plan file's longer working titles — see `open_questions`):
+
+| # | File | Duration / difficulty | Lab tag |
+|---|---|---|---|
+| 01 | `01-artifacts.mdx` | 20 min / core | `lesson/m19-01-start` |
+| 02 | `02-design-canvas.mdx` | 20 min / core | `none` |
+| 03 | `03-chrome-automation.mdx` | 15 min / core | `lesson/m19-03-start` |
+| 04 | `04-dataviz.mdx` | 10 min / advanced | `none` |
+
+Each follows the D006 order (Objectives & prerequisites → `<WhenNotToUse>` → Concept with one worked prompt → `<Lab>` → Anti-patterns → `<Callout variant="changed">` where `research/deprecations.md` has an item → 3–4 `<Quiz>` → Sources rendered from frontmatter). Four matching TR twins were created as `draft: true` stubs with EN frontmatter fields carried over, translated `title`/`description`/`tags` and a one-paragraph Turkish summary — no TR prose beyond that (P25/P26/P40/P41 own the translation).
+
+**Sources.** Every fact comes from a page fetched this session: `artifacts.md`, `chrome.md`, `commands.md`, `skills.md`, `whats-new/2026-w27.md`, `whats-new/2026-w34.md`, plus `docs/llms.txt` to find the last two. `content/_shared/sources.json` gained two new entries (`docs-whats-new-2026-w27`, `docs-whats-new-2026-w34`) and `m19-visual` tags on `docs-commands`, `docs-skills`, `repo-claude-code-lab` and `repo-claude-code-training`; nothing was removed or reordered.
+
+**Transcripts (D093/D099) — seven files, all real, none fabricated.** Under `content/_shared/transcripts/m19-visual/`:
+
+- `01-artifacts/01-lab-setup.txt` — the real tag checkout and the sample CSV.
+- `01-artifacts/02-build-page-headless.txt` — `claude -p … --disallowedTools "Artifact"`, which builds the page and publishes nothing.
+- `02-design-canvas/01-canvas-out.txt` — this repo's own `/design` output (`docs/design/canvas-out/`, nine artboards, the `.dc.html` shape).
+- `03-chrome-automation/01-chrome-flag.txt` — the `--chrome` line from a real `claude --help`.
+- `03-chrome-automation/02-browser-tools.txt` — the real `claude-in-chrome` tool list from a headless `--chrome` session.
+- `03-chrome-automation/03-list-connected-browsers.txt` — one read-only browser call; no tab was opened, navigated or clicked.
+- `04-dataviz/01-dataviz-headless.txt` — a real `/dataviz` invocation with `Write` and `Artifact` denied, so advice only.
+
+**Honest-capture policy applied.** Nothing was published to claude.ai, no browser was driven, and no interactive dialog was reconstructed. The publish prompt, the `/design` canvas editor, the `/chrome` panel and the GIF recording are described in prose with the exact commands to run, and each lesson says so where it applies. The capturing machine carries `"language": "Turkish"` in its user settings, which an `--append-system-prompt` override alone did not beat; every assistant reply in these transcripts was therefore re-captured with a temp `--settings` file containing `{"language": "English"}`, which does win, so no recording shows a learner output they would not see themselves. The absolute temp path is shown as `./english.json` and each header records that redaction.
+
+**Review counts (D071).** `fact-checker`, delegated via `claude -p … --permission-mode plan`: 60+ claims CONFIRMED, **2 WRONG** and **2 UNVERIFIABLE** — all four fixed.
+
+1. `02-design-canvas.mdx` claimed this site's canvas is public; `docs/design/CANVAS.md` marks the canvas link private to the owner's account. Reworded: the write-up and the exported artboards are public, the live canvas is not.
+2. `01-artifacts.mdx`'s Changed callout garbled two distinct 2.1.242 facts. Rewritten to state both separately.
+3. "pan-and-zoom canvas" appears in no fetched doc — descriptor cut.
+4. The exact Windows registry *subkey* for the native messaging host is not documented (only the parent key) — the PowerShell tab now lists the parent key, and the prose says so.
+
+`reviewer`: **1 blocker, 0 majors, 1 minor.** The blocker was a real local username leaking through the `ls -l` line of `02-build-page-headless.txt` (rendered to readers, not merely committed) — redacted to `user`, the header records the redaction, and the lesson's `range` was corrected from `4-10` to `5-11`. The minor (`docs-computer-use` tagged `m19-visual` with no citing lesson) belongs to another plan's registry entry and is routed to `open_questions` rather than edited.
+
+**Verification, all run in this worktree after the fixes.** `npm run gate` → `content gate: OK (200 files checked)`; `npm run typecheck` → 0 errors / 0 warnings (110 files); `npm run lint` → prettier clean plus `check-no-inline-script: OK (73 files scanned)`; `npm test` → 22 files / 184 tests passed; `npm run build` → ends `check-no-inline-script (dist): OK (134 files scanned)` and `dist/en/l4-master/m19-visual/` holds `artifacts`, `chrome-automation`, `dataviz`, `design-canvas` and `index.html`; `node scripts/check-raw-colors.mjs` → OK (77 files); `node scripts/check-public-hygiene.mjs` → `public-hygiene: OK (tracked)`; `node tools/plan/cli.ts check` → ok. Playwright ran on port 4436 from a temporary `playwright.p36.config.ts` plus a temporary `e2e/p36-m19-visual.spec.ts` covering all six m19 routes (five EN plus the TR module index) at 390 px and 1280 px alongside `e2e/a11y.spec.ts`: **26 passed**, 0 axe serious/critical. Both temporary files were deleted afterwards.
+
+**Notes for the next session.** The TR twins are stubs by design — do not treat their summaries as translations. `docs/design/CANVAS.md` and `docs/design/canvas-out/` are cited from lesson 02 as this site's own `/design` worked example; if P00 ever regenerates them, lesson 02's transcript (nine artboards with fixed frames) needs recapturing. Lesson 01's lab carries the extra `git checkout lesson/m19-01-solution -- artifacts/` step only until P22 moves that directory onto the start tag.
 

@@ -1,0 +1,322 @@
+---
+title: 'Publishing an artifact: update, share, comments'
+description: 'Turn a session result into a live page on claude.ai: publish it, republish to the same URL, find it again with /artifacts, share it with your organisation, and let Claude read and answer the comments people leave on it.'
+level: 4
+module: 'm19-visual'
+order: 1
+duration_min: 20
+difficulty: core
+tags: ['artifacts', 'sharing', 'comments', 'visual']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Share session output as artifacts'
+    url: 'https://code.claude.com/docs/en/artifacts.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Commands reference (/artifacts)'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: "What's new · week 27, 2026 (artifacts generally available on Pro and Max)"
+    url: 'https://code.claude.com/docs/en/whats-new/2026-w27.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m19-01-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say what an artifact is — and what it is not — and pick the outputs worth publishing as one.
+- Publish a page from a session, republish it to the same URL, and reopen it later with `/artifacts` or `Ctrl+]`.
+- Update an artifact from a different session by handing Claude its URL.
+- Choose a sharing audience, and explain why an artifact that calls MCP connectors can never be a public link.
+- Have Claude read the comment threads on an org-shared artifact, and know exactly which threads it is allowed to answer.
+- Work inside the page constraints — one self-contained page, a strict CSP, four allowed script CDNs, 16 MiB.
+
+**Prerequisites.** A session signed in with `/login` on a Pro, Max, Team or Enterprise plan, Claude Code 2.1.183 or later, and the Anthropic API as the model provider. A session authenticated with an API key, a gateway token, or a cloud provider's credentials cannot publish. Comments need 2.1.221 or later and a Team or Enterprise plan, because only an artifact shared inside an organisation takes comments.
+
+<WhenNotToUse>
+  An artifact is a capture of work, not a deployment. It is a single self-contained page with no
+  backend: it cannot store what someone types into a form, serve a second route, or resolve a
+  relative link, and its only route to outside data while someone is viewing it is an MCP connector
+  call. Reach for your own infrastructure when you need a hosted internal tool, real persistence,
+  authentication of your own, or a page that must outlive your organisation's artifact retention
+  policy. And skip it entirely when terminal text is already the right medium — a styled page costs
+  noticeably more output tokens than the same answer as text, and inline images embedded as data
+  URIs are the worst offender.
+</WhenNotToUse>
+
+## Concept
+
+### What gets published
+
+An artifact is a live, interactive web page that Claude Code publishes from your session to a private URL on `claude.ai`. You open it in a browser; it updates in place as the session continues. Claude may publish one on its own when the output suits a page, or you can ask for one in plain language.
+
+This lesson's worked prompt is the shape that works best — name the output, not the markup:
+
+```text
+Make an artifact that walks through this PR with the diff annotated inline.
+```
+
+Unless you name a location, Claude writes the page to an HTML or Markdown file in a temporary directory outside your project, then publishes that file. The published file must be `.html`, `.htm` or `.md`; Markdown renders as styled HTML.
+
+The good candidates are all the same shape: output easier to look at than to read line by line. An annotated diff. A dashboard built from data the session already pulled. Four layout options side by side with a one-line trade-off under each. An investigation timeline that fills in while a long task runs. A checklist Claude ticks off as it works.
+
+### Publishing, and the permission it needs
+
+Publishing a new artifact goes through your session's permission mode. In **auto** mode the classifier reviews the publish instead of prompting you, so a page can appear without you seeing a prompt. In **manual** and **accept edits** modes Claude Code asks, with a prompt naming the file, the page title, and the fact that the file is uploaded to claude.ai to host — private to you until you share it.
+
+After you approve once, Claude republishes without asking. It asks again in three cases:
+
+1. Claude declares a runtime capability for the page, such as connector calls.
+2. You have since shared the artifact publicly.
+3. You have since shared it with specific people or your organisation, with the latest version chosen as the version viewers see.
+
+After the first publish Claude prints the URL and your browser opens the page. `Ctrl+]` reopens the most recent artifact from the terminal at any time. Set `CLAUDE_CODE_ARTIFACT_AUTO_OPEN=0` to stop the browser opening by itself.
+
+Claude picks the page's title and the emoji used as its browser-tab icon. Both show in your gallery at `claude.ai/code/artifacts` and in shared links, so ask for a specific title or icon if you care about them.
+
+### Updating, versions and other sessions
+
+Ask Claude to revise the page and it edits the underlying file and publishes again to the same URL. Anyone with the page open sees the change in place. Every publish becomes a version, and the **Share** control in the page header picks which version viewers see.
+
+A new session does not know about your artifact. To update one from elsewhere, either give Claude the URL in your prompt, or attach it with `/artifacts`; without one of those, the session creates a _new_ artifact instead:
+
+```text
+Update https://claude.ai/code/artifact/5fbea6f3-... with today's numbers.
+```
+
+`/artifacts` lists every artifact you own and every artifact shared with you, read from your claude.ai account — so it still works in a fresh session and after `/clear`, when the link has scrolled out of the terminal. Select one and press `o` to open it, `c` to copy its link, or `Enter` to attach it to the session. The command needs 2.1.208 or later; attaching with `Enter` needs 2.1.216 (before that, `Enter` opened it in the browser).
+
+### Sharing
+
+A new artifact is visible only to you. You share it from the **Share** control in the page header, and what you can choose depends on the plan:
+
+| Audience                                                  | Available on                                                                                                       |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Private to you                                            | Every plan — the default for a new artifact                                                                        |
+| Specific people, or everyone, in your organisation        | Team and Enterprise                                                                                                |
+| A public link anyone on the internet can open, no sign-in | Pro and Max (the only sharing option there); Team and Enterprise only after an Owner turns on **External sharing** |
+
+On Team and Enterprise you can also promote someone from **viewer** to **editor**. An editor republishes exactly the way you update from another session: they give Claude the URL, or attach it from `/artifacts`, and Claude pulls the current content and republishes with their changes.
+
+Viewers inside your organisation see who published the page. A viewer who opens a public link without signing in, or from outside your organisation, sees `Content is user-generated and unverified.` instead of your name.
+
+### Comments, and which threads Claude may answer
+
+People you share an artifact with **inside your organisation** can leave comment threads on the page. Claude reads them in two situations: you give it the URL and ask, or somebody who can edit the artifact sends a comment to Claude — with **Send to Claude** in the thread, or by mentioning `@claude` in it. Either of those _activates_ the thread.
+
+That distinction is the whole rule: **Claude can reply to or resolve only an activated thread.** Every other thread stays open until a person resolves it on the page. Replies appear attributed to Claude, via you.
+
+Once your session has published an artifact, it watches that artifact for comments for as long as the session runs (2.1.228 or later). What happens when a sent comment arrives depends on your permission mode: Claude either replies on its own — you see `Auto-replied to comment thread on Artifact: <name>` — or tells you `Comments are waiting on Artifact: <name>` and asks for approval, or, in plan mode, waits until you leave plan mode. Claude also stops auto-replying on an artifact after handling 60 sent comments or activations on it within an hour, and picks up again as that hour's comments age out.
+
+`/tasks` lists every artifact the session is watching, as a live-updates task. Three ways to stop the replies: press `Ctrl+C` once at an idle prompt (pauses on every watched artifact until your next message); stop the task in `/tasks` (stops on that artifact until you ask to resume, and survives republishing and resuming the session); or press `Ctrl+X Ctrl+K` twice within three seconds, the chord that stops every background subagent — that one cannot be undone by asking Claude to resume.
+
+Public artifacts take no comments at all. The page says `Comments aren't available while this Artifact is shared publicly.`, and to switch an artifact that already has threads to a public link you delete the threads first.
+
+### Live data: what a published page may call
+
+The one runtime capability the artifacts documentation describes is calling **MCP connectors** from your claude.ai account, so the page renders current data each time somebody opens it rather than a snapshot from the session that built it (2.1.209 or later). Claude declares which connectors the page may call as part of publishing, and the page cannot call anything outside that declaration. Local MCP servers configured in Claude Code — servers from `.mcp.json`, say — can feed data in while Claude _builds_ the page, but the published page cannot call them.
+
+The part worth internalising is whose account the call runs on: **the viewer's, not yours.** Two people opening the same dashboard can see different rows. Each viewer is asked for permission before the page's first connector call, and a viewer who declines, or who has never connected that connector, still sees the page — just without its live sections. Ask Claude to put a fallback message naming the required connector in each live section, so those viewers see what to connect instead of an empty box.
+
+Because a connector-backed page depends on the viewer's own account, it cannot be shared to a public link on any plan.
+
+### Page constraints
+
+Claude Code wraps your file in an HTML shell and serves it under a strict Content Security Policy, from a sandboxed `*.claudeusercontent.com` origin. That shapes what the page may do:
+
+| Constraint        | Effect                                                                                                                                                                                                                                                                                                                                                                            |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| External requests | Typefaces from Google Fonts, and scripts from four public CDN hosts only: `cdnjs.cloudflare.com`, `cdn.jsdelivr.net` (selected paths such as `/npm/`), `cdn.tailwindcss.com`, `code.jquery.com`. Every external image, and all other external scripts, stylesheets and fonts, are blocked; `fetch`, XHR and WebSocket reach only the page's own origin and the Google Fonts hosts |
+| No backend        | Static page: it cannot store form input or authenticate viewers. Connector calls are its only way to fetch data at view time                                                                                                                                                                                                                                                      |
+| Single page       | Relative links do not resolve — multi-section content uses in-page anchors                                                                                                                                                                                                                                                                                                        |
+| Source file types | `.html`, `.htm` or `.md`                                                                                                                                                                                                                                                                                                                                                          |
+| Rendered size     | 16 MiB or smaller; large embedded images are the usual cause of a size failure                                                                                                                                                                                                                                                                                                    |
+
+Claude also applies a built-in design skill when it builds an artifact (2.1.182 or later), and that skill looks for an existing design system in your project first. Record your colours, typefaces and spacing somewhere it will find them — the project `CLAUDE.md` or a theme file — and artifacts come out in your product's branding. Your design system outranks Claude's own choices, and your prompt outranks both.
+
+## Hands-on lab
+
+This lab stops one step short of publishing on purpose. Publishing uploads a page to claude.ai under your account, and that is your decision to make, not a step a lesson should perform for you — so you build the exact file an artifact is made of, look at it locally, and then publish it yourself if you want to.
+
+<Lab
+  title="Lab · build the page, then publish it yourself"
+  lessonId="en/l4-master/m19-visual/artifacts"
+  repoTag="lesson/m19-01-start"
+  steps={[
+    'Clone the lab repo if you have not already, then `git checkout lesson/m19-01-start`.',
+    'Bring in the sample data, which currently lives on the solution tag: `git checkout lesson/m19-01-solution -- artifacts/`, then look at `artifacts/task-activity.csv` — 30 days of daily task counts.',
+    'Build the page without publishing it, so you can read it before anything is uploaded: run the headless command in the transcript below, which denies the `Artifact` tool explicitly.',
+    'Open `out/task-activity.html` in a browser. Confirm it renders with no network access — that is what "self-contained page" means in practice.',
+    'Now do it for real in an interactive session: `claude`, then ask "Publish artifacts/task-activity.csv as an artifact: created vs completed over the 30 days, plus the overdue trend." Approve the publish prompt, and read what it says about the file, the title and the upload.',
+    'Ask for a change — "add the overdue count as a second panel and republish" — and confirm the URL does not change and the page updates in place.',
+    'Run `/clear`, then `/artifacts`. Find your page in the list, press `Enter` to attach it, and ask Claude for a one-line summary of what is on it.',
+  ]}
+  expected="out/task-activity.html exists and renders offline. The interactive publish prints a claude.ai/code/artifact/... URL and opens it. The republish reuses that same URL. After /clear, /artifacts lists the page and attaching it lets a fresh session talk about it."
+  checklist={[
+    'The headless run wrote a self-contained HTML file and published nothing',
+    'The interactive publish prompt named the file, the title and the upload to claude.ai',
+    'The republish landed on the same URL and produced a second version',
+    '/artifacts lists the page after /clear and Enter attaches it',
+    'The page is still private to you — you have not shared it',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m19-visual/01-artifacts/01-lab-setup.txt"
+    range="2-14"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m19-visual/01-artifacts/02-build-page-headless.txt"
+    range="5-11"
+  />
+</Lab>
+
+Two things about that recording. It is a `claude -p` run with `--disallowedTools "Artifact"`, so the publish path was closed off before the session started — the model had no choice but to write a local file. And the file it wrote is exactly the artefact an artifact is made of: one HTML page, an inline SVG chart, no external requests. Publishing it is one more step, taken interactively, with a prompt you read first.
+
+Steps 5 to 7 are interactive by nature — a permission dialog, a browser opening, a TUI list with `o`/`c`/`Enter`. There is no honest transcript of a dialog, so they are written as commands to run rather than output to compare against.
+
+## Anti-patterns
+
+**Publishing an artifact from a new session and wondering why the link changed.** A fresh session has no idea your artifact exists; without the URL or an `/artifacts` attach it creates a second page. _Fix:_ paste the URL into the prompt, or attach the artifact with `/artifacts` first.
+
+**Expecting a form on the page to save something.** There is no backend. A submit button on an artifact stores nothing, and the next viewer sees an empty form. _Fix:_ if state has to survive, put it somewhere real; if you only need the result back in your session, ask for a "copy as prompt" control you can paste into the terminal.
+
+**Loading a library from the CDN you always use.** Anything outside `cdnjs.cloudflare.com`, `cdn.jsdelivr.net`, `cdn.tailwindcss.com` and `code.jquery.com` is blocked by the CSP, silently, and a blocked library has no fallback — the interactive half of the page just does not work. _Fix:_ name one of the four hosts, pin an exact version, and inline everything else.
+
+**Building a connector-backed dashboard and then trying to share it publicly.** A page that calls connectors can never be a public link, because every call runs on the viewer's own account. _Fix:_ share it inside your organisation, or publish a static snapshot for the public version.
+
+**Assuming Claude will answer every comment.** Claude can reply to or resolve only threads someone activated with **Send to Claude** or an `@claude` mention. Threads nobody activated sit there looking ignored. _Fix:_ tell your reviewers how to activate a thread, and read the un-activated ones yourself.
+
+**Treating a shared artifact as an audit-proof record.** Artifacts have an organisation retention policy, and Owners can delete them through the Compliance API. _Fix:_ keep the durable copy in the repository; the artifact is the view of it.
+
+<Callout variant="changed">
+  The setting that turns artifacts off is `"enableArtifact": false`; the older `"disableArtifact":
+  true` still works but is deprecated. Two separate things changed in 2.1.242: a higher-precedence
+  settings file can no longer turn artifacts back on once a lower-precedence one set
+  `"enableArtifact": false`, and project and local settings honour the key at all only from that
+  version on.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m19-visual/artifacts"
+  questionId="q1"
+  lang="en"
+  prompt="You published an artifact yesterday. Today, in a brand-new session, you ask Claude to add a chart to it. What happens?"
+  options={[
+    {
+      text: 'Claude republishes to the same URL — artifacts are tied to your account, not the session.',
+      explanation: 'A new session has no reference to the artifact until you give it one.',
+    },
+    {
+      text: 'Claude creates a new artifact at a new URL, unless you give it the old URL or attach it with /artifacts.',
+      correct: true,
+      explanation:
+        'Exactly. Hand over the URL in the prompt, or attach the artifact from the /artifacts list first.',
+    },
+    {
+      text: 'Claude refuses, because only the publishing session can update an artifact.',
+      explanation:
+        'Any session — and on Team or Enterprise, any editor — can update it, given the URL.',
+    },
+    {
+      text: 'Claude asks you to re-approve the original publish prompt.',
+      explanation:
+        'Re-approval is triggered by capability, public sharing or audience changes, not by a new session.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m19-visual/artifacts"
+  questionId="q2"
+  lang="en"
+  prompt="Your dashboard artifact pulls open pull requests through a GitHub connector. A colleague opens it and the live section is empty. What is the most likely reason?"
+  options={[
+    {
+      text: 'Your connector token expired, so nobody can see the data.',
+      explanation: 'The page never uses your connection — calls run through the viewing account.',
+    },
+    {
+      text: 'They have not connected that connector on their own account, or they declined the permission ask.',
+      correct: true,
+      explanation:
+        'Connector calls run on the viewer’s account. Ask Claude to add a fallback naming the connector so they know what to connect.',
+    },
+    {
+      text: 'The CSP blocked the connector call.',
+      explanation: 'Connector calls go through claude.ai, which makes the network call itself.',
+    },
+    {
+      text: 'Connector-backed artifacts only work for the author.',
+      explanation: 'They work for any viewer who has the connector connected and approves the ask.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m19-visual/artifacts"
+  questionId="q3"
+  lang="en"
+  prompt="Which comment thread can Claude reply to?"
+  options={[
+    {
+      text: 'Any thread on an artifact you shared with your organisation.',
+      explanation:
+        'Sharing makes comments possible; it does not make a thread answerable by Claude.',
+    },
+    {
+      text: 'A thread someone who can edit the artifact sent to Claude with Send to Claude, or in which they mentioned @claude.',
+      correct: true,
+      explanation:
+        'Activation is the gate for both replying and resolving. Everything else waits for a person.',
+    },
+    {
+      text: 'Any thread, as long as you are in auto permission mode.',
+      explanation:
+        'The permission mode decides whether Claude posts without asking you — not which threads it may touch.',
+    },
+    {
+      text: 'Any thread on a publicly shared artifact.',
+      explanation: 'A publicly shared artifact takes no comments at all.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m19-visual/artifacts"
+  questionId="q4"
+  lang="en"
+  prompt="A session authenticated with an API key asks Claude to publish an artifact. What happens?"
+  options={[
+    {
+      text: 'It publishes normally; the API key is a valid credential.',
+      explanation:
+        'Artifacts require a session backed by a claude.ai account signed in with /login.',
+    },
+    {
+      text: 'Claude writes a local HTML file or says it cannot publish.',
+      correct: true,
+      explanation:
+        'That is the documented behaviour whenever an availability requirement is not met — API keys, gateway tokens and cloud-provider credentials all fail it.',
+    },
+    {
+      text: 'It publishes, but the page is public.',
+      explanation: 'A new artifact is never public; it starts private to its author.',
+    },
+    {
+      text: 'It prompts you to sign in and then publishes.',
+      explanation:
+        'There is no in-line sign-in step for the Artifact tool; sign in with /login first.',
+    },
+  ]}
+/>
+
+**Next:** `02-design-canvas` uses the same publishing machinery for a different job — `/design` drafts a canvas of editable artboards instead of a finished page, and this site's own visual design is the worked example.

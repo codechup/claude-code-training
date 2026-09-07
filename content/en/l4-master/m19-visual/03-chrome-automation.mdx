@@ -1,0 +1,325 @@
+---
+title: 'Driving a site with Claude in Chrome, and recording it'
+description: 'Connect Claude Code to your own Chrome with --chrome, drive a real page — clicks, forms, console, network — record the run as a GIF, and understand the permission model that decides which browser calls prompt you.'
+level: 4
+module: 'm19-visual'
+order: 3
+duration_min: 15
+difficulty: core
+tags: ['chrome', 'browser', 'automation', 'visual']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Use Claude Code with Chrome'
+    url: 'https://code.claude.com/docs/en/chrome.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: "What's new · week 27, 2026 (Claude in Chrome is generally available)"
+    url: 'https://code.claude.com/docs/en/whats-new/2026-w27.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Commands reference (/chrome)'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m19-03-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Connect Claude Code to your own Chrome, and check the connection with `/chrome`.
+- Say what the integration actually is — your real browser, your real logins — and what follows from that.
+- Predict which browser calls prompt you in plan mode and which run silently.
+- Ask for a GIF recording of a browser run, and know what ends up inside it.
+- Diagnose the four errors you will actually hit, and know that WSL is not supported.
+
+**Prerequisites.** Google Chrome, Microsoft Edge, or another Chromium browser (Brave, Arc, Vivaldi, Opera); the Claude in Chrome extension version 1.0.36 or higher; a direct Anthropic plan (Pro, Max, Team or Enterprise); and a session signed in with `/login`. A session authenticated with an API key or a long-lived `claude setup-token` keeps Chrome integration off even when you pass `--chrome`, because the extension cannot authenticate with those credentials. Chrome integration is not supported in WSL, and is unavailable through Amazon Bedrock, Google Cloud's Agent Platform and Microsoft Foundry.
+
+<WhenNotToUse>
+  This is your browser, with your cookies and your sessions, driven by an agent. That is exactly
+  what makes it useful and exactly what makes it the wrong tool for some jobs. Do not reach for it
+  when a deterministic, repeatable check is what you need — a Playwright suite in CI does not depend
+  on which tabs you had open. Do not use it where a stray click has real consequences: production
+  admin consoles, payment flows, anything that sends mail. Do not use it as a scraper for a site
+  with an API, and do not use it when the page's content is untrusted, because a page Claude reads
+  can try to instruct it. Enabling Chrome by default also loads the browser tools into every
+  session, which costs context you may want elsewhere.
+</WhenNotToUse>
+
+## Concept
+
+### What the integration is
+
+Claude Code talks to the Claude in Chrome browser extension. Claude opens new tabs for browser tasks and **shares your browser's login state**, so it can work inside any site you are already signed into — Gmail, Notion, your CRM, an internal dashboard — with no API connector. Actions run in a visible Chrome window in real time, and when Claude hits a login page or a CAPTCHA it stops and asks you to handle it by hand.
+
+The tabs Claude opens are collected into a Chrome tab group tied to your session. When you type `/clear`, Claude Code closes that group, open pages included, unless work that survives the clear is still running. When you switch sessions with `/resume`, exit, or `/clear` while such work is running, it closes the group only if it holds nothing but empty new tabs — so pages you may still be reading stay open.
+
+Start a session with the flag:
+
+<Transcript
+  src="content/_shared/transcripts/m19-visual/03-chrome-automation/01-chrome-flag.txt"
+  range="2-5"
+/>
+
+The first launch shows a one-time dialog explaining the integration and how site permissions work. To avoid the flag every time, run `/chrome` and select **Enabled by default** — at the cost of loading the browser tools into every session, which increases context usage.
+
+`/chrome` is also the panel for everything else: connection status, permissions, **Reconnect extension**, and **Select browser…** when more than one browser is connected. The integration is working when the panel shows `Status: Enabled` and `Extension: Installed`. If Claude needs the browser in an interactive session and the extension is not detected, Claude Code shows a "Claude wants to use your browser" prompt, at most once per session, offering **Install extension**, **Not now** or **Don't ask again**.
+
+This lesson's worked prompt is the documentation's own first example — a navigate, an interaction and a report, in one sentence:
+
+```text
+Go to code.claude.com/docs, click on the search box,
+type "hooks", and tell me what results appear
+```
+
+### The tools behind it
+
+The browser actions are MCP tools from the `claude-in-chrome` server. You can list them yourself — run `/mcp`, select `claude-in-chrome`, then **View tools** — and this is that list, read out of a real `--chrome` session:
+
+<Transcript
+  src="content/_shared/transcripts/m19-visual/03-chrome-automation/02-browser-tools.txt"
+  range="8-29"
+/>
+
+Read the names and the capability list falls out of them: `navigate` and the `tabs_*` tools for getting somewhere, `computer` for clicking and typing, `read_page` / `get_page_text` / `find` for reading, `form_input` for forms, `read_console_messages` and `read_network_requests` for debugging, `file_upload` and `upload_image` for attachments, `gif_creator` for recordings, and `browser_batch` for running several actions in one call.
+
+### Which calls prompt you
+
+In plan mode the split is between reading and changing:
+
+|                              | Calls                                                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Read-only** — no prompt    | `read_page`, `get_page_text`, `find`, reading console messages or network requests, taking a screenshot |
+| **State-changing** — prompts | clicks, typing, navigation, tab and window management, and recording a GIF                              |
+
+An otherwise read-only call also prompts when it sets a state-changing input flag — `createIfEmpty` on `tabs_context_mcp`, `clear` on the console and network readers, `save_to_disk` on a screenshot. A `browser_batch` runs without a prompt only when every action inside it is read-only.
+
+Site-level permissions are separate and come from the extension itself: manage in the Chrome extension settings which sites Claude may browse, click and type on. Outside plan mode, the first browser action on a site raises a dialog starting `Claude in Chrome wants to`, with an option to allow all actions on that site for the session.
+
+### Recording a GIF
+
+Ask for it in words; the recording is a normal part of the run:
+
+```text
+Record a GIF showing how to complete the checkout flow, from adding
+an item to the cart through to the confirmation page.
+```
+
+Claude records the interaction sequence and saves it as a GIF file. The thing to internalise before you share one: **the recording captures everything visible in the browser**, including account details on logged-in pages. Review it before it leaves your team. And because recording a GIF is a state-changing call, it prompts for approval in plan mode.
+
+Screenshots work the same way — "take a screenshot of the checkout page and save it to disk" — and Claude reports the file path it wrote.
+
+### Uploads
+
+Claude can attach a local file to an upload field on a page; Claude Code reads the file and sends its contents to the browser, so this works in local and remote sessions alike (2.1.211 or later). Three restrictions: a permission rule that denies `Read` on a file also blocks uploading it; a single upload carries at most 10 MB in total; and files with multiple hard links are refused — common inside package-manager stores like `node_modules`, so copy the file and upload the copy.
+
+### When it will not connect
+
+The first time you enable the integration, Claude Code installs a native messaging host configuration file, which Chrome reads at startup — so if the extension is not detected on the first attempt, restart Chrome. If it still fails, check that the host configuration is where the documentation says it should be — a file on macOS and Linux, a registry key on Windows, where the documentation names the parent key rather than the entry inside it:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+ls ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.anthropic.claude_code_browser_extension.json
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+ls ~/.config/google-chrome/NativeMessagingHosts/com.anthropic.claude_code_browser_extension.json
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+Get-ChildItem 'HKCU:\Software\Google\Chrome\NativeMessagingHosts\'
+```
+
+  </Fragment>
+</OSTabs>
+
+Edge uses the same filename under its own configuration directory (`~/Library/Application Support/Microsoft Edge/NativeMessagingHosts/`, `~/.config/microsoft-edge/NativeMessagingHosts/`, or `HKCU\Software\Microsoft\Edge\NativeMessagingHosts\`), and every other Chromium browser has its own directory and registry key. The WSL tab is missing on purpose: Chrome integration is not supported in WSL.
+
+The four errors worth memorising:
+
+| Error                                       | Cause                                                                                                        | Fix                                                         |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| `Browser extension is not connected`        | The native messaging host cannot reach the extension, or an organisation IP allowlist rejects the connection | Restart Chrome and Claude Code, then `/chrome` to reconnect |
+| Extension shows `Not detected` in `/chrome` | Extension not installed or disabled                                                                          | Install or enable it in `chrome://extensions`               |
+| `No tab available`                          | Claude acted before a tab was ready                                                                          | Ask Claude to create a new tab and retry                    |
+| `Receiving end does not exist`              | The extension's service worker went idle                                                                     | `/chrome` → **Reconnect extension**                         |
+
+A modal `alert`, `confirm` or `prompt` dialog also blocks browser events entirely: dismiss it by hand, then tell Claude to continue.
+
+## Hands-on lab
+
+The lab repository ships a small HTTP API, which is enough of a "site" to drive: you start it, point Claude at it in a real browser, read the console and network, and record the run. Every step below is interactive by nature — a browser opens on your screen and a permission dialog appears — so the transcript here proves the connection, not the clicking.
+
+<Lab
+  title="Lab · drive the lab API in your own browser and record it"
+  lessonId="en/l4-master/m19-visual/chrome-automation"
+  repoTag="lesson/m19-03-start"
+  steps={[
+    'Install the Claude in Chrome extension (version 1.0.36 or higher) and sign in to Claude Code with `/login`.',
+    'In the lab repo: `git checkout lesson/m19-03-start`, `npm ci`, then `npm run api` — the API listens on port 3000.',
+    'In a second terminal, in the same repo, start `claude --chrome`. Accept the one-time dialog, then run `/chrome` and confirm it shows Status: Enabled and Extension: Installed.',
+    'Ask for a read-only pass first: "Open http://localhost:3000/health in a new tab, read the page text, and report the console messages and the network requests for that load."',
+    'Then a state-changing one: "Open http://localhost:3000/tasks, and tell me what the response looks like." Approve the dialog that starts with `Claude in Chrome wants to`, and note the option to allow all actions on that site for the session.',
+    'Ask for the recording: "Record a GIF of opening /health and then /tasks." Approve it, then open the GIF file Claude reports and check what is visible in it.',
+    'Run `/clear` and watch the tab group Claude opened close with the session.',
+  ]}
+  expected="/chrome reports Status: Enabled and Extension: Installed. The read-only pass returns the /health JSON plus console and network entries with no permission dialog in plan mode. The navigation and the GIF both prompt. The GIF file exists at the path Claude reports and shows the two page loads."
+  checklist={[
+    'The extension is connected and /chrome confirms it',
+    'A read-only call (read_page / console / network) ran without a prompt in plan mode',
+    'A navigation prompted with the `Claude in Chrome wants to` dialog',
+    'The GIF exists and you have reviewed what is visible in it before sharing',
+    '/clear closed the tab group Claude opened',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m19-visual/03-chrome-automation/03-list-connected-browsers.txt"
+    range="7-12"
+  />
+</Lab>
+
+That capture is deliberately minimal: a headless session, started with `--chrome`, allowed exactly one read-only tool, `list_connected_browsers`. It proves the extension is connected and names the browser, and it opened, navigated and clicked nothing — which is the honest limit of what a lesson can record for you. The JSON is the tool's own output; the device id in it is redacted.
+
+## Anti-patterns
+
+**Pointing it at production.** It is your real browser with your real sessions; a misread selector in an admin console is a real change. _Fix:_ drive a local server or a staging site, and keep site permissions in the extension narrow.
+
+**Asking for "all the console output".** Console logs are verbose and they land in your context window. _Fix:_ say what to look for — "check the console for errors during the page load" — as the documentation itself advises.
+
+**Using it as a CI check.** A run that depends on your logged-in browser is not reproducible by anyone else, and it cannot run headless on a build machine. _Fix:_ use Chrome for exploration and debugging; write the durable check in Playwright.
+
+**Sharing a GIF without watching it.** The recording captures everything visible, including account details on a logged-in page. _Fix:_ open it and look at every frame before it leaves your team.
+
+**Leaving Chrome enabled by default and wondering where the context went.** The browser tools load into every session when the default is on. _Fix:_ turn the default off and pass `--chrome` when you need it.
+
+**Trying it inside WSL.** It is not supported there, and no amount of reconnecting fixes that. _Fix:_ run Claude Code natively on the host when you need the browser.
+
+<Callout variant="changed">
+  Sessions authenticated with an API key or a `claude setup-token` token now keep Chrome integration
+  off even when you pass `--chrome`. Before 2.1.216 such a session could enable it, and every
+  attempt to reach the extension failed with a 403.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m19-visual/chrome-automation"
+  questionId="q1"
+  lang="en"
+  prompt="In plan mode, which of these runs without a permission prompt?"
+  options={[
+    {
+      text: 'Clicking a button on the page.',
+      explanation: 'Clicks change state, so they prompt.',
+    },
+    {
+      text: 'Reading the page text.',
+      correct: true,
+      explanation:
+        'read_page, get_page_text, find, console and network reads and screenshots are read-only — unless they set a state-changing flag such as save_to_disk.',
+    },
+    {
+      text: 'Recording a GIF.',
+      explanation: 'Recording is classed as state-changing and prompts.',
+    },
+    {
+      text: 'Creating a new tab.',
+      explanation: 'Tab and window management is state-changing.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m19-visual/chrome-automation"
+  questionId="q2"
+  lang="en"
+  prompt="You run `claude --chrome` in a session authenticated with a token from `claude setup-token`. What happens?"
+  options={[
+    {
+      text: 'Chrome integration stays off — the extension cannot authenticate with that credential.',
+      correct: true,
+      explanation:
+        'Correct. Sign in with /login instead. Before v2.1.216 the session could enable it and then fail with a 403 on every call.',
+    },
+    {
+      text: 'It works, but only for read-only calls.',
+      explanation: 'There is no read-only fallback; the integration is off.',
+    },
+    {
+      text: 'It works after you run /chrome and reconnect.',
+      explanation: 'Reconnecting does not change which credential the session holds.',
+    },
+    {
+      text: 'It prompts you to install the extension.',
+      explanation: 'The blocker is the credential, not the extension.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m19-visual/chrome-automation"
+  questionId="q3"
+  lang="en"
+  prompt="Claude's browser commands suddenly stop working after a long session, with `Receiving end does not exist`. What is the fix?"
+  options={[
+    {
+      text: 'Reinstall Claude Code.',
+      explanation:
+        'That is the remedy for a crashing native messaging host on Windows, not this error.',
+    },
+    {
+      text: 'Run /chrome and select Reconnect extension — the extension’s service worker went idle.',
+      correct: true,
+      explanation: 'Exactly the documented cause and fix for long sessions.',
+    },
+    {
+      text: 'Switch to WSL.',
+      explanation: 'Chrome integration is not supported in WSL at all.',
+    },
+    {
+      text: 'Ask Claude to create a new tab.',
+      explanation: 'That is the fix for `No tab available`.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m19-visual/chrome-automation"
+  questionId="q4"
+  lang="en"
+  prompt="Why does the documentation tell you to review a GIF before sharing it?"
+  options={[
+    {
+      text: 'GIF files are large and slow to send.',
+      explanation: 'Size is not the stated reason.',
+    },
+    {
+      text: 'The recording captures everything visible in the browser, including account details on logged-in pages.',
+      correct: true,
+      explanation:
+        'Claude drives your real browser with your real sessions, so anything on screen is in the frame.',
+    },
+    {
+      text: 'The recording may include the model’s reasoning.',
+      explanation: 'It records the browser, not the session transcript.',
+    },
+    {
+      text: 'GIFs are recorded at a different resolution than the page.',
+      explanation: 'Not a documented concern.',
+    },
+  ]}
+/>
+
+**Next:** `04-dataviz` is the discipline behind everything you just published — chart form, colour by role, and a palette you can prove is readable.

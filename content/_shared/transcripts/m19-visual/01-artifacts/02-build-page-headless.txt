@@ -1,0 +1,11 @@
+# Captured 2026-09-07, Claude Code 2.1.263, in a clone of codechup/claude-code-lab at lesson/m19-01-start.
+# Headless run, Artifact tool explicitly denied: this capture stops one step short of publishing.
+# Verbatim except redactions: a workspace-trust warning line naming a local path was deleted,
+# and the owning username in the `ls -l` output was replaced with `user`.
+› claude -p "Read artifacts/task-activity.csv and write out/task-activity.html: one self-contained HTML page (no external requests) with an inline SVG line chart of tasks_created vs tasks_completed over the 30 days, plus a one-sentence summary. Do not publish an artifact. Report in English in at most three lines." --model sonnet --max-turns 20 --allowedTools "Read,Write" --disallowedTools "Artifact" --permission-mode acceptEdits --append-system-prompt "Language override for this session: reply in English only, ignoring any standing preference for another language." --output-format text
+The chart is written to `out/task-activity.html` — an inline SVG line chart (blue = created, orange = completed, validated colorblind-safe pair) with hover tooltip, legend, and a collapsible data table, no external requests.
+
+Summary: over the 30 days, 158 tasks were created vs. 131 completed, so the backlog grew net +27, with creation outpacing completion on most days.
+› ls -l out/
+total 12
+-rw-r--r-- 1 user 197121 10637 Sep  7 22:44 task-activity.html
