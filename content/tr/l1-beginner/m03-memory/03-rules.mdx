@@ -1,15 +1,15 @@
 ---
 title: '`.claude/rules/` ile yol tabanlı kurallar'
-description: "Kurallar talimatları konu dosyalarına böler; paths: frontmatter'ı ise bir kuralın yalnızca Claude eşleşen dosyaları okuduğunda yüklenmesini sağlar. Laboratuvar deposunda bir kural yazıp Claude'un cevaplarında görünüp kaybolmasını izleyin."
+description: "Kurallar, talimatları konu dosyalarına böler; paths: frontmatter'ı ise bir kuralın yalnızca Claude eşleşen dosyaları okuduğunda yüklenmesini sağlar. Kum havuzu deposunda bir kural yazın ve Claude'un cevaplarında görünüp kaybolmasını izleyin."
 level: 1
 module: 'm03-memory'
 order: 3
 duration_min: 15
 difficulty: core
-tags: ['memory', 'rules', 'claude-directory']
+tags: ['bellek', 'kurallar', 'claude-dizini']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'How Claude remembers your project'
@@ -27,7 +27,349 @@ lab:
   repo_tag: 'lesson/m03-03-start'
 ---
 
-Bu ders `.claude/rules/*.md` dosyalarını ve `paths:` frontmatter'ını anlatır: bir kural ne zaman devreye girer, glob desenleri nasıl yazılır, kullanıcı düzeyindeki kurallar proje kurallarıyla nasıl sıralanır. Laboratuvarda aynı komutu üç kez çalıştırıp kuralın önce yokluğunu, sonra varlığını, sonra da kapsam dışı bir dosya okunduğunda yeniden yokluğunu gözlemlersiniz.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l1-beginner/m03-memory/03-rules.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Konuya özel bir talimatı, `CLAUDE.md`'yi büyütmek yerine `.claude/rules/<topic>.md` içine koymak.
+- Bir kuralın yalnızca Claude eşleşen dosyaları okuduğunda yüklenmesi için glob desenleriyle `paths:` frontmatter'ı yazmak.
+- Yol tabanlı bir kuralı tam olarak neyin tetiklediğini — ve neyin tetiklemediğini — kesin biçimde söylemek.
+- Bir kural, bir `CLAUDE.md` girdisi ve bir [skill](/tr/playbook/glossary/#skill) (`/ad` ile çağrılan ya da Claude'un kendiliğinden yüklediği yeniden kullanılabilir talimat paketi) arasında seçim yapmak.
+- Her projede geçerli kişisel kurallar için `~/.claude/rules/` klasörünü kullanmak.
+
+**Ön koşullar.** `01-claude-md` ve `02-hierarchy-imports` dersleri. Laboratuvar için `codechup/claude-code-lab` deposunun bir klonu.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bir kural yine de bağlama yüklenir — kapsamsız bir kural için her oturumda, kapsamlı bir kural
+  için ise eşleşen bir dosya her okunduğunda. Yalnızca belirli bir görevi yaparken önemli olan
+  talimatlar için bir skill daha iyi bir yerdir: siz onu çağırdığınızda ya da Claude prompt'unuzla
+  ilgili bulduğunda yüklenir, öncesinde değil. Ve `/compact` sonrasında bozulmadan kalması gereken
+  bir şey için yol tabanlı bir kural kötü bir seçimdir; çünkü kapsamlı kurallar mesaj geçmişinde
+  yaşar ve geri kalan her şeyle birlikte özetlenip silinir, yalnızca eşleşen bir dosya yeniden
+  okunduğunda tekrar yüklenir.
+</WhenNotToUse>
+
+## Kavram
+
+### Kurallar, konuya göre bölünmüş `CLAUDE.md`'dir
+
+Markdown dosyalarını `.claude/rules/` içine koyun. Her biri açıklayıcı bir dosya adıyla tek bir konuyu kapsar. Tüm `.md` dosyaları özyinelemeli olarak (recursively) bulunur, yani alt dizinler de işe yarar:
+
+<CodeBlock title="bir projenin .claude/ düzeni">
+
+```text
+your-project/
+├── .claude/
+│   ├── CLAUDE.md           # Main project instructions
+│   └── rules/
+│       ├── code-style.md   # Code style guidelines
+│       ├── testing.md      # Testing conventions
+│       └── security.md     # Security requirements
+```
+
+</CodeBlock>
+
+`paths:` frontmatter'ı **olmayan** bir kural, başlangıçta `.claude/CLAUDE.md` ile aynı öncelikle yüklenir. Yani kapsamsız bir `CLAUDE.md`'yi kapsamsız kurallara bölmek size düzen kazandırır, tıpkı `@path` importları gibi — ve importlar gibi, size hiç bağlam geri kazandırmaz.
+
+Kuralları farklı kılan şey frontmatter'dır.
+
+### `paths:` frontmatter'ı
+
+Bir `paths` glob deseni listesi ekleyin, kural koşullu hale gelir: yalnızca Claude eşleşen dosyalarla çalıştığında uygulanır.
+
+<CodeBlock title=".claude/rules/api.md">
+
+```markdown
+---
+paths:
+  - 'src/api/**/*.ts'
+---
+
+# API Development Rules
+
+- All API endpoints must include input validation
+- Use the standard error response format
+- Include OpenAPI documentation comments
+```
+
+</CodeBlock>
+
+Tetikleyici kesindir ve ezberlemeye değer: **yol tabanlı kurallar, Claude desenle eşleşen bir dosyayı okuduğunda devreye girer** — her tool kullanımında değil, ve dosyanın depoda sadece var olması yüzünden hiç değil. Claude `src/api/` altındaki bir dosyayı hiç açmazsa, o kural hiçbir zaman konuşmaya girmez. Eşleşme, Claude bir dosyaya proje dizinine symlink (sembolik bağlantı) verilmiş bir yoldan ulaştığında da çalışır.
+
+Yaygın desenler:
+
+| Desen                  | Eşleşenler                                      |
+| ---------------------- | ----------------------------------------------- |
+| `**/*.ts`              | Herhangi bir dizindeki tüm TypeScript dosyaları |
+| `src/**/*`             | `src/` altındaki tüm dosyalar                   |
+| `*.md`                 | Proje kök dizinindeki Markdown dosyaları        |
+| `src/components/*.tsx` | Tek bir dizindeki React bileşenleri             |
+
+Birden çok desen listeleyebilir ve birden fazla uzantı için brace expansion (küme ayraçlarıyla genişletme) kullanabilirsiniz:
+
+<CodeBlock title=".claude/rules/typescript.md">
+
+```markdown
+---
+paths:
+  - 'src/**/*.{ts,tsx}'
+  - 'lib/**/*.ts'
+  - 'tests/**/*.test.ts'
+---
+```
+
+</CodeBlock>
+
+Küme ayraçları çarpar: `src/*.{ts,tsx}` iki desene genişler, `{a,b}/{c,d}/*.{ts,tsx}` ise sekize. Bir kuralın bütün `paths` listesi, 1.000 genişletilmiş desen ve 4 MiB'lik tek bir bütçeyi paylaşır; küme ayracı içermeyen desenler bu bütçeden düşülmez. Bütçeyi aşacak bir desen genişletilmeden olduğu gibi kullanılır ve bu durumda düz metin haldeki küme ayraçları hiçbir şeyle eşleşmez.
+
+Bir glob tuzağı: `[` bir köşeli parantez ifadesi başlatır. `photos [2024/**` gibi tek başına okunamayan bir desen geçersizdir — hiçbir şeyle eşleşmez, kuralın diğer desenleri ise çalışmaya devam eder. Gerçek bir köşeli parantezi `photos \[2024/**` olarak escape edin.
+
+### Kullanıcı düzeyindeki kurallar
+
+`~/.claude/rules/` makinenizdeki her projeye uygulanır. Bunu, projenin değil kendi tercihiniz olan şeyler için kullanın — [commit](/tr/playbook/glossary/#commit) (bir git deposuna kaydedilen değişiklik anlık görüntüsü) mesajı tarzı, testleri nasıl düzenlemeyi sevdiğiniz gibi. Kullanıcı düzeyindeki kurallar proje kurallarından **önce** yüklenir; bu da proje kurallarına daha yüksek öncelik kazandırır.
+
+### Kural mı, CLAUDE.md mi, yoksa skill mi?
+
+Bu dersin işlenmiş örnek prompt'u, Claude'u kendi kaynaklarını göstermeye zorlayan prompt'tur — üçünü pratikte birbirinden ayırt etmenin yolu da budur:
+
+```text
+Read src/store.ts. Do not edit anything. Then list, as short bullets, the
+conventions this project expects for code under src/, and say for each where
+that convention comes from.
+```
+
+Cevap ya `.claude/CLAUDE.md`'yi, ya `.claude/rules/style.md`'yi ya da hiçbirini adlandırır — bu da kuralınızın sandığınız yerde olup olmadığını size söyler.
+
+<DecisionTree
+  title="Bu talimat nereye ait?"
+  desc="Her zaman geçerli talimatlar CLAUDE.md'ye gider; kod tabanının bir alanına bağlı talimatlar yol tabanlı bir kurala gider; çok adımlı prosedürler ise bir skill'e gider."
+  nodes={[
+    { id: 'start', x: 0, y: 60, width: 150, lines: ['Yeni, kalıcı', 'bir talimat'] },
+    { id: 'q1', x: 190, y: 60, width: 160, lines: ['Çok adımlı', 'prosedür mü?'] },
+    { id: 'skill', x: 390, y: 10, width: 150, lines: ['Skill', 'talep üzerine yüklenir'] },
+    { id: 'q2', x: 390, y: 110, width: 160, lines: ['Yalnızca tek', 'bir alan için mi?'] },
+    { id: 'rule', x: 590, y: 60, width: 160, lines: ['.claude/rules/,', 'paths: frontmatter’lı'] },
+    { id: 'claudemd', x: 590, y: 160, width: 150, lines: ['CLAUDE.md', 'her oturumda'] },
+  ]}
+  edges={[
+    { from: 'start', to: 'q1' },
+    { from: 'q1', to: 'skill', label: 'evet' },
+    { from: 'q1', to: 'q2', label: 'hayır' },
+    { from: 'q2', to: 'rule', label: 'evet' },
+    { from: 'q2', to: 'claudemd', label: 'hayır' },
+  ]}
+/>
+
+### Kuralları projeler arasında paylaşmak
+
+`.claude/rules/` symlink'leri (sembolik bağlantıları) destekler, böylece tek bir bakımı yapılan kural kümesi birden çok depoya hizmet edebilir. Symlink'ler normal şekilde çözülüp yüklenir, döngüsel symlink'ler ise tespit edilip ele alınır.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+ln -s ~/shared-claude-rules .claude/rules/shared
+ln -s ~/company-standards/security.md .claude/rules/security.md
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+ln -s ~/shared-claude-rules .claude/rules/shared
+ln -s ~/company-standards/security.md .claude/rules/security.md
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+# Requires Developer Mode or an elevated shell.
+New-Item -ItemType SymbolicLink -Path .claude/rules/shared -Target $HOME/shared-claude-rules
+New-Item -ItemType SymbolicLink -Path .claude/rules/security.md -Target $HOME/company-standards/security.md
+```
+
+  </Fragment>
+</OSTabs>
+
+## Uygulamalı laboratuvar
+
+<Callout label="Not">
+  Bu laboratuvardaki her headless komut, önüne `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` konularak
+  yakalandı; sizinki de öyle olmalı. Auto memory depo başına anahtarlanır (`04-auto-memory` dersi),
+  bu yüzden aynı klonda daha önceki bir laboratuvarı yaparken Claude'un kaydettiği notlar ikinci bir
+  cevap kaynağı olurdu — ve buradaki bütün mesele, çalıştırmalar arasında tam olarak tek bir şeyin
+  değişmesidir.
+</Callout>
+
+Neredeyse aynı komutun üç çalıştırması. İlk ikisi yalnızca kural dosyasının var olup olmamasıyla farklıdır; üçüncüsü ise yalnızca Claude'dan hangi dosyayı okumasının istendiğiyle farklıdır — ve kapsamın süs değil gerçek olduğunu kanıtlayan da bu üçüncü çalıştırmadır.
+
+<Lab
+  title="Laboratuvar · yol tabanlı bir kural yazın ve açılıp kapanmasını izleyin"
+  lessonId="tr/l1-beginner/m03-memory/rules"
+  repoTag="lesson/m03-03-start"
+  steps={[
+    'Start tag’ini `git checkout lesson/m03-03-start` ile checkout edin, ardından `npm ci` çalıştırın. Bu, 01. derste yazdığınız `.claude/CLAUDE.md`’yi zaten taşıyor, henüz `.claude/rules/` yok.',
+    'Yalnızca Read tool’una izin vererek "önce" cevabını yakalayın: `claude -p "Read src/store.ts. Do not edit anything. Then list, as short bullets, the conventions this project expects for code under src/, and say for each where that convention comes from." --model sonnet --max-turns 4 --output-format text --allowedTools "Read"`. Hangi kaynakları adlandırdığına dikkat edin.',
+    "`.claude/rules/style.md` dosyasını `paths: ['src/**']` frontmatter'ıyla ve dört kuralla oluşturun: adlandırılmış (named) export'ları tercih edin, default export kullanmayın; `src/cli.ts` ve `src/api/server.ts`'i ince tutun; `src/store.ts`'teki yeni davranış `test/` içinde eşleşen bir testle gelsin; göreli importlar açık bir `.ts` uzantısı kullansın. Bu dördün üçü `.claude/CLAUDE.md`'de hiçbir yerde yok — ince-katman (thin-wrapper) olanı ise bilerek var, böylece cevapta iki evi olan bir kuralın neye benzediğini görebilirsiniz.",
+    'Adım 2’deki komutu birebir aynı şekilde tekrar çalıştırın.',
+    'Şimdi tek bir şeyi değiştirin — Claude’un okuduğu dosyayı — ve şunu çalıştırın: `claude -p "Read test/store.test.ts and no other file. Do not edit anything. Then list, as short bullets, the conventions this project expects for code under src/, and say for each where that convention comes from." --model sonnet --max-turns 4 --output-format text --allowedTools "Read"`',
+    'Üçünü de karşılaştırın. Dosya hâlâ diskte dururken üçüncü çalıştırmanın kuralı neden göremediğini kendinize sorun.',
+  ]}
+  expected="1. çalıştırma yalnızca .claude/CLAUDE.md'yi kaynak gösterir; adlandırılmış export'lardan, .ts uzantısından ya da eşleşen bir testten hiç söz etmez. 2. çalıştırma bu üçünü ekler ve her birini .claude/rules/style.md'ye bağlar — ince-katman kuralı için ise her iki dosyayı da kaynak gösterir, çünkü bu kural gerçekten ikisinde de vardır. test/store.test.ts'i okuyan 3. çalıştırma ise style.md'den hiç söz etmez: test/, src/** ile eşleşmez, bu yüzden kural konuşmaya hiç girmez."
+  checklist={[
+    'Kural dosyasının bir `paths` listesi içeren YAML frontmatter’ı var',
+    'Dört kuralından üçü .claude/CLAUDE.md’de yok, bu yüzden hangisinin nereden geldiği açık',
+    '2. çalıştırma, yeni maddelerin kaynağı olarak .claude/rules/style.md’yi adlandırıyor',
+    '3. çalıştırma kuraldan hiç söz etmiyor ve "default export kullanılmaz" demiyor',
+    'Runs 2 ile 3 arasındaki farkı tek cümlede açıklayabiliyorsunuz',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/03-rules/01-before-rule.txt"
+    range="2-10"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/03-rules/02-after-rule.txt"
+    range="2-12"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/03-rules/03-out-of-scope.txt"
+    range="2-11"
+  />
+</Lab>
+
+Üçüncü kaydı dikkatle okuyun. Açık `.ts` uzantısından gerçekten söz eder — ama bunu bir kurala değil, az önce okuduğu test dosyasındaki import satırına bağlar. Kural gerçekten yoktur; Claude aynı şeyi yalnızca koddan fark etmiştir. Bir talimatla bir çıkarım arasındaki fark budur, ve böyle bir laboratuvarın sonuçlar yerine kaynaklar istemesinin nedeni de budur.
+
+(Bu modülün geri kalanında olduğu gibi, kayıtlar Türkçe cevap verir; çünkü onları kaydeden makinede Türkçe isteyen bir kullanıcı kapsamı bellek dosyası vardır — bkz. `02-hierarchy-imports` dersi.)
+
+## Anti-pattern'ler
+
+**Kapsamsız bir `CLAUDE.md`'yi kapsamsız kurallara bölüp bağlam tasarrufu beklemek.** `paths` alanı olmayan kurallar, koşulsuz olarak başlangıçta yüklenir. _Düzeltme:_ tasarrufu sağlayan dosya bölünmesi değil, `paths:` alanıdır.
+
+**Her yerde geçerli olması gereken bir kuralı kapsamlamak.** `paths: ['src/**']` arkasına konan "Asla sır commit'leme" örneği, Claude `src/` okumadığı her an görevden uzaktır. _Düzeltme:_ gerçekten evrensel talimatları kapsamsız bırakın ya da `CLAUDE.md`'ye koyun.
+
+**Bir kuralın, eşleşen bir dosya var diye tetiklendiğini varsaymak.** Tetikleyici, Claude'un eşleşen bir dosyayı _okumasıdır_. `src/api/` altını hiç açmayan bir oturum, API kuralını hiç görmez. _Düzeltme:_ daha erken gerekiyorsa, kapsamı kaldırın ya da oturumu önce o alana yönlendirin.
+
+**Kapsamlı bir kuralın `/compact`'tan sağ çıkmasını beklemek.** Yol tabanlı kurallar ve iç içe `CLAUDE.md` dosyaları mesaj geçmişinde yaşar ve özetlenerek silinir; Claude eşleşen dosyaları yeniden okudukça yeniden yüklenirler. _Düzeltme:_ bir talimat sıkıştırma sonrasında da kalıcı olmalıysa, `paths:` frontmatter'ını kaldırın ya da onu proje kökündeki `CLAUDE.md`'ye taşıyın.
+
+**Hiç doğrulamadığınız bir glob yazmak.** `photos [2024/**` hiçbir şeyle eşleşmez. Küme ayracı genişlemesi kontrolden çıkan bir desen genişletilmeden kullanılır ve onun düz metin haldeki küme ayraçları da hiçbir şeyle eşleşmez. _Düzeltme:_ tam olarak bu laboratuvarın yaptığı gibi, Claude'dan eşleşen bir dosyayı okuyup kaynaklarını adlandırmasını isteyerek kuralın tetiklendiğini kanıtlayın.
+
+**Bir kuralda `CLAUDE.md`'nin zaten söylediğini tekrarlamak.** Yinelenen talimatlar bağlamı iki kez tüketir ve birbirinden uzaklaşır. _Düzeltme:_ her gerçek için tek bir ev.
+
+<Callout variant="changed" label="Değişti">
+  Talep üzerine yüklenen kurallar — yol tabanlı kurallar ve iç içe `.claude/rules/` dizinlerindeki
+  kurallar — artık `--setting-sources`'tan `project`'i çıkardığınızda atlanıyor. v2.1.211'den önce
+  bu durumda bile yükleniyorlardı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/rules"
+  questionId="q1"
+  lang="tr"
+  prompt="`paths: ['src/api/**/*.ts']` içeren bir kural konuşmaya ne zaman girer?"
+  options={[
+    {
+      text: 'Oturum başında, diğer her kural gibi',
+      explanation: 'Bu, `paths` alanı olmayan bir kuraldır. Kapsamlı bir kural bekler.',
+    },
+    {
+      text: 'Claude, desenle eşleşen bir dosyayı okuduğunda',
+      correct: true,
+      explanation: 'Doğru — tetikleyici eşleşen bir dosyayı okumaktır, her tool kullanımı değil.',
+    },
+    {
+      text: 'Oturum src/’ye en az bir kez dokunduktan sonra, her tool çağrısında',
+      explanation: 'Dokümantasyon bunun her tool kullanımında olmadığını açıkça söylüyor.',
+    },
+    {
+      text: 'Yalnızca prompt’unuzda src/api/’den bahsederseniz',
+      explanation: 'İfadeniz önemsizdir; önemli olan dosyanın okunmasıdır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/rules"
+  questionId="q2"
+  lang="tr"
+  prompt="Hangi değişiklik, her oturuma gerçekten yüklenen şeyi azaltır?"
+  options={[
+    {
+      text: 'CLAUDE.md’nin 100 satırını bir @path importuna taşımak',
+      explanation: 'Importlar başlangıçta genişler — aynı maliyet.',
+    },
+    {
+      text: '100 satırı, frontmatter’ı olmayan .claude/rules/style.md’ye taşımak',
+      explanation:
+        'Kapsamsız bir kural, başlangıçta .claude/CLAUDE.md ile aynı öncelikle yüklenir.',
+    },
+    {
+      text: '100 satırı, bir `paths:` listesi olan .claude/rules/style.md’ye taşımak',
+      correct: true,
+      explanation:
+        'Artık bağlama yalnızca gerçekten eşleşen dosyaları okuyan oturumlarda mal olur.',
+    },
+    {
+      text: '100 satırı bir HTML yorumuna sarmak',
+      explanation: 'Bu onları bağlamdan tamamen çıkarır — artık hiçbir şekilde talimat olmazlar.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/rules"
+  questionId="q3"
+  lang="tr"
+  prompt="Makinenizdeki her projede istediğiniz kişisel bir commit mesajı kuralınız var. Bu nereye gider?"
+  options={[
+    {
+      text: 'Her projenin kendi .claude/rules/ klasörü',
+      explanation:
+        'Bu, her depoyu düzenlemek ve kişisel zevkinizi paylaşılan depolara commit’lemek anlamına gelir.',
+    },
+    {
+      text: 'Her yerde geçerli olan ve proje kurallarından önce yüklenen ~/.claude/rules/',
+      correct: true,
+      explanation:
+        'Doğru — kullanıcı düzeyindeki kurallar önce yüklenir, böylece proje kuralları daha yüksek önceliği korur.',
+    },
+    {
+      text: 'Yönetilen (managed policy) bir CLAUDE.md',
+      explanation: 'Bu, BT tarafından kurum çapında dağıtım içindir, kişisel tercih için değil.',
+    },
+    {
+      text: 'Auto memory, Claude’a bir kez söyleyerek',
+      explanation: 'Auto memory depo başınadır, bu yüzden yeni bir projeye sizi takip etmez.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/rules"
+  questionId="q4"
+  lang="tr"
+  prompt="Kullanıcı düzeyindeki kurallar ile proje kuralları arasında hangisi daha yüksek önceliğe sahiptir?"
+  options={[
+    {
+      text: 'Kullanıcı düzeyindekiler, çünkü önce yüklenirler',
+      explanation:
+        'Önce yüklenmeleri tam olarak neden öyle olmadıklarının nedenidir: proje kuralları onlardan sonra okunur.',
+    },
+    {
+      text: 'Proje kuralları',
+      correct: true,
+      explanation:
+        'Kullanıcı düzeyindeki kurallar proje kurallarından önce yüklenir, bu da proje kurallarına daha yüksek öncelik kazandırır.',
+    },
+    {
+      text: 'Hiçbiri — sırasız birleştirilirler',
+      explanation: 'Belgelenmiş bir sıra var.',
+    },
+    { text: 'Hangi dosya daha büyükse o', explanation: 'Boyutun öncelikle hiçbir ilgisi yok.' },
+  ]}
+/>
+
+**Sırada:** `04-auto-memory` — sistemin diğer yarısı: Claude'un sorulmadan projeniz hakkında yazdığı notlar.

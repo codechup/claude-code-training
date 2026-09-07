@@ -6,10 +6,10 @@ module: 'm04-commands'
 order: 3
 duration_min: 15
 difficulty: core
-tags: ['commands', 'sessions', 'resume', 'branch']
+tags: ['komutlar', 'oturumlar', 'sürdürme', 'branch']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Manage sessions'
@@ -31,6 +31,373 @@ lab:
   repo_tag: 'lesson/m04-03-start'
 ---
 
-> **Not:** Bu sayfanın tam Türkçe çevirisi henüz yapılmadı. `draft: true` kaldığı sürece sayfa gezinmede görünmez. Çeviri, `.claude/rules/i18n.md` kurallarına göre `content/en/l1-beginner/m04-commands/03-sessions.mdx` dosyasından üretilecek (D016, D018). Aşağıda dersin Türkçe özeti var.
+## Hedefler ve ön koşullar
 
-Bu ders oturum (session) yönetimini anlatır: bir proje dizinine bağlı, `~/.claude/projects/<proje>/<oturum-id>.jsonl` altında JSONL olarak saklanan ve varsayılan olarak 30 gün tutulan kaydedilmiş konuşma. Bir konuşmaya geri dönmenin dört yolunu (`claude --continue`, `claude --resume <id>`, `claude --resume <ad>`, oturum içinden `/resume`) ve her birinin neyi atladığını gösterir — özellikle `-p` ile oluşturulan oturumların seçicide ve `--continue` içinde görünmemesi, ama `claude -p --continue` içinde görünmesi. Sürdürülen bir oturumun neyi geri getirdiğini (konuşma geçmişi, model, agent, hedef) ve neyi getirmediğini (`--mcp-config`, `--settings`, `--add-dir` gibi başlatma yapılandırması) ayırır; izin modunun (permission mode) `bypassPermissions` durumundan asla geri yüklenmediğini vurgular. Oturum adlandırma, oturum seçicisinin klavye kısayolları ve son olarak `/branch`, `/fork` ile `--fork-session` arasındaki fark — hepsi laboratuvar deposunda gerçekten çalıştırılmış kayıtlarla: `--fork-session` yeni bir `session_id` üretir ama geçmişi korur.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Bir oturumun ne olduğunu, [transcript](/tr/playbook/glossary/#transcript)'inin (oturumun sürekli kaydedildiği döküm) nerede tutulduğunu ve ne kadar süre saklandığını söylemek.
+- Bir konuşmaya dört yoldan geri dönmek — `claude --continue`, `claude --resume <id>`, `claude --resume <ad>`, oturum içinden `/resume` — ve hangisinin hangi oturumları atladığını söylemek.
+- Bir oturumu başlatırken ya da oturum ortasında adlandırıp daha sonra bulunabilir kılmak ve oturum seçicisinde klavye kısayollarıyla gezinmek.
+- Sürdürülen bir oturumun neyi geri getirdiğini ve neyi getirmediğini, [permission mode](/tr/playbook/glossary/#permission-mode) (izin modu; agent'ın hangi eylemleri onay almadan yapabileceğini belirleyen ayar) kurallarını da içerecek şekilde açıklamak.
+- İkinci bir yön denemek istediğinizde `/branch`, `/fork` ve `--fork-session` arasında doğru seçimi yapmak.
+
+**Ön koşullar.** Bu modülün 2. dersi — bir `claude -p --output-format json` zarfından `session_id`'yi okumakta rahat olmanız gerekir. Laboratuvar, `lesson/m04-03-start` etiketindeki lab deposuna karşı çalışır.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Sürdürmek her zaman doğru hamle değildir. Uzun bir oturum, geçmişinin tamamını her isteğe taşır;
+  bir sonraki iş gerçekten farklı bir işse `/clear` ile temiz bir başlangıç, alakasız bağlamla dolu
+  bir konuşmayı sürdürmekten daha ucuz ve daha isabetlidir.
+  [Branch](/tr/playbook/glossary/#branch)'lemek (bir oturumun konuşmasını kopyalayıp o kopyada devam
+  etmek) de versiyon kontrolü yerine geçmez — dosyalarınızı değil, konuşmayı kopyalar; bu yüzden
+  aynı depoyu düzenleyen iki branch yine diskte çakışır. Ve `--resume`'u bir şeyleri yazıya dökmenin
+  yerine koymayın: bir oturum varsayılan olarak 30 gün sonra silinir, bu yüzden kalıcı olması
+  gereken her şey `CLAUDE.md`'ye, bir [commit](/tr/playbook/glossary/#commit) (bir değişiklik
+  kümesini depoya kaydeden git işlemi) mesajına ya da bir issue'ya ait olmalıdır.
+</WhenNotToUse>
+
+## Kavram
+
+### Oturum nedir
+
+Oturum, bir proje dizinine bağlı, kaydedilmiş bir konuşmadır. Claude Code, siz çalışırken bunu sürekli olarak yerel bir transcript'e yazar; böylece çıktıktan sonra ya da `/clear`'dan sonra ona geri dönebilirsiniz.
+
+Transcript'ler, `~/.claude/projects/<proje>/<oturum-id>.jsonl` yolunda JSONL olarak tutulur; buradaki `<proje>`, çalışma dizini yolunuzun alfasayısal olmayan karakterleri `-` ile değiştirilmiş hâlidir. Girdi biçimi dahilidir ve sürümler arasında değişir, bu yüzden bu dosyaları kendiniz ayrıştırmayın — `/export`'u ya da aşağıdaki betiklenebilir arayüzleri kullanın. Saklama süresi varsayılan olarak 30 gündür, `cleanupPeriodDays` ayarıyla değiştirilir.
+
+Masaüstü uygulaması, Claude Code on the web ve VS Code eklentisi kendi oturum geçmişlerini ayrı ayrı tutar. Bu ders CLI ile ilgilidir.
+
+### Geri dönmek
+
+| Komut                       | Ne yapar                                                                                                                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `claude --continue`         | Geçerli dizindeki en son etkileşimli oturumu sürdürür                                                                                                                          |
+| `claude --resume`           | Oturum seçicisini açar                                                                                                                                                         |
+| `claude --resume <ad>`      | Adlandırılmış oturumu doğrudan sürdürür                                                                                                                                        |
+| `claude --from-pr <numara>` | Seçiciyi, o [pull request](/tr/playbook/glossary/#pull-request)'e (bir branch'in ana koda birleştirilmesi için açılan değişiklik talebi) bağlı oturumlarla sınırlı olarak açar |
+| `/resume`                   | Etkin bir oturumun içinden başka bir konuşmaya geçer                                                                                                                           |
+
+Dışlamalar, tablonun ima ettiğinden daha önemlidir. `claude -p` ya da Agent SDK ile oluşturulan oturumlar **seçicinin ve `claude --continue`'nun dışında bırakılır** — böyle bir oturumu, ID'sini `claude --resume <session-id>`'a vererek sürdürürsünüz. `claude --continue`, arka plan oturumlarını ve ilk [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni) `/loop` olan oturumları da atlar. Ama `claude -p --continue`, `-p`, SDK ve `/loop` oturumlarını **kapsar**, arka plan oturumlarını yine de atlar.
+
+`claude --resume <session-id>`'ı herhangi bir dizinden çalıştırabilirsiniz. Claude Code önce geçerli proje dizinine ve onun git [worktree](/tr/playbook/glossary/#worktree)'lerine (aynı deponun ayrı bir dizine checkout edilmiş, birbirinden bağımsız çalışma kopyaları) bakar, sonra bu makinedeki diğer her projeye.
+
+İşte bu davranış, gerçekten çalıştırılıp kaydedilmiş hâliyle. Önce, lab deposunda bir [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) çalıştırma, `session_id`'sini saklayarak:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/03-sessions/01-start-session.txt"
+  range="2-6"
+/>
+
+Şimdi aynı oturum, geçmiş gerçekten geri gelmişse anlamlı olacak bir takip sorusuyla ID'den sürdürülüyor:
+
+<Transcript src="content/_shared/transcripts/m04-commands/03-sessions/02-resume.txt" range="2-6" />
+
+`session_id`'nin aynı olduğuna dikkat edin. Sürdürmek bir konuşmaya devam eder; yenisini başlatmaz.
+
+### Sürdürülen bir oturum neyi geri getirir
+
+Sürdürülen bir oturum, konuşmayı **ve içinde kayıtlı durumun bir kısmını** geri getirir:
+
+- **Konuşma geçmişi** — tool çağrıları ve sonuçları dahil, geçmişin tamamı.
+- **Model** — oturum, kullandığı modelle devam eder; ancak o model kullanımdan kaldırılmışsa ya da başlatma sırasında bir `--model` bayrağı veya `ANTHROPIC_MODEL` ailesinden bir değişken başka bir model seçiyorsa durum değişir.
+- **Agent** — `--agent` ile başlatılmış bir oturum, sistem prompt'unu, tool kısıtlamalarını ve modelini koruyarak o [agent](/tr/playbook/glossary/#agent) (kendi başına adım adım karar verip tool çağırabilen yapay zekâ süreci) olarak devam eder.
+- **Permission mode** — terminal yollarında geri yüklenir, ama gerçek istisnalarla (aşağıda).
+- **Etkin hedef** — oturum bittiğinde hâlâ etkin olan bir hedef devreder; tur sayısı, zamanlayıcısı ve [token](/tr/playbook/glossary/#token) (modele giden ve modelden gelen metnin ölçüldüğü birim) taban çizgisi sıfırlanır.
+- **Zamanlanmış görevler** — süresi dolmamış olanlar. Arka planda çalışan Bash ve izleme görevleri geri yüklenmez.
+
+Geri **yüklenmeyen** şey, başlatma yapılandırmasıdır. Oturum `--mcp-config`, `--settings`, `--plugin-dir`, `--fallback-model` bayraklarına ya da `--add-dir` ile eklenmiş dizinlere bağımlıysa, sürdürürken bunları yeniden verin. Oturum ortasında `/add-dir` ile eklenen dizinler de geri yüklenmez. `settings.json` gibi ayar dosyaları başlatmada yeniden okunur, bu yüzden içlerindeki hiçbir şeyi tekrarlamanız gerekmez.
+
+İnsanların çoğunlukla takıldığı yer, permission mode kurallarıdır:
+
+| Oturum şu modda bittiyse | Nasıl sürdürüldü         | Sürdürünce permission mode                                    |
+| ------------------------ | ------------------------ | ------------------------------------------------------------- |
+| `bypassPermissions`      | Terminal                 | Yeni bir oturumun başlayacağı mod — asla geri yüklenmez       |
+| `plan`                   | Terminal                 | Yeni bir oturumun başlayacağı mod                             |
+| `auto`                   | Terminal                 | Hesabınız hâlâ auto mode gereksinimlerini karşılıyorsa `auto` |
+| Herhangi bir mod         | Oturum seçicisi          | Geri yüklenmez — yeni bir oturumun başlayacağı mod            |
+| Herhangi bir mod         | Oturum içinden `/resume` | Geri yüklenmez — konuşma geçerli modunuzda devam eder         |
+
+Kısacası: izin veren bir oturumu sürdürmek, o izinkârlığı size asla bedavaya geri vermez.
+
+### Sonra bulabilmeniz için bir oturumu adlandırmak
+
+| Ne zaman               | Ad nasıl ayarlanır                                            |
+| ---------------------- | ------------------------------------------------------------- |
+| Başlatırken            | `claude -n auth-refactor`                                     |
+| Oturum sırasında       | `/rename auth-refactor` — ad, prompt çubuğunda da görünür     |
+| Oturum seçicisinden    | Bir oturumu vurgulayıp `Ctrl+R`'a basın                       |
+| Plan kabul edildiğinde | Zaten adlandırmadıysanız, planı kabul etmek bir başlık üretir |
+
+Bu makinede seçtiğiniz adı zaten kullanan başka bir canlı oturum varsa, Claude Code adı o oturumda bırakır ve sizinkini `auth-refactor-graceful-unicorn` gibi iki kelimelik bir ekle biten bir varyanta yeniden adlandırıp size bildirir.
+
+Hiç adlandırmadığınız oturumlar bile iki etiket alır, ama bunlardan yalnızca biri bir sürdürme tutamağıdır. **Varsayılan görünen ad** — çalışma dizininin adı artı `my-app-3f` gibi iki karakterlik bir ek — oturumu listelerde tanımlar ama **`--resume`'a verilemez**. Küçük, hızlı bir modele giden bir arka plan isteğinin yazdığı, ilk prompt'unuzun kısa bir özeti olan **üretilen başlık** ise verilebilir.
+
+### Oturum seçicisi
+
+Bir oturum içinde `/resume` çalıştırın, ya da hiçbir argüman vermeden `claude --resume` kullanın. Varsayılan olarak, `bg` ile işaretlenmiş arka plan oturumları dahil geçerli worktree'deki oturumları, artı başka bir yerde başlayıp `/add-dir` ile geçerli dizini eklemiş oturumları gösterir.
+
+| Kısayol   | Eylem                                                                                   |
+| --------- | --------------------------------------------------------------------------------------- |
+| `↑` / `↓` | Oturumlar arasında gezinir                                                              |
+| `→` / `←` | Gruplanmış oturumları genişletir ya da daraltır                                         |
+| `Enter`   | Vurgulanan oturumu sürdürür                                                             |
+| `Space`   | Oturum içeriğini önizler                                                                |
+| `Ctrl+R`  | Vurgulanan oturumu yeniden adlandırır                                                   |
+| `/`       | Arama moduna girip filtreler; yapıştırılan bir PR ya da MR URL'si kendi oturumunu bulur |
+| `Ctrl+A`  | Bu makinedeki tüm projelerden oturumları gösterir                                       |
+| `Ctrl+W`  | Bu deponun tüm worktree'lerinden oturumları gösterir                                    |
+| `Ctrl+B`  | Geçerli git branch'inden oturumlara filtreler                                           |
+| `Esc`     | Seçiciden ya da arama modundan çıkar                                                    |
+
+### Branch'leme ve fork'lama
+
+Bir konuşmayı kopyalayan üç şey vardır ve bunlar **nereye vardığınız** bakımından birbirinden ayrılır:
+
+| İstediğiniz                                             | Kullanın           | Nereye varırsınız                                                                                |
+| ------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------ |
+| Kendiniz farklı bir yönü denemek, orijinali korurken    | `/branch [ad]`     | Kopyaya geçersiniz; orijinal sürdürülebilir kalır                                                |
+| Siz burada devam ederken kopyanın arka planda çalışması | `/fork [prompt]`   | Hâlâ buradasınız; kopya arka plan oturumu olarak çalışır                                         |
+| Cevabı bu konuşmaya geri dönecek bir yan görev          | `/subtask <görev>` | Hâlâ buradasınız; bir [subagent](/tr/playbook/glossary/#subagent) (yardımcı agent) geri bildirir |
+
+`/branch`, transcript'i kopyalar ve çalışan süreci ona yazacak şekilde değiştirir. Onay mesajı iki session ID yazdırır — şu an içinde bulunduğunuz branch ve diskte değişmeden kalan orijinal. Branch aynı süreçte çalıştığı için "bu oturum için izin ver" izin onaylarınız aynen geçer; devam eden arka plan subagent'ları ve Bash komutları çalışmaya devam eder, çıktıları branch'e düşer ve bağlı bir Remote Control cihazı sizi oraya kadar takip eder.
+
+Komut satırında aynı fikir, `--continue` ya da `--resume` ile birleştirilen `--fork-session`'dır: orijinali yeniden kullanmak yerine yeni bir session ID oluşturur. Bu **ayrı bir süreç** olduğu için, mevcut oturum onaylarınız olmadan başlar ve onları orada yeniden vermeniz gerekir.
+
+İşte `--fork-session`, öncekiyle aynı konuşmaya karşı çalıştırılmış:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/03-sessions/03-fork-session.txt"
+  range="2-7"
+/>
+
+`session_id` farklıdır — orijinal `358bfc5d…` yerine `bca4b3dd…` — ve cevap hâlâ önceki turlardaki üç dosyanın tamamını biliyor. Branch'lemenin tam olarak yaptığı da bu: aynı geçmiş, yeni bir kimlik.
+
+Ve bu [fork](/tr/playbook/glossary/#fork) (bir oturumun geçmişini koruyarak yeni bir kimlikle devam eden kopyası) artık dizindeki en son `-p` oturumu olduğu için, `claude -p --continue` onu yakalar:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/03-sessions/04-continue.txt"
+  range="2-6"
+/>
+
+### Başka bir yerde başlamış oturumlar
+
+İki giriş noktası, bir konuşmayı kendi transcript deponuzdan değil başka bir ortamdan içeri taşır. `claude --teleport` ve oturum içindeki `/teleport` (kısacası `/tp`), bir Claude Code on the web oturumunu bu terminale çeker: bir seçici açılır, ardından Claude Code branch'i ve konuşmayı getirir. Bunun için bir claude.ai aboneliği gerekir. Tersi yönde, `/remote-control` (kısaltması `/rc`), içinde bulunduğunuz oturumu claude.ai'den ya da Claude uygulamasından Remote Control ile kullanılabilir hâle getirir; böylece oturumu hiçbir yere taşımadan başka bir cihazdan devam edebilirsiniz.
+
+### Bir betikten eski bir oturuma soru sormak
+
+`/export`, bir transcript'i insan için görüntüler. Bir betik içinse, session ID'yi `claude -p --resume`'a verin:
+
+<CodeBlock title="bitmiş bir oturuma özet sordurmak">
+
+```bash
+claude -p --resume <session-id> --output-format json "summarize what we changed" | jq -r '.result'
+```
+
+</CodeBlock>
+
+İşte bu dersin örnek prompt'u — sürdürülen bir oturumu sürdürmeye değer kılan şekil:
+
+```text
+Pick up where we left off: the pagination fix is in, the test passes.
+Next, do the same for the API handler and show me the diff before anything else.
+```
+
+Sürdürülen bir oturumun zaten yapılmış olanı yeniden yapmasını önleyen şey, bunu adlandırmaktır.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · gerçek bir konuşmayı resume, fork ve continue edin"
+  lessonId="tr/l1-beginner/m04-commands/sessions"
+  repoTag="lesson/m04-03-start"
+  steps={[
+    'Lab deposunun kendi klonunuzda `git checkout lesson/m04-03-start` çalıştırın.',
+    'Headless bir konuşma başlatın ve id’sini saklayın: `claude -p "Answer in English. Name the three source files under src/ that define the store, the CLI and the HTTP API." --model haiku --max-turns 3 --output-format json --allowedTools "Read" "Glob" "Grep" | jq \'{session_id, num_turns, result}\'`',
+    'Onu id ile, geçmişe ihtiyaç duyan bir takip sorusuyla sürdürün: `claude -p --resume <session-id> "Answer in English. Which of those three files did I name first, and what did you say it was for?" --model haiku --max-turns 2 --output-format json | jq \'{session_id, num_turns, result}\'`. session_id’nin değişmeden geri geldiğini doğrulayın.',
+    'Onu fork’layın: aynı resume komutuna yeni bir soruyla `--fork-session` ekleyin ve geri gelen session_id’yi orijinaliyle karşılaştırın.',
+    '`claude -p --continue "Answer in English. In one sentence, what was the last thing I asked you?" --model haiku --max-turns 2 --output-format json | jq \'{session_id, num_turns, result}\'` çalıştırın ve orijinali değil fork’u aldığını doğrulayın.',
+    'Seçiciyi `claude --resume` ile etkileşimli olarak açın. Her projeye genişletmek için `Ctrl+A`’ya, bir oturumu yeniden adlandırmak için `Ctrl+R`’a, sürdürmeden çıkmak için `Esc`’e basın.',
+  ]}
+  expected="3. adım, 2. adımla aynı session_id'yi döndürür ve önceki turdan cevap verir. 4. adım farklı bir session_id döndürür ama konuşmayı hâlâ bilir. 5. adım orijinali değil fork'lanan oturumu sürdürür. 6. adımdaki seçici oturumlarınızı listeler ve Ctrl+A ile genişler."
+  checklist={[
+    'İlk çalıştırmadan bir `session_id` sakladınız',
+    '`--resume <id>` aynı id’yi döndürdü ve önceki cevabı hatırladı',
+    '`--fork-session` geçmiş korunmuş şekilde farklı bir id döndürdü',
+    '`claude -p --continue`, fork’u aldı',
+    'Düz `claude --continue`’nun bu oturumların hiçbirini neden bulamayacağını söyleyebiliyorsunuz',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/03-sessions/01-start-session.txt"
+    range="2-6"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/03-sessions/02-resume.txt"
+    range="2-6"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/03-sessions/03-fork-session.txt"
+    range="2-7"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/03-sessions/04-continue.txt"
+    range="2-6"
+  />
+</Lab>
+
+Üzerinde durmaya değer olan son adımdır: bu laboratuvardaki her oturum `-p` ile oluşturuldu, bu yüzden düz `claude --continue` hiçbirini bulamazdı. `claude -p --continue` buldu, çünkü print mode, print-mode oturumlarını da kapsar.
+
+## Anti-pattern'ler
+
+**`claude --continue`'nun bir headless oturumu bulmasını beklemek.** Bulmaz: `-p` ve SDK oturumları hem `--continue`'dan hem de seçiciden dışlanır. _Düzeltme:_ JSON zarfından `session_id`'yi saklayıp `claude --resume <id>` kullanın, ya da `claude -p --continue` kullanın.
+
+**Bir `bypassPermissions` oturumunu sürdürüp hâlâ izinkâr olduğunu varsaymak.** Değildir — o mod sürdürmede asla geri yüklenmez. _Düzeltme:_ başlatma bayrağını yeniden verin, ya da gerçekten istiyorsanız kullanıcı ya da yönetilen ayarlarda `permissions.defaultMode`'u ayarlayın.
+
+**Varsayılan görünen adla sürdürmeye çalışmak.** `my-app-3f`, bir oturumu listelerde tanımlar ama bir sürdürme tutamağı değildir; `--resume` onu bulamaz. _Düzeltme:_ önemsediğiniz oturumları `-n` ya da `/rename` ile adlandırın, ya da işe yarayan üretilen başlıkla sürdürün.
+
+**Dosyalarınızı korumak için `/branch` kullanmak.** Branch'leme, çalışma dizinini değil konuşmayı kopyalar. Aynı depoyu düzenleyen iki branch yine de aynı dosyalar için çarpışır. _Düzeltme:_ dosya izolasyonu istediğinizde bir git worktree kullanın — `claude -w <name>`.
+
+**Aynı oturumu iki terminalde sürdürmek.** Fork'lamadan, ikisinden gelen mesajlar tek bir transcript'te iç içe girer. _Düzeltme:_ ikincisinde `--fork-session` kullanın.
+
+**Bir betikte `~/.claude/projects/**/\*.jsonl`dosyalarını ayrıştırmak.** Girdi biçimi dahilidir ve sürümler arasında değişir. _Düzeltme:_ oturumun kendisine sormak için`/export`, `--output-format json`ya da`claude -p --resume` kullanın.
+
+<Callout variant="changed" label="Değişti">
+  `claude --resume <session-id>` artık içinde bulunduğunuz dizinin ötesini de arıyor: önce geçerli
+  proje ve onun git worktree'leri, sonra bu makinedeki diğer her proje. v2.1.223'ten önce arama
+  geçerli proje dizininde duruyordu, bu yüzden oturumun en son çalıştığı yere `cd` yapmanız
+  gerekiyordu.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/sessions"
+  questionId="q1"
+  lang="tr"
+  prompt="Dün `claude -p` ile bir görev çalıştırdınız ve onu geri istiyorsunuz. Düz `claude --continue` hiçbir şey bulamıyor. Neden?"
+  options={[
+    {
+      text: 'Oturumun süresi 24 saat sonra doldu.',
+      explanation: 'Varsayılan saklama süresi 30 gündür, `cleanupPeriodDays` ile ayarlanır.',
+    },
+    {
+      text: '`-p` ya da Agent SDK ile oluşturulan oturumlar `--continue`’dan ve seçiciden dışlanır; id ile sürdürün ya da `claude -p --continue` kullanın.',
+      correct: true,
+      explanation: 'Doğru — bu yüzden JSON zarfındaki session_id’yi saklamaya değer.',
+    },
+    {
+      text: '`--continue` yalnızca bir git deposunun içinde çalışır.',
+      explanation: 'Kapsamı git değil, geçerli dizindir.',
+    },
+    {
+      text: 'Headless çalıştırmalar diske hiç yazılmaz.',
+      explanation:
+        'Yazılır — `--no-session-persistence` vermediğiniz ya da `CLAUDE_CODE_SKIP_PROMPT_HISTORY` ayarlamadığınız sürece.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/sessions"
+  questionId="q2"
+  lang="tr"
+  prompt="`--fork-session`, düz bir `--resume`'a kıyasla neyi değiştirir?"
+  options={[
+    {
+      text: 'Session id’yi yeniden kullanır ama yeni bir transcript dosyası başlatır.',
+      explanation: 'Tam tersi — yeni bir id vermek zaten bütün mesele.',
+    },
+    {
+      text: 'Konuşmayı taşırken yeni bir session id oluşturur, böylece orijinal dokunulmamış kalır.',
+      correct: true,
+      explanation: 'Kaydın gösterdiği tam olarak bu: farklı bir session_id, aynı geçmiş.',
+    },
+    {
+      text: 'Konuşma geçmişi olmadan sürdürür.',
+      explanation: 'Öyle olsaydı sıfırdan başlamaktan farkı kalmazdı.',
+    },
+    {
+      text: 'Oturumu bir git worktree’sine taşır.',
+      explanation: 'O, `--worktree`’dir; konuşmaları değil dosyaları izole eder.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/sessions"
+  questionId="q3"
+  lang="tr"
+  prompt="Şu anda, içinde bulunduğunuz konuşmayı kaybetmeden, kendiniz ikinci bir yaklaşımı denemek istiyorsunuz. Hangisi?"
+  options={[
+    {
+      text: '`/fork`',
+      explanation: 'O, kopyayı arka plan oturumu olarak çalıştırır ve sizi orijinalde bırakır.',
+    },
+    {
+      text: '`/branch`',
+      correct: true,
+      explanation:
+        'Branch, aynı süreçte sizi kopyaya geçirir, oturum izin onaylarınızı korur ve orijinali de saklı tutar.',
+    },
+    {
+      text: '`/subtask`',
+      explanation: 'O, buraya geri bildirim yapan bir subagent’a devreder.',
+    },
+    { text: '`/clear`', explanation: 'O, bağlamı tamamen atar.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/sessions"
+  questionId="q4"
+  lang="tr"
+  prompt="Sürdürülen bir oturum, aşağıdakilerden hangisini kendiliğinden geri getirmez?"
+  options={[
+    {
+      text: 'Tool çağrıları ve sonuçları dahil, konuşma geçmişini.',
+      explanation: 'Bu, tamamen geri yüklenir.',
+    },
+    {
+      text: 'Oturumun kullandığı modeli.',
+      explanation:
+        'Geri yüklenir — model kullanımdan kaldırılmadıysa ya da başlatmada bir --model bayrağı ya da ortam değişkeni başka birini seçmiyorsa.',
+    },
+    {
+      text: '--add-dir ile eklediğiniz dizinleri ve --mcp-config ya da --settings gibi bayrakları.',
+      correct: true,
+      explanation:
+        'Başlatma yapılandırması geri yüklenmez — bunları yeniden verin. Ayar dosyaları yeniden okunur, bu yüzden tekrarlanmaları gerekmez.',
+    },
+    {
+      text: 'Oturum bittiğinde hâlâ etkin olan bir hedefi.',
+      explanation: 'Devreder; tur sayısı, zamanlayıcısı ve token taban çizgisi sıfırlanır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/sessions"
+  questionId="q5"
+  lang="tr"
+  prompt="Bir oturumu hiç adlandırmadınız ve bir listede `my-app-3f` görüyorsunuz. Onunla sürdürebilir misiniz?"
+  options={[
+    {
+      text: 'Evet — bir listede gösterilen her etiket bir sürdürme tutamağı olarak çalışır.',
+      explanation: 'Yalnızca bazıları çalışır.',
+    },
+    {
+      text: 'Hayır — bu, bir sürdürme tutamağı olmayan varsayılan görünen addır. Yapay zekânın ürettiği başlık ise öyledir.',
+      correct: true,
+      explanation:
+        'Doğru. Kendi seçtiğiniz bir tutamak istiyorsanız oturumu `-n` ya da `/rename` ile adlandırın.',
+    },
+    {
+      text: 'Yalnızca oturumun başladığı dizinden.',
+      explanation: 'Sorun dizin değil, etiketin türüdür.',
+    },
+    {
+      text: 'Yalnızca `claude -p --resume` ile.',
+      explanation: 'Varsayılan görünen ad, hiçbir sürdürme yolunda kabul edilmez.',
+    },
+  ]}
+/>
+
+**Sırada:** `04-keybindings-statusline-theme`, terminalin kendisini sizin yapar — kısayollar, durum çubuğu, temalar ve çıktı stilleri.

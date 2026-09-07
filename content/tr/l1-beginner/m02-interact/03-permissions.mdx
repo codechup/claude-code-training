@@ -1,15 +1,15 @@
 ---
 title: 'Permission mode’lar ve allow/deny kuralları'
-description: 'Altı permission mode temeli belirler; allow, ask ve deny kuralları üstüne biner. Mod’lar, kural söz dizimi, deny → ask → allow sırası ve deny’in her kapsamda kazanması.'
+description: 'Altı permission mode temeli belirler; allow, ask ve deny kuralları üstüne biner. Mod’ları, kural söz dizimini, deny → ask → allow sırasını ve bir deny’in her kapsamda neden kazandığını öğrenin — lab reposuna karşı yapılmış üç gerçek headless çalıştırmayla kanıtlanmıştır.'
 level: 1
 module: 'm02-interact'
 order: 3
 duration_min: 20
 difficulty: core
-tags: ['permissions', 'security', 'lab']
+tags: ['izinler', 'güvenlik', 'laboratuvar']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Choose a permission mode'
@@ -27,6 +27,368 @@ lab:
   repo_tag: 'lesson/m02-03-start'
 ---
 
-Bu ders altı permission mode'u (izin modu) tanıtır: `default` (CLI'da **Manual** etiketiyle), `acceptEdits`, `plan`, `auto`, `dontAsk` ve yalnızca izole container/VM için `bypassPermissions`. Mod değiştirmenin üç yolu gösterilir: oturum içinde `Shift+Tab`, başlangıçta `--permission-mode`, ayar dosyasında `permissions.defaultMode`. Ardından `Tool(specifier)` kural söz dizimi, `Bash` kurallarında `*` işaretinin nereye konacağı ve en kritik kural işlenir: değerlendirme sırası **deny → ask → allow**'dur, kural özgüllüğü bu sırayı değiştirmez ve herhangi bir kapsamdaki bir deny, başka bir kapsamdaki allow'u geçersiz kılar. Lab reposunda üç gerçek [headless](/tr/playbook/glossary/#headless) çalıştırmayla kanıtlanır. Ayrıca `claude -p` oturumlarının her zaman `default` modunda başladığı ve proje ayar dosyasındaki `auto`/`bypassPermissions` değerlerinin artık yok sayıldığı belirtilir.
+## Hedefler ve ön koşullar
 
-> Bu sayfa henüz çevrilmemiş bir taslaktır; İngilizce kaynak ders tam metindir.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Altı [permission mode](/tr/playbook/glossary/#permission-mode)'u (Claude Code'un bir eylemi size sormadan mı çalıştıracağına karar veren mod) baştan sona saymak — `default` (**Manual** olarak etiketlenir), `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions` — ve her birinde sormadan nelerin çalıştığını söylemek.
+- Modları üç yolla değiştirmek: oturum içinde `Shift+Tab`, başlangıçta `--permission-mode`, bir ayar dosyasında `permissions.defaultMode`.
+- Doğru `Tool(specifier)` söz dizimiyle allow, ask ve deny kuralları yazmak — bir `Bash` kuralında `*`'ın nereye ait olduğu dahil.
+- Değerlendirme sırasını ifade etmek — **önce deny, sonra ask, sonra allow** — ve bir deny kuralının neden istisna taşıyamadığını açıklamak.
+- İki ayar dosyası çeliştiğinde hangisinin kazandığını tahmin etmek ve bir proje ayar dosyasının hangi değerleri belirlemeye yetkisi olmadığını bilmek.
+
+**Ön koşullar.** `02-tools-read-edit-run` dersi (izin kuralları [tool](/tr/playbook/glossary/#tool)'ların — Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araçların — adlarıyla yazılır) ve lab reposunun bir klonu.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  İzin kuralları, düşman bir depoya ya da düşman bir web sayfasına karşı bir güvenlik sınırı
+  değildir. Claude Code'un ne çalıştıracağını kısıtlarlar, bir komutun çalıştıktan sonra ne
+  yaptığını değil; üstelik bunları uygulayan model değil Claude Code'un kendisidir — bir
+  [prompt](/tr/playbook/glossary/#prompt)'ta (modele verdiğiniz istem metninde) ya da `CLAUDE.md`
+  içindeki talimatlar, Claude'un neyi *deneyeceğini* şekillendirir, neyin *izinli* olduğunu asla.
+  Güvenilmeyen kod için ayrıca izolasyon istersiniz: Bash [sandbox](/tr/playbook/glossary/#sandbox)
+  (kısıtlı, dış dünyadan yalıtılmış bir kabuk ortamı), bir container ya da bir VM (3. seviyenin
+  güvenlik modülü). Ve prompt'ların durmasını sağlamak için `bypassPermissions`'a başvurmayın:
+  dokümantasyon bunu internet erişimi olmayan izole container ve VM'lerle sınırlar; aşağıdaki modlar
+  prompt yorgunluğu sorununu zaten doğru şekilde çözer.
+</WhenNotToUse>
+
+## Kavram
+
+### Modlar temeli belirler
+
+Bir permission mode, hangi eylemlerin **önce size sormadan** çalışacağına karar verir. Kurallar bunun üstüne biner.
+
+| Mod                 | Sormadan ne çalışır                                                                                                  | En uygun olduğu yer                              |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `default`           | Yalnızca okumalar                                                                                                    | Her eylemi kendiniz gözden geçirmek, hassas iş   |
+| `acceptEdits`       | Okumalar, dosya düzenlemeleri ve yaygın dosya sistemi komutları (`mkdir`, `touch`, `mv`, `cp`, `rm`, `rmdir`, `sed`) | Gözden geçirdiğiniz kod üzerinde yineleme yapmak |
+| `plan`              | Okumalar, artı auto mod kullanılabilir olduğunda sınıflandırıcının onayladığı komutlar                               | Değiştirmeden önce bir kod tabanını keşfetmek    |
+| `auto`              | Her şey, bir sınıflandırıcı modelin arka planda yaptığı güvenlik kontrolleriyle                                      | Uzun görevler, prompt yorgunluğunu azaltmak      |
+| `dontAsk`           | Yalnızca önceden onaylanmış tool'lar                                                                                 | Kilitli CI ve betikler                           |
+| `bypassPermissions` | Her şey                                                                                                              | Yalnızca izole container'lar ve VM'ler           |
+
+İnsanları şaşırtan iki adlandırma noktası var. Config değeri `default` olan mod; CLI'da, `claude --help`'te, IDE eklentilerinde ve masaüstü uygulamasında **Manual** olarak gösterilir; CLI ayrıca değeri her yazdığınız yerde `manual`'ı bir takma ad olarak kabul eder (Claude Code v2.1.200 veya sonrası). Ve `auto`, "hiç kontrol yok" anlamına gelmez — ikinci bir model, sınıflandırıcı, eylemleri arka planda gözden geçirir ve riskli olanları size sormak yerine engeller.
+
+**Yeni** bir oturumun hangi modda başladığı, onu nasıl başlattığınıza bağlıdır. Pro, Max ve Team planlarında etkileşimli bir terminal ya da VS Code oturumu `auto` modunda başlar; bir `claude -p` çalıştırması, bir Agent SDK oturumu, bir Enterprise planı ya da bir Console API anahtarı `default` modunda başlar. Sonuncusu, bu sitedeki her [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) örnek için önemlidir: **`-p`, aksini söylemediğiniz sürece Manual modda başlar.**
+
+### Mod değiştirme
+
+<CodeBlock title="modu ayarlamanın üç yolu">
+
+```bash
+# 1. During a session: press Shift+Tab to cycle
+#    auto -> default -> acceptEdits -> plan -> back to default
+#    The status bar shows the active mode:
+#      "⏸ manual mode on"   "⏵⏵ accept edits on"   "⏸ plan mode on"
+#      "⏵⏵ auto mode on"    "⏵⏵ don't ask on"      "⏵⏵ bypass permissions on"
+
+# 2. At startup, for one session:
+claude --permission-mode plan
+
+# 3. As a default, in a settings file:
+#    {"permissions": {"defaultMode": "default"}}
+```
+
+</CodeBlock>
+
+`dontAsk`, `Shift+Tab` döngüsünde hiç görünmez — onu bayrakla ayarlayın. `bypassPermissions`, yalnızca oturum onu etkinleştiren bir şekilde başlatılmışsa döngüde görünür. Aynı `--permission-mode` bayrağı `-p` ile de çalışır.
+
+### Kurallar: allow, ask, deny
+
+Kurallar `Tool` ya da `Tool(specifier)` biçiminde yazılır:
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(npm run *)", "Bash(git commit *)", "Read(./docs/**)"],
+    "ask": ["Bash(git push *)"],
+    "deny": ["Read(./.env)", "WebFetch"]
+  }
+}
+```
+
+</CodeBlock>
+
+`Bash` joker karakterleri hakkında içselleştirilmesi gereken üç şey var, çünkü bunları yanlış anlamak en yaygın izin hatasıdır:
+
+- **`*`'ı alt komuttan sonra koyun.** İlk `*`'tan önceki her şey harfiyen eşleşir. `Bash(git log *)` yalnızca `git log`'a izin verir; `Bash(git * main)` ise `git push origin main`'e izin verir — ve adını verdiğiniz bir programı çalıştıran `git -c core.fsmonitor=<script> diff main`'e de.
+- **Önünde boşluk olan sondaki bir `* `, çıplak komutla da eşleşir.** `Bash(ls *)`, `ls` ve `ls -la` ile eşleşir ama `lsof` ile eşleşmez. `Bash(ls*)` — boşluksuz — `lsof`'la da eşleşir.
+- **`:*`, sondaki bir ` *` ile aynıdır.** `Bash(ls:*)` ≡ `Bash(ls *)`. "Yes, and don't ask again" seçildiğinde izin diyaloğu boşluklu biçimi yazar.
+
+Bir **deny ya da ask** kuralında `Tool(param:value)` ile üst düzey bir girdi parametresini de eşleştirebilirsiniz — `Agent(model:opus)`, `Bash(run_in_background:true)` — ama bir tool'un birincil içerik alanını (`command`, `file_path`, `url`) eşleştiremezsiniz, çünkü bileşik bir komut bunun önünden sıyrılabilir.
+
+### Bu dersin döndüğü tek prompt
+
+Yukarıdaki her kural, tek bir prompt hakkındaki tek bir soruyu yanıtlamak için var. Laboratuvarı okurken bunu aklınızda tutun:
+
+```text
+Run the test suite and tell me what fails.
+```
+
+`default` modunda bu prompt, test çalıştırıcısı başlamadan önce onay için durur. `acceptEdits`'te de durur, çünkü `npm test` bir dosya sistemi komutu değildir. `allow: ["Bash(npm test)"]` ile doğrudan çalışır. `deny: ["Bash(npm test)"]` ile hangi modda olursanız olun reddedilir — ve laboratuvarın kaydettiği durum tam olarak bu sonuncusudur.
+
+### Her şeyi belirleyen sıra
+
+> Kurallar şu sırayla değerlendirilir: **önce deny, sonra ask, sonra allow.** Bu sıradaki ilk eşleşme sonucu belirler ve kuralın ne kadar özgül olduğu bu sırayı değiştirmez.
+
+Ezberlemeye değer iki sonuç var:
+
+1. **Bir deny kuralı istisna taşıyamaz.** `deny: ["Bash(aws *)"]`, `allow` listesinde `Bash(aws s3 ls)` de olsa `aws s3 ls`'i engeller.
+2. **Herhangi bir kapsamdaki bir deny, başka bir kapsamdaki bir allow'u yener.** User ayarları allow, proje ayarları deny → reddedilir. Proje allow, user deny → reddedilir. Managed ayarlar hepsinin en üstünde oturur: komut satırı argümanları dahil hiçbir başka seviye, managed bir izin kuralını geçersiz kılamaz.
+
+Deny kuralı olarak **çıplak** bir tool adı (`"deny": ["Bash"]`), tool'u Claude'un bağlamından tamamen kaldırır — Claude o tool'un var olduğunu hiç görmez. Kapsamlı bir kural (`Bash(rm *)`) ise tool'u kullanılabilir bırakır ve yalnızca eşleşen çağrıları engeller.
+
+Her aktif kuralı ve hangi `settings.json`'dan geldiğini görmek için bir oturumda `/permissions` kullanın.
+
+## Uygulamalı laboratuvar
+
+### Checkout'u hazırlayın
+
+Bu laboratuvardaki her komut, lab reposunun bir klonundan çalıştırılır. Komutların kendisi her platformda aynıdır; farklı olan yalnızca onları nasıl zincirlediğinizdir.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-03-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-03-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git clone https://github.com/codechup/claude-code-lab.git; Set-Location claude-code-lab
+git checkout lesson/m02-03-start; npm ci
+npm test
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1'de `&&` operatörü yoktur, bu yüzden yukarıdaki sekmeler bunun yerine `;` ile zincirlenir. Bu modüldeki her [transcript](/tr/playbook/glossary/#transcript) (gerçek bir Claude Code oturumunun kaydı), Claude Code'u Git Bash üzerinden çalıştıran yerel (native) Windows'ta kaydedildi; bazı tool çıktılarının ters eğik çizgili yol ayırıcıları göstermesinin nedeni budur.
+
+Burada yazılan komutlarla aşağıdaki kayıtlar arasında bir fark var: kayıtları üreten makinenin user seviyesinde Türkçe bir `language` ayarı olduğu için, kaydedilen her çalıştırma ayrıca `--settings '{"language":"English"}'` bayrağını da geçti. Bayrak, görebilmeniz için transcript'in komut satırlarında duruyor. Kendi ayarlarınız aynı geçersiz kılmayı gerektirmedikçe bunu atlayın.
+
+Bu laboratuvardaki bir komut gerçekten kabuğa duyarlıdır: son adım `--settings`'e bir JSON ayar nesnesi geçirir. POSIX bir kabuk, içerideki çift tırnakları tek tırnakların içinde korur; PowerShell bunları bir native çalıştırılabilir dosyaya olduğu gibi geçirmez, bu yüzden önce JSON'u bir dosyaya yazın ve `--settings`'i o dosyaya yönlendirin.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+claude -p "Run npm test and report the summary line. If the tool call is refused, quote the refusal message exactly and stop." \
+  --model sonnet --output-format text --max-turns 8 --permission-mode acceptEdits \
+  --settings '{"permissions":{"deny":["Bash(npm test)"]}}'
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+claude -p "Run npm test and report the summary line. If the tool call is refused, quote the refusal message exactly and stop." \
+  --model sonnet --output-format text --max-turns 8 --permission-mode acceptEdits \
+  --settings '{"permissions":{"deny":["Bash(npm test)"]}}'
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+'{"permissions":{"deny":["Bash(npm test)"]}}' | Out-File -Encoding utf8 deny.json
+claude -p "Run npm test and report the summary line. If the tool call is refused, quote the refusal message exactly and stop." --model sonnet --output-format text --max-turns 8 --permission-mode acceptEdits --settings .\deny.json
+Remove-Item deny.json
+```
+
+  </Fragment>
+</OSTabs>
+
+Her iki biçim de ders yazılırken bu tag'e karşı çalıştırıldı ve ikisi de aynı türde bir ret üretiyor (`Permission to use Bash with command npm test has been denied.`; PowerShell çalıştırması komutu `npm test 2>&1` olarak bildirdi).
+
+Bir projenin `permissions.allow` kuralları yetenek verir, bu yüzden Claude Code bunları yalnızca o klasör için **çalışma alanı güveni** diyaloğunu kabul ettikten sonra uygular — ve bu diyalog yalnızca etkileşimli oturumlarda görünür. Güvenilmeyen bir klasördeki bir `claude -p` çalıştırması stderr'e `this workspace has not been trusted` yazar ve o kurallar olmadan devam eder. Aşağıdaki laboratuvarın 2. adımı bu yüzden isteğe bağlı değildir.
+
+Klasör güvenilir olduğunda, lab reposunun kendi proje seviyesindeki allow kuralları, önceliği gerçekten izlemek için iyi bir yer haline getirir — aşağıdaki laboratuvardaki ilk kayıt tam olarak bu bloktur, lab tag'indeki checkout'tan doğrudan okunmuştur.
+
+Dört kayıt geliyor. İlki reponun kendi allow kurallarıdır. İkincisi bunlardan birinin `--allowedTools` ile _birlikte_ nasıl çalıştığını gösterir. Üçüncüsü bir reddin gerçekte neye benzediğini gösterir. Dördüncüsü, projenin izin verdiği komutun tam üstüne bir deny kuralı ekler.
+
+<Lab
+  title="Laboratuvar · dontAsk'ın reddini izleyin, deny'in allow'u yenişini izleyin"
+  lessonId="tr/l1-beginner/m02-interact/permissions"
+  repoTag="lesson/m02-03-start"
+  steps={[
+    'Tag’i checkout edin ve kurun: `git checkout lesson/m02-03-start && npm ci`. Bu yalnızca süreç için bir tag — kod temiz bir taban; dersin konusu Claude Code’un kendi davranışıdır.',
+    'Her şeyden önce klasöre güvenin: klonda bir kez `claude` çalıştırın, çalışma alanı güveni diyaloğunu kabul edin, sonra çıkın. Siz bunu yapana kadar reponun kendi `permissions.allow` kuralları yok sayılır — bir `claude -p` çalıştırması stderr’e `this workspace has not been trusted` yazar ve diyaloğu hiç sunmaz, çünkü güven istemi yalnızca etkileşimli bir oturumda görünür.',
+    'Reponun kendi kurallarını okuyun: `cat .claude/settings.json`. Beş allow girdisine dikkat edin.',
+    'Tek `--allowedTools` girdisi `Read` olan bir `dontAsk` oturumu çalıştırın ve testleri çalıştırmasını isteyin: `claude -p "Run npm test and tell me how many tests pass. If you cannot run it, say exactly which tool call was refused and why." --model sonnet --output-format text --max-turns 10 --permission-mode dontAsk --allowedTools "Read"`. Çalışır — çünkü proje ayar dosyası `Bash(npm test)`’e izin verir.',
+    'Şimdi hiçbir kuralın kapsamadığı bir şey isteyin: `claude -p "Run the shell command \'mkdir scratch-demo\' in the repo root. If the tool call is refused, quote the refusal message exactly and stop; do not try another tool." --model sonnet --output-format text --max-turns 8 --permission-mode dontAsk --allowedTools "Read"`. Ret metnini baştan sona okuyun.',
+    'Hiçbir şeyin olmadığını doğrulayın: `ls scratch-demo`, dizinin var olmadığını bildirir.',
+    'Son olarak, projenin allow kuralının üstüne bir deny kuralı ekleyin ve testleri yeniden çalıştırın: `claude -p "Run npm test and report the summary line. If the tool call is refused, quote the refusal message exactly and stop." --model sonnet --output-format text --max-turns 8 --permission-mode acceptEdits --settings \'{"permissions":{"deny":["Bash(npm test)"]}}\'`',
+    'Aynı klasörde etkileşimli bir oturumda `/permissions`’ı açarak her kuralı ve geldiği dosyayı görün.',
+  ]}
+  expected="Birinci çalıştırma başarılı olur (15 test geçer), çünkü proje allow kuralı `Bash(npm test)`'i kapsar. İkinci çalıştırma “don't ask mode” mesajıyla reddedilir ve hiçbir şey oluşturmaz. Üçüncü çalıştırma reddedilir — “Permission to use Bash with command npm test has been denied.” — proje ayar dosyası tam olarak o komuta izin verse bile, çünkü deny önce değerlendirilir."
+  checklist={[
+    'İlk `-p` çalıştırmasından önce etkileşimli bir oturumda çalışma alanı güveni diyaloğunu kabul ettiniz',
+    '`--allowedTools` içinde `Bash` olmadan ilk çalıştırma 15 testin geçtiğini bildirdi',
+    'Ret mesajı modu adlandırıyor: “because Claude Code is running in don’t ask mode”',
+    '`ls scratch-demo`, dizinin hiç oluşturulmadığını gösteriyor',
+    'Deny kuralı, proje ayar dosyasının izin verdiği aynı komutu engelledi',
+    '`/permissions`, her kuralın hangi ayar dosyasından geldiğini gösteriyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/03-permissions/00-project-settings.txt"
+    range="2-13"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/03-permissions/01-dontask-allow-rule.txt"
+    range="2-3"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/03-permissions/02-dontask-refusal.txt"
+    range="2-5"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/03-permissions/03-deny-beats-allow.txt"
+    range="2-3"
+  />
+</Lab>
+
+İlk kayıt insanları şaşırtan kayıttır: `--allowedTools "Read"` bir kilitleme gibi görünür, ama oturum yine de test paketini çalıştırdı. Bunu yapabildi çünkü `--allowedTools`, ayar dosyalarının zaten katkıda bulunduğu allow kurallarına **ekleme** yapar — ve çünkü `dontAsk`, yerleşik salt-okunur Bash komutlarına da izin verir. Gerçekten sızdırmaz bir çalıştırma istiyorsanız, istemediğinizi deny edin; yalnızca allowlist'ten çıkarmakla yetinmeyin.
+
+İkinci kayıt, Claude Code'un kendi ret metnini alıntılar; bunu bir kez baştan sona okumaya değer: metin, modele meşru bir alternatif tool arayabileceğini ama reddin _niyetini_ atlatmaya çalışmaması gerektiğini söyler ve yetenek gerçekten gerekliyse durup açıklamasını ister.
+
+Üçüncüsü, öncelik kuralının tek satırlık hâlidir. Projenin `.claude/settings.json`'ı `Bash(npm test)`'e izin verir. Daha yüksek öncelikli bir kapsamda verilen bir deny kuralı yine de onu engeller. Deny, her zaman, hangi kapsamdan gelirse gelsin kazanır.
+
+## Anti-pattern'ler
+
+**Bir allowlist'i denylist gibi kullanmak.** Bir tool'u `--allowedTools`'tan çıkarmak onu sızdırmaz hale getirmez — ayar dosyaları, salt-okunur Bash komutları ve modun kendisi hâlâ izin verebilir. _Düzeltme:_ asla çalışmaması gerekenler için açık `deny` kuralları yazın.
+
+**`Bash(git * main)` yazıp buna dar demek.** `*`, alt komutun yerine geçer, bu yüzden bu kural `git push origin main`'e ve `git -c core.fsmonitor=<script> diff main`'e izin verir. _Düzeltme:_ `*`'ı alt komuttan sonra koyun — `Bash(git log *)`.
+
+**Özgül bir allow'un geniş bir deny'i yeneceğini beklemek.** `deny: ["Bash(aws *)"]` artı `allow: ["Bash(aws s3 ls)"]`, salt-okunur komutu da reddeder. _Düzeltme:_ dar kapsamlı deny yazın, ya da bir engelleme yerine bir istem istiyorsanız `ask` kullanın.
+
+**Kendi dizüstü bilgisayarınızda `bypassPermissions`'a başvurmak.** Bu, `.git` ve `.claude` gibi korumalı yollara yazma dahil tüm kontrolleri atlar. Dokümantasyon bunu internet erişimi olmayan izole container ve VM'lerle sınırlar. _Düzeltme:_ düzenleme ağırlıklı iş için `acceptEdits`, uzun görevler için `auto`, ya da bir sandbox kullanın.
+
+**`CLAUDE.md` içinde Claude'a ne yapamayacağını söyleyip buna kontrol demek.** İzin kuralları model tarafından değil Claude Code tarafından uygulanır; düzyazı niyeti şekillendirir, yetkiyi değil. _Düzeltme:_ `/permissions`, bir ayar kuralı, bir permission mode, ya da bir [hook](/tr/playbook/glossary/#hook) (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan bir komut).
+
+<Callout variant="changed" label="Değişti">
+  Bir projenin `.claude/settings.json` ya da `.claude/settings.local.json` dosyasındaki
+  `"defaultMode": "bypassPermissions"` ve `"defaultMode": "auto"` artık etkili olmuyor — bu iki
+  değer yalnızca user ya da managed ayarlardan uygulanıyor. Orada `bypassPermissions` ayarlamak,
+  oturumu bunun yerine Manual modda başlatıyor. Claude Code 2.1.263 için `permission-modes.md`
+  üzerinden doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/permissions"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir user ayar dosyası `Bash(npm test)`'e izin veriyor ve bir proje ayar dosyası onu reddediyor. Claude `npm test` çalıştırmaya çalıştığında ne olur?"
+  options={[
+    {
+      text: 'Reddedilir — deny kuralları her kapsamda allow kurallarından önce değerlendirilir',
+      correct: true,
+      explanation:
+        'Sıra deny → ask → allow’dur ve bir seviyedeki bir deny, başka bir seviyedeki bir allow ile geçersiz kılınamaz.',
+    },
+    {
+      text: 'İzin verilir — user ayarları proje ayarlarından üstündür',
+      explanation: 'Öncelik hiçbir zaman bir allow’un bir deny’i yenmesine izin vermez.',
+    },
+    {
+      text: 'Claude size sorar',
+      explanation: 'Yalnızca açık bir `ask` kuralı bir istem üretir.',
+    },
+    {
+      text: 'Hangi kuralın daha özgül olduğuna bağlıdır',
+      explanation: 'Dokümantasyon açık: kuralın özgüllüğü sırayı değiştirmez.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/permissions"
+  questionId="q2"
+  lang="tr"
+  prompt="Hangi kural `git log --oneline`'a izin verir ama `git push origin main`'e izin vermez?"
+  options={[
+    {
+      text: '`Bash(git log *)`',
+      correct: true,
+      explanation:
+        'İlk `*`’tan önceki her şey harfiyen eşleşir, bu yüzden alt komut `log` kuralı sınırlar.',
+    },
+    {
+      text: '`Bash(git * main)`',
+      explanation:
+        '`*`, alt komutun yerine geçer, bu yüzden bu kural `git push origin main`’e de eşleşir — ve Claude Code, alt komuttan önce `*` olan bir allow kuralı hakkında başlangıçta uyarır.',
+    },
+    { text: '`Bash(git)`', explanation: 'Bu yalnızca tam olarak `git` komutuyla eşleşir.' },
+    { text: '`Bash`', explanation: 'Çıplak bir tool adı her Bash komutuyla eşleşir.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/permissions"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir Max planında, `--permission-mode` bayrağı olmadan `claude -p` ile bir headless çalıştırma başlatıyorsunuz. Oturum hangi modda başlar?"
+  options={[
+    {
+      text: '`default` (Manual) — `claude -p` ve Agent SDK her zaman orada başlar',
+      correct: true,
+      explanation:
+        'Yerleşik `auto` varsayılanı, Pro, Max ve Team planlarındaki etkileşimli terminal ve VS Code oturumları için geçerlidir, `-p` için değil.',
+    },
+    {
+      text: '`auto`, çünkü plan Max',
+      explanation: 'Dokümantasyon tablosundaki `-p` satırı, plan satırını geçersiz kılar.',
+    },
+    { text: '`acceptEdits`', explanation: 'Hiçbir zaman yerleşik bir varsayılan değildir.' },
+    { text: '`dontAsk`', explanation: 'Yalnızca bayrakla açıkça ayarlanır.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/permissions"
+  questionId="q4"
+  lang="tr"
+  prompt="`Bash` ve `Bash(rm *)` deny kuralları arasındaki fark nedir?"
+  options={[
+    {
+      text: '`Bash`, tool’u Claude’un bağlamından tamamen kaldırır; `Bash(rm *)` tool’u kullanılabilir bırakır ve yalnızca eşleşen çağrıları engeller',
+      correct: true,
+      explanation:
+        'Deny kuralı olarak çıplak bir tool adı, Claude’un o tool’un var olduğunu hiç görmemesi anlamına gelir.',
+    },
+    {
+      text: 'Eşdeğerdirler — `Bash`, her specifier’ı reddetmenin kısayoludur',
+      explanation:
+        'Claude’un bağlamı üzerindeki etki farklıdır, bu da neyi deneyeceğini değiştirir.',
+    },
+    {
+      text: '`Bash(rm *)`, `PowerShell`’i de reddeder',
+      explanation:
+        'Kurallar tek bir kanonik tool adıyla eşleşir; `PowerShell`’in kendi kuralı gerekir.',
+    },
+    {
+      text: '`Bash` yalnızca `dontAsk` modunda geçerlidir',
+      explanation: 'Deny kuralları `bypassPermissions` dahil her modda geçerlidir.',
+    },
+  ]}
+/>
+
+**Sırada:** `04-plan-mode`, ne kadar sorulduğunuzu değil çalışma şeklinizi değiştiren tek modu ele alır — önce planla, onayla, sonra çalıştır.

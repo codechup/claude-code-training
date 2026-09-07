@@ -6,10 +6,10 @@ module: 'm04-commands'
 order: 2
 duration_min: 15
 difficulty: core
-tags: ['commands', 'cli', 'flags', 'headless']
+tags: ['komutlar', 'cli', 'bayraklar', 'headless']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'CLI reference'
@@ -31,6 +31,351 @@ lab:
   repo_tag: 'lesson/m04-02-start'
 ---
 
-> **Not:** Bu sayfanın tam Türkçe çevirisi henüz yapılmadı. `draft: true` kaldığı sürece sayfa gezinmede görünmez. Çeviri, `.claude/rules/i18n.md` kurallarına göre `content/en/l1-beginner/m04-commands/02-cli-flags.mdx` dosyasından üretilecek (D016, D018). Aşağıda dersin Türkçe özeti var.
+## Hedefler ve ön koşullar
 
-Bu ders oturumun dışına çıkar: `claude` komutunun nasıl başlayacağını belirleyen bayraklar (flags). Beş başlatma biçimini (`claude`, `claude "soru"`, `claude -p`, `claude -c`, `claude -r`) karşılaştırır ve bir script'in hangisini kullanması gerektiğini söyler. `--output-format json` zarfını okumayı öğretir: `session_id`, `num_turns`, `duration_ms`, `total_cost_usd`, `subtype` ve `is_error`. `--max-turns` ile bir çalıştırmayı sınırlarsınız; sınıra takılan çalıştırma kısmi cevap döndürmez, `subtype: "error_max_turns"`, `is_error: true` ve `result: null` ile hata verir — bu, laboratuvar deposunda gerçekten kaydedilmiş bir çıktıyla gösterilir. `--model` ve `--effort` yalnızca o oturum için geçerlidir ve kalıcı değildir; `--permission-mode` oturumu belirli bir izin modunda (permission mode) başlatır ve headless plan modunun neden bir plan üretmediğini gerçek bir kayıtla açıklar (çalışma ağacı hiç değişmez). Son olarak `--add-dir` yalnızca dosya erişimi verir, yapılandırma keşfi yapmaz; `--settings` ise tek bir oturum için ayarları geçersiz kılar.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Bir oturumu terminalden beş farklı şekilde başlatmak — çıplak, bir [prompt](/tr/playbook/glossary/#prompt)'la (Claude'a verilen istek metni), [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma), devam ederek, resume ederek — ve bir betiğin hangisini kullanması gerektiğini söylemek.
+- `claude -p --output-format json` zarfını okumak ve önemli alanları ayıklamak: `session_id`, `num_turns`, `duration_ms`, `total_cost_usd`, `subtype`, `is_error`.
+- Bir headless çalıştırmayı `--max-turns` ile sınırlamak ve tavana çarptığında ortaya çıkan tam sonucu tanımak.
+- Başlatma sırasında `--model` ve `--effort` ile bir model ve [effort](/tr/playbook/glossary/#effort) (çaba) seviyesi seçmek, her birinin neyin yerine geçtiğini bilmek.
+- `--permission-mode` ile oturumu belirli bir [permission mode](/tr/playbook/glossary/#permission-mode)'da (Claude Code'un bir eylemi size sormadan mı çalıştıracağına karar veren mod) başlatmak, `--add-dir` ile bir çalıştırmaya ek dizinler vermek ve `--settings` ile oturuma özel ayarlar tanımlamak.
+
+**Ön koşullar.** Bu modülün 1. dersi ve bir permission mode'un ne olduğu için `m02-interact` modülünün 3. dersi. Lab deposunun klonlanmış ve `lesson/m04-02-start`'ta checkout edilmiş olması gerekir.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bayraklar bir başlatmayı yapılandırır, bir iş akışını değil. Bunları asıl kalıcı kalmasını
+  istediğiniz durumu tutmak için kullanmayın: `--model` ve `--effort` kalıcı değildir, `--settings`
+  yalnızca bir oturuma uygulanır ve `--add-dir` ile eklenen dizinler resume ettiğinizde geri gelmez.
+  Her çalıştırmada istediğiniz her şey bunun yerine bir ayar dosyasına ait olmalıdır. Ve bir konuşma
+  istediğinizde `-p`'ye başvurmayın — headless mod size tek bir cevap verir ve çıkar, bu yüzden yarı
+  yolda yönlendireceğiniz, düzelteceğiniz ya da onaylayacağınız bir görev, etkileşimli prompt
+  olmadan daha kötü durumda olur.
+</WhenNotToUse>
+
+## Kavram
+
+### Beş başlatma biçimi
+
+| Komut                           | Ne yapar                                               |
+| ------------------------------- | ------------------------------------------------------ |
+| `claude`                        | Etkileşimli bir oturum başlatır                        |
+| `claude "query"`                | Başlangıç prompt'u ile etkileşimli bir oturum başlatır |
+| `claude -p "query"`             | Headless olarak sorgular, cevabı yazdırır, çıkar       |
+| `claude -c`                     | Geçerli dizindeki en son konuşmaya devam eder          |
+| `claude -r "<session>" "query"` | ID veya isimle bir oturumu resume eder                 |
+
+`-p`, `--print`'in kısaltmasıdır; `-c`, `--continue`'un; `-r` ise `--resume`'un. Headless moda pipe ile de girdi verebilirsiniz: `cat logs.txt | claude -p "explain"`.
+
+Aramaya başlamadan önce bilmekte fayda var: **`claude --help` her bayrağı listelemez**, yani bir bayrağın `--help`'te olmaması onun var olmadığı anlamına gelmez. Tam liste CLI referansındadır.
+
+### Headless mod ve zarfı
+
+`claude -p`, betiklenen her şeyin geçtiği giriş noktasıdır. Tek başına düz metin yazdırır. `--output-format` ile bir programın okuyabileceği bir şey yazdırır:
+
+| Değer         | Ne alırsınız                                                             |
+| ------------- | ------------------------------------------------------------------------ |
+| `text`        | Yalnızca cevap (varsayılan)                                              |
+| `json`        | Cevap artı çalıştırmayla ilgili meta veriler içeren tek bir JSON nesnesi |
+| `stream-json` | Çalıştırma ilerledikçe akan bir JSON olay dizisi                         |
+
+Lab deposunda, bir dosyayı okumayı gerektiren bir soru sorulan gerçek bir çalıştırma:
+
+<CodeBlock title="metin çıktısı">
+
+```bash
+claude -p "In one sentence, what does the paginate() function in src/store.ts do?" \
+  --model sonnet --max-turns 3 --output-format text \
+  --allowedTools "Read" "Grep" "Glob"
+```
+
+</CodeBlock>
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/02-cli-flags/01-output-format-text.txt"
+  range="2-2"
+/>
+
+Bu kayıt Türkçe cevap veriyor ve bu kayıttaki bir hata değil. Onu üreten makinenin genel Claude Code tercihleri Türkçe cevap istiyor; headless çalıştırmalar da tıpkı etkileşimli olanlar gibi sizin yerleşik tercihlerinizi ve memory dosyalarınızı yükler. Bu, `m01-start`'ın açılışında verdiği dersin aynısı: bir `-p` çalıştırması boş bir sayfa değildir.
+
+Şimdi aynı soru `--output-format json` ile, ilginç alanları seçmek için `jq`'dan geçirilerek. Bu çalıştırma `--model haiku` kullanıyor, yani aşağıdaki kayıt yukarıdakinden farklı bir modelden geliyor:
+
+<CodeBlock title="json çıktısı">
+
+```bash
+claude -p "In one sentence, what does the paginate() function in src/store.ts do?"   --model haiku --max-turns 3 --output-format json   --allowedTools "Read" "Grep" "Glob"   | jq '{type, subtype, is_error, num_turns, duration_ms, duration_api_ms, total_cost_usd, session_id, stop_reason, result}'
+```
+
+</CodeBlock>
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/02-cli-flags/02-output-format-json.txt"
+  range="2-13"
+/>
+
+Bilinmesi gereken yedi alan:
+
+- **`session_id`** — bu konuşmaya devam etmek için `--resume`'a verdiğiniz tanıtıcı. 3. ders bunu kullanır.
+- **`num_turns`** — çalıştırmanın kaç agentic tur sürdüğü.
+- **`duration_ms`** ve **`duration_api_ms`** — duvar saati süresi ve bunun ne kadarının API'yi beklemekle geçtiği.
+- **`total_cost_usd`** — çalıştırmanın maliyeti.
+- **`subtype`** ve **`is_error`** — çalıştırmanın bitip bitmediği ve nasıl bittiği. Burada `"success"` ve `false`.
+
+### Bir çalıştırmayı `--max-turns` ile sınırlamak
+
+`--max-turns`, agentic tur sayısını sınırlar ve yalnızca print modunda geçerlidir. Varsayılan olarak bir sınır yoktur; sınıra ulaşıldığında çalıştırma **hatayla çıkar** — sessizce kısmi bir cevap döndürmez. Aynı lab deposuna, gerçekten birkaç tur gerektiren ve bire sınırlanan bir şey sorulduğunda:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/02-cli-flags/03-max-turns.txt"
+  range="2-8"
+/>
+
+`subtype` değeri `error_max_turns`, `is_error` değeri `true` ve `result` değeri `null`'dur. Yalnızca `.result`'ı okuyup `.is_error`'ı kontrol etmeyen bir betik, yarıda kesilmiş bir çalıştırmayı sessizce bir cevapmış gibi ele alır. Önce `is_error`'ı kontrol edin.
+
+Betiklenen işler için kardeşi `--max-budget-usd`'dir; bu bayrak, harcama bir dolar tavanına ulaştığında çalıştırmayı durdurur. [Subagent](/tr/playbook/glossary/#subagent)'lardan (ana oturumdan ayrı, kendi bağlamında çalışan yardımcı agent) yapılan harcama da bu tavana dahildir.
+
+### Bir model ve effort seviyesi seçmek
+
+`--model`, geçerli oturum için modeli belirler; bir model takma adı (`sonnet`, `opus`, `haiku`, `fable`) ya da tam bir model adı alır. Hem `model` ayarının hem de `ANTHROPIC_MODEL` ortam değişkeninin yerine geçer.
+
+`--effort`, effort seviyesini belirler: `low`, `medium`, `high`, `xhigh`, `max` ya da `ultracode`. Kullanılabilir seviyeler modele bağlıdır. Bu oturum için `modelSettings` ve `effortLevel` ayarlarının yerine geçer ve **kalıcı değildir** — bir sonraki oturum yapılandırılmış varsayılanınıza döner. Hangi modelin ve hangi effort'un seçileceği 2. seviyenin konusudur (`m05-models-effort`); şu an için faydalı alışkanlık, bunları çalıştırma başına sabitleyebileceğinizi bilmektir.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+claude -p "Summarise src/store.ts in three bullets." --model haiku --effort low
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+claude -p "Summarise src/store.ts in three bullets." --model haiku --effort low
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+claude -p "Summarise src/store.ts in three bullets." --model haiku --effort low
+```
+
+  </Fragment>
+</OSTabs>
+
+### Bir permission mode'da başlamak
+
+`--permission-mode`, oturumu adlandırılmış bir modda başlatır: `default`, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions` ya da `default`'ın takma adı olan `manual`. Ayar dosyalarınızdaki `defaultMode`'un yerine geçer.
+
+Headless modda insanları şaşırtan `plan`'dır. [Plan mode](/tr/playbook/glossary/#plan-mode)'un (Claude'un değişiklik yapmadan önce yalnızca okuyup bir plan sunduğu mod) tüm amacı, bir insanın onaylayacağı bir plan üretmektir; yalın bir `claude -p` çalıştırmasında ise onaylayacak kimse yoktur. Gerçekte olan şey şudur:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/02-cli-flags/04-permission-mode-plan.txt"
+  range="2-3"
+/>
+
+Çalıştırma dört turunu tüketti ve `Reached max turns (4)` ile sona erdi; `git status --short` hiçbir şey yazdırmadı — çalışma ağacına dokunulmadı. Buradan çıkarılacak gözlemlenebilir garanti şu: hiçbir şey yazılmadı.
+
+Mekanizma permission-modes referansındadır. Plan mode, siz planı onaylayana kadar düzenlemeleri engeller; bir `--permission-prompt-tool` olmadan çalışan etkileşimli olmayan bir `-p` çalıştırmasının ise **geri dönebileceği bir prompt'u yoktur** — yani hiçbir şey hiçbir şeyi onaylayamaz. Plan mode'u headless olarak istiyorsanız, çalıştırmaya bir onaylayıcı veren bayrak budur.
+
+Betiklerde göreceğiniz iki ilgili bayrak: `--allowedTools`, sormadan çalışacak [tool](/tr/playbook/glossary/#tool)'ları (Claude'un dosya okumak, komut çalıştırmak gibi işleri yapmak için çağırdığı yerleşik araç) adlandırır (yukarıdaki her kayıtta çalıştırmaları salt-okunur tutmak için kullanıldı); `--dangerously-skip-permissions` ise `--permission-mode bypassPermissions` ile eşdeğerdir. İkincisine, adının istediği gibi davranın.
+
+### Çalışma dizininin dışına uzanmak ve ayarları geçersiz kılmak
+
+`--add-dir`, Claude'un okuyup düzenleyebileceği ek çalışma dizinleri ekler. Bu, **dosya erişimi verir, yapılandırma vermez**: eklenen bir dizinden `.claude/` yapılandırmasının çoğu keşfedilmez ve bayrak, her yolun bir dizin olarak var olduğunu doğrular. Dizinleri oturumlar arasında kalıcı kılmak için bunun yerine ayarlarda `permissions.additionalDirectories`'i ayarlayın.
+
+`--settings`, bir ayar JSON dosyasının yolunu ya da satır içi bir JSON string'ini alır. Oradaki değerler, yalnızca bu oturum için `settings.json` dosyalarınızdaki aynı anahtarların yerine geçer; atladığınız anahtarlar dosya tabanlı değerlerini korur. Dosya, 2 MiB'den büyük olmayan normal bir dosya olmalıdır.
+
+<CodeBlock title="tek bir çalıştırma için bir seferlik yapılandırma">
+
+```bash
+claude -p "Check for type errors" \
+  --add-dir ../shared-lib \
+  --settings '{"outputStyle":"Concise"}' \
+  --max-turns 6 --output-format json
+```
+
+</CodeBlock>
+
+İşte bu dersin örnek prompt'u, headless bir çalıştırma için şekillendirilmiş — bir hedef, bir sınır ve kontrol edilebilir bir sonuç:
+
+```text
+Run the test suite and, if anything fails, tell me which test and why.
+Do not change any files.
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · headless bir çalıştırma yürütün ve zarfını okuyun"
+  lessonId="tr/l1-beginner/m04-commands/cli-flags"
+  repoTag="lesson/m04-02-start"
+  steps={[
+    'Lab deposunu henüz klonlamadıysanız klonlayın, ardından `git checkout lesson/m04-02-start` ve `npm ci` çalıştırın.',
+    'Metin modunda salt-okunur bir soru sorun: `claude -p "In one sentence, what does the paginate() function in src/store.ts do?" --model sonnet --max-turns 3 --output-format text --allowedTools "Read" "Grep" "Glob"`',
+    "Aynı prompt'u `--model haiku` ile `--output-format json` kullanarak çalıştırın, `jq '{type, subtype, is_error, num_turns, duration_ms, duration_api_ms, total_cost_usd, session_id, stop_reason, result}'`'den geçirin. `session_id`'yi not edin — 3. ders bunu kullanır.",
+    'Tavanı zorlayın: birkaç tur gerektiren bir şey isteyin — `claude -p "Read src/store.ts and src/cli.ts, then list every exported function in each." --model haiku --max-turns 1 --output-format json --allowedTools "Read" "Grep" "Glob"` — ve `subtype`, `is_error` ve `result`\'ı okuyun.',
+    'Plan mode altında bir düzenleme isteyin: `claude -p "Add a comment at the very top of src/store.ts that says HELLO." --model sonnet --max-turns 4 --permission-mode plan --output-format text`, ardından `git status --short` çalıştırın.',
+    'Çalışma ağacının temiz olduğunu doğrulayın. Hiçbir şey yazılmış olmamalı.',
+  ]}
+  expected="2. adım, nereye bakacağı söylenmeden dosyadan cevap verir. 3. adımın zarfı bir session_id, num_turns, duration_ms ve total_cost_usd taşır. 4. adım, is_error true ve result null ile subtype error_max_turns döndürür. 5. adım Reached max turns ile çıkar ve git status --short hiçbir şey yazdırmaz."
+  checklist={[
+    "Metin çalıştırması, dosyayı yapıştırmanıza gerek kalmadan `src/store.ts`'ten cevap verdi",
+    'JSON zarfı, kaydettiğiniz bir `session_id` verdi',
+    '`--max-turns 1`, kısmi bir cevap değil `error_max_turns` ve `is_error: true` üretti',
+    "Plan-mode çalıştırması `git status --short`'ı boş bıraktı",
+    'Oturumlar arasında kalıcı olan bir bayrak ve olmayan bir bayrak adlandırabilirsiniz',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/02-cli-flags/01-output-format-text.txt"
+    range="2-2"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/02-cli-flags/02-output-format-json.txt"
+    range="2-13"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/02-cli-flags/03-max-turns.txt"
+    range="2-8"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/02-cli-flags/04-permission-mode-plan.txt"
+    range="2-3"
+  />
+</Lab>
+
+## Anti-pattern'ler
+
+**`.is_error`'ı kontrol etmeden `.result`'ı okumak.** `--max-turns`'e takılan bir çalıştırma `result: null` ve `is_error: true` döndürür. Yalnızca `.result`'ı okuyan bir betik bunu bir hata değil boş bir cevapmış gibi ele alır. _Düzeltme:_ `result`'a dokunmadan önce `is_error` ve `subtype`'a göre dallanın.
+
+**Açık uçlu bir işte tavansız `-p` çalıştırmak.** `--max-turns` olmadan bir sınır yoktur ve büyük bir depoda belirsiz bir prompt uzun süre döngüye girebilir. _Düzeltme:_ gözetimsiz çalışan her şeyde `--max-turns` ya da `--max-budget-usd` ayarlayın.
+
+**`--model` ya da `--effort`'un kalıcı olmasını beklemek.** İkisi de yalnızca başlattığınız oturuma uygulanır, başka hiçbir şeye değil. _Düzeltme:_ kalıcı bir tercihi ayar dosyanıza koyun, bayrakları istisna için kullanın.
+
+**Bir dizin eklemek ve yapılandırmasının yükleneceğini beklemek.** `--add-dir` dosya erişimi verir; o dizindeki `.claude/` yapılandırmasının çoğu keşfedilmez. _Düzeltme:_ yapılandırmaya da ihtiyacınız varsa o dizinde bir oturum açın ya da `--settings`'i istediğiniz dosyaya yöneltin.
+
+**Bir prompt'u ortadan kaldırmak için `--dangerously-skip-permissions`'a başvurmak.** Bu, daha uzun bir adla `bypassPermissions`'dır ve tüm oturuma uygulanır. _Düzeltme:_ aynı fikrin dar kapsamlı hâli olan `--allowedTools` ile belirli tool'ları adlandırın.
+
+**`--help`'in tam bayrak listesi olduğunu varsaymak.** Değildir ve CLI referansı bunu açıkça söyler. _Düzeltme:_ bir bayrağın var olmadığı sonucuna varmadan önce referansa bakın.
+
+<Callout variant="changed" label="Değişti">
+  `--enable-auto-mode`, v2.1.111'de kaldırıldı. Auto mode artık varsayılan olarak `Shift+Tab`
+  döngüsündedir; bir oturumu bu modda başlatmak için `--permission-mode auto` kullanın.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/cli-flags"
+  questionId="q1"
+  lang="tr"
+  prompt="Headless bir çalıştırma subtype error_max_turns ile bitiyor. result alanında ne var?"
+  options={[
+    {
+      text: "Claude'un tavana çarpmadan önce ürettiği kısmi cevap.",
+      explanation: 'Hayır — çalıştırma elindekini döndürmek yerine hatayla çıkar.',
+    },
+    {
+      text: "null, ve is_error true'dur.",
+      correct: true,
+      explanation:
+        "Kaydedilen çalıştırmanın gösterdiği tam olarak bu. result'ı okumadan önce is_error'ı kontrol edin.",
+    },
+    {
+      text: "Sınırı açıklayan bir hata mesajı string'i.",
+      explanation: "Açıklama subtype'tadır; result'ın kendisi null'dur.",
+    },
+    {
+      text: 'Çalıştırma başarılı olsaydı alacağı değerin aynısı.',
+      explanation: 'O zaman bir betiğin farkı anlamasının hiçbir yolu olmazdı.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/cli-flags"
+  questionId="q2"
+  lang="tr"
+  prompt="Hangi bayrak çifti yalnızca başlattığınız oturuma uygulanır ve bir sonrakinde kaybolur?"
+  options={[
+    {
+      text: '`--model` ve `--effort`',
+      correct: true,
+      explanation:
+        'İkisi de o oturum için ayarların yerine geçer ve kalıcı değildir. Kalıcı bir tercihi bir ayar dosyasına koyun.',
+    },
+    {
+      text: '`--settings` ve `permissions.additionalDirectories`',
+      explanation: 'İkincisi bir ayar anahtarıdır, ki bu tam olarak kalıcı biçimdir.',
+    },
+    {
+      text: '`--permission-mode` ve `defaultMode`',
+      explanation: '`defaultMode`, kalıcı olan ayar anahtarıdır; bayrak onun yerine geçer.',
+    },
+    {
+      text: '`--add-dir` ve `--print`',
+      explanation:
+        '`--add-dir` gerçekten oturum başına uygulanır, ama `--print` kalıcı olabilecek bir tercih değil, bir moddur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/cli-flags"
+  questionId="q3"
+  lang="tr"
+  prompt="--add-dir ile ../shared-lib eklediniz. Claude Code, içindeki .claude/ dizinine ne yapar?"
+  options={[
+    {
+      text: "Ayarlarını, hook'larını ve skill'lerini projenizinkiyle birlikte yükler.",
+      explanation:
+        'Bayrağın dokümantasyonunun tam olarak uyardığı tuzak bu — dosya erişimi, yapılandırma keşfi değildir.',
+    },
+    {
+      text: 'Çoğunlukla göz ardı eder: --add-dir dosya erişimi verir ve eklenen bir dizinden .claude/ yapılandırmasının çoğu keşfedilmez.',
+      correct: true,
+      explanation:
+        "Doğru. Yapılandırmaya ihtiyacınız varsa o dizinde bir oturum açın ya da --settings'i dosyaya yöneltin.",
+    },
+    {
+      text: 'Dizinde .claude/ klasörü yoksa başlamayı reddeder.',
+      explanation: 'Yalnızca yolun bir dizin olduğunu doğrular, başka hiçbir şey yapmaz.',
+    },
+    {
+      text: "Gelecekteki oturumlar için onu ~/.claude'a birleştirir.",
+      explanation: '--add-dir ile ilgili hiçbir şey kullanıcı yapılandırmanıza yazmaz.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/cli-flags"
+  questionId="q4"
+  lang="tr"
+  prompt="`claude -p --permission-mode plan` neden genellikle bir plan üretemez?"
+  options={[
+    {
+      text: 'Plan mode etkileşimli oturumların dışında var olmaz.',
+      explanation: 'Bayrak `plan` değerini kabul eder; sorun bundan sonra olandır.',
+    },
+    {
+      text: "Plan mode, bir plan onaylanana kadar düzenlemeleri engeller; --permission-prompt-tool olmadan çalışan etkileşimli olmayan bir -p çalıştırmasının geri dönebileceği bir prompt'u yoktur, bu yüzden hiçbir şey onu onaylayamaz.",
+      correct: true,
+      explanation:
+        'Doğru. Kaydedilen çalıştırmada turlarını tüketti ve çalışma ağacına dokunmadan sona erdi.',
+    },
+    {
+      text: 'Plan mode --output-format stream-json gerektirir.',
+      explanation: 'Çıktı biçiminin onayla ilgisi yoktur.',
+    },
+    {
+      text: '--max-turns, plan mode ile uyumsuzdur.',
+      explanation:
+        'Uyumludur; tavan yalnızca hiçbir şey planı onaylayamadığında çalıştırmayı sonlandıran şeydir.',
+    },
+  ]}
+/>
+
+**Sırada:** `03-sessions`, bu dersin okumayı öğrettiği `session_id`'yi kullanır — bir konuşmayı resume etmek, devam ettirmek, dallandırmak ve fork'lamak.

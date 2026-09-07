@@ -6,10 +6,10 @@ module: 'm03-memory'
 order: 4
 duration_min: 15
 difficulty: core
-tags: ['memory', 'auto-memory', 'settings']
+tags: ['bellek', 'otomatik-bellek', 'ayarlar']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'How Claude remembers your project'
@@ -27,7 +27,304 @@ lab:
   repo_tag: 'none'
 ---
 
-Bu ders otomatik belleği (auto memory) anlatır: `user`, `feedback`, `project` ve `reference` türlerini, `~/.claude/projects/<project>/memory/` dizinini, her oturumda yüklenen `MEMORY.md` indeksinin 200 satır / 25 KB sınırını ve otomatik belleği oturum, proje ya da makine düzeyinde kapatma yollarını. Laboratuvarda Claude'un gerçekten iki bellek dosyası yazışını görürsünüz.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l1-beginner/m03-memory/04-auto-memory.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- [auto memory](/tr/playbook/glossary/#auto-memory)'nin (Claude'un bir oturum sırasında öğrendiklerini kendiliğinden kaydettiği notlar) ne olduğunu, kimin yazdığını ve `CLAUDE.md`'den farkını söylemek.
+- Dört bellek türünü — `user`, `feedback`, `project`, `reference` — adlandırmak ve her birine neyin girdiğini söylemek.
+- Bir depo için bellek dizinini bulmak, `MEMORY.md`'yi ve konu dosyalarını okumak.
+- 200 satır / 25 KB'lık indeks sınırını ve neden var olduğunu açıklamak.
+- Auto memory'yi bir oturum, bir proje ya da tamamen için kapatmak.
+
+**Ön koşullar.** `01-claude-md` dersi. Laboratuvar için bir geçici klasör ve bir terminal.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Auto memory makine yereldir: dosyalar makineler ya da cloud ortamları arasında paylaşılmaz ve
+  sürüm kontrolünde değildir. Ekibinizin ihtiyaç duyduğu her şey — derleme komutları, kurallar,
+  mimari kararlar — bir laptop'taki notlarda değil, commit'lenmiş bir `CLAUDE.md`'de ya da bir
+  kuralda olmalıdır. Paylaşılan ya da geçici bir ortamda, kimsenin okumayacağı bir proje dizininin
+  biriktiği bir CI çalıştırıcısında ve konuşmayla ilgili hiçbir şeyin sonrasında kalıcı olmasını
+  istemediğiniz herhangi bir oturumda auto memory'yi tamamen kapatın.
+</WhenNotToUse>
+
+## Kavram
+
+### İki sistem, tek bir [context window](/tr/playbook/glossary/#context-window) (bağlam penceresi)
+
+Her iki bellek sistemi de her konuşmanın başında yüklenir ve Claude ikisini de zorunlu bir yapılandırma değil bağlam olarak ele alır. Ayrım, onları kimin yazdığıyla ilgilidir:
+
+|                    | CLAUDE.md dosyaları                                                                         | Auto memory                                                                                   |
+| ------------------ | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Kim yazar          | Siz                                                                                         | Claude                                                                                        |
+| Ne içerir          | Talimatlar ve kurallar                                                                      | Öğrenilenler ve kalıplar                                                                      |
+| Kapsam             | Proje, kullanıcı ya da organizasyon                                                         | Depo başına, worktree'ler arasında paylaşılır                                                 |
+| Nereye yüklenir    | Her oturum                                                                                  | Her oturum (ilk 200 satır ya da 25 KB)                                                        |
+| Ne için kullanılır | Kodlama standartları, [workflow](/tr/playbook/glossary/#workflow)'lar (iş akışları), mimari | Tercihleriniz, Claude'a verdiğiniz düzeltmeler, Claude'un koddan çıkaramayacağı proje bağlamı |
+
+### Dört tür
+
+Çalışırken Claude dört tür not kaydeder. Dokümantasyon bu türü, bellek dosyasının frontmatter'ındaki bir `type` alanı olarak tanımlar; aşağıdaki kayıtta bu, o frontmatter'daki bir `metadata:` bloğunun altında `type:` olarak görünür. Dört tür şunlardır:
+
+- **`user`** — rolünüz, uzmanlığınız ve çalışma tercihleriniz.
+- **`feedback`** — Claude'a verdiğiniz düzeltmeler ve onayladığınız yaklaşımlar.
+- **`project`** — Claude'un koddan ya da git geçmişinden çıkaramayacağı süregelen iş, son tarihler ve kararlar.
+- **`reference`** — bir issue tracker ya da bir dashboard gibi, proje dışındaki bilginin nerede bulunacağı.
+
+İki dışlama, dört dahil etme kadar önemlidir. Claude **kod tabanından çıkarabileceği her şeyi atlar** — mimari, dosya yolları, bir hata ayıklama düzeltmesi — ve **`CLAUDE.md` dosyalarınızın zaten söylediği her şeyi atlar**. Ayrıca her oturumda bir şey kaydetmez; bir gerçeğin gelecekteki bir konuşmada işe yarayıp yaramayacağına duruma göre karar verir.
+
+Akılda tutulacak cümle şu: auto memory, kodun Claude'a söyleyemediği ve sizin de yazmadığınız şeyler içindir.
+
+### Dosyalar nerede duruyor
+
+Her proje, `~/.claude/projects/<proje>/memory/` altında kendi dizinini alır. `<proje>` bölümü git deposundan türetilir, bu yüzden **aynı deponun her [worktree](/tr/playbook/glossary/#worktree)'si (aynı deponun ayrı bir dizine çıkarılmış, kendi çalışma kopyasına sahip başka bir kopyası) ve alt dizini tek bir auto memory dizinini paylaşır**. Bir git deposunun dışında, bunun yerine proje kökü kullanılır.
+
+<CodeBlock title="~/.claude/projects/<project>/memory/">
+
+```text
+MEMORY.md           # Index, one line per memory, loaded into every session
+user_role.md        # One memory
+feedback_testing.md # One memory
+...                 # Any other topic files Claude creates
+```
+
+</CodeBlock>
+
+`MEMORY.md` bir indekstir, depo değil. Claude, oturum boyunca bu dizindeki dosyaları okur ve yazar; neyin nerede olduğunu takip etmek için `MEMORY.md`'yi kullanır. **Konu dosyaları başlangıçta yüklenmez** — Claude, ayrıntıya ihtiyaç duyduğunda onları sıradan dosya tool'larıyla talep üzerine okur.
+
+Dizini, herhangi bir ayar kapsamından okunan `settings.json` içindeki `autoMemoryDirectory` ile taşıyabilirsiniz. Değer mutlak bir yol olmalı ya da `~/` ile başlamalıdır:
+
+<CodeBlock title="settings.json">
+
+```json
+{
+  "autoMemoryDirectory": "~/my-custom-memory-dir"
+}
+```
+
+</CodeBlock>
+
+Bir projenin `.claude/settings.json` ya da `.claude/settings.local.json` dosyasından ayarlandığında, Claude Code buna, ayar dosyalarındaki [hook](/tr/playbook/glossary/#hook)'lar (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan komutlar) için geçerli olanla aynı çalışma alanı güveni kuralı altında uyar — klonlanmış bir depo bu dosyaları sağlayabilir, bu yüzden önce güven kontrol edilir.
+
+### 200 satırlık indeks sınırı
+
+`MEMORY.md`'nin ilk 200 satırı ya da ilk 25 KB'ı — hangisi önce gelirse — her konuşmanın başında yüklenir. Bu eşiği aşan hiçbir şey yüklenmez.
+
+Claude Code bunu etkin biçimde uygular. Claude `MEMORY.md`'ye yazdıktan sonra dosyayı ölçer: bir sınıra yaklaşıldığında Claude'a dosyayı kısaltması hatırlatılır — her girdi için tek satır, ayrıntı konu dosyalarına, eskimiş girdiler birleştirilir ya da silinir. Bir sınır aşıldığında yazma yine de başarılı olur, ama Claude Code, Claude'a indeksi yeniden yazmasını söyleyen bir hata döndürür, çünkü sınırı aşan her şey bir sonraki yüklemede düşer.
+
+Bu sınır yalnızca `MEMORY.md` için geçerlidir. Bir `CLAUDE.md`, 4 MiB'a kadar tam olarak yüklenir; daha büyüğü tamamen atlanır.
+
+Saklama süresi de bilerek ayrılmıştır: Claude Code, `cleanupPeriodDays` süresinden sonra eski oturum [transcript](/tr/playbook/glossary/#transcript)'lerini (kaydedilmiş oturum dökümlerini) siler, ama bellek dizini bu temizlikten hariç tutulur. `MEMORY.md` ve konu dosyaları, siz ya da Claude onları düzenleyene ya da silene kadar kalır.
+
+### Kapatmak
+
+Auto memory varsayılan olarak açıktır. En dardan en genişe üç kaldıraç:
+
+| Kapsam     | Nasıl                                                                                            |
+| ---------- | ------------------------------------------------------------------------------------------------ |
+| Bir oturum | `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` — her iki yönde de ayarın önüne geçer                        |
+| Bir proje  | O projenin ayarlarında `"autoMemoryEnabled": false`                                              |
+| Her yerde  | `autoMemoryEnabled`'ı `~/.claude/settings.json`'a yazan, `/memory` içindeki auto memory anahtarı |
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 claude -p "Summarise the failing test." --output-format text
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 claude -p "Summarise the failing test." --output-format text
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$env:CLAUDE_CODE_DISABLE_AUTO_MEMORY = "1"
+claude -p "Summarise the failing test." --output-format text
+```
+
+  </Fragment>
+</OSTabs>
+
+`autoMemoryEnabled` `false` olduğunda Claude bellek dizininden ne okur ne de yazar. Ayarlar referansı sıralama konusunda açıktır: `CLAUDE_CODE_DISABLE_AUTO_MEMORY`, `autoMemoryEnabled`'ın oturum başına geçersiz kılıcısı olarak listelenir ve "her iki yönde de" onun önüne geçer; dolayısıyla bu değişken auto memory'yi bir oturum için hem kapatabilir hem de yeniden açabilir.
+
+### Bu, gerçek bir projede neye benziyor
+
+Bu eğitim sitesinin kendi deposu, iş bölümünün işlenmiş bir örneğidir ve herkese açıktır, dolayısıyla içindeki her dosyayı okuyabilirsiniz. Commit'lenmiş `CLAUDE.md`'si, her oturumun bilmesi gereken şeyi taşır — oturum protokolü, kanıt ve herkese açık depo hijyeni hakkındaki katı kurallar, komut listesi. `.claude/rules/content.md` dosyası, `paths: ['content/**/*.mdx', 'content/_shared/**']` arkasında ders yazma kurallarını taşır, bu yüzden bağlamı yalnızca biri gerçekten bir dersi düzenlerken tüketir. Hiçbir dosya, belirli bir katkıda bulunanın PowerShell komutlarını tercih ettiğini ya da geçen hafta transcript biçimlendirmesi hakkında düzeltildiğini kaydetmez. İşte bu, auto memory'nin yarısıdır — kişi başına, makine başına, commit'lenmemiş ve başka kimseyi ilgilendirmeyen.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (modele verilen istem), tam olarak o yarıya bilerek bir şey koyandır:
+
+```text
+Remember for future sessions: I am a technical writer, not the maintainer of
+this project, and I always want commands given for Windows PowerShell first.
+```
+
+## Uygulamalı laboratuvar
+
+Auto memory gerçek dosyalar yazar, bu yüzden onu görmenin dürüst yolu, bir şeyler yazmasına izin verip sonra bunları diskten okumaktır.
+
+<Lab
+  title="Laboratuvar · Claude'a bir not aldırın, sonra notu okuyun"
+  lessonId="tr/l1-beginner/m03-memory/auto-memory"
+  repoTag="none"
+  steps={[
+    'Önemsediğiniz hiçbir deponun dışında boş bir geçici klasör açın. Git deposu olmadığı için bellek dizini klasörün kendisine göre anahtarlanır, bu da bu deneyi izole tutar.',
+    'Auto memory’nin açık olduğunu doğrulayın: `claude` çalıştırın, sonra `/memory`, ve auto memory anahtarına bakın. Açık bırakın.',
+    'Geçici klasörden şunu çalıştırın: `claude -p "Remember for future sessions: I am a technical writer, not the maintainer of this project, and I always want commands given for Windows PowerShell first. Then tell me in one sentence what you saved." --model sonnet --max-turns 6 --output-format text --permission-mode acceptEdits`',
+    'Dizini bulun: macOS ve Linux’ta `ls ~/.claude/projects/`, PowerShell’de `Get-ChildItem $HOME/.claude/projects/`. Geçici klasörünüze ait girdi, bir `memory/` alt dizini olandır.',
+    'İçindeki `MEMORY.md`’yi okuyun. Sonra bağlantı verdiği konu dosyalarından birini okuyun ve frontmatter’ına bakın: `type` ve bir `modified` ISO 8601 zaman damgası.',
+    'Katılmadığınız bir bellek dosyasını silin ve `MEMORY.md`’yi onun satırını çıkaracak şekilde düzenleyin. İkisi de düz markdown; hiçbir şey sizi durdurmaz.',
+  ]}
+  expected="MEMORY.md, her biri bir konu dosyasına bağlanan, bellek başına kısa bir satır içerir. Konu dosyaları, bir type alanı içeren bir frontmatter taşır — kim olduğunuz için user, süregelen düzeltme için feedback — artı bir modified zaman damgası ve neyin, neden uygulanacağını açıklayan bir gövde."
+  checklist={[
+    'Oturum ne kaydettiğini bildirdi',
+    '~/.claude/projects/<proje>/memory/ var ve içinde MEMORY.md bulunuyor',
+    'MEMORY.md bir indeks: bellek başına tek satır, bir konu dosyasına bağlantı veriyor',
+    'Bir konu dosyasında metadata.type: user, bir başkasında metadata.type: feedback var',
+    'Bir konu dosyası bir modified ISO 8601 zaman damgası taşıyor',
+    'Bunların hepsini elle düzenleyebilir ya da silebilirsiniz',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/04-auto-memory/01-auto-memory-written.txt"
+    range="2-24"
+  />
+</Lab>
+
+Bu kayıttaki mutlak yol `~/.claude/projects/<project>/` olarak sansürlenmiştir; başka hiçbir şey değiştirilmemiştir. İçinde durup düşünmeye değer iki şey var. Claude, iki gerçeği istenmeden ve farklı biçimde sınıflandırdı — kişinin kim olduğu için `metadata:` bloğunun altında `type: user`, süregelen düzeltme için `type: feedback` — ve bunları iki satırlık bir indeksle iki konu dosyasına ayırdı; bu da 200 satır sınırının teşvik etmek üzere tasarlandığı biçimdir. (Cevap Türkçedir, çünkü kaydı yapan makinede bunu isteyen kullanıcı kapsamında bir bellek dosyası vardır; bkz. `02-hierarchy-imports` dersi.)
+
+## Anti-pattern'ler
+
+**Auto memory'ye bir ekip arkadaşının ihtiyaç duyduğu herhangi bir şey için güvenmek.** Makine yereldir ve sürüm kontrolünde değildir, bu yüzden "Claude zaten biliyor" tam olarak bir kişi için doğrudur. _Düzeltme:_ ekip için önemliyse onu `CLAUDE.md`'ye ya da bir kurala taşıyıp [commit](/tr/playbook/glossary/#commit)'leyin (git deposuna kaydedin).
+
+**Onu hiç okumamak.** Notlar sessizce birikir ve düzenlenene ya da silinene kadar kalır — transcript saklama temizliğinin dışındadırlar. Altı ay önceki eskimiş bir tercih bugün hâlâ cevapları şekillendiriyor olabilir. _Düzeltme:_ `/memory` çalıştırın, auto memory klasörünü açın ve arada bir okuyun.
+
+**`MEMORY.md`'nin indeks yerine depo hâline gelmesine izin vermek.** 200 satırı ya da 25 KB'ı aştığında taşan kısım basitçe yüklenmez, bu yüzden aktif sandığınız bellekler görünmez olur. _Düzeltme:_ her girdi için tek satır, ayrıntıyı konu dosyalarına koyun — ve "indeksi kısalt" hatırlatması göründüğünde ciddiye alın.
+
+**Bir [subagent](/tr/playbook/glossary/#subagent)'ın (ana oturumdan görev devralan, kendi bağlamında çalışan yardımcı agent) onu devraldığını varsaymak.** Ana konuşmanın auto memory'si subagent'lara yüklenmez; istisna, ebeveyn konuşmayı devralan bir [fork](/tr/playbook/glossary/#fork)'tur (ana konuşmanın tüm bağlamını devralarak ondan başlatılan ayrı bir çalıştırma). Bir subagent'ın kendi belleği, kendi frontmatter'ındaki `memory` alanıyla etkinleştirilir ve ayrı bir dizindir. _Düzeltme:_ auto memory'yi bir oturum ile onun subagent'ları arasında bir kanal olarak kullanmayın.
+
+**Onu paylaşılan ya da geçici bir ortamda açık bırakmak.** Bir CI çalıştırıcısı ya da paylaşılan bir makine, kimsenin hiç okumayacağı bir proje dizini biriktirir. _Düzeltme:_ oturum için `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, ya da proje için `autoMemoryEnabled: false`.
+
+**Worktree başına bellek beklemek.** `<proje>` bölümü git deposundan türetilir, bu yüzden bir deponun her worktree'si tek bir dizine yazar. _Düzeltme:_ gerçekten ayrı notlara ihtiyacınız varsa `autoMemoryDirectory` tam olarak bunun içindir.
+
+<Callout variant="changed" label="Değişti">
+  Claude, zaten YAML frontmatter ile başlayan bir bellek dosyasına yazdığında, Claude Code artık
+  yazma zamanını bir ISO 8601 zaman damgası olarak `modified` alanına damgalıyor; böylece hem siz
+  hem de Claude bir gerçeğin ne kadar güncel olduğunu görebilirsiniz. Frontmatter'ı olmayan
+  dosyalara hiçbir zaman bu alan eklenmez. `modified` alanı Claude Code v2.1.214 ya da üzerini
+  gerektirir.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/auto-memory"
+  questionId="q1"
+  lang="tr"
+  prompt="Claude bunlardan hangisini auto memory'ye kaydeder?"
+  options={[
+    {
+      text: 'HTTP handler’ların src/api/server.ts içinde olduğu bilgisi',
+      explanation: 'Kod tabanından çıkarılabilir — auto memory’nin açıkça atladığı şeylerden biri.',
+    },
+    {
+      text: 'npm yerine pnpm tercih ettiğiniz, bunu bir kez düzelttikten sonra',
+      correct: true,
+      explanation:
+        'feedback türünde bir bellek: gelecekteki bir oturumda işe yarayacak bir düzeltme.',
+    },
+    {
+      text: 'CLAUDE.md’nizin zaten belgelediği bir derleme komutu',
+      explanation: 'CLAUDE.md dosyalarının zaten söylediği her şeyi atlar.',
+    },
+    {
+      text: 'Az önce düzelttiği hatanın stack trace’i',
+      explanation:
+        'Tek seferlik bir hata ayıklama ayrıntısı; çıkarılabilir ve gelecekteki bir konuşmada işe yaramaz.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/auto-memory"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir oturumun başında bellek dizininden tam olarak ne yüklenir?"
+  options={[
+    {
+      text: 'Dizindeki her dosya',
+      explanation: 'Konu dosyaları başlangıçta değil, talep üzerine okunur.',
+    },
+    {
+      text: 'MEMORY.md’nin ilk 200 satırı ya da ilk 25 KB’ı, hangisi önce gelirse',
+      correct: true,
+      explanation: 'Ve bu eşiği aşan içerik basitçe yüklenmez.',
+    },
+    {
+      text: 'MEMORY.md’nin tamamı, ne kadar uzun olursa olsun',
+      explanation: 'İndeks üzerinde kesin bir okuma sınırı vardır.',
+    },
+    {
+      text: '/memory çalıştırana kadar hiçbir şey',
+      explanation: 'İndeks otomatik olarak yüklenir; /memory gözden geçirme ve düzenleme içindir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/auto-memory"
+  questionId="q3"
+  lang="tr"
+  prompt="Aynı deponun üç git worktree’si var. Kaç tane auto memory dizini vardır?"
+  options={[
+    {
+      text: 'Üç — worktree başına bir tane',
+      explanation: '<project> bölümü checkout yolundan değil, depodan türetilir.',
+    },
+    {
+      text: 'Bir tane, üçü tarafından paylaşılır',
+      correct: true,
+      explanation: 'Aynı depo içindeki tüm worktree’ler ve alt dizinler tek bir dizini paylaşır.',
+    },
+    { text: 'Branch başına bir tane', explanation: 'Branch’ler anahtarın parçası bile değildir.' },
+    {
+      text: 'Hiçbiri — auto memory worktree’lerde devre dışıdır',
+      explanation: 'Orada normal şekilde çalışır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/auto-memory"
+  questionId="q4"
+  lang="tr"
+  prompt="Auto memory’yi hiçbir ayar dosyasını değiştirmeden, yalnızca tek bir headless çalıştırma için kapatmak istiyorsunuz. Ne kullanırsınız?"
+  options={[
+    {
+      text: 'Komutun önüne CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 koymak',
+      correct: true,
+      explanation:
+        'autoMemoryEnabled’ın önüne, her iki yönde de geçen, oturum başına bir geçersiz kılıcı.',
+    },
+    {
+      text: '~/.claude/settings.json içinde "autoMemoryEnabled": false',
+      explanation: 'Bu, her yerde ve kalıcı olarak geçerli kaldıraçtır, tek çalıştırmalık değil.',
+    },
+    {
+      text: '/memory anahtarı',
+      explanation:
+        'Bu, autoMemoryEnabled’ı kullanıcı ayarlarınıza yazar — yine, çalıştırma başına değil.',
+    },
+    {
+      text: 'Çalıştırmadan önce MEMORY.md’yi silmek',
+      explanation: 'Claude basitçe yeni bir tane yazar.',
+    },
+  ]}
+/>
+
+**Sırada:** `05-memory-commands` — `/memory`, Claude'dan bir şeyi hatırlamasını istemek ve eskimiş olanı budamak.

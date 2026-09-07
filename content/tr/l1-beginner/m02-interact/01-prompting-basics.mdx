@@ -1,15 +1,15 @@
 ---
 title: 'Prompt temelleri: hedef, kısıt, kanıt'
-description: 'Claude Code’un harekete geçebileceği bir prompt; hedefi, bakılacak yeri ve geri istenen kanıtı adlandırır. Aynı hatayı konu alan dört gerçek headless çalıştırma karşılaştırılır.'
+description: 'Claude Code’un harekete geçebileceği bir prompt; hedefi, bakılacak yeri ve geri istenen kanıtı adlandırır. Aynı hatayı konu alan dört gerçek headless çalıştırma karşılaştırılır: bağlamsız “fix it” komutundan, tam satırı, başarısız assertion’ı ve düzeltmeyi döndüren bir prompt’a kadar.'
 level: 1
 module: 'm02-interact'
 order: 1
 duration_min: 15
 difficulty: core
-tags: ['prompting', 'basics', 'evidence']
+tags: ['prompt-yazımı', 'temeller', 'kanıt']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Best practices for Claude Code'
@@ -27,6 +27,356 @@ lab:
   repo_tag: 'lesson/m02-02-start'
 ---
 
-Bu ders, Claude Code'un harekete geçebileceği bir [prompt](/tr/playbook/glossary/#prompt) (bir ajana verilen görev metni) yazmayı öğretir: **hedef** (iş bittiğinde ne değişmiş olacak), **kısıt** (nereye bakılacak, nelere dokunulmayacak) ve **kanıt** (geriye hangi çıktıyla dönülecek). Lab reposundaki gerçek bir off-by-one hatası üzerinde aynı sorunu hedefleyen dört gerçek headless çalıştırma karşılaştırılır: bağlamsız bir `fix it`, hedefi olan ama amacı olmayan bir `review store.ts`, doğrulanabilir bir hedefi olmayan `make the store code faster` — ki bu, çalışan bir veri yapısını yeniden yazmayı önerip asıl hatayı kapsam dışı bırakır — ve son olarak belirtiyi, konumu, sınırı ve istenen üç kanıtı adlandıran bir prompt. Ders ayrıca `Esc` ile durdurmayı ve çalışan bir tool'u durdurmadan düzeltme yazmayı gösterir.
+## Hedefler ve ön koşullar
 
-> Bu sayfa henüz çevrilmemiş bir taslaktır; İngilizce kaynak ders tam metindir.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Çalışabilir her [prompt](/tr/playbook/glossary/#prompt)'un (Claude Code'a verilen görev metni) taşıdığı üç parçayı adlandırmak: **hedef** (iş bittiğinde ne değişmiş olacak), **kısıt** (nereye bakılacak, nelere dokunulmayacak) ve **kanıt** (geriye hangi çıktıyla dönülecek).
+- Resmî best-practices kılavuzunun adlandırdığı dört kalıbı kullanarak belirsiz bir isteği somut bir isteğe dönüştürmek: görevi sınırlamak, kaynaklara işaret etmek, var olan kalıplara başvurmak, belirtiyi tarif etmek.
+- Doğrulanabilir bir "bitti" tanımı olmayan bir prompt'un ne üreteceğini tahmin etmek — ve bunu gerçek bir [transcript](/tr/playbook/glossary/#transcript)'te (kaydedilmiş gerçek bir oturum dökümü) tanımak.
+- Belirsiz bir prompt'un ne zaman doğru seçim olduğunu söylemek ve baştan başlamak yerine çalışan bir oturumu `Esc` ile ya da yazılı bir düzeltmeyle yönlendirmek.
+
+**Ön koşullar.** Claude Code'un kurulu ve kimlik doğrulaması yapılmış olması (`m01-start` modülü) ve kursun lab deposunun yerel bir klonu. Bu dersin laboratuvarı salt okunurdur: burada çalıştırdığınız hiçbir şey bir dosyayı düzenlemez.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Keşif yaparken bir prompt'u kusursuz kurmaya çaba harcamayın. "What would you improve in this
+  file?" meşru bir prompt'tur — resmî kılavuz böyle söylüyor — ve sormayı akıl edemeyeceğiniz
+  şeyleri gün yüzüne çıkarır. Değişiklik, tarifinden küçükse töreni de atlayın: düzeltmeyi tarif
+  etmekten daha hızlı yazabiliyorsanız düzeltmeyi yazın. Ve prompt'un ifade biçimini kötü bir
+  oturumun çaresi saymayın. Claude'u aynı noktada iki kez düzelttiyseniz bağlam başarısız
+  yaklaşımlarla kirlenmiş demektir; `/clear` çalıştırıp daha iyi bir ilk prompt'la yeniden başlayın.
+</WhenNotToUse>
+
+## Kavram
+
+### Claude Code bir sohbet kutusu değil, bir derleyici de değil
+
+Bir sohbet modelinin, bilginin sizin kelimelerinizde bulunmasına ihtiyacı vardır. Bir
+[agent](/tr/playbook/glossary/#agent)'ın (bir hedefi kendi başına adım adım yürüten, tool
+çağırabilen yapay zekâ süreci) buna ihtiyacı yoktur: bilgiyi kendisi gidip alabilir. Yani bir
+prompt'un işi kodu tarif etmek değildir — Claude kodu zaten okuyacaktır — asıl işi **hedefi, sınırı
+ve kanıtı sabitlemektir**.
+
+Dokümantasyon bunu _devret, dikte etme_ olarak ifade ediyor: "Bağlam ve yön verin, ardından
+ayrıntıları bulması için Claude'a güvenin." Resmî dokümantasyonun kullandığı örnek, bir cümlelik
+belirti artı bir dizinden oluşur:
+
+```text
+The checkout flow is broken for users with expired cards.
+The relevant code is in src/payments/. Can you investigate and fix it?
+```
+
+Neyin söylenmediğine dikkat edin: hangi dosyaların açılacağı, hangi komutların çalıştırılacağı,
+düzeltmenin neye benzeyeceği. Söylenen ise neyin bozuk olduğu, kimin için ve nereden başlanacağıdır.
+
+### Üç parça
+
+| Parça     | Yanıtladığı soru                          | Uygulamada neye benzediği                                               |
+| --------- | ----------------------------------------- | ----------------------------------------------------------------------- |
+| **Hedef** | İş bittiğinde ne değişmiş olacak?         | "sayfa 1 ilk iki görevi döndürür", "pagination'ı düzelt" değil          |
+| **Kısıt** | Nereye bakılacağı, nelere dokunulmayacağı | "mantık `src/store.ts` içinde", "hiçbir dosyayı düzenleme"              |
+| **Kanıt** | Cevapla birlikte hangi kanıtın geldiği    | "başarısız assertion'ı alıntıla", "`npm test` çalıştır ve özeti göster" |
+
+Üçüncüsü, insanların atladığı ve en çok fark yaratan parçadır. Best-practices kılavuzu bu konuda
+açık sözlü: "Claude, iş bitmiş görününce durur. Çalıştırabileceği bir kontrol olmadan, 'bitmiş
+görünmek' elindeki tek sinyaldir ve doğrulama döngüsü haline siz gelirsiniz." Ona geçti ya da kaldı
+döndüren bir şey verin, döngü sizsiz kapansın.
+
+### Resmî kılavuzdan dört yeniden yazım
+
+Best-practices kılavuzu iki önce/sonra tablosu taşır — biri Claude'a işini doğrulamanın bir yolunu
+vermek için, biri belirli bağlam sağlamak için. Bunlardan dört satır, işin en kısa yararlı özetidir.
+Örnekler kılavuzdaki hâliyle İngilizce bırakılmıştır:
+
+| Kalıp                       | Önce                                                  | Sonra                                                                                                                                                                          |
+| --------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Görevi sınırlamak**       | "add tests for foo.py"                                | "write a test for foo.py covering the edge case where the user is logged out. avoid mocks."                                                                                    |
+| **Kaynaklara işaret etmek** | "why does ExecutionFactory have such a weird api?"    | "look through ExecutionFactory's git history and summarize how its api came to be"                                                                                             |
+| **Belirtiyi tarif etmek**   | "fix the login bug"                                   | "users report that login fails after session timeout. check the auth flow in src/auth/, especially token refresh. write a failing test that reproduces the issue, then fix it" |
+| **Doğrulama sağlamak**      | "implement a function that validates email addresses" | "write a validateEmail function. example test cases: user@example.com is true, invalid is false … run the tests after implementing"                                            |
+
+İlk günden bilinmeye değer iki kaldıraç daha var. Bir dosyanın nerede olduğunu tarif etmek yerine
+onu `@` ile referans verin — Claude yanıtlamadan önce onu okur. Ve hatayı yorumlamak yerine gerçek
+hata metnini, ekran görüntüsünü ya da log'u yapıştırın; kılavuzun "kök nedenleri ele al" satırı tam
+olarak şudur: "the build fails with this error: [paste error]".
+
+### Bir prompt bir sözleşme değil, bir konuşmanın başlangıcıdır
+
+Kusursuz bir prompt'a ihtiyacınız yok, çünkü ona bağlı kalmak zorunda değilsiniz. Claude çalışırken:
+
+- Onu hemen durdurmak için `Esc`'e basın. Çalışan [tool](/tr/playbook/glossary/#tool) (Claude'un
+  dosya okumak, komut çalıştırmak gibi işleri yapmak için çağırdığı yerleşik araç) çağrısı iptal
+  edilir ve bağlamınız korunur.
+- Çalışan tool'u durdurmadan göndermek için bir düzeltme yazıp `Enter`'a basın — Claude bunu
+  geçerli eylem biter bitmez okur ve bir sonraki adımını seçmeden önce buna göre ayarlar.
+
+"Önce belirgin başla, sonra yinele" yaklaşımının "kusursuz prompt'u yaz"dan üstün olmasının nedeni
+bu. Biraz yanlış giden bir ilk prompt'un bedeli tek bir `Esc`'tir.
+
+## Uygulamalı laboratuvar
+
+### Depoyu hazırlama
+
+Bu laboratuvardaki her komut, lab deposunun bir klonundan çalıştırılır. Komutların kendisi her
+platformda aynıdır; farklı olan yalnızca onları nasıl zincirlediğinizdir.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-02-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-02-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git clone https://github.com/codechup/claude-code-lab.git; Set-Location claude-code-lab
+git checkout lesson/m02-02-start; npm ci
+npm test
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1'de `&&` operatörü yoktur; bu yüzden yukarıdaki sekmeler onun yerine `;` ile
+zincirlenir. Bu modüldeki her transcript yerel Windows'ta, Claude Code Git Bash üzerinden
+çalıştırılarak kaydedildi; bazı tool çıktılarının ters eğik çizgili yol ayracı göstermesinin nedeni
+budur.
+
+Burada yazılan komutlarla aşağıdaki kayıtlar arasında bir fark var: yakalanan her çalıştırma ayrıca
+`--settings '{"language":"English"}'` bayrağını da geçti, çünkü kayıtları üreten makinenin
+kullanıcı düzeyinde `language` ayarı Türkçe. Bayrak, görebilmeniz için transcript'in komut
+satırlarında duruyor. Kendi ayarlarınız aynı geçersiz kılmayı gerektirmedikçe bunu eklemeyin.
+
+`lesson/m02-02-start` etiketindeki lab deposu gerçek, bilerek eklenmiş tek bir kusur taşıyor:
+`src/store.ts` içindeki `paginate()`, kendi dokümantasyonuna göre 1'den başlayan bir indeksleme
+kullanıyor ama `page * pageSize`'dan dilimliyor; bu yüzden 1. sayfa sessizce 2. sayfanın öğelerini
+döndürüyor. Dört prompt, aynı hata, aynı depo, aynı model — aşağıdaki dört çalıştırmanın hepsi
+gerçekten, [headless](/tr/playbook/glossary/#headless) olarak (etkileşimli arayüz olmadan tek
+komutla çalıştırma) ve hiçbir şeyin düzenlenememesi için
+**[plan mode](/tr/playbook/glossary/#plan-mode)**'da (Claude'un değişiklik yapmadan önce yalnızca
+okuyup bir plan sunduğu mod) kaydedildi.
+
+<Lab
+  title="Laboratuvar · dört prompt, tek hata"
+  lessonId="tr/l1-beginner/m02-interact/prompting-basics"
+  repoTag="lesson/m02-02-start"
+  steps={[
+    'Lab deposunu klonlayın ve başlangıç etiketini checkout edin: `git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && git checkout lesson/m02-02-start && npm ci`.',
+    'Herhangi bir prompt yazmadan önce hatanın gerçek olduğunu doğrulayın: `npm test` çalıştırın ve dört başarısızlığı okuyun.',
+    'Bağlamsız prompt’u çalıştırın: `claude -p "fix it" --model sonnet --output-format text --max-turns 12 --permission-mode plan`.',
+    'Hedefi olan ama amacı olmayan prompt’u çalıştırın: prompt’u `review store.ts` ile değiştirip yeniden çalıştırın.',
+    'Doğrulanamaz prompt’u çalıştırın: prompt’u `make the store code faster` ile değiştirip yeniden çalıştırın. Neyi değiştirmeyi önerdiğini okuyun.',
+    'Belirgin prompt’u çalıştırın — belirti, konum, sınır ve istediğiniz üç kanıt parçası — ve cevabı önceki üçüyle karşılaştırın.',
+    '`git status` çalıştırın. Plan mode her düzenlemeyi engellediği için dört çalıştırmanın ardından da çalışma ağacı hâlâ temiz.',
+  ]}
+  expected="Dört çalıştırma da bir cevap döndürür, ama yalnızca dördüncüsü tam olarak istediğinizi verir: hatalı satır (src/store.ts:57), onu yakalayan assertion (test/store.test.ts:30) ve tek satırlık düzeltme — ve hiçbir şeyi düzenlemez. `git status`, baştan sona temiz bir ağaç bildirir."
+  checklist={[
+    '`npm test`, başlamadan önce 4 başarısız test gösteriyor',
+    '“fix it”, bir soruyla bitti — istediğiniz kanıt değil, onaylamanız gereken bir plan',
+    '“make the store code faster”, çalışan bir veri yapısını yeniden yazmayı önerdi ve asıl hatayı düzeltmeyi açıkça reddetti',
+    'Belirgin prompt satırı, assertion’ı ve düzeltmeyi döndürdü — ve “No files were edited” dedi',
+    '`git status`, dört çalıştırmanın ardından da temiz',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/02-tools-read-edit-run/00-npm-test-before.txt"
+    range="2-13"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/01-prompting-basics/00-no-context.txt"
+    range="2-11"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/01-prompting-basics/01-vague-review.txt"
+    range="2-13"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/01-prompting-basics/02-vague-no-check.txt"
+    range="2-26"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/01-prompting-basics/03-good-symptom.txt"
+    range="2-22"
+  />
+</Lab>
+
+Bu dört kaydı dürüstçe okuyun, çünkü derli toplu bir dersin duymak isteyeceği şeyi söylemiyorlar.
+Kayıtlar gerçek çalıştırmalar olduğu için model çıktısı olduğu gibi, İngilizce bırakılmıştır.
+
+**"fix it" işe yaradı.** Git geçmişinde tam olarak `seed bug B1 - off-by-one in paginate` adında bir
+[commit](/tr/playbook/glossary/#commit) (bir değişiklik kümesinin depoya kaydedildiği an) bulunan
+dört dosyalık bir depoda Claude, hatayı iki kelimeden buldu. Bu, bu laboratuvara dair bir gerçek,
+sizin kod tabanınıza dair değil. Depoyu büyütün, "fix it" "fix what?"'a dönüşür — ve aramanın
+bedelini tur ve bağlam olarak ödersiniz.
+
+**"review store.ts" de işe yaradı** ve bir inceleme döndürdü. Sonunda gelen şuna dikkat edin: _"Let
+me know if you'd like me to fix the off-by-one."_ Hedefi olan ama amacı olmayan bir prompt size bir
+gidiş-dönüş kazandırır.
+
+**"make the store code faster", ilginç olan başarısızlık.** Store'un yavaş olduğuna dair hiçbir
+kanıt, "faster" için de bir tanım yoktu, bu yüzden Claude ikisini de kendisi uydurdu: diziyi bir
+`Map` ile değiştirmeyi, altı fonksiyonu yeniden yazmayı önerdi — ve gerçek başarısız hatayı açıkça
+kapsam dışı saydı. Doğrulanabilir bir hedefi olmayan bir prompt hiçbir şey üretmez değil. Yanlış
+problem üzerinde kendinden emin bir iş üretir.
+
+**Dördüncü prompt**, belirtiyi sayılarla adlandırdı, iki dosyayı adlandırdı, bir sınır koydu ("Do
+not edit any files") ve üç somut çıktı istedi. Tam olarak üç çıktı ve bir kapanış satırıyla döndü:
+_"No files were edited, per your instruction."_
+
+## Anti-pattern'ler
+
+**Belirtiyi adlandırmak yerine kodu tarif etmek.** Bir fonksiyonu prompt'a yapıştırıp "bu doğru mu?"
+diye sormak, agent'ın en büyük avantajını çöpe atar — dosyayı, testleri ve git geçmişini okuyabilme
+becerisini. _Düzeltme:_ bir kullanıcının neyin yanlış gittiğini gördüğünü tarif edin ve dizini
+adlandırın.
+
+**Kontrol edecek bir yolu olmayan bir değişiklik istemek.** "Daha hızlı yap", "bunu temizle", "hata
+yönetimini iyileştir" gibi isteklerin geçti/kaldı diye bir ölçütü yoktur. _Düzeltme:_ aynı mesaja bir
+kontrol ekleyin — çalıştırılacak bir test, 0 ile çıkması gereken bir komut, değişmesi gereken bir
+sayı.
+
+**Adımları dikte etmek.** "`store.ts`'i aç, 57. satıra git, `page`'i `page - 1` yap" demek,
+düzenlemeyi kendiniz yazmanın yavaş bir yoludur. _Düzeltme:_ hedefi ve kısıtı belirtin; 57. satırı
+Claude bulsun.
+
+**Kirlenmiş bir oturuma prompt yazmak.** Aynı nokta üzerine üçüncü ve dördüncü düzeltme nadiren işe
+yarar, çünkü bağlam artık üç başarısız yaklaşım taşıyor. _Düzeltme:_ `/clear` çalıştırın, ardından
+öğrendiklerinizi içeren tek, daha iyi bir prompt yazın.
+
+**Düzeltmeden önce turun bitmesini beklemek.** Claude'un yanlış yolda iki dakika daha ilerlediğini
+izlemek size zaman ve bağlam kaybettirir. _Düzeltme:_ durdurmak için `Esc`, ya da durdurmadan yön
+vermek için düzeltmeyi yazıp `Enter`'a basın.
+
+**Bir iddiayı kanıt saymak.** "Testler geçiyor" bir cümledir. Test koşucusunun özet satırı kanıttır.
+_Düzeltme:_ komutu ve çıktısını isteyin, okuyun.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/prompting-basics"
+  questionId="q1"
+  lang="tr"
+  prompt="Claude Code'un harekete geçebileceği bir prompt hangi üç parçayı taşır?"
+  options={[
+    {
+      text: 'Hedef, kısıt, kanıt',
+      correct: true,
+      explanation:
+        'İş bittiğinde neyin değiştiği, nereye bakılıp nelere dokunulmayacağı ve geri gelen kanıt.',
+    },
+    {
+      text: 'Dosya listesi, satır numaraları, değiştirilecek metin',
+      explanation: 'Bu, diff’i dikte etmektir — daha hızlı kendiniz yazabilirdiniz.',
+    },
+    {
+      text: 'Rol, ton, çıktı uzunluğu',
+      explanation:
+        'Bu, sohbet prompt’u hijyenidir. Bir agent’ın ihtiyacı olan bir hedef ve bir kontroldür, bir persona değil.',
+    },
+    {
+      text: 'Model, effort seviyesi, permission mode',
+      explanation:
+        '[Effort](/tr/playbook/glossary/#effort) (modelin bir yanıt için harcadığı düşünme çabası seviyesi) ve [permission mode](/tr/playbook/glossary/#permission-mode) (Claude’un hangi eylemleri onaysız yapabileceğini belirleyen ayar) gibi bunlar birer oturum ayarıdır, isteğin içeriği değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/prompting-basics"
+  questionId="q2"
+  lang="tr"
+  prompt="Laboratuvarda, “make the store code faster” neden asıl hatayı yerinde bırakıp altı fonksiyonu yeniden yazan bir plan üretti?"
+  options={[
+    {
+      text: 'Plan mode, Claude’un hataları düzeltmesini engeller.',
+      explanation:
+        'Plan mode düzenlemeleri engeller, teşhisi değil — diğer üç çalıştırma da aynı modda hatayı teşhis etti.',
+    },
+    {
+      text: 'Prompt, yavaşlığa dair hiçbir kanıt ve “faster” için hiçbir tanım adlandırmadı, bu yüzden Claude kendi hedefini kendisi belirledi.',
+      correct: true,
+      explanation:
+        'Geçti/kaldı diye bir ölçütü olmayan bir hedef uydurulur. Transcript, gerçek başarısız hatayı kapsam dışı olarak bile listeler.',
+    },
+    {
+      text: 'Sonnet, TypeScript okuyamaz.',
+      explanation: 'Dosyayı doğru okudu; yanlış şeyi optimize etti.',
+    },
+    {
+      text: '`--max-turns 12` çok düşüktü.',
+      explanation: 'Çalıştırma, tur bütçesinin oldukça içinde bitti ve eksiksiz bir plan döndürdü.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/prompting-basics"
+  questionId="q3"
+  lang="tr"
+  prompt="Claude, yanlış olduğunu şimdiden görebildiğiniz bir yaklaşıma iki dakikadır devam ediyor. En ucuz düzeltme nedir?"
+  options={[
+    {
+      text: 'Turun bitmesini bekleyip sonra neyin yanlış gittiğini açıklamak.',
+      explanation: 'Yanlış turun tamamının bedelini hem zaman hem bağlam olarak ödersiniz.',
+    },
+    {
+      text: 'Durdurmak için `Esc`’e basmak, ya da çalışan tool’u durdurmadan yön vermek için bir düzeltme yazıp `Enter`’a basmak.',
+      correct: true,
+      explanation:
+        'İkisi de bağlamınızı korur. `Esc`, çalışan tool çağrısını iptal eder; yazılan bir düzeltme, geçerli eylem tamamlanır tamamlanmaz okunur.',
+    },
+    {
+      text: 'Hemen `/clear` çalıştırmak.',
+      explanation:
+        '`/clear`, tekrarlanan başarısız düzeltmelerden sonra doğru harekettir, ilk rota düzeltmesi için değil — hâlâ ihtiyacınız olan bağlamı çöpe atar.',
+    },
+    {
+      text: 'Terminali kapatıp yeni bir oturum başlatmak.',
+      explanation:
+        'Oturumlar ve [checkpoint](/tr/playbook/glossary/#checkpoint)’ler (Claude Code’un otomatik olarak diske kaydettiği geri dönülebilir durum anları) diske kaydedilir, bu yüzden hiçbir şey kaybolmaz — ama yeni bir oturum taze bir [context window](/tr/playbook/glossary/#context-window) (modelin bir seferde görebildiği bağlam miktarı) ile başlar ve her şeyi yeniden anlatmanız gerekir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/prompting-basics"
+  questionId="q4"
+  lang="tr"
+  prompt="Hangi yeniden yazım, kılavuzun “belirtiyi tarif et” kalıbını izler?"
+  options={[
+    {
+      text: '“fix the login bug”',
+      explanation: 'Bu, “önce” sütunudur — belirti yok, konum yok, “düzeldi”nin bir tanımı yok.',
+    },
+    {
+      text: '“users report that login fails after session timeout. check the auth flow in src/auth/, especially token refresh. write a failing test that reproduces the issue, then fix it”',
+      correct: true,
+      explanation:
+        'Belirti, olası konum ve “düzeldi”nin neye benzediği — önce başarısız olan, sonra geçen bir test.',
+    },
+    {
+      text: '“`src/auth/session.ts`’i aç ve 88. satırı değiştir”',
+      explanation: 'Bir diff dikte etmek, bir belirti tarif etmek değil.',
+    },
+    {
+      text: '“kimlik doğrulamamız iyi mi?”',
+      explanation: 'Meşru bir keşif prompt’u, ama hiçbir belirti ya da kontrol adlandırmıyor.',
+    },
+  ]}
+/>
+
+**Sırada:** `02-tools-read-edit-run`, Claude'un dördüncü prompt gibi bir prompt'la gerçekte ne
+yaptığını gösterir — hangi tool'lara başvurduğunu ve neden `Grep`'in `Read`'den önce geldiğini.

@@ -9,7 +9,7 @@ difficulty: intro
 tags: ['kimlik-doğrulama', 'setup', 'api-anahtarı']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Authentication'
@@ -31,8 +31,317 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l1-beginner/m01-start/03-authenticate.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders Claude Code’da oturum açmayı anlatır: Claude Pro/Max aboneliği, Claude for Teams veya Enterprise, Claude Console (v2.1.242’den itibaren API anahtarı oluşturmadan da) ve Amazon Bedrock, Google Cloud’s Agent Platform, Microsoft Foundry gibi bulut sağlayıcıları. Tarayıcı akışının ayrıntılarını (`c` ile URL kopyalama, `Paste code here if prompted` istemi, `Login successful` mesajı), CI için `claude setup-token` ile üretilen bir yıllık OAuth token’ı ve yedi basamaklı kimlik bilgisi önceliğini kapsar — ortamda duran bir `ANTHROPIC_API_KEY`, onaylandıktan sonra aboneliğinizin önüne geçer ve faturayı Console kuruluşunuza yazar. Laboratuvar, `claude auth status --text` ve `claude auth status` çıktılarıyla hangi kimlik bilgisinin etkin olduğunu kanıtlar.
+- Claude Code'da bir Claude aboneliği, bir Claude Console hesabı ya da kurumunuzun bulut sağlayıcısıyla oturum açmak.
+- Anahtarsız Console oturum açmanın neyi sakladığını ve bunun bir API anahtarı oluşturmaktan nasıl farklı olduğunu açıklamak.
+- `claude setup-token` ile uzun ömürlü bir [token](/tr/playbook/glossary/#token) (kimliğinizi kanıtlayan, süresi dolana kadar geçerli kalan bir kimlik doğrulama dizisi) üretmek ve bunu CI'da kullanmak.
+- Kimlik bilgisi öncelik sırasını ezbere bilmek ve "neden aboneliğim yerine API anahtarımı faturalandırıyor?" sorusunu teşhis etmek.
+- Bir oturum başlatmadan `claude auth status` ile mevcut durumunuzu kontrol etmek.
+
+**Ön koşullar.** Çalışan bir kurulum (`02-install` dersi) ve bir hesap: Claude Pro, Max, Team veya Enterprise ya da yöneticinizin sizi davet ettiği bir Claude Console hesabı. Ücretsiz Claude.ai planı Claude Code'u kapsamaz.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Sadece Claude Code'u denemek için bir API anahtarı oluşturmayın. Zaten bir Pro ya da Max
+  aboneliğiniz varsa, onunla oturum açmak hem daha basit hem daha ucuzdur — bir API anahtarı token
+  başına faturalandırılır ve onaylandıktan sonra aboneliğinizin önüne geçer; bu da beklenmedik
+  harcamaların en yaygın nedenidir. `claude setup-token`'ı da gündelik iş için kullanmayın: bu komut
+  tarayıcıdan oturum açmanın mümkün olmadığı CI pipeline'ları ve betikler için vardır, ve bastığı
+  token Remote Control oturumları açamaz ya da claude.ai connector'larını getiremez. Yönetilen bir
+  kurumsal makinede de yöneticinizin dayattığı bir oturum açma yöntemini aşmaya çalışmayın — onu
+  sabitleyen ayarlar bilerek oradadır.
+</WhenNotToUse>
+
+## Kavram
+
+### Hesap türleri
+
+Şunlardan herhangi biriyle kimlik doğrulayabilirsiniz:
+
+- **Claude Pro veya Max aboneliği** — Claude.ai hesabınızla oturum açın.
+- **Claude for Teams veya Enterprise** — takım yöneticinizin sizi davet ettiği Claude.ai hesabıyla oturum açın.
+- **Claude Console** — Console kimlik bilgilerinizle, bir API anahtarı oluşturarak ya da oluşturmadan oturum açın.
+- **Bulut sağlayıcıları** — Amazon Bedrock, Google Cloud'un Agent Platform'u ya da Microsoft Foundry: `claude`'u çalıştırmadan önce gerekli ortam değişkenlerini ayarlayın ya da oturum açma isteminde **3rd-party platform**'u seçin. Tarayıcıdan oturum açmaya gerek yoktur.
+- **Cloud gateway** — kurumunuz kendi barındırdığı bir Claude apps gateway çalıştırıyorsa, `/login` üzerinden kurumsal SSO ile oturum açın; bu durumda gateway'in verdiği token, oturumun tek kimlik bilgisi olur.
+
+### Tarayıcı ile oturum açma akışı
+
+`claude`'u ilk çalıştırdığınızda, oturum açmanız için bir tarayıcı penceresi açar. Bu pencereyle karşılaşmadan önce bilinmesi gereken üç şey var:
+
+- Tarayıcı açılmazsa, oturum açma URL'sini panonuza kopyalamak için `c` tuşuna basın ve kendiniz yapıştırın.
+- Tarayıcı sizi terminale döndürmek yerine bir **login code** (oturum açma kodu) gösteriyorsa, bu kodu `Paste code here if prompted` isteminde yapıştırın. Bu, tarayıcının Claude Code'un yerel callback sunucusuna erişemediği WSL2, SSH oturumları ve container'larda normaldir.
+- İşlem bittiğinde terminal `Login successful` yazar ve `Enter`'a basmanızı ister.
+
+Ortamınızda `ANTHROPIC_API_KEY` ayarlıysa, Claude Code tarayıcıyı tamamen atlar ve bunun yerine anahtarı onaylamanızı bir kez ister.
+
+Aynı akışlara bir oturuma girmeden, komut satırından da ulaşabilirsiniz:
+
+<CodeBlock title="oturum açma ve kapatma">
+
+```bash
+claude auth login
+claude auth login --console
+claude auth logout
+```
+
+</CodeBlock>
+
+`--email` adresinizi önceden doldurur, `--sso` SSO'yu zorunlu kılar ve `--console`, bir Claude aboneliği yerine API kullanım faturalandırması için Anthropic Console ile oturum açar. Çalışan bir oturumun içindeyken karşılıkları `/login` ve `/logout`'tur. Oturumu kapatmak ilk-çalıştırma kurulum durumunuzu da sıfırlar, böylece bir sonraki `claude` sizi yeniden oturum açma ve kuruluma götürür.
+
+### API anahtarı olmadan Console'a oturum açma
+
+v2.1.242'den beri bir Console hesabına **API anahtarı oluşturmadan** oturum açabilirsiniz — kurumunuz geliştiricilerin API anahtarı oluşturmasına izin vermediğinde işe yarar. `/login` isteminde Anthropic Console hesabını seçin; Claude Code size nasıl oturum açmak istediğinizi sorar:
+
+| Seçim                                               | Claude Code ne saklar                                                                                           |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| **Console hesabınızla oturum açın** (`recommended`) | Bu oturum açmadan gelen OAuth token'ı, bir Anthropic profili olarak saklanır. Hiçbir API anahtarı oluşturulmaz. |
+| **Bir API anahtarı oluşturun** (`legacy`)           | Diğer kimlik bilgilerinizle birlikte saklanan bir Console API anahtarı.                                         |
+
+Pratikteki fark şu: bir profil, Claude Code'un sizin yerinize yenilediği bir OAuth oturumunu tutar; bir API anahtarı ise statik bir kimlik bilgisidir. Bir profilin yenilenmesi başarısız olduğunda, siz yeniden oturum açana kadar istekler `Anthropic profile login expired` hatasıyla başarısız olur.
+
+Bu seçim her zaman size sorulmaz. Claude Code; bir bulut sağlayıcısına karşı çalıştığınızda, herhangi bir ayar dosyası `forceLoginOrgUUID`'yi ayarladığında ya da `forceLoginMethod`'u `"claudeai"` veya `"console"` yaptığında, ya da yönetilen bir ayar kaynağı var ama okunamıyorsa, sormadan bir API anahtarı oluşturur. Anahtarsız oturum açmadan önce `ANTHROPIC_API_KEY`'i kaldırın.
+
+### CI için uzun ömürlü bir token
+
+Etkileşimli bir tarayıcı ile oturum açmanın mümkün olmadığı pipeline'lar ve betikler için, bir yıllık bir OAuth token'ı üretin:
+
+<CodeBlock title="setup-token">
+
+```bash
+claude setup-token
+```
+
+</CodeBlock>
+
+`/login` ile aynı tarayıcı yetkilendirme akışını açar ve erişimi onayladıktan sonra token'ı terminale basar. **Token'ı hiçbir yere kaydetmez** — onu kopyalayın, sonra pipeline'ın ihtiyaç duyduğu yere siz yerleştirin:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+export CLAUDE_CODE_OAUTH_TOKEN=your-token
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+export CLAUDE_CODE_OAUTH_TOKEN=your-token
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$env:CLAUDE_CODE_OAUTH_TOKEN = "your-token"
+```
+
+  </Fragment>
+</OSTabs>
+
+Bu token, Claude aboneliğinizle kimlik doğrular ve bir Pro, Max, Team ya da Enterprise plan gerektirir. Yalnızca model istekleri yapabilir, bu yüzden Remote Control oturumları kuramaz ya da claude.ai connector'larını getiremez; yerel olarak yapılandırılmış [MCP server](/tr/playbook/glossary/#mcp-server)'lar (Claude'a dış araç ve veri sağlayan sunucular) yine de çalışır. Onu bir sır gibi ele alın: yeri CI sağlayıcınızın secret deposudur, asla bir [commit](/tr/playbook/glossary/#commit)'e (bir değişikliğin depoya kalıcı olarak kaydedilmesi işlemi) girmiş bir dosya değil.
+
+### Hangi kimlik bilgisi kazanır
+
+Birden fazla kimlik bilgisi mevcut olduğunda, Claude Code şu sırayla birini seçer:
+
+1. `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX` ya da `CLAUDE_CODE_USE_FOUNDRY` ayarlıyken bulut sağlayıcı kimlik bilgileri.
+2. `ANTHROPIC_AUTH_TOKEN` — LLM gateway'leri ve proxy'ler için `Authorization: Bearer` başlığı olarak gönderilir.
+3. `ANTHROPIC_API_KEY` — `X-Api-Key` olarak gönderilir. Etkileşimli modda bir kez onaylarsınız; etkileşimli olmayan modda (`-p`) mevcut olduğunda her zaman kullanılır.
+4. Bir vault'tan dönen kimlik bilgileri için `apiKeyHelper` betik çıktısı.
+5. `CLAUDE_CODE_OAUTH_TOKEN`, `claude setup-token`'ın bastığı token.
+6. Anthropic profili ve federasyon kimlik bilgileri.
+7. `/login`'den gelen abonelik OAuth kimlik bilgileri — Pro, Max, Team ve Enterprise için varsayılan.
+
+Oturum açılmış bir Claude apps gateway oturumu bu listenin dışındadır ve hepsinin önüne geçer.
+
+Bu sıralama, en yaygın faturalandırma sürprizinin cevabıdır. Hem aktif bir aboneliğiniz **hem de** kabuk profilinizde ayarlı bir `ANTHROPIC_API_KEY` varsa, anahtar onaylandıktan sonra kazanır ve her istek Console kuruluşunuzu faturalandırır. `unset ANTHROPIC_API_KEY` çalıştırın ve `/status`'a bakın: `Login method` satırı abonelik hesabınızı gösterir, bir anahtar kullanımdayken de bir `API key` satırı belirir.
+
+### Tek örnek prompt
+
+Oturum açtıktan sonra, denemeye değer iyi bir ilk [prompt](/tr/playbook/glossary/#prompt) (modele verdiğiniz istek metni) budur — kimlik bilgisinin çalıştığını kanıtlar ve neredeyse hiçbir şeye mal olmaz:
+
+```text
+In one sentence, what model are you and what account is this session billing to?
+Do not read or change any files.
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · oturum açın, sonra hangi kimlik bilgisinin etkin olduğunu kanıtlayın"
+  lessonId="tr/l1-beginner/m01-start/authenticate"
+  repoTag="none"
+  steps={[
+    '`claude auth status --text` çalıştırın. Oturum açmadığınızı bildirirse 1 koduyla çıkar — bu bir hata değil, kontrolün ta kendisidir.',
+    'Oturum açmadıysanız `claude auth login` çalıştırın (bir Console hesabı için `claude auth login --console`) ve tarayıcı akışını tamamlayın. Tarayıcı açılmazsa `c` tuşuna basın; tarayıcı bir login code gösterirse bunu `Paste code here if prompted` isteminde yapıştırın.',
+    '`claude auth status --text`’i tekrar çalıştırın ve üç satırı okuyun: oturum açma yöntemi, kuruluş, e-posta.',
+    'Aynı durumu JSON olarak almak için `claude auth status`’ü hiçbir bayrak olmadan çalıştırın — bir betikte kullanılacak biçim budur, çünkü oturum açıkken 0, açık değilken 1 koduyla çıkar.',
+    'Kabuğunuzda başıboş bir anahtar olup olmadığını kontrol edin: `echo $ANTHROPIC_API_KEY` (PowerShell: `$env:ANTHROPIC_API_KEY`). Bir şey yazdırıyorsa ve aboneliğinizi kullanmayı düşünüyorsanız, onu kaldırın ve 3. adımı yeniden çalıştırın.',
+  ]}
+  expected="`claude auth status --text`, `Login method:`, `Organization:` ve `Email:` yazdırır ve 0 ile çıkar; JSON biçimi, true değerinde bir `loggedIn` alanı ile bir `authMethod` ve bir `subscriptionType` bildirir."
+  checklist={[
+    '`claude auth status` 0 ile çıkıyor',
+    'Gösterilen oturum açma yöntemi, kullanmayı amaçladığınız hesap',
+    'Kabuğunuzda beklenmedik bir `ANTHROPIC_API_KEY` ayarlı değil',
+    'Oturumunuzun yedi öncelik girdisinden hangisini kullandığını söyleyebiliyorsunuz',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m01-start/03-authenticate/01-auth-status-text.txt"
+    range="2-5"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m01-start/03-authenticate/02-auth-status-json.txt"
+    range="2-13"
+  />
+</Lab>
+
+<Callout label="Not">
+  Oturum açmanın kendisi etkileşimli bir tarayıcı akışıdır, bu yüzden burada onun bir
+  [transcript](/tr/playbook/glossary/#transcript)'i (gerçek bir Claude Code oturumunun kaydı) yok ve
+  hiç olmayacak: bu site, yeniden kurgulanmış terminal çıktısı yayımlamaz (D070, D093). Yukarıda
+  kaydedilen kısım, dürüstçe yakalanabilecek kısımdır — halihazırda oturum açmış bir makinenin
+  durumu, hesap e-postası, kuruluş ve yerel yol karartılmış hâlde.
+</Callout>
+
+### Bir oturumu bozulmadan önce yenilemek
+
+Bir `/login` kimlik bilgisinin süresinin dolmasına üç gün kaldığında, Claude Code başlangıçta `Your login expires in 3 days · run /login to renew` gösterir. Bu uyarı hiçbir isteği engellemez — kimlik doğrulama, oturum açma gerçekten sona erene kadar çalışmaya devam eder; o noktada her model isteği `Login expired · Please run /login` hatasıyla başarısız olur. Sorun çıkmadan önce de durumu görebilirsiniz: `/status`, `Expired — log in again` yazan bir `Login` satırı gösterir.
+
+Erken yenilemek en çok gözetimsiz oturumlarda önemlidir. Oturum açma süresini aşan bir arka plan oturumu ya da Remote Control oturumu, ilerlemeyi durdurur.
+
+## Anti-pattern'ler
+
+**`ANTHROPIC_API_KEY`'i "ne olur ne olmaz" diye kabuk profilinizde bırakmak.** Bu, aboneliğinizin önüne geçer, böylece her oturum sessizce API'yi faturalandırır — ve anahtar devre dışı bırakılmış bir kuruluşa aitse, kimlik doğrulama aboneliğinizle hiç ilgisi olmayan nedenlerle başarısız olur. _Düzeltme:_ `unset ANTHROPIC_API_KEY`, sonra `/status` ile doğrulayın.
+
+**Bir `setup-token` çıktısını commit'lemek.** Bu, terminalinize düz metin olarak basılmış, aboneliğinize bir yıllık erişim sağlayan bir kimlik bilgisidir. _Düzeltme:_ onu doğrudan CI sağlayıcınızın secret deposuna yapıştırın, deponun izlediği bir dosyaya asla değil.
+
+**`claude setup-token`'ı normal oturum açma yönteminiz olarak kullanmak.** Bu yalnızca model istekleri yapar: Remote Control yok, claude.ai connector'ları yok. _Düzeltme:_ yerelde `/login` kullanın, token'ı CI için saklayın.
+
+**`/logout`'un zararsız olduğunu varsaymak.** Bu, ilk-çalıştırma kurulum durumunuzu da sıfırlar, böylece bir sonraki `claude` onboarding'i yeniden çalıştırır. _Düzeltme:_ gerçekten hesap değiştirmek istediğinizde kullanın; yalnızca bakmak istediğinizde `/status` kullanın.
+
+**Bir oturum açma hatasını yeniden kurarak gidermeye çalışmak.** Kurulum yöntemi ile kimlik bilgisi birbiriyle ilgisizdir. _Düzeltme:_ `claude auth status` çalıştırın, hangi yöntemi bildirdiğini okuyun ve öncelik listesinde aşağı doğru ilerleyin.
+
+<Callout variant="changed" label="Değişti">
+  Anahtarsız Console oturum açma — bir Console hesabına API anahtarı oluşturmadan oturum açmak —
+  Claude Code v2.1.242 veya sonrasını gerektirir; ondan önce bir Console oturumu her zaman bir API
+  anahtarı basardı. Süre dolumu uyarısı v2.1.217'den itibaren üç gün kala gelir (ondan önce beş
+  gündü) ve hiç görünmesi için v2.1.203 veya sonrası gerekir.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/authenticate"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir Claude Max aboneliğiniz var ve kabuk profilinizde ANTHROPIC_API_KEY export edilmiş. Claude Code hangi kimlik bilgisini kullanır?"
+  options={[
+    {
+      text: 'Abonelik, çünkü ücretli bir plan her zaman kazanır.',
+      explanation: 'API anahtarı öncelik listesinde 3. sıradadır; abonelik en sondadır.',
+    },
+    {
+      text: 'Onaylandıktan sonra API anahtarı — bu yüzden istekler aboneliği değil API’yi faturalandırır.',
+      correct: true,
+      explanation:
+        'Aboneliğe geri dönmek için `unset ANTHROPIC_API_KEY` çalıştırın ve `/status`’a bakın.',
+    },
+    {
+      text: 'Hiçbiri; Claude Code iki kimlik bilgisi varken başlamayı reddeder.',
+      explanation: 'Çakışmayı belgelenmiş öncelik sırasını kullanarak sessizce çözer.',
+    },
+    {
+      text: 'Hangisi en son ayarlandıysa o.',
+      explanation: 'Öncelik, ne zaman ayarlandığına değil kimlik bilgisi türüne göredir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/authenticate"
+  questionId="q2"
+  lang="tr"
+  prompt="`claude setup-token`, ürettiği token'a ne yapar?"
+  options={[
+    {
+      text: 'Sonraki oturumlar için ~/.claude/.credentials.json içine kaydeder.',
+      explanation: 'Token’ı hiçbir yere kaydetmez — bu yüzden onu hemen kopyalamanız gerekir.',
+    },
+    {
+      text: 'Kaydetmeden terminale basar; onu CLAUDE_CODE_OAUTH_TOKEN olarak siz ayarlarsınız.',
+      correct: true,
+      explanation: 'CI pipeline’ları ve betikler için tasarlanmış bir yıllık bir OAuth token’ıdır.',
+    },
+    {
+      text: 'Proje ayar dosyanıza yazar.',
+      explanation:
+        'Bir kimlik bilgisini asla bir proje dosyasına yazmaz; bu, deponuzda bir secret olurdu.',
+    },
+    {
+      text: 'Console’da bir API anahtarıyla değiştirir.',
+      explanation: 'Bu, bir Console API anahtarı değil, aboneliğinize karşı bir OAuth token’ıdır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/authenticate"
+  questionId="q3"
+  lang="tr"
+  prompt="Tarayıcınız sizi terminale döndürmek yerine bir login code gösteriyor. Ne oldu?"
+  options={[
+    {
+      text: 'Hesabınızın Claude Code kullanım hakkı yok.',
+      explanation: 'Bir yetkilendirme sorunu bir hata üretir, yapıştırılacak bir kod değil.',
+    },
+    {
+      text: "Tarayıcı, Claude Code'un yerel callback sunucusuna erişemedi — WSL2, SSH ve container'larda yaygındır. Kodu istemde yapıştırın.",
+      correct: true,
+      explanation: '`Paste code here if prompted` istemi tam olarak bu durum için vardır.',
+    },
+    {
+      text: 'ANTHROPIC_API_KEY ayarlı, bu yüzden Claude Code bir kod akışına geri düştü.',
+      explanation:
+        'Bir anahtar ayarlıyken Claude Code, tarayıcı açmak yerine anahtarı onaylamanızı ister.',
+    },
+    {
+      text: 'Native installer ile yeniden kurmanız gerekir.',
+      explanation: 'Kurulum yöntemi, callback sunucusuna erişilebilirlikle hiç ilgili değildir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/authenticate"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir betikten kimlik doğrulama durumunu bildiren, oturum açıkken 0 ve açık değilken 1 ile çıkan komut hangisidir?"
+  options={[
+    {
+      text: 'claude auth status',
+      correct: true,
+      explanation:
+        'Varsayılan olarak JSON yazdırır; insanın okuyabileceği biçim için `--text` ekleyin.',
+    },
+    {
+      text: 'claude doctor',
+      explanation:
+        'Bu, hangi hesabın oturum açtığını değil, kurulum ve ayar tanılamalarını bildirir.',
+    },
+    {
+      text: 'claude --version',
+      explanation: 'Bu yalnızca kurulu sürümü yazdırır.',
+    },
+    {
+      text: '/status',
+      explanation:
+        'Bir slash komutu çalışan bir oturumun içinde işe yarar, betiklenebilir bir kabuk komutu olarak değil.',
+    },
+  ]}
+/>
+
+**Sırada:** `04-first-session`, kimlik bilgisini işe koşar — lab deposuna karşı gerçek bir oturum.

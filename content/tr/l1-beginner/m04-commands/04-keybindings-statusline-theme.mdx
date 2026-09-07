@@ -1,15 +1,15 @@
 ---
 title: 'Klavye kısayolları, durum çubuğu, temalar ve çıktı biçemleri'
-description: "Terminali kendinize göre ayarlayın: `~/.claude/keybindings.json` içinde tuşları yeniden atayın, Claude Code'un scriptinize verdiği JSON'dan bir durum çubuğu (statusline) kurun, tema seçin veya yazın, tam ekran renderer'a geçin ve bir çıktı biçemiyle (output style) Claude'un yazış tarzını değiştirin."
+description: "Terminali kendinize göre ayarlayın: ~/.claude/keybindings.json içinde tuşları yeniden atayın, Claude Code'un scriptinize verdiği JSON'dan bir durum çubuğu (statusline) kurun, tema seçin veya yazın, tam ekran renderer'a geçin ve bir çıktı biçemiyle (output style) Claude'un yazış tarzını değiştirin."
 level: 1
 module: 'm04-commands'
 order: 4
 duration_min: 15
 difficulty: core
-tags: ['commands', 'keybindings', 'statusline', 'themes', 'output-styles']
+tags: ['komutlar', 'kısayollar', 'durum-çubuğu', 'temalar', 'çıktı-biçemleri']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Customize keyboard shortcuts'
@@ -39,6 +39,416 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Not:** Bu sayfanın tam Türkçe çevirisi henüz yapılmadı. `draft: true` kaldığı sürece sayfa gezinmede görünmez. Çeviri, `.claude/rules/i18n.md` kurallarına göre `content/en/l1-beginner/m04-commands/04-keybindings-statusline-theme.mdx` dosyasından üretilecek (D016, D018). Aşağıda dersin Türkçe özeti var.
+## Hedefler ve ön koşullar
 
-Bu ders arayüzü kendinize uydurmakla ilgilidir. `/keybindings` ile `~/.claude/keybindings.json` dosyasını açar; `bindings` / `context` yapısını, `namespace:action` biçimindeki eylem adlarını, boşlukla ayrılan chord'ları ve bir tuşu `null` ile serbest bırakmayı gösterir. Günlük kullanacağınız varsayılanları (`Enter`, `Ctrl+J`, `Shift+Tab`, `Ctrl+O`, `Ctrl+R`) ve asla yeniden atanamayan altı tuşu (`Ctrl+C`, `Ctrl+D`, `Ctrl+M`, `Ctrl+[`, `Ctrl+I`, `Ctrl+H`) listeler; çok satırlı girdinin aslında bir terminal sorunu olduğunu ve `/terminal-setup`'ın hangi terminalde ne yaptığını anlatır. Durum çubuğu (statusline) bölümü `/statusline` komutunu, `statusLine` ayar bloğunu ve scriptinize stdin üzerinden verilen JSON alanlarını (`model.display_name`, `context_window.used_percentage`, `cost.total_cost_usd` ve diğerleri) açıklar — Windows'ta yolların ters bölü işaretiyle yazılmaması gerektiği uyarısıyla birlikte. Ardından temalar, `~/.claude/themes/` altındaki özel tema dosyaları ve `/tui fullscreen` gelir. Son bölüm çıktı biçemlerini (output styles) anlatır: sistem promptunu değiştirirler, bu yüzden ancak `/clear` sonrasında etkili olurlar; `keep-coding-instructions` alanı varsayılan olarak `false`'tur.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- `~/.claude/keybindings.json` dosyasını açıp düzenlemek, `bindings` / `context` yapısını okumak, bir [chord](/tr/playbook/glossary/#chord) (art arda, boşlukla ayrılarak basılan tuş dizisi) yazmak ve bir tuşun atamasını kaldırmak.
+- Günlük olarak gerçekten kullanacağınız kısayolları saymak ve hangi altı tuşun neden asla yeniden atanamayacağını söylemek.
+- `/statusline` ile ya da elle bir durum çubuğu (statusline) yapılandırmak ve Claude Code'un scriptinize stdin üzerinden verdiği JSON'u okumak.
+- Bir tema seçmek, `~/.claude/themes/` içinde özel bir tane yazmak ve tam ekran [renderer](/tr/playbook/glossary/#renderer)'a (arayüzü ekrana çizen katman) geçmek.
+- Bir çıktı biçemi (output style) seçmek ve bir çıktı biçeminin, `CLAUDE.md`'nin değiştirmediği neyi değiştirdiğini söylemek.
+
+**Ön koşullar.** Bu modülün, ilgili komutlar (`/keybindings`, `/statusline`, `/theme`, `/tui`, `/config`) için 01 numaralı dersi ve bir JSON dosyasını düzenleyebileceğiniz bir terminal.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bu, modüldeki en isteğe bağlı derstir. Buradakilerin hiçbiri Claude'u kodunuzda daha iyi yapmaz —
+  yalnızca arayüzü ellerinize uydurur. Yeniyseniz özelleştirmeyi tamamen atlayın: varsayılanlar
+  iyidir, yarım yamalak hatırladığınız yeniden atanmış bir tuş, hiç düşünmediğiniz varsayılan tuştan
+  daha kötüdür. Bir durum çubuğu (statusline) scriptine yavaş bir iş koymayın — her asistan
+  mesajında çalışır ve yavaş bir script bütün arayüzü ağırlaştırır. Ve gerçekte istediğiniz şey
+  Claude'un projenizin kurallarını bilmesiyse özel bir çıktı biçemine başvurmayın; bunun için
+  `CLAUDE.md` vardır.
+</WhenNotToUse>
+
+## Kavram
+
+### Klavye kısayolları
+
+Yapılandırma dosyanızı `~/.claude/keybindings.json` konumunda oluşturmak ya da açmak için `/keybindings` çalıştırın. Değişiklikler, Claude Code'u yeniden başlatmadan algılanır ve uygulanır.
+
+Dosya, her biri bir **context**'e (bağlam — kısayolun geçerli olduğu arayüz bölümü) bağlı blokların bir listesidir. Context'ler arasında `Global`, `Chat`, `Autocomplete`, `Settings`, `Confirmation`, `Tabs`, `Help`, `Transcript`, `HistorySearch`, `Task`, `ThemePicker`, `Attachments`, `Footer`, `MessageSelector`, `DiffDialog`, `DiffPanel`, `ModelPicker`, `Select`, `Plugin` ve `Scroll` bulunur. Eylemler `namespace:action` biçiminde adlandırılır.
+
+<CodeBlock title="~/.claude/keybindings.json">
+
+```json
+{
+  "$schema": "https://www.schemastore.org/claude-code-keybindings.json",
+  "$docs": "https://code.claude.com/docs/en/keybindings",
+  "bindings": [
+    {
+      "context": "Chat",
+      "bindings": {
+        "ctrl+e": "chat:externalEditor",
+        "ctrl+u": null
+      }
+    }
+  ]
+}
+```
+
+</CodeBlock>
+
+`null` değeri tuşun atamasını kaldırır. Değiştiriciler `+` ile birleşir; bilinmesi gereken takma adlar şunlardır: `ctrl`/`control`; `shift`; `alt`/`opt`/`option`/`meta` (Windows ve Linux'ta Alt, macOS'ta Option); `cmd`/`command`/`super`/`win`. `cmd` grubu yalnızca Super değiştiricisini bildiren terminallerde algılanır, bu yüzden her yerde çalışmasını istediğiniz atamalarda `ctrl` ya da `meta` kullanın. **Chord'lar boşlukla ayrılmış tuş dizileridir**: `"ctrl+k ctrl+s"`, önce Ctrl+K'ya basıp bırakmak, sonra Ctrl+S'ye basmak anlamına gelir.
+
+İlk karşılaşacağınız varsayılanlar:
+
+| Kısayol       | Eylem                               | Ne yapar                                                                                                                                     |
+| ------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Enter`       | `chat:submit`                       | Mesajı gönderir                                                                                                                              |
+| `Ctrl+J`      | `chat:newline`                      | Göndermeden yeni bir satır ekler                                                                                                             |
+| `Escape`      | `chat:cancel`                       | Geçerli girdiyi iptal eder                                                                                                                   |
+| `Shift+Tab`   | `chat:cycleMode`                    | [Permission mode](/tr/playbook/glossary/#permission-mode)'lar (Claude'un onay almadan ne yapabileceğini belirleyen mod) arasında geçiş yapar |
+| `Ctrl+O`      | `app:toggleTranscript`              | Tam [transcript](/tr/playbook/glossary/#transcript)'i (kaydedilmiş oturum dökümü) gösterir                                                   |
+| `Ctrl+R`      | `history:search`                    | [Prompt](/tr/playbook/glossary/#prompt) (Claude'a yazdığınız istek metni) geçmişinizde arama yapar                                           |
+| `Up` / `Down` | `history:previous` / `history:next` | Prompt geçmişinde adım adım ilerler                                                                                                          |
+| `Ctrl+G`      | `chat:externalEditor`               | Prompt'u editörünüzde düzenler (ayrıca `Ctrl+X Ctrl+E`)                                                                                      |
+| `Meta+P`      | `chat:modelPicker`                  | Model seçiciyi açar                                                                                                                          |
+
+Altı tuş **saklıdır ve yeniden atanamaz**, çünkü ne anlama geldiklerine terminalin kendisi karar verir: `Ctrl+C` (kesme), `Ctrl+D` (çıkış — 800 ms içinde iki kez basarak onaylanır), `Ctrl+M` (her zaman Enter olarak gelir), `Ctrl+[` (her zaman Escape olarak gelir), `Ctrl+I` (her zaman Tab olarak gelir) ve `Ctrl+H` (ASCII backspace baytı). Caps Lock ise terminal uygulamalarına hiçbir zaman iletilmez.
+
+İki platform notu. VT modu olmayan Windows'ta — Node 24.2.0/22.17.0'dan ya da Bun 1.2.23'ten eski sürümlerde — `Shift+Tab`, `Meta+M`'ye düşer. Görsel yapıştırma ise Windows ve WSL dışında her yerde `Ctrl+V`'dir; Windows ve WSL'de `Alt+V`'dir.
+
+Terminal çoklayıcılarının (multiplexer) tuşunuzu çalmasına dikkat edin: `Ctrl+B` tmux'ın önek tuşudur, `Ctrl+A` GNU screen'inkidir, `Ctrl+Z` ise Unix'te süreci askıya alır.
+
+Bir atama hiçbir şey yapmıyorsa Claude Code muhtemelen onu reddetmiştir. Ayrıştırma hatalarında, geçersiz context adlarında, bilinmeyen eylem adlarında, saklı-kısayol çakışmalarında ve yinelenenlerde uyarır — ve bu uyarıları debug günlüğüne yazar; bunları görmek için `--debug` ile çalıştırın.
+
+### Çok satırlı girdi, aslında bir terminal sorunu
+
+Hiçbir kuruluma gerek kalmadan **her** terminalde işleyen iki yol var: `Ctrl+J`, ya da `\` yazıp `Enter`'a basmak. `Shift+Enter` daha rahat olanı, ama çalışıp çalışmaması terminalinize bağlı:
+
+| Terminal                                                                | Ne yapmalı                                            |
+| ----------------------------------------------------------------------- | ----------------------------------------------------- |
+| Ghostty, Kitty, iTerm2, WezTerm, Warp, Apple Terminal, Windows Terminal | Kurulum gerekmeden çalışır                            |
+| VS Code, Cursor, Devin Desktop, Alacritty, Zed                          | Bir kez `/terminal-setup` çalıştırın                  |
+| gnome-terminal, PyCharm ve Android Studio gibi JetBrains IDE'leri       | Kullanılamaz; `Ctrl+J` ya da `\` sonra Enter kullanın |
+
+`/terminal-setup`, kısayolu terminalin kendi yapılandırma dosyasına yazar. VS Code, Cursor ve Devin Desktop'ta ayrıca `terminal.integrated.gpuAcceleration`'ı kapatarak bozuk metni önler ve daha akıcı tam ekran kaydırma için `terminal.integrated.mouseWheelScrollSensitivity`'yi ayarlar. Apple Terminal'de Option'ı Meta olarak etkinleştirir ve sesli zili kapatır; iTerm2'de ise `/copy`'nin çalışması için pano erişimini açar. Bunu tmux ya da screen içinde değil, ana terminalde çalıştırın.
+
+### Durum çubuğu
+
+`/statusline`, ne görüntülemek istediğinizi anlatan doğal dilde talimatlar kabul eder. Claude Code, `~/.claude/` içinde bir script oluşturur ve ayarlarınızı sizin için günceller.
+
+<CodeBlock title="onu tarif ederek yapılandırın">
+
+```text
+/statusline show model name and context percentage with a progress bar
+```
+
+</CodeBlock>
+
+Yazdığı ayarlar şöyle görünür:
+
+<CodeBlock title="settings.json">
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline.sh",
+    "padding": 2
+  }
+}
+```
+
+</CodeBlock>
+
+`command`, bir script yolu ya da satır içi bir kabuk komutudur ve bir kabukta çalışır. `padding`, karakter cinsinden yatay boşluk ekler ve varsayılanı `0`'dır. İki isteğe bağlı kardeşi daha var: `refreshInterval`, komutu her N saniyede bir yeniden çalıştırır (en az `1`; olaylarda çalışması için boş bırakın), ve `hideVimModeIndicator`, scriptiniz `vim.mode`'u kendisi gösterdiğinde yerleşik `-- INSERT --` metnini bastırır.
+
+İlginç olan kısım, scriptinizin ne aldığıdır. Claude Code ona **stdin** (standart giriş akışı) üzerinden, başkalarının yanında şunları da içeren bir JSON nesnesi verir:
+
+| Alan                                    | Ne tuttuğu                                                                                                                                                                                                                                                      |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model.display_name`, `model.id`        | Kullanılan model                                                                                                                                                                                                                                                |
+| `workspace.current_dir`, `.project_dir` | Oturumun nerede olduğu                                                                                                                                                                                                                                          |
+| `context_window.used_percentage`        | [Context window](/tr/playbook/glossary/#context-window)'un (modelin bir seferde işleyebildiği toplam bağlam sınırı) ne kadar dolu olduğu — yalnızca girdi [token](/tr/playbook/glossary/#token)'ları (modelin işlediği metin birimi), çıktı değil               |
+| `cost.total_cost_usd`                   | Oturum harcaması; `/clear` yeni bir konuşma başlattığında $0'a döner                                                                                                                                                                                            |
+| `session_id`, `session_name`, `version` | Oturum kimliği ve Claude Code sürümü                                                                                                                                                                                                                            |
+| `effort.level`, `thinking.enabled`      | Geçerli [effort](/tr/playbook/glossary/#effort) (çaba) seviyesi ve thinking (düşünme) durumu                                                                                                                                                                    |
+| `vim.mode`, `output_style.name`         | Editör modu, etkin çıktı biçemi                                                                                                                                                                                                                                 |
+| `pr.number`, `worktree.branch`          | Bu oturumun bağlı olduğu [PR](/tr/playbook/glossary/#pull-request) (pull request — bir dalı ana koda birleştirmek için açılan değişiklik isteği) ve [worktree](/tr/playbook/glossary/#worktree) (aynı deponun ayrı bir dizine açılmış bağımsız çalışma kopyası) |
+
+Bazı alanlar `null` yerine tamamen **yok** olabilir — bunlar arasında `session_name`, `effort`, `vim`, `agent`, `pr`, `worktree`, `rate_limits` de var — bu yüzden `jq` ifadelerinize varsayılan değerler yazın.
+
+<CodeBlock title="~/.claude/statusline.sh">
+
+```bash
+#!/bin/bash
+input=$(cat)
+MODEL=$(echo "$input" | jq -r '.model.display_name')
+DIR=$(echo "$input" | jq -r '.workspace.current_dir')
+PCT=$(echo "$input" | jq -r '.context_window.used_percentage // 0' | cut -d. -f1)
+echo "[$MODEL] ${DIR##*/} | ${PCT}% context"
+```
+
+</CodeBlock>
+
+Her `echo` ayrı bir satırdır ve ANSI renk kodları çalışır. Script; oturum başında, her yeni asistan mesajında, `/compact`'ten sonra, bir permission mode ya da vim modu değişikliğinde ve bir `refreshInterval` sinyalinde yeniden çalışır — 300 ms debounce ile, ve hâlâ çalışırken yeni bir güncelleme gelirse iptal edilir. Onu hızlı tutmanın nedeni budur. Yerelde çalışır ve hiç API token'ı harcamaz.
+
+İnsanların bir saatini alan bir Windows notu: Git Bash kuruluysa durum çubuğu komutları Git Bash üzerinden çalışır, ve Git Bash tırnaksız ters bölü işaretlerini yutar; bu yüzden `C:\Users\you\script.mjs` gibi bir yol, ayırıcıları silinmiş olarak gelir ve sessizce başarısız olur. **Yolları düz bölü işaretiyle (`/`) yazın.**
+
+Durum çubuğunu kaldırmak için `/statusline` çalıştırıp şunu isteyin: `/statusline clear` işe yarar.
+
+### Temalar ve renderer
+
+`/theme` çalıştırın, ya da `/config` içindeki seçiciyi kullanın. `auto` seçeneği terminalinizin açık ya da koyu arka planını algılar, bu yüzden tema, terminaliniz işletim sistemi görünümü değişikliklerini takip ettikçe onu izler. Liste; açık ve koyu varyantları, renk körlüğüne uygun (daltonize) temaları, terminalinizin kendi paletini kullanan ANSI temalarını ve yazdığınız her özel temayı içerir.
+
+Özel bir tema, `~/.claude/themes/` içinde bir JSON dosyasıdır. `.json` uzantısı olmadan dosya adı temanın slug'ıdır, ve onu seçmek tercihiniz olarak `custom:<slug>`'ı kaydeder. Üç isteğe bağlı alan vardır: `name`, `base` (`dark`, `light`, `dark-daltonized`, `light-daltonized`, `dark-ansi`, `light-ansi`'den biri; varsayılanı `dark`'tır) ve `overrides`.
+
+<CodeBlock title="~/.claude/themes/dracula.json">
+
+```json
+{
+  "name": "Dracula",
+  "base": "dark",
+  "overrides": {
+    "claude": "#bd93f9",
+    "error": "#ff5555",
+    "success": "#50fa7b"
+  }
+}
+```
+
+</CodeBlock>
+
+Renk değerleri `#rrggbb`, `#rgb`, `rgb(r,g,b)`, `ansi256(n)` ya da `ansi:<name>` olabilir. Bilinmeyen belirteçler ve geçersiz değerler yok sayılır, bu yüzden bir yazım hatası render'ı bozamaz. Klasör izlenir ve canlı olarak yeniden yüklenir — ama `~/.claude/themes/`, Claude Code başladığında yoksa, ilk dosyanızı oluşturduktan sonra bir kez yeniden başlatın.
+
+**Renderer** için `/tui fullscreen` çalıştırın. Claude Code `tui` ayarını kaydeder ve konuşmanız bozulmadan yeniden başlatır, bu yüzden sonraki oturumlar tam ekranda başlar — titremesiz, alternatif ekrana (alt-screen) geçen renderer. `/tui default` klasik renderer'a geri döner, argümansız `/tui` ise hangisinin etkin olduğunu yazdırır. `/focus` ve `/scroll-speed`'i kullanılabilir yapan şey tam ekran modudur. Ekran okuyucu modunda tam ekran geçerli değildir, ve `/tui fullscreen` geçiş yapmak yerine bir açıklama yazdırır.
+
+### Çıktı biçemleri
+
+Bir çıktı biçemi, **Claude'un nasıl yanıt verdiğini değiştirir, ne bildiğini değil**. Rolü, tonu ve çıktı biçimini belirlemek için sistem [prompt](/tr/playbook/glossary/#prompt)'unu değiştirir. Her turda aynı üslup için yeniden prompt yazmaktan bıktığınızda birine başvurun.
+
+**Default** biçeminin yanında dört tane daha yerleşiktir:
+
+| Biçem           | Ne yapar                                                                              |
+| --------------- | ------------------------------------------------------------------------------------- |
+| **Proactive**   | Hemen çalıştırır, sıradan kararlar için durup beklemek yerine makul varsayımlar yapar |
+| **Concise**     | Sonuçla başlar, girişi atlar, yanıtları kısa tutar — aynı işi yaparken                |
+| **Explanatory** | Görevleri tamamlarken eğitici “Insights” (içgörüler) ekler                            |
+| **Learning**    | `TODO(human)` işaretleri ekler ve küçük kod parçalarını sizin yazmanızı ister         |
+
+Birini `/config` altında **Output style**'ta seçin — bu tercihinizi `.claude/settings.local.json`'a kaydeder — ya da `outputStyle`'ı doğrudan bir ayar dosyasında ayarlayın. Çıktı biçemi, Claude Code'un yalnızca oturum başında bir kez okuduğu sistem promptunun bir parçasıdır — **değişiklikler ancak `/clear` sonrasında ya da yeni bir oturumda etkili olur**, hemen değil.
+
+Özel bir biçem, `~/.claude/output-styles`, `.claude/output-styles` ya da yönetilen-ayarlar dengindeki bir Markdown dosyasıdır. Frontmatter'da `name` ayarlanmadıkça dosya adı biçemin adı olur. Her şeyi belirleyen alan `keep-coding-instructions`'tır: onu belirtmezseniz (varsayılanı `false`'tur) Claude Code'un yerleşik yazılım mühendisliği talimatları düşer — bu, bir yazma asistanı için doğru, hâlâ kod yazan bir şey için ise yanlıştır.
+
+<CodeBlock title=".claude/output-styles/diagrams-first.md">
+
+```markdown
+---
+name: Diagrams first
+description: Lead every explanation with a diagram
+keep-coding-instructions: true
+---
+
+When explaining code, architecture, or data flow, start with a Mermaid diagram showing the
+structure, then explain in prose.
+```
+
+</CodeBlock>
+
+Çıktı biçemleri yalnızca ana konuşmaya uygulanır — bir [subagent](/tr/playbook/glossary/#subagent) (ana oturumdan görev devralan, kendi bağlamında çalışan yardımcı agent) kendi sistem promptuyla çalışır, bu yüzden biçemler subagent'ların yanıt verme biçimini değiştirmez. [Fork](/tr/playbook/glossary/#fork) (üst oturumun tam sistem promptunu devralarak başlayan bir kopyası) bunun istisnasıdır.
+
+Bu dersin örnek prompt'u işte bu — çoğu kişinin bir durum çubuğunu bu şekilde yapılandırması gerekir:
+
+```text
+/statusline show the model, the git branch, and how full the context window is,
+and keep it to one line
+```
+
+## Uygulamalı laboratuvar
+
+Bu dersteki her şey etkileşimli bir yüzeydir — düzenlediğiniz bir JSON dosyası, bir TUI seçici, çalışan oturumun çağırdığı bir script. Lab-repo alıştırması yok ve bilerek bir transcript de yok: bir tema seçicinin kaydı, Claude Code'un bir terminale yazdığı bir şey değildir, ve böyle bir şey uydurmak bir uydurmaca olurdu. Bunu kendi terminalinizde yapın.
+
+<Lab
+  title="Laboratuvar · terminali kendinize göre yapın"
+  lessonId="tr/l1-beginner/m04-commands/keybindings-statusline-theme"
+  repoTag="none"
+  steps={[
+    '`/keybindings` çalıştırın ve açtığı ya da oluşturduğu `~/.claude/keybindings.json` dosyasını okuyun. `Chat` context’inde `ctrl+e`’yi `chat:externalEditor`’a bağlayan bir blok ekleyin, kaydedin ve yeniden başlatmadan çalıştığını doğrulayın.',
+    'Bir chord ekleyin: `Global` context’inde `"ctrl+k ctrl+t"`’yi `app:toggleTranscript`’a bağlayın. Ctrl+K’ya basıp bırakın, sonra Ctrl+T’ye basın.',
+    'Bilerek birini bozun: bir tuşu `chat:doesNotExist`’e bağlayın, kaydedin, sonra `claude --debug` ile yeniden başlatıp debug günlüğünde uyarıyı bulun. Ardından kaldırın.',
+    '`/statusline show the model, the current directory and the context percentage` çalıştırın. `~/.claude/` içine yazdığı scripti ve ayarlarınıza eklediği `statusLine` bloğunu okuyun.',
+    'Bir önceki adımın scriptini bir oturum başlatmadan, elle test edin: `echo \'{"model":{"display_name":"Opus"},"workspace":{"current_dir":"/home/user/project"},"context_window":{"used_percentage":25},"session_id":"test-session-abc"}\' | <statusline komutunun yazdığı script>`',
+    '`/theme` çalıştırın ve `auto` seçeneğini deneyin. Sonra bir `base` ve bir `overrides` girişiyle `~/.claude/themes/mine.json` oluşturun, bir kez yeniden başlatın ve `/theme` listesinin altından onu seçin.',
+    '`/tui fullscreen` çalıştırın ve konuşmanın bozulmadan yeniden başladığını doğrulayın. Sonra yalnızca tam ekranda var olan `/focus`’u çalıştırın.',
+    'Bir çıktı biçemi ayarlayın: `/config`, sonra Output style, sonra Concise. `/clear` çalıştırın ve bir soru sorun — değişiklik yalnızca yeni bir konuşmada etkili olur.',
+  ]}
+  expected="Yeniden atanan Ctrl+E, yeniden başlatmadan editörünüzü açar; chord transcript'i açıp kapatır; kötü eylem adı --debug günlüğünde bir uyarı üretir; durum çubuğu oturumda alanlarınızı render eder ve piped-JSON testi aynı satırı tek başına yazdırır; özel tema bir yeniden başlatmadan sonra /theme'de görünür; /tui fullscreen yeniden başlar ve /focus kullanılabilir hâle gelir; Concise biçemi /clear'dan sonra etkili olur."
+  checklist={[
+    '`~/.claude/keybindings.json` var ve yeniden atanan bir tuş yeniden başlatmadan çalışıyor',
+    'Bir chord (boşlukla ayrılmış iki tuşa basış) tetikleniyor',
+    'Geçersiz bir eylem `--debug` ile bulduğunuz bir uyarı üretti',
+    'Durum çubuğu scriptiniz, piped JSON’a karşı tek başına çalışıyor',
+    '`~/.claude/themes/` içindeki özel bir tema `/theme`’de görünüyor',
+    'Bir çıktı biçemi değişikliği yalnızca `/clear`’dan sonra etkili oldu',
+  ]}
+/>
+
+## Anti-pattern'ler
+
+**`Ctrl+C` ya da `Ctrl+D`'yi yeniden atamak.** Bunlar saklıdır: Claude Code onları görmeden önce ne anlama geldiklerine terminal karar verir. _Düzeltme:_ saklı listede olmayan bir tuş seçin — `Ctrl+M`, `Ctrl+[` ve `Ctrl+I` ile `Ctrl+H` de listenin dışında değil, onlar da saklı.
+
+**Sessiz bir atamayı Claude Code hatası sanmak.** Bilinmeyen bir eylem adı ya da geçersiz bir context reddedilir, ve uyarı ekrana değil debug günlüğüne gider. _Düzeltme:_ `--debug` ile başlayın ve dosyayı yeniden yazmadan önce günlüğü okuyun.
+
+**Durum çubuğuna bir ağ çağrısı ya da yavaş bir git komutu koymak.** Her asistan mesajında çalışır; yavaş bir script bütün arayüzü ağırlaştırır, ve Claude Code hâlâ çalışırken yeni bir güncelleme gelirse onu iptal eder. _Düzeltme:_ yerel, hızlı okumalarla sınırlı tutun, bir şeyi önbelleğe almanız gerekiyorsa önbellek anahtarı olarak `session_id` kullanın.
+
+**`statusLine.command`'a ters bölü işaretli bir Windows yolu yazmak.** Git Bash bunları siler ve komut görünür bir hata vermeden başarısız olur. _Düzeltme:_ her zaman düz bölü işareti.
+
+**Bir çıktı biçemi değişikliğinin konuşma ortasında etkili olmasını beklemek.** Bu, oturum başında bir kez okunan sistem promptunun bir parçasıdır. _Düzeltme:_ `/clear` yapın, ya da yeni bir oturum başlatın.
+
+**Hâlâ kod yazarken `keep-coding-instructions: true` olmadan özel bir çıktı biçemi yazmak.** Claude Code'un yerleşik mühendislik talimatlarını — değişiklikleri nasıl sınırlandıracağını, yorum nasıl yazacağını ve işi nasıl doğrulayacağını — sessizce düşürürsünüz. _Düzeltme:_ Claude gerçekten yazılım mühendisliği yapmıyorsa hariç, bunu `true` yapın.
+
+**Claude'a projenizi öğretmek için bir çıktı biçemine başvurmak.** Biçemler üslubu değiştirir, bilgiyi değil. _Düzeltme:_ proje kuralları ve kod tabanı bağlamı `CLAUDE.md`'ye aittir.
+
+<Callout variant="changed" label="Değişti">
+  `keybindingFlavor` ayarı yok sayılır ve artık klavye kısayolları referansında geçmez — Claude Code
+  2.1.263 için `keybindings.md`'ye karşı doğrulandı. Kelime düzenleme tuşları her zaman Bash
+  tarzıdır: `Ctrl+W` önceki boşluğa kadar geri siler, `Alt+B` ve `Alt+F` bir kelime hareket ettirir,
+  `Alt+D` bir kelimenin sonuna kadar siler, ve `Ctrl+Y` bir kelime ya da satır kısayolunun son
+  sildiğini geri yapıştırır — hepsi `interactive-mode.md`'de belgelenmiştir, ve hepsi macOS'ta
+  Option-as-Meta gerektirir.
+</Callout>
+
+<Callout variant="changed" label="Değişti">
+  Artık bir `/output-style` komutu yok: v2.1.73'te kullanımdan kaldırıldı, v2.1.91'de tamamen
+  silindi. Bir biçemi `/config` altında **Output style**'ta seçin, ya da bir ayar dosyasında
+  `outputStyle` alanını ayarlayın. Aynı şekilde renderer, bir `/fullscreen` komutuyla değil, `/tui
+  fullscreen` ile değiştirilir.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/keybindings-statusline-theme"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir chord'u — art arda gelen iki tuşa basışı — ~/.claude/keybindings.json içinde nasıl yazarsınız?"
+  options={[
+    {
+      text: 'Tuşları bir boşlukla ayırın: "ctrl+k ctrl+s".',
+      correct: true,
+      explanation:
+        'Doğru: Ctrl+K’ya basıp bırakın, sonra Ctrl+S’ye basın. Bir `+`, tek bir tuşa basış içindeki değiştiricileri birleştirir.',
+    },
+    {
+      text: 'Onları bir artı işaretiyle ayırın: "ctrl+k+ctrl+s".',
+      explanation: 'Bu, imkânsız değiştiricileri olan tek bir tuşa basış gibi okunur.',
+    },
+    {
+      text: 'Bir dizi kullanın: ["ctrl+k", "ctrl+s"].',
+      explanation: 'Tuş bir dizi değil, bir string’tir.',
+    },
+    {
+      text: 'Chord’lar desteklenmez; bunun yerine tek bir tuş bağlayın.',
+      explanation: 'Desteklenirler, ve birkaç varsayılan zaten bir `ctrl+x` önekini kullanır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/keybindings-statusline-theme"
+  questionId="q2"
+  lang="tr"
+  prompt="Durum çubuğu scriptiniz verisini nasıl alır?"
+  options={[
+    {
+      text: 'Claude Code’un komuta eklediği komut satırı argümanları olarak.',
+      explanation: 'Hiçbir şey eklenmez — veri stdin üzerinden gelir.',
+    },
+    {
+      text: 'model.display_name, workspace.current_dir ve context_window.used_percentage gibi alanları olan, scripte stdin üzerinden aktarılan bir JSON nesnesi olarak.',
+      correct: true,
+      explanation: 'Doğru; bu yüzden kanonik örnek `input=$(cat)` ile başlar ve onu `jq` ile okur.',
+    },
+    {
+      text: 'Claude Code’un onu çalıştırmadan önce ayarladığı ortam değişkenlerinden.',
+      explanation:
+        '`COLUMNS` ve `LINES`’ı gerçekten ayarlar, ama oturum verisinin kendisi stdin üzerinden gelir.',
+    },
+    {
+      text: 'Oturumun transcript dosyasını doğrudan okuyarak.',
+      explanation:
+        'Transcript yolu aldığınız alanlardan biridir, ama onu ayrıştırmak zorunda değilsiniz.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/keybindings-statusline-theme"
+  questionId="q3"
+  lang="tr"
+  prompt="Konuşma ortasında Concise çıktı biçemine geçiyorsunuz ve hiçbir şey değişmiyor. Neden?"
+  options={[
+    {
+      text: 'Concise yalnızca subagent’lara uygulanır.',
+      explanation:
+        'Tam tersi: biçemler ana konuşmaya uygulanır, ve subagent’lar kendi sistem promptlarıyla çalışır.',
+    },
+    {
+      text: 'Çıktı biçemi, oturum başında bir kez okunan sistem promptunun bir parçasıdır — ancak /clear’dan ya da yeni bir oturumdan sonra etkili olur.',
+      correct: true,
+      explanation: 'Tam olarak öyle. Hiçbir şey bozuk değil; prompt henüz yeniden kurulmadı.',
+    },
+    {
+      text: 'Yalnızca oturumu değil, terminali de yeniden başlatmanız gerekir.',
+      explanation: '`/clear` yeterlidir.',
+    },
+    {
+      text: 'Concise, `keep-coding-instructions: true` gerektirir.',
+      explanation: 'Bu alan özel biçemlere aittir; Concise yerleşiktir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/keybindings-statusline-theme"
+  questionId="q4"
+  lang="tr"
+  prompt="Aşağıdakilerden hangisini yeniden ATAYAMAZSINIZ?"
+  options={[
+    {
+      text: '`Ctrl+E`',
+      explanation: 'Bu, dokümanın kendi eklediğiniz atama örneğidir.',
+    },
+    {
+      text: '`Ctrl+D`',
+      correct: true,
+      explanation:
+        'Saklıdır — sabit kodlanmış çıkıştır. `Ctrl+C`, `Ctrl+M`, `Ctrl+[`, `Ctrl+I` ve `Ctrl+H` da saklıdır.',
+    },
+    { text: '`Meta+P`', explanation: 'Bu varsayılan model seçicidir ve değiştirilebilir.' },
+    {
+      text: '`Ctrl+O`',
+      explanation: 'Bu varsayılan transcript aç/kapa tuşudur ve değiştirilebilir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/keybindings-statusline-theme"
+  questionId="q5"
+  lang="tr"
+  prompt="Özel bir çıktı biçemi yazıyorsunuz ve keep-coding-instructions'ı frontmatter'dan çıkarıyorsunuz. Ne olur?"
+  options={[
+    {
+      text: 'Hiçbir şey — varsayılanı true olur.',
+      explanation: 'Varsayılanı `false`’tur.',
+    },
+    {
+      text: 'Claude Code’un yerleşik yazılım mühendisliği talimatları düşer, böylece Claude değişiklikleri sınırlandırma, yorum yazma ve doğrulama konusundaki yol göstericiliğini kaybeder.',
+      correct: true,
+      explanation: 'Doğru — kod yazmayan bir asistan için doğru, Claude hâlâ kod yazıyorsa yanlış.',
+    },
+    {
+      text: 'Biçem geçersiz sayılıp reddedilir.',
+      explanation: 'Bu alan isteğe bağlıdır.',
+    },
+    {
+      text: 'Biçem, ana konuşmanın yanında subagent’lara da uygulanır.',
+      explanation: 'Bir fork dışında, biçemler subagent sistem promptlarını asla değiştirmez.',
+    },
+  ]}
+/>
+
+**Sırada:** `05-subcommands`, oturumu tamamen bırakır — `claude mcp`, `claude plugin`, subcommand ağacının geri kalanı ve bilinmesi gereken ortam değişkenleri.

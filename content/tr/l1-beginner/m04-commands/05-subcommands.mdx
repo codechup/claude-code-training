@@ -6,10 +6,10 @@ module: 'm04-commands'
 order: 5
 duration_min: 15
 difficulty: core
-tags: ['commands', 'cli', 'mcp', 'plugins', 'env-vars']
+tags: ['komutlar', 'cli', 'mcp', 'plugins', 'env-vars']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'CLI reference'
@@ -39,6 +39,424 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Not:** Bu sayfanın tam Türkçe çevirisi henüz yapılmadı. `draft: true` kaldığı sürece sayfa gezinmede görünmez. Çeviri, `.claude/rules/i18n.md` kurallarına göre `content/en/l1-beginner/m04-commands/05-subcommands.mdx` dosyasından üretilecek (D016, D018). Aşağıda dersin Türkçe özeti var.
+## Hedefler ve ön koşullar
 
-Bu ders oturumu hiç başlatmadan çalışan `claude` alt komutlarını ele alır: kurulum ve sağlık (`install`, `update`, `doctor`), oturum açma (`auth login/logout/status`, `setup-token`), araç yapılandırma (`mcp`, `plugin`), arka plan oturumları (`agents`, `attach`, `logs`, `respawn`, `stop`, `rm`) ve yerel durum (`project purge`, `auto-mode`). `claude mcp` ile `claude plugin` alt komutlarının bu makinede gerçekten alınmış `--help` çıktıları gösterilir; `claude plugin details` ile bir plugin'in bağlam (context) maliyetini kurmadan önce görebileceğiniz vurgulanır. Önemli bir düzeltme: **`claude config` diye bir alt komut yoktur** — bunun yerine oturum içinde `/config key=value`, başlatmada `--settings` veya doğrudan ayar dosyası kullanılır. Ortam değişkenleri bölümü değişkenlerin nerede ayarlanacağını (shell, ayar dosyasının `env` bloğu) ve öncelik kurallarını anlatır: ayar dosyası shell'i yener, `--model` `ANTHROPIC_MODEL`'i geçersiz kılar ama `CLAUDE_CODE_EFFORT_LEVEL` `--effort`'u geçersiz kılar. Ayrıca yalnızca varlığa bakan (`0` bile açar) değişkenler ve feature-flag getirmeyi kapatarak Remote Control, `/import`, `/skill-doctor` ve advisor'ı da kapatan dört değişken listelenir.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- `claude` alt komutlarını sıralamak ve oturum başlatmadan her birinin hangi işi yaptığını söylemek.
+- `claude mcp` ve `claude plugin`'i shell'den kullanmak — listelemek, eklemek, kurmak, doğrulamak — ve alt komutlarını `--help` ile bulmak.
+- Bir yeni başlayanın gerçekten karşılaştığı ortam değişkenlerini adlandırmak ve her birinin neyi değiştirdiğini söylemek.
+- Bir ortam değişkenini üç yolla ayarlamak — shell, ayar dosyasının `env` bloğu, tek çalıştırmaya özgü — ve hangisinin kazandığını söylemek.
+- Alışılmış açma/kapama kuralını bozan değişkenleri ve feature-flag getirmeyi ona bağlı her şeyle birlikte kapatan değişkenleri tanımak.
+
+**Ön koşullar.** Bu modülün 01-03 numaralı dersleri. Laboratuvar deposuna gerek yok: buradaki her komut kendi makinenizde çalışır ve hiçbiri bir dosyayı düzenlemez.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Alt komutlar kurulum ve inceleme içindir, günlük iş için değil — bir döngü içinde `claude mcp
+  list` çalıştırıyorsanız muhtemelen oturum içi `/mcp` panelini istiyorsunuzdur. Ortam değişkenleri,
+  Claude Code'un sahip olduğu en kaba yapılandırma yüzeyidir: paylaşılan bir depoda görünmezler,
+  global olarak dışa aktardığınızda projeler arasında sızarlar ve başıboş bir `ANTHROPIC_API_KEY`,
+  aboneliğiniz yerine sessizce Console hesabınızı faturalandırır. Bir takım arkadaşınızın görmesini
+  istediğiniz her şey için ayar dosyasını tercih edin, değişkenleri ise gerçekten tek bir makineye
+  ya da tek bir shell'e ait olan şeyler için saklayın.
+</WhenNotToUse>
+
+## Kavram
+
+### Alt komut ağacı
+
+`claude` tek başına bir oturum başlatır. `claude <alt komut>` başka bir şey yapar ve çıkar. İşte Claude Code 2.1.263'te `claude --help`'in verdiği gerçek liste:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/05-subcommands/03-claude-subcommands.txt"
+  range="2-20"
+/>
+
+Neden çalıştıracağınıza göre gruplanmış:
+
+| İş                    | Alt komutlar                                               |
+| --------------------- | ---------------------------------------------------------- |
+| Kurulum ve sağlık     | `install`, `update`/`upgrade`, `doctor`                    |
+| Oturum açma           | `auth login`, `auth logout`, `auth status`, `setup-token`  |
+| Araçları yapılandırma | `mcp`, `plugin`/`plugins`                                  |
+| Arka plan oturumları  | `agents`, `attach`, `logs`, `respawn`, `stop`/`kill`, `rm` |
+| Yerel durum           | `project purge`, `auto-mode defaults`, `auto-mode reset`   |
+| İnceleme ve altyapı   | `ultrareview`, `gateway`, `import`                         |
+
+Şimdiden öne çıkarmaya değer iki tanesi var. `claude doctor`, oturum başlatmadan terminalden **salt okunur** kurulum ve ayar tanılamaları yazdırır — oturum içi `/doctor` ise sorunları da düzeltebilen daha kapsamlı bir kontroldür. `claude auth status` ise kimlik doğrulama durumunu JSON olarak yazdırır; oturum açıksa 0, değilse 1 ile çıkar, bu da onu bir CI betiğinin en başına koyulacak doğru kontrol yapar.
+
+Birini yanlış yazarsanız Claude Code en yakın eşleşmeyi önerir ve oturum başlatmadan çıkar: `claude udpate` şunu yazdırır: `Did you mean claude update?`.
+
+### `claude mcp`
+
+[MCP server](/tr/playbook/glossary/#mcp-server)'lar (Claude'a dış araç ve veri bağlayan sunucular) 3. seviyede ayrıntılı ele alınır. Burada önemli olan, onları bir oturum açmadan inceleyip yapılandırabilmenizdir:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/05-subcommands/01-claude-mcp.txt"
+  range="2-16"
+/>
+
+`add`, bir ad ve bir komut ya da URL alır; HTTP sunucuları için `--transport http`, stdio ortam değişkenleri için `-e KEY=value` ve bir alt sürecin kendi bayraklarından önce `--` kullanılır. `get <ad>`, onaylanmış bir sunucuyu sağlık kontrolünden geçirir ve onaylanmamış `.mcp.json` sunucularını beklemede olarak gösterir. `login` ve `logout`, `/mcp` panelini açmadan bir sunucunun OAuth'unu çalıştırır ve temizler — SSH üzerinden, yetkilendirme URL'sini yazdırmak için `login`'e `--no-browser` ekleyin.
+
+Normal bir başlatmada `--mcp-config`, sunucuları yalnızca o oturum için JSON dosyalarından ya da dizgelerden yükler; `--strict-mcp-config` ise yalnızca bunların kullanılmasını sağlar.
+
+### `claude plugin`
+
+Aynı yapı, [plugin](/tr/playbook/glossary/#plugin)'ler (Claude Code'a eklenen, kendi komutlarını, MCP server'larını ve ayarlarını taşıyabilen üçüncü taraf paketler) için de geçerli. `claude plugins` kabul edilen bir takma addır:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/05-subcommands/02-claude-plugin.txt"
+  range="2-19"
+/>
+
+`install`, belirli bir [marketplace](/tr/playbook/glossary/#marketplace)'e (plugin'lerin yayınlandığı ve keşfedildiği bir kayıt) ihtiyacınız olduğunda `plugin@marketplace` alır; `marketplace` alt komutu marketplace'lerin kendisini yönetir; `init`/`new`, bir sonraki oturumda kendiliğinden yüklenen bir plugin iskeleti oluşturur; `validate`, yayınlamadan önce bir plugin'i ya da marketplace'i denetler; `details`, bir plugin'in bileşen envanterini ve öngörülen [token](/tr/playbook/glossary/#token) (bir dil modelinin metni işlerken kullandığı temel birim) maliyetini gösterir — bu da bir plugin'in bağlamınızda yer kaplamaya değip değmediğine karar verirken önemli olan sayıdır.
+
+Tek bir oturum için `--plugin-dir`, bir plugin'i bir dizinden ya da `.zip`'ten yükler; `--plugin-url` ise bir tanesini bir URL'den getirir. Oturum içinde `/plugin`, aynı işlevi bir menü olarak açar ve `/reload-plugins`, yeniden başlatmadan değişiklikleri uygular.
+
+### `claude config` diye bir şey yok
+
+Yukarıdaki alt komut listesine yeniden bakın: `config` içinde yok. Shell'den yapılandırma `--settings` (ders 02), ayar dosyalarının kendisi ya da ortam üzerinden yapılır. Bir oturumun **içinden** `/config`, Ayarlar arayüzünü açar — ve v2.1.181'den beri doğrudan `key=value` çiftlerini de alır, v2.1.182'den beri de adlandırılmış kısa anahtarlarla:
+
+<CodeBlock title="panel açmadan bir değer ayarlamak">
+
+```text
+/config theme=dark
+/config model=sonnet
+/config thinking=false
+/config --help
+```
+
+</CodeBlock>
+
+Bu biçim, `-p` ile çalışan etkileşimsiz modda da işe yarar. Panelde onayınızı gerektiren bir ayarı **açamaz**, ama kapatabilir.
+
+### Ortam değişkenleri
+
+Değişkenler başlangıçta okunur ve onları ayarlayabileceğiniz üç yer vardır.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+export ANTHROPIC_MODEL="haiku"
+claude -p "Reply with the single word OK." --max-turns 1 --output-format json |
+  jq '{num_turns, result, model: (.modelUsage | keys)}'
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+export ANTHROPIC_MODEL="haiku"
+claude -p "Reply with the single word OK." --max-turns 1 --output-format json |
+  jq '{num_turns, result, model: (.modelUsage | keys)}'
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$env:ANTHROPIC_MODEL = "haiku"
+claude -p "Reply with the single word OK." --max-turns 1 --output-format json |
+  jq '{num_turns, result, model: (.modelUsage | keys)}'
+```
+
+  </Fragment>
+</OSTabs>
+
+İşte bu çalışırken: çalıştırmanın `modelUsage` alanı hangi modelin gerçekten hizmet verdiğini kanıtlıyor:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/05-subcommands/04-env-var-model.txt"
+  range="2-8"
+/>
+
+İkinci yer, bir ayar dosyasının `env` bloğudur; bir değişkeni projeyle paylaşmanın yolu budur:
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "env": {
+    "API_TIMEOUT_MS": "1200000",
+    "BASH_DEFAULT_TIMEOUT_MS": "300000"
+  }
+}
+```
+
+</CodeBlock>
+
+Çalışan bir oturum, dosyayı kaydettiğinizde yeni ve değişmiş değerleri uygular — ama değişkenlerini yalnızca başlangıçta bir kez okuyan bir özellik, siz yeniden başlatana kadar başlangıç değerlerini korur; ayrıca **bir değişkeni dosyadan kaldırmak, çalışan bir oturumda onu unset etmez**.
+
+### Hangisi kazanır
+
+Öncelik kuralları kısadır ve ezberlemeye değer, çünkü tahmin edeceğiniz gibi değildir:
+
+- **Ayar dosyası shell'inizi yener.** Claude Code, her `env` girdisini işlem ortamına yazar ve shell'den kalıtılan değerin yerini alır.
+- **Bir ayar dosyasında bir değişkeni ayarlayabilirsiniz ama kaldıramazsınız.** Unset edemediğiniz bir değişkenin üzerine yazmak için onu boş bir dizgeye ayarlayın: `"CLAUDE_CODE_USE_VERTEX": ""`.
+- **`--model` ve `/model`, `ANTHROPIC_MODEL`'in üzerine yazar.** Ama `CLAUDE_CODE_EFFORT_LEVEL`, [effort](/tr/playbook/glossary/#effort) (modelin bir görev için harcadığı akıl yürütme çabasının düzeyi) ayarını belirleyen `--effort` ve `/effort`'un üzerine yazar — yön burada tersine döner.
+- Ayar dosyaları arasında `env`, normal ayar önceliğini izler: Managed ayarlar, user ve proje ayarlarının üzerine yazar.
+
+Açma/kapama değişkenleri için bir davranışı açmak üzere `1` ya da `true`, kapatmak üzere `0` ya da `false` ayarlayın — büyük/küçük harf önemli değil. Birkaç tanesi bu kuralı bozar ve yalnızca **varlığa** bakar, öyle ki `0` bile onları açar: `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`, `CLAUDE_CODE_TMUX_TRUECOLOR`, `FALLBACK_FOR_ALL_PRIMARY_MODELS` ve `IS_DEMO`. `FORCE_HYPERLINK` ise bir sayı okur, bu yüzden yalnızca `0` onu kapatır — `false` onu etkinleştirir.
+
+### Şimdi bilinmesi gereken değişkenler
+
+| Değişken                                   | Neyi değiştirir                                                                                                          |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
+| `ANTHROPIC_API_KEY`                        | `X-Api-Key` olarak gönderilen API anahtarı. **Ayarlandığında, oturum açmış olsanız bile aboneliğiniz yerine kullanılır** |
+| `ANTHROPIC_MODEL`                          | Kullanılacak model ayarı                                                                                                 |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL`            | `haiku` takma adının çözümlendiği model; arka plan işlevselliği için de kullanılır                                       |
+| `CLAUDE_CONFIG_DIR`                        | Yapılandırma dizinini geçersiz kılar (varsayılan `~/.claude`) — ayarlar, oturum geçmişi, plugin'ler                      |
+| `CLAUDE_CODE_EFFORT_LEVEL`                 | Effort düzeyi; `--effort`, `/effort` ve ayarların önüne geçer                                                            |
+| `API_TIMEOUT_MS`                           | API istekleri için zaman aşımı (varsayılan 600000, on dakika)                                                            |
+| `BASH_DEFAULT_TIMEOUT_MS`                  | Uzun süren bash komutları için varsayılan zaman aşımı (varsayılan 120000, iki dakika)                                    |
+| `BASH_MAX_OUTPUT_LENGTH`                   | Bash çıktısının azami karakter sayısı (varsayılan 30000, azami 150000)                                                   |
+| `MCP_TIMEOUT`                              | MCP server başlatma zaman aşımı (varsayılan 30000, otuz saniye)                                                          |
+| `CLAUDE_CODE_SAFE_MODE`                    | Her özelleştirme kapalıyken başlatır — `--safe-mode` ile eşdeğerdir                                                      |
+| `CLAUDE_CODE_SIMPLE`                       | Minimal system prompt ve tool'lar, otomatik keşif yok — `--bare` ile eşdeğerdir                                          |
+| `CLAUDE_CODE_SKIP_PROMPT_HISTORY`          | Prompt geçmişini ya da transcript'leri diske yazmaz; bu tür oturumlar `--resume`'da hiç görünmez                         |
+| `CLAUDE_AX_SCREEN_READER`                  | Ekran okuyucu dostu çıktı: düz metin, dekoratif kenarlık ya da animasyon yok                                             |
+| `DISABLE_AUTOUPDATER`                      | Otomatik arka plan güncellemelerini kapatır; elle çalıştırılan `claude update` yine çalışır                              |
+| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | Otomatik güncellemeleri, telemetriyi, hata bildirimini ve `/feedback`'i kapatır                                          |
+
+`CLAUDE_CONFIG_DIR`, gerçekten işe yarayan bir hile açar — aynı shell içinde ikinci, izole bir Claude Code kimliği:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+alias claude-work='CLAUDE_CONFIG_DIR=~/.claude-work claude'
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+alias claude-work='CLAUDE_CONFIG_DIR=~/.claude-work claude'
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$env:CLAUDE_CONFIG_DIR = "$HOME/.claude-work"; claude
+```
+
+  </Fragment>
+</OSTabs>
+
+Onu shell'inizde, user ayarlarında ya da managed ayarlarda ayarlayın — **proje ve local ayarlarda yok sayılır**.
+
+### Söylediklerinden fazlasını kapatan dört değişken
+
+`DISABLE_GROWTHBOOK`, `DISABLE_TELEMETRY`, `DO_NOT_TRACK` ve `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`'in hepsi **feature-flag getirmeyi** kapatır. Bu da sırayla Remote Control'ü, `/import`'u, `/skill-doctor`'ı, advisor [tool](/tr/playbook/glossary/#tool)'unu (Claude Code'un çağırabildiği bir araç), [artifact](/tr/playbook/glossary/#artifact) (Claude Code'un yayımlayabildiği, kendi başına çalışan bir web sayfası) yorumlarını, makineler arası mesajlaşmayı ve Pro, Max ve Team planlarındaki varsayılan auto-mode başlangıcını devre dışı bırakır. Okuduğunuz bir özellik sadece orada yoksa, kontrol edilecek ilk şey budur.
+
+İşte bu dersin örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni) — kendi kurulumunuz hakkında işe yarar bir cevap alacağınız biçim:
+
+```text
+Read the output of `claude doctor` and `claude mcp list` and tell me whether
+anything in my install is misconfigured. Do not change any settings.
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · kendi kurulumunuzu shell'den inceleyin"
+  lessonId="tr/l1-beginner/m04-commands/subcommands"
+  repoTag="none"
+  steps={[
+    '`claude --help` çalıştırın ve Commands bölümünü okuyun. Bir `config` alt komutunun olmadığını kendiniz doğrulayın.',
+    '`claude doctor` çalıştırın ve raporu okuyun — kurulum sağlığı, ayar dosyası doğrulaması, güncelleme kanalı. Asla oturum başlatmaz.',
+    '`claude auth status` çalıştırın, ardından `echo $?` (PowerShell: `$LASTEXITCODE`). Oturum açıkken 0 döndüğünü doğrulayın.',
+    '`claude mcp list` çalıştırın, ardından `claude mcp --help`, ve alt komut listesini okuyun.',
+    "`claude plugin list` çalıştırın, ardından `claude plugin --help`. Bir alt komut seçin ve onun kendi `--help`'ini okuyun.",
+    'Bilerek bir alt komutu yanlış yazın: `claude udpate`. Doğru olanı önerdiğini ve oturum başlatmadan çıktığını doğrulayın.',
+    'Bir çalıştırma için bir değişken ayarlayın ve etkili olduğunu kanıtlayın: `ANTHROPIC_MODEL=haiku claude -p "Reply with the single word OK." --max-turns 1 --output-format json | jq \'{result, model: (.modelUsage | keys)}\'` (PowerShell: önce kendi satırında `$env:ANTHROPIC_MODEL = "haiku"` ayarlayın).',
+    'Onu tekrar unset edin ve aynı komutu yeniden çalıştırın. `modelUsage` içindeki modelin varsayılanınıza döndüğünü doğrulayın.',
+  ]}
+  expected="claude --help; mcp, plugin, auth, doctor, agents, project ve arka plan oturumu komutlarını listeler, config'i listelemez. claude doctor, oturum açmadan tanılamalar yazdırır. claude mcp list ve claude plugin list neyin yapılandırıldığını bildirir. claude udpate, claude update'i önerir. ANTHROPIC_MODEL=haiku ile modelUsage bir haiku modelini adlandırır; o olmadan varsayılan modelinizi adlandırır."
+  checklist={[
+    'Üç `claude` alt komutunu ve her birinin ne yaptığını söyleyebiliyorsunuz',
+    '`claude config` diye bir alt komutun olmadığını doğruladınız',
+    '`claude auth status` 0 ile çıktı',
+    '`claude mcp --help` ve `claude plugin --help`, ikisi de kendi alt komutlarını listeledi',
+    '`ANTHROPIC_MODEL`, çalıştırmaya hangi modelin hizmet verdiğini gözle görülür şekilde değiştirdi',
+    'Bir shell değişkeni ile bir ayar dosyasının `env` bloğundaki aynı anahtar arasında hangisinin kazandığını söyleyebiliyorsunuz',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/05-subcommands/03-claude-subcommands.txt"
+    range="2-20"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/05-subcommands/01-claude-mcp.txt"
+    range="2-16"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/05-subcommands/02-claude-plugin.txt"
+    range="2-19"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/05-subcommands/04-env-var-model.txt"
+    range="2-8"
+  />
+</Lab>
+
+Yukarıdaki `--help` kayıtları, her alt komutun açıklamasının yalnızca ilk satırına kırpılmıştır — terminal bunları birkaç satıra sarar ve fazladan satırlar ilkinin söylemediği hiçbir şey söylemez. Hiçbir şey yeniden yazılmadı.
+
+## Anti-pattern'ler
+
+**`ANTHROPIC_API_KEY`'i shell profilinizde dışa aktarılmış bırakmak.** Oturum açmış olsanız bile Pro, Max, Team ya da Enterprise aboneliğiniz yerine kullanılır, `-p` modunda ise her zaman kullanılır. Planınızın zaten karşıladığı iş için Console fiyatlarını ödemiş olursunuz. _Düzeltme:_ `unset ANTHROPIC_API_KEY` yapın ve anahtarı gerçekten ihtiyaç duyan tek shell ya da betikle sınırlayın.
+
+**Bir shell değişkeninin ayar dosyasını yeneceğini beklemek.** Yenmez: Claude Code her `env` girdisini işlem ortamına yazar ve shell'in değerinin yerini alır. _Düzeltme:_ bir projenin `env` bloğu sizinle çelişiyorsa, ya bloğu değiştirin ya da daha yüksek öncelikli bir ayar kapsamında üzerine yazın.
+
+**`DISABLE_TELEMETRY=0` ayarlayıp telemetrinin açık olmasını beklemek.** O değişken değeri değil varlığı okur — `0` yine de devre dışı bırakır. _Düzeltme:_ onu tamamen unset edin.
+
+**Zorunlu olmayan trafiği kapatıp sonra bir özelliğin nereye gittiğini merak etmek.** `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, feature-flag getirmeyi de kapatır; bu da Remote Control'ü, `/import`'u, `/skill-doctor`'ı ve advisor tool'unu beraberinde götürür. _Düzeltme:_ yalnızca otomatik güncellemeleri durdurmak istiyorsanız daha dar kapsamlı olan `DISABLE_AUTOUPDATER`'ı kullanın.
+
+**`claude config`'i aramak.** Öyle bir şey yok. _Düzeltme:_ oturum içinde `/config key=value`, başlatmada `--settings`, ya da ayar dosyasını düzenleyin.
+
+**Bir ayar dosyasının `env` bloğundan bir değişkeni kaldırıp çalışan oturumun bunu fark etmesini beklemek.** Değerler kaydedildiğinde uygulanır; kaldırmalar uygulanmaz. _Düzeltme:_ oturumu yeniden başlatın ya da anahtarı boş bir dizgeye ayarlayın.
+
+**Plugin'leri maliyetlerine bakmadan kurmak.** Her plugin'in [skill](/tr/playbook/glossary/#skill)'leri (yeniden kullanılabilir talimat paketleri) ve MCP tool'ları her istekte bağlam tüketir. _Düzeltme:_ `claude plugin details <ad>`, karar vermeden önce öngörülen token maliyetini gösterir, `/skill-doctor` ise sonrasında gerçekte neyin kullanıldığını gösterir.
+
+<Callout variant="changed" label="Değişti">
+  `ANTHROPIC_SMALL_FAST_MODEL` kullanımdan kaldırıldı. Güncel değişken, `haiku` takma adının
+  çözümlendiği modeli ve Claude Code'un arka plan işlevselliği için kullandığı modeli belirleyen
+  `ANTHROPIC_DEFAULT_HAIKU_MODEL`'dir — Claude Code 2.1.263 için `env-vars.md` üzerinden doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/subcommands"
+  questionId="q1"
+  lang="tr"
+  prompt="Shell'inizde ANTHROPIC_MODEL=opus ayarladınız ve projenizin .claude/settings.json dosyasında onu sonnet'e ayarlayan bir env bloğu var. Oturum hangi modeli kullanır?"
+  options={[
+    {
+      text: 'opus — shell ortamı işleme en yakın olandır.',
+      explanation: 'Sezgisel cevap, ve yanlış olan: Claude Code kalıtılan değerin üzerine yazar.',
+    },
+    {
+      text: 'sonnet — Claude Code her env girdisini işlem ortamına yazar ve shell değerinin yerini alır.',
+      correct: true,
+      explanation: "Doğru. Ayar dosyasının env'i shell'i yener.",
+    },
+    {
+      text: 'Çakışmada hata verir.',
+      explanation: 'Tanımlı bir öncelik vardır; hiçbir şey hata vermez.',
+    },
+    {
+      text: 'Hangisi en son ayarlandıysa o.',
+      explanation: 'Ayarlanma sırasının bununla bir ilgisi yok.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/subcommands"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir Max aboneliğiyle oturum açtınız ve ANTHROPIC_API_KEY shell profilinizde dışa aktarılmış durumda. Ne olur?"
+  options={[
+    {
+      text: 'Abonelik kullanılır; oturum açıkken anahtar yok sayılır.',
+      explanation: 'Tam tersi — anahtar devralır.',
+    },
+    {
+      text: 'API anahtarı, abonelik yerine kullanılır; bu yüzden iş Console hesabınıza faturalanır.',
+      correct: true,
+      explanation:
+        'Ve -p modunda her zaman kullanılır. Aboneliğe geri dönmek için `unset ANTHROPIC_API_KEY` yapın.',
+    },
+    {
+      text: 'Claude Code, birini seçene kadar başlamayı reddeder.',
+      explanation: 'Etkileşimli modda anahtarı bir kez onaylarsınız; reddetmez.',
+    },
+    {
+      text: 'İkisi, yük dengeleme için nöbetleşe kullanılır.',
+      explanation: 'Böyle bir davranış yok.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/subcommands"
+  questionId="q3"
+  lang="tr"
+  prompt="Hangi komut, oturum başlatmadan kurulum tanılamalarını yazdırır?"
+  options={[
+    {
+      text: '`/doctor`',
+      explanation:
+        'Bu, düzeltmeleri de uygulayabilen oturum içi kontroldür — bir oturuma ihtiyaç duyar.',
+    },
+    {
+      text: '`claude doctor`',
+      correct: true,
+      explanation:
+        'Terminalden salt okunur tanılamalar: kurulum sağlığı, ayar doğrulaması, Remote Control uygunluğu.',
+    },
+    { text: '`claude config list`', explanation: '`claude config` diye bir alt komut yok.' },
+    {
+      text: '`claude --verbose`',
+      explanation: 'Bu, zaten başlattığı bir oturumun içindeki günlüklemeyi değiştirir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/subcommands"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir iş arkadaşınız, makinesinde hem /skill-doctor hem de Remote Control'ün eksik olduğunu bildiriyor. İlk kontrol edilmeye değer şey nedir?"
+  options={[
+    {
+      text: 'Doğru sürüm kanalında olup olmadıkları.',
+      explanation: 'Mümkün, ama tam olarak bu özellik kümesini götürmezdi.',
+    },
+    {
+      text: 'Feature-flag getirmeyi kapatan bir değişkenin ayarlı olup olmadığı — DISABLE_TELEMETRY, DO_NOT_TRACK, DISABLE_GROWTHBOOK ya da CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC.',
+      correct: true,
+      explanation:
+        "Bu dördü flag getirmeyi kapatır; bu da Remote Control'ü, /import'u, /skill-doctor'ı ve advisor tool'unu beraberinde götürür.",
+    },
+    {
+      text: '`claude plugin install` çalıştırıp çalıştırmadıkları.',
+      explanation: 'Bu özelliklerin ikisi de bir plugin olarak gelmez.',
+    },
+    {
+      text: "`CLAUDE_CONFIG_DIR`'ın ayarlı olup olmadığı.",
+      explanation: 'Bu, yapılandırmayı taşır; bu özelliklerin önünü kesmez.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/subcommands"
+  questionId="q5"
+  lang="tr"
+  prompt="`claude config` diye bir alt komut yokken, bir Claude Code ayarını shell'den nasıl ayarlarsınız?"
+  options={[
+    {
+      text: 'Başlatmada bir dosya yolu ya da satır içi JSON ile `--settings` geçirin, ya da ayar dosyasını düzenleyin — ve oturum içinden `/config key=value` kullanın.',
+      correct: true,
+      explanation: 'Bunlar üç yüzeydir. `/config key=value`, `-p` ile de çalışır.',
+    },
+    {
+      text: "Yalnızca `~/.claude/settings.json`'ı elle düzenleyerek.",
+      explanation: 'Bu işe yarar, ama tek yol değildir.',
+    },
+    {
+      text: '`claude set <key> <value>` ile.',
+      explanation: 'Öyle bir alt komut yok.',
+    },
+    {
+      text: 'Her ayar bir ortam değişkenidir.',
+      explanation: 'Bazılarının değişken karşılığı var; çoğunun yok.',
+    },
+  ]}
+/>
+
+**Sırada:** Beginner seviyesini bitirdiniz. 2. seviye, `m05-models-effort` ile başlar — varsayılanı kabul etmek yerine bir model ve bir effort düzeyini bilinçli olarak seçmek.

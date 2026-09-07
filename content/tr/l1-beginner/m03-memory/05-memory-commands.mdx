@@ -6,10 +6,10 @@ module: 'm03-memory'
 order: 5
 duration_min: 10
 difficulty: core
-tags: ['memory', 'commands', 'maintenance']
+tags: ['bellek', 'komutlar', 'bakım']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'How Claude remembers your project'
@@ -27,7 +27,273 @@ lab:
   repo_tag: 'none'
 ---
 
-Bu ders `/memory` ekranını (bellek dosyalarını listeleme, düzenleme, otomatik bellek anahtarı), `/memory` ile `/context` arasındaki farkı ve bir bilginin otomatik belleğe mi yoksa `CLAUDE.md`'ye mi gitmesini istediğinizi nasıl söyleyeceğinizi anlatır. Ayrıca eski eğitimlerdeki `#` kısayolunun 2.0.70 sürümünde kaldırıldığını ve yerine ne geçtiğini gösterir.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l1-beginner/m03-memory/05-memory-commands.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- `/memory` ile kullanıcı ve proje kapsamındaki her bellek dosyasını listeleyin, açın ve düzenleyin.
+- `/memory` ile `/context`'i birbirinden ayırt edin ve her birinin hangi soruyu yanıtladığını bilin.
+- İsteyerek belleğe bir şey ekleyin ve bunun auto memory'ye mi yoksa `CLAUDE.md`'ye mi gideceğini seçin.
+- Eskimiş bir belleği budayın ve budamanın nerede yapılması gerektiğini bilin.
+- Eski bir eğitimde kaldırılmış `#` kısayolunu tanıyın ve yerine neyin geçtiğini bilin.
+
+**Ön koşullar.** `01-claude-md`'den `04-auto-memory`'ye kadar olan dersler. Etkileşimli bir Claude Code oturumu — buradaki her şey [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) değil, TUI'dir.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  `/memory` etkileşimli bir düzenleyicidir: dosyaları editörünüzde açar ve Vim gibi bir terminal
+  editörü için, siz çıkana kadar terminali ona devreder. Bunların hiçbiri bir betikte, bir CI işinde
+  ya da bir `claude -p` çalıştırmasında yeri olan şeyler değildir. Otomasyon, bellek dosyalarını
+  sıradan yoldan düzenler — bunlar diskteki düz markdown dosyalarıdır ve bir betik, bir TUI'yi
+  sürmek yerine onları doğrudan yazmalıdır. Ve `/memory` bir yükleme kontrolü değildir: henüz var
+  olmayanlar dahil konumları listeler, bu da geçerli oturumun gerçekte neyi okuduğundan farklı bir
+  sorudur.
+</WhenNotToUse>
+
+## Kavram
+
+### `/memory` — her şeyi görün ve düzenleyin
+
+`/memory`, kullanıcı ve proje kapsamlarındaki `CLAUDE.md`, `CLAUDE.local.md` ve diğer bellek dosyası konumlarını listeler. Henüz **var olmayan** dosyalar için de kullanıcı ve proje `CLAUDE.md` girdilerini içerir — bu da birini oluşturmanın en hızlı yoludur: bir girdiyi seçin, dosya eksikse önce oluşturulur, sonra açılır.
+
+Tek ekranda üç şey yapar:
+
+- Herhangi bir dosyayı seçip editörünüzde açmak.
+- [Auto memory](/tr/playbook/glossary/#auto-memory)'yi (Claude'un oturum sırasında kendiliğinden kaydettiği notlar) açıp kapatmak (bu, `~/.claude/settings.json` dosyasına `autoMemoryEnabled` yazar).
+- Auto memory klasörünü açıp Claude'un bu depo için neler kaydettiğine göz atmak.
+
+<CodeBlock title="etkileşimli bir oturumda">
+
+```text
+/memory
+```
+
+</CodeBlock>
+
+Editörün nasıl davranacağı hangisini kullandığınıza bağlıdır. VS Code gibi bir GUI editör dosyayı ayrı bir pencerede açar ve o pencere açıkken oturumu kullanmaya devam edebilirsiniz. Vim gibi bir terminal editörü ise siz çıkana kadar terminali devralır.
+
+### `/memory` ile `/context`
+
+İkisi iki farklı soruyu yanıtlar ve bunları karıştırmak, hiçbir şeyi hata ayıklayarak yirmi dakika geçirmenin en yaygın yoludur:
+
+| Komut      | Cevapladığı soru                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------ |
+| `/memory`  | Hangi bellek dosyalarının var olduğunu ya da var olabileceğini gösterir ve onları düzenlemenizi sağlar |
+| `/context` | **Bu** oturuma gerçekte neyin yüklendiğini gösterir — **Memory files** listesine bakın                 |
+
+Bir talimat uygulanmıyorsa önce `/context`. O listede eksik olan bir dosya, Claude'un göremediği bir dosyadır ve onu ne kadar yeniden yazarsanız yazın bir işe yaramaz.
+
+<CodeBlock title="hata ayıklama sırası">
+
+```text
+/context
+/memory
+/doctor
+```
+
+</CodeBlock>
+
+`/context` neyin yüklendiğini söyler, `/memory` bunu düzeltmenizi sağlar, `/doctor` (takma adı `/checkup`) ise commit'lenmiş bir `CLAUDE.md` için kırpma önerir — Claude'un kod tabanından zaten çıkarabileceği içeriği keser, araçların varsayılanından farklı tuzakları, gerekçeleri ve kuralları korur.
+
+### Hızlı notlar: isteyin, önek yazmayın
+
+Claude'dan bir şeyi hatırlamasını istediğinizde — "her zaman pnpm kullan, npm değil" ya da "API testlerinin yerel bir Redis örneği gerektirdiğini hatırla" gibi — Claude bunu auto memory'ye kaydeder.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni), notu Claude'un tahmin ettiği yere değil sizin istediğiniz yere koyan örnektir:
+
+```text
+Add this to CLAUDE.md: relative imports keep the explicit .ts extension,
+because this project runs TypeScript on Node without a build step.
+```
+
+Bu ayrımı bilinçli yapmakta fayda var:
+
+| İstediğiniz şey…                                    | Söyleyin                       | Şuraya gider                         |
+| --------------------------------------------------- | ------------------------------ | ------------------------------------ |
+| Sizin için, bu makinede, depo başına hatırlanmasını | "Hatırla: …"                   | Auto memory (`~/.claude/projects/…`) |
+| Commit'lenmesini, ekiple paylaşılmasını             | "Bunu CLAUDE.md'ye ekle: …"    | Proje `CLAUDE.md`'si                 |
+| Kendi elinizle yazılmasını                          | `/memory`, sonra dosyayı seçin | Seçtiğiniz dosya                     |
+
+Eski eğitimler bunun yerine mesaja `#` ile başlamanızı söyler. O kısayol artık yok — aşağıda, anti-pattern'lerden sonraki Değişti kutusuna bakın.
+
+### Budama
+
+Bellek dosyaları [transcript](/tr/playbook/glossary/#transcript) (kaydedilmiş gerçek bir oturum dökümü) saklama süpürmesinin dışında tutulur — `MEMORY.md` ve konu dosyaları, siz ya da Claude onları düzenleyip silene kadar öylece kalır. Hiçbir şey kendiliğinden süresi dolmaz; yani budama, kendiliğinden olan değil sizin yaptığınız bir şeydir.
+
+Belleği, yaşadığı yerde budayın:
+
+- **Eskimiş bir `CLAUDE.md` satırı** — `/memory`, dosyayı açın, satırı silin. Ya da kırpmayı `/doctor`'a önerdirin.
+- **Eskimiş bir auto memory** — `/memory`, auto memory klasörünü açın, konu dosyasını silin ve `MEMORY.md`'deki satırını da silin. İkisi de düz markdown'dır; elle düzenlemek bir hile değil, beklenen yoldur.
+- **200 satırı geçmiş bir `MEMORY.md`** — taşan kısım sessizce yüklenmez. Girdileri birer satıra indirip ayrıntıyı konu dosyalarına itin.
+- **Birbiriyle çelişen iki talimat** — asıl aranmaya değer olan bu. Claude ikisinden birini rastgele seçebilir; yani hiç silmediğiniz eski bir kural nötr değildir, yazı tura atmaktır. `CLAUDE.md`'nizi, iç içe `CLAUDE.md` dosyalarınızı ve `.claude/rules/` dizininizi tek tek değil, birlikte gözden geçirin.
+
+Hangi talimat dosyalarının ne zaman ve neden yüklendiğini hata ayıklamak için bir `InstructionsLoaded` [hook](/tr/playbook/glossary/#hook)'u (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan bir komut) vardır — path-scoped bir kural ya da tembel yüklenen bir alt dizin dosyası beklenmedik davrandığında işe yarar. Hook'lar `m07-hooks` modülünün konusudur.
+
+## Uygulamalı laboratuvar
+
+Bu laboratuvarın çoğu etkileşimlidir ve bir `/memory` ekranı bir TUI'dir: onun bir resmini uydurmak fabrikasyon bir kayıt olurdu, bu yüzden o adımlar düzyazıyla anlatılır ve kendiniz çalıştırırsınız. Son iki adım etkileşimli değildir ve aşağıdaki kayıt onların gerçek bir yakalamasıdır — aynı iki ifade, yan yana, iki farklı yere giderken.
+
+<Lab
+  title="Laboratuvar · kendi belleğinizi denetleyin, düzenleyin ve budayın"
+  lessonId="tr/l1-beginner/m03-memory/memory-commands"
+  repoTag="none"
+  steps={[
+    'Gerçekten üzerinde çalıştığınız bir proje açın ve `claude` ile bir oturum başlatın.',
+    '`/context` çalıştırın ve **Memory files** altında listelenenleri not edin. Bu, bu oturum için zemin gerçektir.',
+    '`/memory` çalıştırın. Listesini az önce not ettiğinizle karşılaştırın: var olduğu halde yüklenmemiş girdiler ve henüz var olmayan dosyalar için sunulan girdiler.',
+    "Kullanıcı `CLAUDE.md`'nizi (`~/.claude/CLAUDE.md`) seçin. Hiç oluşturmadıysanız, seçmek onu oluşturur. Baştan sona okuyun — aylar önce ekleyip unuttuğunuz her şey dahil.",
+    'Artık arkasında durmadığınız bir satırı silin, kaydedin ve editörden çıkın.',
+    "`/memory` ekranından auto memory klasörünü açın ve `MEMORY.md`'yi okuyun. Eskimiş bir konu dosyasını silin ve indeksteki satırını kaldırın.",
+    "Yeni bir oturum başlatın ve `/context`'i tekrar çalıştırın. **Memory files** listesi düzenlemelerinizi yansıtmalı.",
+    'Şimdi iki ifadeyi iki farklı yere gönderin. Bir geçici klasörde şunu çalıştırın: `claude -p "Add this to CLAUDE.md: <one convention your project actually has>. Then tell me in one sentence which file you wrote." --model sonnet --max-turns 6 --output-format text --permission-mode acceptEdits`, ardından `cat CLAUDE.md`.',
+    "Aynı klasörde şunu çalıştırın: `claude -p \"Remember that <one fact about your local setup>. Then tell me in one sentence where you saved that.\" --model sonnet --max-turns 6 --output-format text --permission-mode acceptEdits`. `CLAUDE.md`'nin bayt bayt değişmediğini doğrulayın ve auto memory'deki `MEMORY.md`'ye eklenen yeni satırı okuyun.",
+  ]}
+  expected="/context, bu oturumun yüklediği bellek dosyalarını listeler; /memory ise henüz var olmayanlar dahil konumları listeler ve herhangi birini açmanızı sağlar. Düzenlemelerinizden sonra yeni bir oturumun /context'i bunları yansıtır. Son iki çalıştırma da iki farklı dosyaya gider: CLAUDE.md istemek çalışma dizininde CLAUDE.md yazar, Claude'dan bir şeyi hatırlamasını istemekse CLAUDE.md'ye dokunmaz ve bunun yerine auto memory indeksine bir satır ekler."
+  checklist={[
+    '/memory ile /context arasındaki farkı tek cümlede söyleyebiliyorsunuz',
+    "Kullanıcı kapsamındaki CLAUDE.md'nizi baştan sona okudunuz",
+    'En az bir eskimiş satır ya da bellek dosyası kayboldu',
+    '"Bunu hatırla" mı yoksa "bunu CLAUDE.md\'ye ekle" mi demeniz gerektiğini, verilen bir gerçek için biliyorsunuz',
+    "Yeni bir oturumun /context'i değişikliği gösteriyor",
+    '"Add this to CLAUDE.md" çalıştırması CLAUDE.md\'yi yazdı ve eklediği satırı okudunuz',
+    '"Remember that" çalıştırması CLAUDE.md\'yi değiştirmedi, bunun yerine auto memory\'ye yazdı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/05-memory-commands/01-where-it-lands.txt"
+    range="2-13"
+  />
+</Lab>
+
+Bu, yukarıdaki tablonun ileri sürülmek yerine kanıtlanmış hâli: seçtiğiniz ifade dosyayı belirliyor. (Cevaplar Türkçe, çünkü kaydı yapan makinede bunu isteyen bir kullanıcı kapsamı bellek dosyası var — bkz. `02-hierarchy-imports` dersi.)
+
+## Anti-pattern'ler
+
+**Bir dosyanın yüklenip yüklenmediğini kontrol etmek için `/memory` kullanmak.** Henüz var olmayanlar dahil konumları listeler. Bu aynı soru değildir. _Düzeltme:_ `/context`, ve **Memory files** listesini okuyun.
+
+**Yalnızca eklemek, hiç çıkarmamak.** Hiçbir şeyin süresi dolmaz. Eklediğiniz her satır, siz silene kadar her oturuma yüklenen bir satırdır ve eski tavsiye, yenisine kibarca yol vermez. _Düzeltme:_ bellek dosyalarını kod gibi ele alın — eklediğiniz sıklıkta gözden geçirin ve silin.
+
+**Ekibin ihtiyacı olan bir şey için "bunu hatırla" demek.** Bu, auto memory'ye gider: makineye özel, commit'lenmemiş, başka herkes için görünmez. _Düzeltme:_ projeyi kastediyorsanız "bunu CLAUDE.md'ye ekle" deyin ve commit'leyin.
+
+**Bir çelişkiyi üçüncü bir talimat ekleyerek çözmeye çalışmak.** "Yukarıdaki tab kuralını yok say" demek, önceki iki kuralı da bağlamda bırakır ve üstüne katılmayan yeni bir tane daha ekler. _Düzeltme:_ yanlış olanı silin.
+
+**2025 tarihli bir eğitimin `#` kısayolunu izlemek.** Bu, 2.0.70'te kaldırıldı; yazmak artık özel bir şey yapmıyor. _Düzeltme:_ Claude'dan `CLAUDE.md`'yi düzenlemesini isteyin ya da `/memory` ile açın.
+
+**`/memory`'yi bir betikten sürmek.** Bu, terminalinizi Vim'e devredebilecek bir TUI'dir. _Düzeltme:_ bellek dosyaları diskteki düz markdown dosyalarıdır — onları doğrudan yazın.
+
+<Callout variant="changed" label="Değişti">
+  Eski eğitimler, hızlı bir bellek girdisi eklemek için mesaja `#` ile başlamanızı söyler. Resmî
+  değişiklik günlüğünün 2.0.70 girdisi (15 Aralık 2025) şöyle diyor: "Removed # shortcut for quick
+  memory entry (tell Claude to edit your CLAUDE.md instead)" ve hiçbir güncel sayfa bunu
+  belgelemiyor. Claude'dan `CLAUDE.md`'nizi düzenlemesini isteyin ya da dosyayı `/memory` ile açın.
+  Bugün bir prompt'un başına `#` yazmak, yalnızca bir diyez ile başlayan bir prompt'tur.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/memory-commands"
+  questionId="q1"
+  lang="tr"
+  prompt="Claude, proje CLAUDE.md'nizdeki bir talimatı yok sayıyor. Çalıştırılacak ilk komut hangisidir?"
+  options={[
+    {
+      text: '/context, ve Memory files listesini kontrol edin',
+      correct: true,
+      explanation: 'İlk önemli olan tek soruyu yanıtlar: dosya bu oturuma gerçekten yüklendi mi?',
+    },
+    {
+      text: '/memory, dosyayı yeniden okumak için',
+      explanation: 'Konumları listeler ve düzenletir — bu oturuma neyin yüklendiğini söylemez.',
+    },
+    {
+      text: '/compact, ona yer açmak için',
+      explanation: 'Sıkıştırma, hiç yüklenmemiş bir talimatı düzeltmez.',
+    },
+    {
+      text: '/init, dosyayı yeniden oluşturmak için',
+      explanation: 'Bu, var olan bir dosyaya iyileştirme önerir; bir tanı değildir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/memory-commands"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir kuralın commit'lenmesini ve ekibinizle paylaşılmasını istiyorsunuz. Claude'a ne dersiniz?"
+  options={[
+    {
+      text: '"Her zaman pnpm kullandığımızı hatırla."',
+      explanation: "Bu ifade onu auto memory'ye kaydeder — makineye özel ve commit'lenmemiş.",
+    },
+    {
+      text: '"Bunu CLAUDE.md\'ye ekle: her zaman pnpm kullanıyoruz, asla npm değil."',
+      correct: true,
+      explanation: "Açıkça CLAUDE.md istemek, onu commit'leyebileceğiniz bir dosyaya koyan şeydir.",
+    },
+    {
+      text: '"# her zaman pnpm kullanıyoruz"',
+      explanation:
+        "`#` kısayolu 2.0.70'te kaldırıldı; bu artık yalnızca diyezle başlayan bir prompt.",
+    },
+    {
+      text: "Hiçbir şey — lockfile'ınızdan çıkarsayacaktır",
+      explanation: "Oturum başına çıkarsayabilir. Commit'lenmiş bir talimat bir tahmin değildir.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/memory-commands"
+  questionId="q3"
+  lang="tr"
+  prompt="Var olmayan bir dosya için bir /memory girdisini seçmek ne yapar?"
+  options={[
+    { text: 'Bir hata gösterir', explanation: 'O girdiler bilerek listelenir.' },
+    {
+      text: 'Dosyayı oluşturur, sonra editörünüzde açar',
+      correct: true,
+      explanation:
+        "Bu da /memory'yi bir kullanıcı ya da proje CLAUDE.md'si başlatmanın en hızlı yolu yapar.",
+    },
+    {
+      text: 'Önce içerik üretmek için /init çalıştırır',
+      explanation: 'Boş bir dosya oluşturur; /init ayrı bir komuttur.',
+    },
+    {
+      text: 'Dosya var olana kadar girdiyi gizler',
+      explanation:
+        'Tam tersi — var olmayan kullanıcı ve proje CLAUDE.md girdileri bilerek gösterilir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/memory-commands"
+  questionId="q4"
+  lang="tr"
+  prompt="Altı ay önceki bir auto memory yanlış. Onu ne kaldırır?"
+  options={[
+    {
+      text: 'Hiçbir şey — saklama süpürmesiyle süresi dolar',
+      explanation:
+        'Bellek dosyaları o süpürmenin açıkça dışında tutulur; düzenlenene ya da silinene kadar kalır.',
+    },
+    {
+      text: "Konu dosyasını ve MEMORY.md'deki satırını, /memory ya da herhangi bir editörle silmek",
+      correct: true,
+      explanation:
+        "Bunlar düz markdown'dır. Elle düzenlemek, belleği denetlemenin belgelenmiş yoludur.",
+    },
+    {
+      text: "Claude'a bir kez yanlış olduğunu söylemek",
+      explanation: 'Bu, düzeltici bir bellek ekleyebilir; eski dosyayı kaldırmaz.',
+    },
+    {
+      text: '/compact',
+      explanation: 'Auto memory, sıkıştırmadan sonra diskten değişmeden yeniden enjekte edilir.',
+    },
+  ]}
+/>
+
+**Sırada:** `m04-commands` modülü — tüm yerleşik slash komut tablosu, arkalarındaki CLI bayrakları ve dün kapattığınız bir oturuma geri dönme yolu.

@@ -2,7 +2,7 @@
 id: P25
 title: "TR translation: L1 Beginner"
 milestone: M2
-status: in_progress
+status: review
 owner: sonnet-p25-2026-09-07
 branch: plan/25-tr-l1-beginner
 model_hint: sonnet
@@ -16,7 +16,7 @@ owned_paths:
 shared_paths:
   - content/tr/playbook/glossary.mdx
 estimate: L
-updated_at: 2026-09-07T10:55:10Z
+updated_at: 2026-09-07T19:17:03Z
 open_questions: []
 ---
 
@@ -84,5 +84,93 @@ A reviewer runs `npm run dev`, switches to `/tr/l1-beginner/` via LangSwitch fro
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+**What changed.** All 20 `draft: true` TR stubs under `content/tr/l1-beginner/m0{1,2,3,4}-*/` were
+replaced with full, genuine Turkish translations of their EN twins and flipped to `draft: false`
+(m01-start: 02-install, 03-authenticate, 04-first-session, 05-doctor-update-channels; m02-interact:
+01-06; m03-memory: 01-05; m04-commands: 01-05). `01-what-claude-code-is.mdx` was already the
+finished reference and untouched. Live tree has 5 lessons in both m03-memory and m04-commands (not
+4 as the plan summary line says) — the plan body's own Context section already flags the outline as
+a floor, and the live file list (20 stubs total) is what was translated, matching this note.
+
+**Process.** Each lesson was translated by a fresh general-purpose agent (the `translator` custom
+agent type is not registered as an invokable subagent type in this environment — confirmed by a
+direct probe — so `general-purpose` was used instead, briefed with the full text of
+`.claude/rules/i18n.md`, `.claude/agents/translator.md`, and the finished EN/TR reference pair, plus
+explicit mechanical rules: `lessonId`/`lang` swap to `tr`, code/transcripts byte-identical including
+comments, Lab/Quiz string props render as plain text so glossary links only go in real prose). Two
+API-session interruptions during the run required re-verifying file state (`draft:` grep, `git
+status`) and relaunching the handful of lessons that had not actually written before the cut.
+
+**Glossary.** 22 new terms appended (append-only, added after the existing `skill` entry): `commit`,
+`branch`, `worktree`, `pull request`, `permission mode`, `sandbox`, `token`, `context window`,
+`checkpoint`, `marketplace`, `artifact`, `workflow`, `plugin`, `auto memory`, `fork`, `rule`,
+`renderer`, `monorepo`, `import`, `compaction`, `chord`, `routine`. `fork`, `auto memory`, `rule`,
+`renderer`, `monorepo`, `import`, `compaction` and `chord` are not on i18n.md's illustrative "stays
+in English" list, but are genuine Claude Code technical terms used repeatedly across this level with
+established precedent elsewhere in the TR tree (e.g. `fork` in `m04-commands/03-sessions.mdx` and
+`l3-advanced/m10-subagents/index.mdx`); each got a one-line Turkish definition and a first-use link.
+Proposed EN-twin glossary entries (for whoever owns `content/en/playbook/glossary.mdx`): the same 22
+terms, one-sentence English definitions mirroring the Turkish ones above.
+
+**Verification run (all from the worktree root, 2026-09-07):**
+- `npm run typecheck` — 0 errors, 0 warnings.
+- `npm run lint` (eslint + prettier + check-no-inline-script) — clean after `prettier --write` on
+  all 20 translated files (translator agents did not run prettier themselves).
+- `npm run gate` (content-gate.ts) — OK, 158 files checked. One frontmatter defect found and fixed:
+  `m04-commands/01-slash-command-reference.mdx`'s translator wrote its YAML frontmatter block with
+  curly quotes (’) instead of straight quotes, which YAML doesn't treat as string delimiters,
+  breaking `sources[].url` validation — fixed by normalizing the frontmatter block to straight
+  quotes.
+- `npm test` — 184/184 passed.
+- `npm run build` — failed once: the same file also used curly quotes as JS string delimiters inside
+  several `<Lab>`/`<Quiz>` string props (`steps`, `checklist`, `text`, `explanation`), which is
+  invalid JS and broke MDX/oxc parsing (`Invalid Character '’'`). Fixed by normalizing those
+  delimiters to straight quotes while preserving internal apostrophes/content; rebuilt clean —
+  `check-no-inline-script (dist): OK (133 files scanned)`, 133 pages, EN/TR route sets for
+  `l1-beginner` are identical (25 routes each incl. module indexes).
+- Manual programmatic diff of every fenced code block between each EN/TR pair — zero differences
+  across all 20 lessons (re-verified after the quote fixes and after Prettier reformatting).
+- `node scripts/check-raw-colors.mjs` — OK, 77 files. `node scripts/check-public-hygiene.mjs` — OK
+  (tracked). `node tools/plan/cli.ts check` — OK, 48 plans, DAG acyclic, STATE.md fresh.
+- Glossary anchors: every `/tr/playbook/glossary/#<anchor>` link used across the 20 lessons resolves
+  to a `### <term>` heading in `content/tr/playbook/glossary.mdx` (checked programmatically; no
+  `lychee` binary available in this environment, so this substitutes for it as instructed by the
+  brief's spirit — no broken internal links found).
+- Playwright, temp config `playwright.p25.config.ts` on port 4425 (deleted after the run, along with
+  the temp spec `e2e/p25-l1-beginner.spec.ts`): `e2e/a11y.spec.ts` + the temp spec covering all 21
+  L1 Beginner lesson routes × 2 languages × 2 viewports (390/1280) — 98/98 passed, 0 axe
+  serious/critical violations. `e2e/shell.spec.ts` (LangSwitch EN↔TR round-trip) — 18/18 passed.
+  `e2e/lesson.spec.ts` (against the TR `what-claude-code-is` lesson in this level) — 20/20 passed.
+
+**Review (D071).** Ran the `reviewer` agent via `claude -p --permission-mode plan` against a 4-lesson
+sample (`m01-start/02-install`, `m02-interact/03-permissions`, `m03-memory/02-hierarchy-imports`,
+`m04-commands/01-slash-command-reference`, with EN twins for comparison). Verdict: CHANGES
+REQUESTED, 0 blockers, 3 majors, 7 minors. All 3 majors fixed: a diacritics defect
+(`moduldeki`→`modüldeki` in `03-permissions.mdx`), and glossary first-use ordering violations in
+`01-slash-command-reference.mdx` (several terms — `prompt`, `subagent`, `MCP server`, `transcript`,
+`hook`, `plugin`, `artifact`, `routine`, `sandbox`, `effort` — were either linked out of order or
+never linked; fixed by linking each at its true first occurrence and de-linking later mentions).
+Fixed 3 of 7 minors (a stray `description` backtick in `02-install.mdx`, an unnecessary apostrophe
+on the naturalized loanword "Mod'lar"→"Modlar" in `03-permissions.mdx`, and a missing `token`/`auto
+memory` glossary link in `hierarchy-imports.mdx`). One reviewer major (finding #2, "kum havuzu
+deposu" for "sandbox repository") was evaluated and **not** applied: the already-finished reference
+lesson `m01-start/01-what-claude-code-is.mdx` (predating this plan) already establishes exactly this
+translation for the course's specific sandbox repository, distinct from the generic technical term
+`sandbox` (which stays English and is glossary-linked everywhere else in this batch) — matching the
+reference's own precedent is correct per i18n.md's "never independent rewrites" principle, not a
+defect. Remaining minor nits (tag-translation consistency across the batch, one phrasing nit, and an
+EN-source evidence/narration drift in `m02-interact/03-permissions.mdx` that predates this plan) are
+left as follow-ups, not blockers. Full gate/typecheck/lint/test/build/Playwright re-run clean after
+fixes.
+
+**Open questions / follow-ups (not blocking this PR):**
+- `content/en/l1-beginner/m02-interact/03-permissions.mdx` step 3's prose ("cat .claude/settings.json")
+  doesn't match its own recorded transcript's command (`node -e "require('./.claude/settings.json')…"`)
+  — an EN-source drift owned by P14, not fixed here per this plan's non-goals; the TR twin mirrors it
+  byte-identically as required.
+- `content/en/l1-beginner/m04-commands/03-sessions.mdx` Anti-patterns section has a markdown-escaping
+  spacing glitch in its EN prose (missing spaces around two backtick-inline code spans) — owned by
+  P16, not fixed here.
+- `content/en/playbook/glossary.mdx` (EN twin of the glossary) is still just a placeholder sentence;
+  the 22 Turkish terms above need EN-language mirror entries from whichever plan owns that file.
 

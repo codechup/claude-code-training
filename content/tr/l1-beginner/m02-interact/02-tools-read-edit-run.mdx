@@ -1,15 +1,15 @@
 ---
 title: 'Yerleşik araçlar: Read, Edit, Glob, Grep, Bash'
-description: 'Claude Code yerleşik bir tool kümesi üzerinden hareket eder. Read, Edit, Write, Glob, Grep, Bash, PowerShell ve WebFetch ne yapar, Claude aralarında nasıl seçim yapar?'
+description: 'Claude Code, sabit bir yerleşik tool kümesi üzerinden hareket eder. Read, Edit, Write, Glob, Grep, Bash, PowerShell ve WebFetch’in her birinin ne yaptığını, Claude’un aralarında nasıl seçim yaptığını öğrenin ve gerçek bir oturumda Grep, Read, Edit ve npm test ile bir off-by-one hatasının nasıl bulunup düzeltildiğini izleyin.'
 level: 1
 module: 'm02-interact'
 order: 2
 duration_min: 15
 difficulty: core
-tags: ['tools', 'basics', 'lab']
+tags: ['tools', 'temeller', 'lab']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Tools available to Claude'
@@ -27,6 +27,310 @@ lab:
   repo_tag: 'lesson/m02-02-start'
 ---
 
-Bu ders, bir oturumda ekrandan akan [tool](/tr/playbook/glossary/#tool)'ları tanıtır: `Read` (satır numaralı dosya okuma), `Edit` (tam metin eşleşmesiyle hedefli düzenleme, çoklu eşleşme için `replace_all: true`), `Write`, `Glob` (isim örüntüsüyle dosya bulma), `Grep` (ripgrep söz dizimiyle içerik arama), `Bash`/`PowerShell` ve `WebFetch`. Claude'un bunlar arasında nasıl seçim yaptığı — okumadan önce daralt: önce `Grep`, sonra `Read` — lab reposundaki gerçek bir kayıtla gösterilir: önce yalnızca aramayla dört çağrı yeri bulunur, sonra tek bir `Edit` ile off-by-one düzeltilir ve `npm test` ile kanıtlanır. Ayrıca tool adlarının izin kurallarının birimi olduğu (`Bash(npm test)`, `Read(./.env)`) anlatılır.
+## Hedefler ve ön koşullar
 
-> Bu sayfa henüz çevrilmemiş bir taslaktır; İngilizce kaynak ders tam metindir.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Sıradan bir oturumda ekrandan akıp giden [tool](/tr/playbook/glossary/#tool)'ları (Claude'un dosya okumak, komut çalıştırmak gibi işleri yapmak için çağırdığı yerleşik araçları) adlandırmak — `Read`, `Edit`, `Write`, `Glob`, `Grep`, `Bash` (ya da `PowerShell`), `WebFetch` — ve her birinin ne işe yaradığını söylemek.
+- Okumadan-önce-düzenleme kuralını, `Edit`'in neden bir örüntü yerine tam bir metni değiştirdiğini ve `replace_all: true`'nun ne işe yaradığını açıklamak.
+- Belirli bir soru için Claude'un `Glob`, `Grep` ya da `Read`'e mi başvuracağını tahmin etmek.
+- Bir [transcript](/tr/playbook/glossary/#transcript) (kaydedilmiş gerçek bir oturum dökümü) içindeki bir tool çağrısını okumak ve onu hangi izin kuralı biçiminin (`Bash(npm test)`, `Read(./.env)`, `WebFetch(domain:example.com)`) yöneteceğini bilmek.
+- Aramayla bir hata bulan, tek bir düzenlemeyle düzelten ve düzeltmeyi test koşucusuyla kanıtlayan gerçek bir oturum çalıştırmak.
+
+**Ön koşullar.** `01-prompting-basics` dersi ve Node 24'ün kurulu olduğu, lab reposunun bir klonu.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bu tool'ları hiçbir zaman siz çağırmazsınız, çağırmaya da çalışmamalısınız. Onları Claude seçer;
+  sizin kaldıraçlarınız [prompt](/tr/playbook/glossary/#prompt) (Claude'a verdiğiniz istek metni) ve
+  izin kurallarıdır. Bir prompt'ta tool adlarına başvurmak ("önce Grep, sonra Read, sonra Edit
+  kullan") adımları dikte etmektir — önceki dersteki anti-pattern — ve demo'dan büyük her işte
+  oturumu kötüleştirir. Tek dürüst istisna öğretim ve hata ayıklamadır; bu dersin laboratuvarının
+  tam olarak yaptığı da budur: tool'ları adlandırmak kaydı okunur kılar. Gerçek işte hedefi
+  adlandırın.
+</WhenNotToUse>
+
+## Kavram
+
+### Bunu bir agent yapan şey tool'lardır
+
+Tool'lar olmadan bir model yalnızca metinle cevap verebilir. Onlarla kodunuzu okuyabilir, değiştirebilir, test takımınızı çalıştırabilir ve bir sayfa getirebilir. Her tool çağrısı, döngüye geri besleyen ve bir sonraki kararı belirleyen bir bilgi döndürür — mekanizmanın tamamı budur.
+
+Dokümantasyon, yerleşik olanları beş kategoriye ayırır:
+
+| Kategori            | Claude ne yapabilir                                                                                                                                                                                                               |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Dosya işlemleri** | Dosya okumak, kod düzenlemek, yeni dosya oluşturmak, yeniden adlandırmak ve düzenlemek                                                                                                                                            |
+| **Arama**           | Desene göre dosya bulmak, regex ile içerik aramak, kod tabanını keşfetmek                                                                                                                                                         |
+| **Çalıştırma**      | Kabuk komutları çalıştırmak, sunucu başlatmak, test çalıştırmak, git kullanmak                                                                                                                                                    |
+| **Web**             | Web'de arama yapmak, dokümantasyon getirmek, hata mesajı aramak                                                                                                                                                                   |
+| **Kod zekâsı**      | Düzenlemeden sonra tip hatalarını görmek, tanıma gitmek, referansları bulmak (bir code-intelligence [plugin](/tr/playbook/glossary/#plugin)'i — Claude Code'un temel araçlarını genişleten, ayrıca kurulan bir eklenti — gerekir) |
+
+### Gerçekte gördükleriniz
+
+| Tool         | Ne yapar                                                               | Bilinmesi gereken                                                                                                                                             |
+| ------------ | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Read`       | Satır numaralarıyla dosya içeriğini döndürür                           | Görselleri, PDF'leri ve Jupyter not defterlerini de işler; büyük bir dosya `PARTIAL view` olarak döner                                                        |
+| `Edit`       | Bir dosyada tam metin değiştirme                                       | Regex yok, bulanık eşleşme yok. `old_string` tam olarak bir kez eşleşmeli — ya da `replace_all: true` geçirin. Aşağıdaki okumadan-önce-düzenleme notuna bakın |
+| `Write`      | Bir dosya oluşturur ya da üzerine yazar                                | Üzerine yazar. Kısmi bir değişiklik için doğru araç `Edit`'tir                                                                                                |
+| `Glob`       | Desene göre dosya bulur (`**/*.ts`, `*.{json,yaml}`)                   | Sonuçlar 100 dosyayla sınırlıdır; varsayılan olarak `.gitignore`'a uymaz                                                                                      |
+| `Grep`       | Dosya içeriğinde arama yapar, **ripgrep söz dizimi**, POSIX grep değil | `.gitignore`'a uyar; üç çıktı modu (`files_with_matches`, `content`, `count`)                                                                                 |
+| `Bash`       | Kabuk komutları çalıştırır                                             | Varsayılan zaman aşımı 2 dakika, azami 10 dakika; arka planda çalışabilir                                                                                     |
+| `PowerShell` | Windows'ta yerel olarak PowerShell çalıştırır                          | Başka yerlerde `CLAUDE_CODE_USE_POWERSHELL_TOOL=1` ile isteğe bağlı olarak açılır                                                                             |
+| `WebFetch`   | Bir URL'yi getirir ve küçük bir modelle içeriği çıkarır                | Tasarım gereği bilgi kaybına yol açar; yanıtlar 15 dakika önbelleğe alınır                                                                                    |
+| `WebSearch`  | Web'de arama yapar                                                     | Belirteç yok — tool'un tamamına ya izin verir ya da reddedersiniz                                                                                             |
+
+`Edit` hakkında tek bir ayrıntıyı tam olarak belirtmekte fayda var, çünkü modellerle birlikte değişti. Tool referansı şöyle diyor: "Claude reads the file in the current conversation before editing it, and a read cut short with a `PARTIAL view` notice doesn't count. Claude Opus 4.6, Claude Haiku 4.5, and older models always require the read. Newer models can edit an unread file when reading it wouldn't need a permission prompt and the Read tool is available." Yani okumadan-önce-düzenleme, eski modellerde katı bir gereklilik, yeni modellerde ise neredeyse her zaman uyulan bir alışkanlıktır — bunu atlamaya dayanan bir iş akışı kurmayın.
+
+Bunların ötesinde daha uzun bir liste var — bir [subagent](/tr/playbook/glossary/#subagent) (ana oturumdan bağımsız, kendi bağlamında çalışan yardımcı agent) başlatan `Agent`, `Skill`, `AskUserQuestion`, `EnterPlanMode`/`ExitPlanMode`, `Monitor`, `Task*` görev listesi tool'ları — ve tam liste için otorite tool referansıdır.
+
+### Claude nasıl seçer
+
+Bu bir arama tablosu değildir; model, prompt'unuza ve önceki çağrının döndürdüğüne bakarak seçer. Dokümantasyonun kendi örneği, "başarısız testleri düzelt" için:
+
+1. Ne başarısız olduğunu görmek için test takımını çalıştırın.
+2. Hata çıktısını okuyun.
+3. İlgili kaynak dosyaları arayın.
+4. O dosyaları okuyun.
+5. Onları düzenleyin.
+6. Doğrulamak için testleri tekrar çalıştırın.
+
+Genellenebilecek örüntü şu: **okumadan önce daralt**. `Glob`, "X'e benzeyen hangi dosyalar var" sorusunu yanıtlar. `Grep`, "hangi dosyalar X'i içeriyor, hangi satırda" sorusunu yanıtlar. `Read` pahalı olandır — dosyanın tamamını [context window](/tr/playbook/glossary/#context-window)'a (modelin bir seferde görebildiği, sınırlı büyüklükteki metin alanı) koyar — bu yüzden iyi davranan bir oturum önce grep'ler, sonra okur. Bunun lab'ın ilk kaydında gerçekleştiğini izleyebilirsiniz.
+
+### İznin birimi tool adlarıdır
+
+Her izin kuralı `Tool` ya da `Tool(belirteç)` biçiminde yazılır; bu yüzden kural yazabilmenizi sağlayan şey tool adlarını bilmenizdir:
+
+<CodeBlock title="izin kuralı biçimleri">
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(npm run *)", "Read(./docs/**)"],
+    "deny": ["Bash(git push *)", "WebFetch"]
+  }
+}
+```
+
+</CodeBlock>
+
+`Edit(/src/**)` o yola yazmayı kapsar ve orada okumaya da izin verir. `WebFetch(domain:example.com)` host'a göre eşleşir. Çıplak bir tool adı **deny** kuralı olarak kullanıldığında, tool'u Claude'un bağlamından tamamen kaldırır — Claude onu hiç görmez. Bir sonraki ders tamamen bununla ilgili.
+
+## Uygulamalı laboratuvar
+
+### Checkout'u hazırlayın
+
+Bu laboratuvardaki her komut, lab reposunun bir klonundan çalıştırılır. Komutların kendisi her
+platformda aynıdır; farklı olan yalnızca onları nasıl zincirlediğinizdir.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-02-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-02-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git clone https://github.com/codechup/claude-code-lab.git; Set-Location claude-code-lab
+git checkout lesson/m02-02-start; npm ci
+npm test
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1'de `&&` operatörü yoktur, bu yüzden yukarıdaki sekmeler bunun yerine `;` ile
+zincirlenir. Bu modüldeki her transcript, Git Bash üzerinden çalışan Claude Code ile yerel
+Windows'ta yakalandı; bazı tool çıktılarının ters eğik çizgili yol ayırıcıları göstermesinin nedeni
+budur.
+
+Burada yazılan komutlarla aşağıdaki kayıtlar arasında bir fark var: yakalanan her çalıştırma ayrıca `--settings '{"language":"English"}'` bayrağını da geçti, çünkü kayıtları yapan makinenin kullanıcı düzeyinde `language` ayarı Türkçe. Bayrak, görebilmeniz için transcript komut satırlarında duruyor. Kendi ayarlarınız aynı geçersiz kılmayı gerektirmedikçe bunu kullanmayın.
+
+`lesson/m02-02-start`'a karşı yapılmış iki gerçek [headless](/tr/playbook/glossary/#headless) (arayüzsüz, tek komutla çalışan) çalıştırma var; bu tag, ekilmiş **B1** hatasını taşıyor: `src/store.ts` içindeki `paginate()`, `(page - 1) * pageSize` yerine `page * pageSize`'dan dilimliyor, bu yüzden 1. sayfa 2. sayfanın öğelerini döndürüyor. Dört test başarısız oluyor.
+
+İlk çalıştırma salt-okunur ve yalnızca arama yapar — `--allowedTools "Glob,Grep,Read"` — yalnızca aramanın neyi yanıtlayabildiğini göstermek için. İkincisi Claude'a düzenleme ve test tool'larını verir, düzeltmeyi ve kanıtı ister.
+
+<Lab
+  title="Laboratuvar · aramayla bul, tek bir düzenlemeyle düzelt, testlerle kanıtla"
+  lessonId="tr/l1-beginner/m02-interact/tools-read-edit-run"
+  repoTag="lesson/m02-02-start"
+  steps={[
+    'Start tag’ını checkout edin ve kurulumu yapın: `git checkout lesson/m02-02-start && npm ci`.',
+    'Hatayı yeniden üretin: `npm test`. `test/store.test.ts` ve `test/api.test.ts` genelinde dört test başarısız olur.',
+    'Yalnızca arama — salt-okunur oturumu çalıştırın ve hiçbir dosyayı baştan sona okumadan file:line çiftleriyle cevap verdiğini not edin: `claude -p "Using only search, list every file in this repo that calls paginate(), with the line number of each call. Do not read whole files unless you have to, and do not edit anything." --model sonnet --output-format text --max-turns 10 --permission-mode dontAsk --allowedTools "Glob,Grep,Read"`',
+    'Şimdi harekete geçmesine izin verin. Açık ve asgari bir tool allowlist’iyle düzeltme oturumunu çalıştırın: `claude -p "Two tests in test/store.test.ts are failing because paginate() in src/store.ts is off by one. Find it with Grep, read the function, fix it with a single Edit, then run npm test and show me the summary line." --model sonnet --output-format text --max-turns 20 --permission-mode acceptEdits --allowedTools "Read,Edit,Write,Glob,Grep,Bash(npm test)"`',
+    'Değişikliği kendiniz inceleyin: `git diff --stat` ve `git diff -- src/store.ts`. Tek satır olmalı.',
+    'Son durumun dersin çözüm tag’iyle eşleştiğini doğrulayın: `git diff lesson/m02-02-solution -- src/store.ts` hiçbir şey yazdırmaz.',
+  ]}
+  expected="Yalnızca arama yapan çalıştırma dört çağrı yerini file:line çiftleri olarak döndürür. Düzeltme çalıştırması tam olarak bir satırı değiştirir — `const start = page * pageSize;`, `const start = (page - 1) * pageSize;` olur — ve 4 test dosyasının, 15 testin geçtiğini bildirir. `git diff lesson/m02-02-solution -- src/store.ts` boştur."
+  checklist={[
+    '`npm test`, düzeltmeden önce 15 testten 4’ünü başarısız etti',
+    'Yalnızca arama yapan oturum, dosya içerikleriyle değil çağrı yerleriyle cevap verdi',
+    '`git diff --stat`, `1 file changed, 1 insertion(+), 1 deletion(-)` gösterir',
+    'Test özeti 15 testin geçtiğini bildirir',
+    'Çalışma ağacı artık `lesson/m02-02-solution` ile eşleşiyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/02-tools-read-edit-run/00-npm-test-before.txt"
+    range="2-13"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/02-tools-read-edit-run/01-search-tools.txt"
+    range="2-8"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/02-tools-read-edit-run/02-fix-with-tools.txt"
+    range="2-5"
+  />
+</Lab>
+
+O kayıtlardaki üç ayrıntı ikinci bir bakışı hak ediyor.
+
+Arama çalıştırması `test\store.test.ts:29`, `src\api\server.ts:75` ve benzerleriyle cevap verdi — **Windows yol ayırıcıları**, çünkü bu kayıt yerel Windows'ta yapıldı. Tool çıktısı çalıştığı makineyi yansıtır; düzenlenmemiş bir transcript'in görünümü budur.
+
+Düzeltme çalıştırmasının allowlist'i `Bash(npm test)`'tir, `Bash` değil. Bu tek kural, "Claude test takımını çalıştırabilir" ile "Claude her şeyi çalıştırabilir" arasındaki farktır. Aynı zamanda çalıştırmanın kendini doğrulayabilmesinin de nedeni budur: bir tür `Bash` kuralı olmadan, oturum teşhis koyabilir ama kanıtlayamaz.
+
+Ve düzeltme yeniden yazma değil, **tek bir `Edit`**'ti. `Edit`, daha önce okunmuş bir dosyada tam bir metni değiştirir; bu kısıt, tek satırlık bir hatayı tek satırlık bir diff olarak tutan şeydir.
+
+## Anti-pattern'ler
+
+**Düzeltme isterken yeniden yazma istemek.** "`store.ts`'i düzgünce yeniden yaz" `Write`'ı davet eder, bu da dosyanın tamamının üzerine yazar. _Düzeltme:_ kusuru tarif edin; hedefli bir istekten hedefli bir `Edit` çıkar.
+
+**Tek bir komut kastederken `Bash`'e izin vermek.** Bir betikte `--allowedTools "Bash"`, kabuğun tamamını teslim eder. _Düzeltme:_ oturumun kendini yine de doğrulamasına izin veren en dar kuralı yazın — `Bash(npm test)`, `Bash(npm run *)`.
+
+**Bir oturumun tüm dizinleri okumasına izin vermek.** "`src/` altındaki her şeyi oku ve ne yaptığını söyle" iş başlamadan context window'u doldurur. _Düzeltme:_ önce aramanın cevaplayabileceği bir soru sorun ya da keşfi bir subagent'a devredin.
+
+**POSIX grep söz dizimi beklemek.** Tool referansı, `Grep`'in "uses **ripgrep syntax** (not POSIX grep)" kullandığını açıkça belirtir; yani bir kabuk `grep`'inde işleyen bir örüntü burada eşleşmeyebilir. _Düzeltme:_ ripgrep örüntüleri yazın — ya da ne aradığınızı tarif edin ve örüntüyü Claude yazsın.
+
+**`Glob`'un `.gitignore`'a uyduğunu varsaymak.** Varsayılan olarak uymaz — `Grep` uyar. `node_modules` bulunan bir depoda glob çalıştırmak, derleme çıktısı dosyalarını gönül rahatlığıyla döndürür. _Düzeltme:_ dar bir örüntü kullanın (`src/**/*.ts`) ya da bunun yerine `Grep` ile içerikte arama yapın.
+
+<Callout variant="changed" label="Değişti">
+  `MultiEdit` artık yok — güncel tool referansında bulunmuyor. Çoklu eşleşmeleri değiştirmek için
+  `replace_all: true` ile `Edit` kullanın. Aynı şekilde eski oturum görev listesi tool'u `TodoWrite`
+  da varsayılan olarak kapalı ve yerini `Task*` tool'ları (`TaskCreate`, `TaskUpdate`, `TaskList`,
+  …) aldı. Claude Code 2.1.263 için `tools-reference.md`'ye göre doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/tools-read-edit-run"
+  questionId="q1"
+  lang="tr"
+  prompt="Hangi dosyaların `paginate()`'i çağırdığını ve hangi satırlarda çağırdığını, context window'u doldurmadan öğrenmek istiyorsunuz. Hangi tool uyar?"
+  options={[
+    {
+      text: '`Grep` — dosya içeriğinde ripgrep söz dizimiyle arama yapar ve eşleşmeleri satır numaralarıyla döndürebilir',
+      correct: true,
+      explanation:
+        'Lab’ın ilk kaydının yaptığı tam olarak bu: dört çağrı yeri, hiç tam dosya okuması yok.',
+    },
+    {
+      text: '`src/` içindeki her dosyada `Read`',
+      explanation: 'Doğru ama pahalı — okunan her dosya context window’a düşer.',
+    },
+    {
+      text: '`Glob`',
+      explanation: '`Glob`, dosyaları *ad* örüntüsüne göre bulur. İçlerini göremez.',
+    },
+    {
+      text: '`WebFetch`',
+      explanation: 'Bu bir URL getirir, yerel dosyaları değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/tools-read-edit-run"
+  questionId="q2"
+  lang="tr"
+  prompt="`Edit` tool'unda `replace_all: true` ne yapar?"
+  options={[
+    {
+      text: 'Benzersiz bir eşleşme gerektirmek yerine, dosyadaki `old_string`’in her geçtiği yeri değiştirir',
+      correct: true,
+      explanation:
+        'Kaldırılan `MultiEdit` tool’unun, çok sayıda eşleşmeyi değiştirme işlevinin yerini alır.',
+    },
+    {
+      text: 'Dosyanın tamamını yeni içerikle değiştirir',
+      explanation: 'Bu, `Write`’ın işi.',
+    },
+    {
+      text: 'Aynı düzenlemeyi depodaki her dosyaya uygular',
+      explanation: '`Edit`, bir seferde bir dosya üzerinde çalışır.',
+    },
+    {
+      text: '`old_string`’te düzenli ifadeleri (regex) etkinleştirir',
+      explanation: '`Edit` tam metin değiştirmedir — regex yok, bulanık eşleşme yok.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/tools-read-edit-run"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir headless çalıştırmaya yalnızca `Read,Edit,Glob,Grep` izni verilmiş. Ne yapamaz?"
+  options={[
+    {
+      text: 'Test takımını çalıştırarak kendi düzeltmesini doğrulamak',
+      correct: true,
+      explanation:
+        'Test çalıştırmak bir `Bash` (ya da `PowerShell`) kuralı gerektirir. Böyle bir kural olmadan oturum teşhis koyabilir ve düzenleyebilir, ama kanıtlayamaz.',
+    },
+    {
+      text: 'Hatalı fonksiyonu bulmak',
+      explanation: 'Bunu `Grep` ve `Read` karşılar.',
+    },
+    {
+      text: 'Hatalı satırı değiştirmek',
+      explanation: 'Bunu `Edit` karşılar.',
+    },
+    {
+      text: 'Depodaki dosyaları listelemek',
+      explanation: 'Bunu `Glob` karşılar.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/tools-read-edit-run"
+  questionId="q4"
+  lang="tr"
+  prompt="Claude Code 2.1.263 itibarıyla `Glob` ve `Grep` hakkında hangi ifade doğrudur?"
+  options={[
+    {
+      text: '`Grep`, `.gitignore`’a uyar; `Glob` varsayılan olarak uymaz',
+      correct: true,
+      explanation:
+        '`Glob`’un davranışını değiştirmek için `CLAUDE_CODE_GLOB_NO_IGNORE=false` ayarlayın. `Glob` sonuçları ayrıca 100 dosyayla sınırlıdır.',
+    },
+    {
+      text: 'İkisi de `.gitignore`’a uyar',
+      explanation: 'Varsayılan olarak yalnızca `Grep` uyar.',
+    },
+    { text: 'İkisi de `.gitignore`’a uymaz', explanation: '`Grep` uyar.' },
+    {
+      text: '`Grep`, POSIX grep söz dizimini kullanır',
+      explanation:
+        'Ripgrep söz dizimini kullanır, bu da farklıdır — özellikle kaçış (escaping) ve karakter sınıflarında.',
+    },
+  ]}
+/>
+
+**Sırada:** `03-permissions`, o tool adlarını kurallara dönüştürür ve bir `deny` girdisinin, hangi ayar dosyasından geldiğine bakılmaksızın neden her `allow` girdisini yendiğini açıklar.

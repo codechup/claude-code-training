@@ -9,7 +9,7 @@ difficulty: core
 tags: ['ilk-oturum', 'tui', 'lab']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Quickstart'
@@ -31,8 +31,268 @@ lab:
   repo_tag: 'lesson/m01-04-start'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l1-beginner/m01-start/04-first-session.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders ilk gerçek oturumu lab deposunun `lesson/m01-04-start` etiketinde çalıştırır: `npm test` üç testte başarısız olur, çünkü `src/store.ts` içindeki `addTask()` boş başlığı ve negatif önceliği sessizce kabul eder. İyi bir ilk görev küçüktür, gözden çıkarılabilir bir depodadır ve kendi kontrolünü yanında getirir — bu yüzden prompt belirtiyi, kapsamı (`src/`) ve kanıtı (`npm test` geçmeli) söyler, çözümü değil. Ders ayrıca TUI’yi okumayı kapsar: prompt çubuğu ve `/`, `@`, `!`, `?` kısayolları; `Shift+Tab` ile permission mode döngüsü; `Ctrl+O` transcript görüntüleyici; `Ctrl+T` görev listesi; `Esc`, `Ctrl+C`, `Ctrl+D`. Aynı iş `claude -p` ile headless olarak da tekrarlanır — bu durumda `--allowedTools` şarttır, çünkü headless bir oturumda izin istemini yanıtlayacak kimse yoktur.
+- Gerçek bir projede bir oturum başlatmak ve Claude'a kendi kendine doğrulayabileceği bir görev vermek.
+- Döngünün tamamının gerçekleşmesini izlemek: başarısız testleri okumak, nedenini bulmak, kaynağı düzenlemek, testleri yeniden çalıştırmak.
+- TUI'yi okumak — [prompt](/tr/playbook/glossary/#prompt) (Claude'a verdiğiniz istek metni) çubuğu, [permission mode](/tr/playbook/glossary/#permission-mode) (Claude'un bir değişikliği uygulamadan önce izin isteyip istemediğini belirleyen mod) göstergesi, görev listesi, [transcript](/tr/playbook/glossary/#transcript) (kaydedilmiş oturum dökümü) görüntüleyici.
+- İlk gün önemli olan birkaç tuşu kullanmak: `Esc`, `Shift+Tab`, `Ctrl+O`, `Ctrl+T`, `Ctrl+C`, `Ctrl+D`, `!`, `@`, `?`.
+- Aynı işi `claude -p` ile [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) olarak tekrarlamak, böylece bir [pull request](/tr/playbook/glossary/#pull-request)'e (bir depoya değişiklik önermek için açılan inceleme talebi) yapıştırabileceğiniz bir kayıt elde etmek.
+
+**Ön koşullar.** `02-install` ve `03-authenticate` dersleri: `claude --version` bir sürüm yazdırır ve `claude auth status` 0 ile çıkar. Lab deposu için ayrıca `git`'e ve `package.json`'ın `engines` alanında belirttiği Node.js sürümüne ihtiyacınız var — yazıldığı sırada Node.js 24 veya üzeri.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  İlk oturumunuzu, önemsediğiniz bir deponun büyük ve doğrulanamayan bir yeniden yapılandırmasına
+  dönüştürmeyin. Döngünün değeri sonundaki kontrolden gelir; üstelik bir ilk oturum, iyi bir sonuçla
+  kendinden emin görünen bir sonucu ayırt etme yeteneğinizin en zayıf olduğu andır. Henüz
+  [commit](/tr/playbook/glossary/#commit) edilmemiş (değişiklikleri depo geçmişine kaydedilmemiş)
+  işin bulunduğu, kaybetmeyi göze alamayacağınız bir dizinde de başlamayın — `git status`'ün temiz
+  olduğu bir yerden başlayın, böylece `git diff` size tam olarak neyin değiştiğini gösterir. Ve
+  yalnızca kodu okumak istiyor, değiştirmek istemiyorsanız bir oturuma hiç ihtiyacınız yok: `claude
+  -p "…"` cevap verir ve çıkar.
+</WhenNotToUse>
+
+## Kavram
+
+### İlk oturum neye benzemeli
+
+İyi bir ilk görevin üç özelliği vardır: küçüktür, gözden çıkarabileceğiniz bir depodadır ve **kendi kontrolünü yanında getirir**. Başarısız bir test ideal biçimdir — Claude onu önce çalıştırabilir, bir değişiklik yapabilir ve yeniden çalıştırabilir; ikinizin de birbirinin sözüne güvenmesi gerekmez.
+
+Lab deposu tam olarak bunun için kurulmuştur. `lesson/m01-04-start` etiketinde `npm test` üç kez başarısız olur: `src/store.ts` içindeki `addTask()`, boş bir başlığı ve negatif bir önceliği hiç itiraz etmeden kabul eder; bu yüzden bir reddetme bekleyen iki birim testi ve bir API testi başarısız olur.
+
+### Tek örnek prompt
+
+```text
+npm test fails with three failures. Find the cause, fix it in src/, and run npm test again
+to prove it passes.
+```
+
+Bunun ne söylediğine ve ne söylemediğine dikkat edin. Belirtiyi (`npm test` başarısız oluyor), kapsamı (`src/`) ve kanıtı (`npm test` geçiyor) adlandırır. Dosyayı, fonksiyonu ya da çözümü adlandırmaz — devrettiğiniz kısım da tam olarak budur.
+
+### TUI'yi okumak
+
+Bir projede `claude` çalıştırdığınızda tam ekran bir terminal arayüzü (TUI) alırsınız. Bunun üzerinde ilk gün dikkatinizi hak eden dört şey vardır:
+
+- **Prompt çubuğu**, altta, yazdığınız yer. Başta bir `/` komutları ve [skill](/tr/playbook/glossary/#skill)'leri (yeniden kullanılabilir talimat paketlerini) açar, `@` dosya yolu otomatik tamamlamasını tetikler, `!` bir kabuk komutunu doğrudan çalıştırıp çıktısını oturuma ekler ve boş girişte `?` kısayol yardım panelini açıp kapatır.
+- **Permission mode göstergesi.** `Shift+Tab` permission mode'lar arasında geçiş yapar (Windows'ta, çalışma zamanı VT giriş modunu etkinleştirmediğinde `Alt+M`). Hangi modda olduğunuz, Claude'un her düzenlemeden önce izin isteyip istemediğini belirler — bir sonraki modülde bütün bir dersin konusu.
+- **Claude'un görev listesi**, `Ctrl+T` ile açılıp kapatılır: kalan adımların ne olduğunu düşündüğü liste.
+- **Transcript görüntüleyici**, `Ctrl+O` ile açılıp kapatılır: kaydırarak geçtiğiniz [tool](/tr/playbook/glossary/#tool) (Claude'un çalıştırdığı yerleşik araç) çağrıları dahil, oturumun uçtan uca dökümü.
+
+İlk önce ezberlenmesi gereken tuşlar:
+
+| Tuş         | Ne yapar                                              |
+| ----------- | ----------------------------------------------------- |
+| `Esc`       | Claude'u durdurur ya da bir iletişim kutusunu kapatır |
+| `Esc` `Esc` | Giriş taslağını temizler ya da geri sarar             |
+| `Ctrl+C`    | Durdurur ya da girişi temizler                        |
+| `Ctrl+D`    | Oturumdan çıkar                                       |
+| `Shift+Tab` | Permission mode'lar arasında geçiş yapar              |
+| `Ctrl+O`    | Transcript görüntüleyiciyi açıp kapatır               |
+| `Ctrl+T`    | Claude'un görev listesini açıp kapatır                |
+| `Ctrl+R`    | Komut geçmişinde tersten arama yapar                  |
+| `Ctrl+L`    | Ekranı yeniden çizer ya da temizler                   |
+| `Ctrl+G`    | Geçerli girişi metin düzenleyicinizde açar            |
+
+Claude'a yön vermek için onu durdurmanız gerekmez: bir tool çalışırken bir düzeltme yazıp `Enter`'a basmak mesajı kuyruğa alır, `Esc` ise eylemi doğrudan durdurur.
+
+Çok satırlı giriş için dört yol vardır, çünkü terminaller bu konuda anlaşamaz: `\` ardından `Enter` her yerde çalışır, `Ctrl+J` hiçbir yapılandırma gerektirmeden her terminalde çalışır, `Shift+Enter` iTerm2, WezTerm, Ghostty, Kitty, Warp, Apple Terminal ve Windows Terminal'de yerleşiktir ve `Option+Enter`, macOS'ta Option'ı Meta olarak etkinleştirdiğinizde çalışır.
+
+### Aynı oturum, headless olarak
+
+Yukarıdakilerin tamamının etkileşimli olmayan bir ikizi vardır. `claude -p "…"` görevi çalıştırır ve çıkar; bu, bir pull request için bir kayda ihtiyaç duyduğunuzda ya da modelleri karşılaştırmak için aynı görevi on kez çalıştırdığınızda istediğiniz şeydir. Aşağıdaki transcript'ler bu şekilde üretildi — bu kurs asla yeniden kurgulanmış çıktı yayımlamaz.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · lab deposundaki üç başarısız testi düzeltin"
+  lessonId="tr/l1-beginner/m01-start/first-session"
+  repoTag="lesson/m01-04-start"
+  steps={[
+    'Lab deposunu klonlayın ve bu dersin etiketini checkout edin: `git clone https://github.com/codechup/claude-code-lab && cd claude-code-lab && git checkout lesson/m01-04-start && npm ci`.',
+    'Önce `npm test`’i kendiniz çalıştırın. Üç test başarısız olur — Claude’a herhangi bir şey sormadan önce adlarını okuyun.',
+    '`claude` ile bir oturum başlatın, ardından örnek prompt’u yazın: `npm test fails with three failures. Find the cause, fix it in src/, and run npm test again to prove it passes.`',
+    'Döngüyü izleyin: Claude başarısız testleri okur, `src/store.ts`’i açar, bir düzenleme önerir ve `npm test`’i yeniden çalıştırır. Görev listesini görmek için `Ctrl+T`’ye, transcript’in tamamını kaydırmak için `Ctrl+O`’ya basın.',
+    'Sorulduğunda düzenlemeyi onaylayın. Ardından `Ctrl+D` ile oturumdan çıkın ve `git diff`’i kendiniz çalıştırın — "geçiyor" sözüne asla güvenmeyin.',
+    '`npm test`’i kendi kabuğunuzda bir kez daha çalıştırın. 15 passed bildirmesi gerekir.',
+    'İsteğe bağlı: transcript’lerin altında gösterilen `claude -p` komutuyla işin tamamını headless olarak tekrarlayın ve diff’i karşılaştırın.',
+  ]}
+  expected="`npm test`, 3 failed / 12 passed durumundan 15 passed durumuna geçer ve `git diff`, `src/store.ts` içindeki `addTask()`'e boş bir başlık ve negatif bir öncelik için `InvalidTaskError` fırlatan küçük bir değişiklik gösterir."
+  checklist={[
+    '`npm test`, oturumdan önce üç kez başarısız oldu',
+    'Prompt yazmadan önce başarısız test adlarını kendiniz okudunuz',
+    'Değişiklik `src/` ile sınırlı — testi geçirmek için hiçbir test dosyası düzenlenmedi',
+    '`git diff`, `addTask()`’e eklenen doğrulamayı gösteriyor',
+    '`npm test`, sonrasında 15 passed bildiriyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m01-start/04-first-session/01-npm-test-before.txt"
+    range="2-15"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m01-start/04-first-session/02-claude-session.txt"
+    range="2-9"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m01-start/04-first-session/03-git-diff.txt"
+    range="2-18"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m01-start/04-first-session/04-npm-test-after.txt"
+    range="2-13"
+  />
+</Lab>
+
+O kayıtta durup düşünmeye değer üç şey var.
+
+**Cevap Türkçe.** Bunu yakalayan makinenin genel Claude Code tercihleri Türkçe cevap istiyor, bu yüzden model Türkçe cevap verdi — `01-what-claude-code-is` dersinin belgelediğiyle aynı etki. Kalıcı memory'niz ve ayar dosyalarınız, durumsuz olmasını beklediğiniz bir headless oturum dahil, her oturumu şekillendirir ve bunu ilk günden bilmekte fayda var.
+
+**Tek bir değişiklik üç testi düzeltti.** Başarısızlıkların ikisi `addTask()` üzerindeki birim testleriydi; üçüncüsü, boş bir başlık için `POST /tasks`'ın 201 yerine 400 döndürmesini doğrulayan bir API testiydi. API katmanı `InvalidTaskError`'ı zaten 400'e çeviriyordu — sadece hiç böyle bir hata almamıştı. Bu, bir oturumun hızla bulduğu ve bir okuyucunun yanlış tahmin ettiği türden bir şey.
+
+**Diff dört satır** — bir satır değiştirildi, üç satır eklendi. Okumak on saniye sürer ve işi gerçekten doğrulayan tek adımdır. Her seferinde yapın.
+
+### Headless karşılığı
+
+<CodeBlock title="aynı görev, etkileşimli olmadan">
+
+```bash
+claude -p "npm test fails with three failures. Find the cause, fix it in src/, and run npm test again to prove it passes." \
+  --model sonnet \
+  --max-turns 12 \
+  --output-format text \
+  --permission-mode acceptEdits \
+  --allowedTools "Read,Edit,Glob,Grep,Bash(npm test)"
+```
+
+</CodeBlock>
+
+`--allowedTools`, insanların atladığı kısımdır. Headless bir oturumda izin istemini yanıtlayacak kimse yoktur, bu yüzden önceden verilmeyen her şey reddedilir ve çalıştırma işi bitiremez. Yukarıdaki komuttan bu tek bayrağı çıkarmak, bunun yerine şunu verir — her tur harcanır, hiçbir şey değişmez, çıkış kodu 1:
+
+<Transcript
+  src="content/_shared/transcripts/m01-start/04-first-session/05-no-allowedtools.txt"
+  range="2-3"
+/>
+
+Çalışan bir etkileşimli görevi `-p`'ye taşırken karşılaşılan en yaygın sürpriz budur. Tool'lara izin verin ya da iş için yeterince geniş bir permission mode ayarlayın.
+
+## Anti-pattern'ler
+
+**Bakmadan prompt yazmak.** `npm test`'i önce kendiniz çalıştırmak on saniye sürer ve cevabı değerlendirecek kelime dağarcığını verir. _Düzeltme:_ önce hatayı okuyun, nedenini sonra devredin.
+
+**Bir testin, geçmesi için düzenlenmesine izin vermek.** "Testleri geçir" şeklinde ifade edilen bir görev tam olarak bunu davet eder. _Düzeltme:_ değişikliğin kapsamını belirtin ("`src/`'te düzelt") ve `git diff`'te test dosyası düzenlemesi olup olmadığını kontrol edin.
+
+**Çalıştırmadan "tüm testler geçiyor" iddiasını kabul etmek.** İddia ucuzdur; çıktı değildir. _Düzeltme:_ oturumdan çıktıktan sonra `npm test`'i kendi kabuğunuzda çalıştırın.
+
+**Kirli bir depoda başlamak.** `git status` önceden temiz değilse, sonrasındaki `git diff` size Claude'un neyi değiştirdiğini söyleyemez. _Düzeltme:_ önce commit edin ya da stash'leyin.
+
+**Yön vermek için `Ctrl+C`'ye başvurmak.** Durdurmak, o an çalışan tool çağrısını çöpe atar. _Düzeltme:_ düzeltmeyi yazıp `Enter`'a basın — mesaj kuyruğa alınır ve çalıştırma durdurulmadan iletilir. Eylemin gerçekten durmasını istediğinizde `Esc` kullanın.
+
+<Callout variant="changed" label="Değişti">
+  Kelime hareketi tuşları (`Alt+B`, `Alt+F`, `Alt+D`, `Ctrl+W`) Claude Code v2.1.261 ve sonrasında
+  readline kurallarını izler. Bunları eskiden açan `keybindingFlavor` ayarı artık kullanım dışıdır
+  ve hiçbir etkisi yoktur.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/first-session"
+  questionId="q1"
+  lang="tr"
+  prompt="Hangi tuş transcript görüntüleyiciyi açıp kapatır — tool çağrıları dahil, bir oturumun tam dökümünü?"
+  options={[
+    { text: 'Ctrl+T', explanation: "Bu, Claude'un görev listesini açıp kapatır." },
+    {
+      text: 'Ctrl+O',
+      correct: true,
+      explanation: 'Ctrl+O, transcript görüntüleyiciyi açıp kapatır.',
+    },
+    { text: 'Shift+Tab', explanation: 'Bu, permission mode’lar arasında geçiş yapar.' },
+    { text: 'Ctrl+R', explanation: 'Bu, komut geçmişinde tersten aramadır.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/first-session"
+  questionId="q2"
+  lang="tr"
+  prompt="Claude bir komut çalıştırıyor ve talimatınızın belirsiz olduğunu fark ediyorsunuz. Ona yön vermenin en az yıkıcı yolu nedir?"
+  options={[
+    {
+      text: 'Durdurmak için Ctrl+C’ye basın, sonra baştan yeni bir prompt yazın.',
+      explanation: 'Bu, o an çalışan tool çağrısını durdurur ve devam eden işi çöpe atar.',
+    },
+    {
+      text: 'Düzeltmeyi yazın ve Enter’a basın — mesaj kuyruğa alınır ve çalıştırma durdurulmadan iletilir.',
+      correct: true,
+      explanation: 'Esc, eylemin gerçekten durmasını istediğiniz zamanlar içindir.',
+    },
+    {
+      text: 'Ctrl+D’ye basın.',
+      explanation: 'Bu, oturumdan tamamen çıkar.',
+    },
+    {
+      text: 'Bitmesini bekleyin ve yeni bir oturum başlatın.',
+      explanation: 'İşe yarar ama turu boşa harcar — çalışma sırasında yön vermek desteklenir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/first-session"
+  questionId="q3"
+  lang="tr"
+  prompt="Etkileşimli olarak çalışan bir görev, `claude -p` içinde onay gerektiğine dair bir mesajla duruyor. Neden?"
+  options={[
+    {
+      text: 'Headless mod hiçbir tool kullanamaz.',
+      explanation: 'Tool’ları serbestçe kullanır — sadece kimseye bir izin istemi gösteremez.',
+    },
+    {
+      text: 'Headless bir oturumda izin istemini yanıtlayacak kimse yoktur, bu yüzden kullanabileceği tool’lar önceden --allowedTools ile (ya da bir permission mode ile) verilmelidir.',
+      correct: true,
+      explanation: 'Etkileşimli bir görevi -p’ye taşırken karşılaşılan en yaygın sürpriz budur.',
+    },
+    {
+      text: 'Headless modda model farklıdır.',
+      explanation:
+        'Model, --model’in (ya da varsayılanınızın) söylediği neyse odur; bununla ilgisi yoktur.',
+    },
+    {
+      text: '-p için ANTHROPIC_API_KEY ayarlanmış olmalıdır.',
+      explanation: 'Bir abonelik girişi de headless olarak çalışır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/first-session"
+  questionId="q4"
+  lang="tr"
+  prompt="Bu ilk görevlerden hangisi bir ilk oturum için en uygun biçime sahiptir?"
+  options={[
+    {
+      text: '"Bu depoyu daha hızlı yap."',
+      explanation:
+        'Ne kapsam ne de kontrol var — ikiniz de işe yarayıp yaramadığını anlayamazsınız.',
+    },
+    {
+      text: '"npm test fails with three failures. Find the cause, fix it in src/, and run npm test again to prove it passes."',
+      correct: true,
+      explanation: 'Belirti, kapsam ve kanıt — ve kanıt bir görüş değil, bir komut.',
+    },
+    {
+      text: '"src/store.ts dosyasını aç, 24. satıra git ve başlığı kırpacak şekilde değiştir."',
+      explanation:
+        'Bu, adımları dikte eder ve bir agent’ı yavaş bir makroya çevirir — bunu kendiniz de yazabilirsiniz.',
+    },
+    {
+      text: '"API katmanını farklı bir framework’te yeniden yaz."',
+      explanation: 'Büyük, doğrulanamaz ve hiçbir şekilde bir ilk oturum değil.',
+    },
+  ]}
+/>
+
+**Sırada:** `05-doctor-update-channels`, az önce kullandığınız kurulumu sağlıklı tutar — tanılama, güncellemeler ve sürüm kanalları.

@@ -6,10 +6,10 @@ module: 'm01-start'
 order: 5
 duration_min: 10
 difficulty: core
-tags: ['doctor', 'güncelleme', 'sürüm-kanalları', 'bakım']
+tags: ['doctor', 'güncellemeler', 'sürüm-kanalları', 'bakım']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Advanced setup'
@@ -31,8 +31,337 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l1-beginner/m01-start/05-doctor-update-channels.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders kurulumun bakımını anlatır. `claude doctor` kabuktan çalışır, oturum başlatmaz ve yalnızca okur: kurulum yöntemi ve sürümü, launcher yolu, ripgrep durumu, otomatik güncelleme kanalı, son güncelleme denemesinin sonucu ve varsa kurum politikası. Düzeltme yapabilen sürüm, oturum içindeki `/doctor` komutudur. `claude update` iki sonuçtan birini bildirir: bir güncelleme kurulduğunda `Successfully updated from … to version …`, zaten güncelken `Claude Code is up to date (sürüm)`. `autoUpdatesChannel` ayarı `latest` (varsayılan) ile `stable` (yaklaşık bir hafta geride) arasında seçim yapar; `minimumVersion` bir taban belirler, böylece kanal değiştirmek sizi geriye almaz. `DISABLE_AUTOUPDATER` yalnızca arka plan kontrolünü durdurur — her yolu kapatmak için `DISABLE_UPDATES` gerekir.
+- Bir `claude doctor` raporunu satır satır okumak ve her satırın ne anlattığını söylemek.
+- `claude doctor` ile `/doctor` arasındaki farkı ayırt etmek ve hangisinin sorunları düzeltebildiğini bilmek.
+- `claude update` ile bilinçli olarak güncellemek ve iki olası sonucunu da tanımak.
+- `latest` ile `stable` sürüm kanalları arasında seçim yapmak ve `minimumVersion` ile bir taban sabitlemek.
+- Otomatik güncellemeleri kapatmak — ve `DISABLE_AUTOUPDATER`'ın tam olarak neyi durdurup neyi durdurmadığını söylemek.
+
+**Ön koşullar.** `02-install` ile `04-first-session` arasındaki dersler. Tanı koyabilmek için çalışan bir kuruluma ihtiyacınız var.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  `claude doctor` bir tanı aracıdır, alışkanlık değil — her oturumdan önce çalıştırmak size zaten
+  bilmediğiniz hiçbir şey söylemez. Gerçekten bir şeyler ters gittiğinde, az önce bir ayar dosyasını
+  değiştirdiğinizde ya da kötü giden bir güncellemeden sonra ona başvurun. `stable` kanalına da
+  "stable daha güvenli görünüyor" diye geçmeyin: kanal yaklaşık bir hafta geridedir, bu yüzden
+  okuduğunuz her ders, changelog kaydı ve hata mesajı henüz sizde olmayan bir davranışı anlatıyor
+  olabilir. Ve gerçekten üzerinde çalıştığınız bir makinede `DISABLE_AUTOUPDATER`'ı ayarlamayın —
+  hiç güncellemediğiniz bir sürüm, hatalarını da sürekli taşıdığınız bir sürümdür.
+</WhenNotToUse>
+
+## Kavram
+
+### İki doctor
+
+| Komut           | Nerede çalışır              | Ne yapar                                                                                                                                             |
+| --------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `claude doctor` | Kabuğunuzda, oturum olmadan | **Salt okunur** kurulum ve ayar tanılamaları yazdırır: kurulum sağlığı, ayar dosyası doğrulama hataları, Remote Control (uzaktan kontrol) uygunluğu. |
+| `/doctor`       | Çalışan bir oturum içinde   | **Düzeltmeler de uygulayabilen** kapsamlı bir kurulum kontrolü.                                                                                      |
+
+Önce `claude doctor`'a başvurun, çünkü hiçbir şey başlatmaz ve hiçbir şeyi değiştirmez.
+
+Sağlıklı bir raporu satır satır görelim:
+
+- `Running: native (2.1.263)` — fiilen kullanılan kurulum yöntemi ve sürüm.
+- `Commit`, `Platform` — derleme (build) bilgisi ve platform üçlüsü.
+- `Path` — başlatıcının bulunduğu yer. Native kurucunun oluşturmadığı bir başlatıcı burada raporlanır.
+- `Config install method` — yapılandırmanızın ne kurduğunu düşündüğü; ikinci, çakışan bir kurulumun kendini böyle belli ettiği yer.
+- `Search: OK (bundled)` — ripgrep mevcut. Bir oturumda arama başarısız olursa okunacak satır budur.
+- `Auto-updates` ve `Auto-update channel` — arka plan güncellemelerinin açık olup olmadığı ve hangi kanalı izledikleri.
+- `Last update attempt` — en son arka plan güncellemesinin sonucu, sürümü ve tarihiyle.
+- `Managed settings (remote)` ve `Organization policy` — bu makineye bir yönetici politikasının uygulanıp uygulanmadığı.
+
+### Güncelleme
+
+Native kurulumlar başlangıçta ve çalışırken belirli aralıklarla güncelleme olup olmadığını kontrol
+eder. Güncellemeler arka planda indirilip kurulur ve **ancak Claude Code'u bir sonraki
+başlatışınızda etkin hale gelir** — başarılı olduğunu gördüğünüz bir güncellemenin sürüm numarasında
+henüz görünmemesinin sebebi budur.
+
+Birini hemen uygulamak için:
+
+<CodeBlock title="şimdi güncelle">
+
+```bash
+claude update
+```
+
+</CodeBlock>
+
+İki olası sonuç vardır ve ikisini de tanımaya değer. Bir güncelleme kurulduğunda komut
+`Successfully updated from <old version> to version <new version>` yazar. Zaten güncelseniz
+`Claude Code is up to date (<version>)` yazar — Homebrew, WinGet veya apk tarafından yönetilen
+kurulumlarda ise bunun yerine `Claude is up to date!` görürsünüz.
+
+Homebrew, WinGet, apt, dnf ve apk kurulumları hiç otomatik güncellenmez.
+`CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE` değişkenini `1` yaparak Homebrew ve WinGet için bunu
+açabilirsiniz; bundan sonra Claude Code yükseltmeyi arka planda çalıştırır ve sizden yeniden
+başlatmanızı ister. WinGet'te bu yükseltme, Claude Code çalışırken başarısız olabilir, çünkü
+Windows çalıştırılabilir dosyayı kilitler; bu durumda Claude Code size manuel komutu gösterir.
+
+### Sürüm kanalları
+
+`autoUpdatesChannel`, hem otomatik güncellemelerin hem de `claude update`'in hangi kanalı
+izleyeceğini belirler:
+
+- `"latest"` (varsayılan) — yeni özellikler yayınlanır yayınlanmaz gelir.
+- `"stable"` — genellikle yaklaşık bir hafta eski bir sürüm; büyük regresyonlu sürümleri atlar.
+
+Bunu `/config` → **Auto-update channel** üzerinden ya da `settings.json` içinde ayarlayın:
+
+<CodeBlock title="settings.json">
+
+```json
+{
+  "autoUpdatesChannel": "stable"
+}
+```
+
+</CodeBlock>
+
+Homebrew bu ayarı yok sayar ve kanalı cask adına göre seçer: `claude-code` stable'dır,
+`claude-code@latest` ise latest'tir.
+
+`minimumVersion` bir taban belirler. Arka plan otomatik güncellemeleri ve `claude update`, bunun
+altındaki hiçbir şeyi kurmayı reddeder; bu yüzden `stable`'a geçmek, zaten daha yeni bir `latest`
+sürümünde olan bir makineyi geriye almaz. `/config` içinde kanal değiştirmek, mevcut sürümünüzde
+kalmak mı yoksa geri düşmeye izin vermek mi istediğinizi sorar; kalmayı seçmek `minimumVersion`'ı o
+sürüme sabitler, `latest`'e geri dönmekse bunu temizler.
+
+<CodeBlock title="settings.json — bir tabanı açıkça sabitleme">
+
+```json
+{
+  "autoUpdatesChannel": "stable",
+  "minimumVersion": "2.1.100"
+}
+```
+
+</CodeBlock>
+
+`minimumVersion` yalnızca **güncellemeleri** kısıtlar. Claude Code'un belirli bir sürüm aralığının
+dışında başlamayı reddetmesini sağlamak için bir yönetici bunun yerine `requiredMinimumVersion` ve
+`requiredMaximumVersion` yönetilen ayarlarını kullanır.
+
+### Güncellemeleri kapatma
+
+<CodeBlock title="settings.json — arka plan kontrolünü durdurma">
+
+```json
+{
+  "env": {
+    "DISABLE_AUTOUPDATER": "1"
+  }
+}
+```
+
+</CodeBlock>
+
+`DISABLE_AUTOUPDATER` yalnızca arka plan kontrolünü durdurur: `claude update` ve `claude install`
+yine çalışır. Manuel olanlar dâhil her güncelleme yolunu engellemek için bunun yerine
+`DISABLE_UPDATES` ayarlayın — Claude Code'u kendi kanallarınızdan dağıtıp insanların gönderdiğiniz
+sürümde kalmasını istediğinizde ihtiyacınız olan şey budur.
+
+### Tek örnek prompt
+
+`claude doctor` neyin yanlış olduğunu söyler; bir oturuma vereceğiniz şu
+[prompt](/tr/playbook/glossary/#prompt) (Claude'a verdiğiniz istek metni) ise bunun için ne
+yapmanız gerektiğini söyleyebilir:
+
+```text
+Here is my `claude doctor` output. Explain each warning in one line, and tell me which one
+to fix first and why. Do not change any files.
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · kendi doctor raporunuzu okuyun ve bilinçli olarak güncelleyin"
+  lessonId="tr/l1-beginner/m01-start/doctor-update-channels"
+  repoTag="none"
+  steps={[
+    '`claude doctor` çalıştırın ve her satırı okuyun. Kurulum yönteminizi, otomatik güncelleme kanalınızı ve son güncelleme denemesinin sonucunu not edin.',
+    '`Running:` ile `Config install method:` satırlarını karşılaştırın. Uyuşmuyorlarsa birden fazla kurulumunuz var demektir — her şeyden önce troubleshooting sayfasının çakışan kurulumlar bölümünü izleyin.',
+    "`claude --version` çalıştırın ve `claude doctor`'ın bildirdiği sürümle eşleştiğini doğrulayın.",
+    '`claude update` çalıştırın. İki belgelenmiş mesajdan hangisini aldığınızı okuyun: bir güncelleme mi kuruldu, yoksa zaten güncel miydiniz.',
+    "Bir oturumda `/config`'i açın ve **Auto-update channel** ayarını bulun. Mevcut değerinize bakın; bir sebebiniz olmadıkça değiştirmeyin.",
+    'İsteğe bağlı: `claude doctor` çıktınızı yukarıdaki örnek prompt ile birlikte bir oturuma yapıştırın ve anlamadığınız uyarıları açıklatın.',
+  ]}
+  expected="`claude doctor`, `No installation issues found.` ile biter; `claude update` ya `Successfully updated from … to version …` ya da `Claude Code is up to date (<version>)` bildirir."
+  checklist={[
+    'Kurulum yönteminizi ve güncelleme kanalınızı ezbere söyleyebiliyorsunuz',
+    '`Running:` ve `Config install method:` uyuşuyor',
+    '`claude --version`, doctor raporundaki sürümle eşleşiyor',
+    '`claude update` tamamlandı ve iki mesajdan hangisini aldığınızı tanıdınız',
+    'Makinenize bir kurum politikasının uygulanıp uygulanmadığını biliyorsunuz',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m01-start/05-doctor-update-channels/01-doctor.txt"
+    range="2-22"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m01-start/05-doctor-update-channels/02-update.txt"
+    range="2-5"
+  />
+</Lab>
+
+<Callout label="Not">
+  Yukarıdaki kayıt zaten-güncel yoludur, çünkü makine kayıt anında yayınlanmış en yeni sürümdeydi.
+  `Successfully updated from … to version …` mesajı bir kayıt olarak gösterilmek yerine resmî
+  kurulum sayfasından alıntılanmıştır — bu kurs, üretmediği bir terminal çıktısını sahneye koymaz
+  (D070, D093).
+</Callout>
+
+## Anti-pattern'ler
+
+**Raporu okumak yerine yeniden kurmak.** `claude doctor` sorunu adlandırır — ikinci bir kurulum
+yolu, ayrıştırılamayan bir ayar dosyası, eksik bir ripgrep. Yeniden kurmak, üzerine düşünülmesi
+gereken üçüncü bir şey daha ekler. _Düzeltme:_ önce `Running:`, `Path:` ve `Config install method:`
+satırlarını okuyun.
+
+**`stable`'a geçip unutmak.** Bir hafta geride olmak, bir changelog kaydı okuyup özelliği deneyene
+ve onu bulamayana kadar sorun değildir. _Düzeltme:_ `stable`'ı seçtiyseniz, belgelenen bir davranış
+sizinkiyle eşleşmediğinde bunu hatırlayın; `claude doctor` kanalınızı yazdırır.
+
+**`DISABLE_AUTOUPDATER`'ı "hiç güncelleme yok" sanmak.** Bu yalnızca arka plan kontrolünü durdurur.
+`claude update` ve `claude install` yine çalışır — ki genelde asıl istediğiniz de budur.
+_Düzeltme:_ gerçekten her yolun engellenmesi gerekiyorsa `DISABLE_UPDATES` kullanın.
+
+**Bir güncellemenin çalışan oturuma hemen yansımasını beklemek.** Güncellemeler ancak Claude
+Code'u bir sonraki başlatışınızda etkin olur. _Düzeltme:_ çıkıp yeniden başlatın, sonra
+`claude --version`'ı kontrol edin.
+
+**`Running:` ile `Config install method:` arasındaki uyuşmazlığı görmezden gelmek.** Bu, birbiriyle
+yarışan iki kurulumun imzasıdır ve hangi terminali açtığınıza göre değişen sürüm numaraları üretir.
+_Düzeltme:_ o yöntemin kaldırma talimatlarına göre istemediğiniz kurulumu kaldırın.
+
+<Callout variant="changed" label="Değişti">
+  macOS ve Linux'ta, `~/.local/bin/claude`'daki özel bir başlatıcı artık güncellemelerden
+  etkilenmeden kalıyor: v2.1.207'den bu yana otomatik güncelleme ve `claude update`, yeni sürümleri
+  `~/.local/share/claude/versions/` altına kurup başlatıcınıza dokunmuyor; oysa önceki sürümler her
+  güncellemede onu kendi symlink'iyle değiştiriyordu. Özel bir başlatıcı varken Claude Code ayrıca
+  kurulu her sürümü diskte tutuyor ve `claude doctor`, kendisinin oluşturmadığı başlatıcıyı
+  raporluyor.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/doctor-update-channels"
+  questionId="q1"
+  lang="tr"
+  prompt="`claude doctor` ile `/doctor` arasındaki fark nedir?"
+  options={[
+    {
+      text: 'İkisi aynı şeyin farklı adlarıdır.',
+      explanation:
+        'Biri kabuğunuzda, diğeri bir oturum içinde çalışır ve yalnızca biri düzeltme uygulayabilir.',
+    },
+    {
+      text: '`claude doctor`, oturum başlatmadan kabuktan salt okunur tanılamalar yazdırır; `/doctor` ise düzeltme de uygulayabilen, oturum içi kontrol.',
+      correct: true,
+      explanation: 'Önce salt okunur olana başvurun.',
+    },
+    {
+      text: '`claude doctor` sizi günceller; `/doctor` yalnızca rapor verir.',
+      explanation: "Güncelleme `claude update`'in işidir; `claude doctor` hiçbir şeyi değiştirmez.",
+    },
+    {
+      text: '`/doctor` yalnızca native kurulumlarda çalışır.',
+      explanation: 'İki komut da tek bir kurulum yöntemiyle sınırlı değildir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/doctor-update-channels"
+  questionId="q2"
+  lang="tr"
+  prompt='`/config` içinde, zaten daha yeni bir `latest` sürümünde çalışan bir makinede otomatik güncelleme kanalını "stable"a çeviriyorsunuz ve mevcut sürümünüzde kalmayı seçiyorsunuz. Ne olur?'
+  options={[
+    {
+      text: 'Hemen stable sürüme geriler.',
+      explanation:
+        "/config içinde kanal değiştirmek önce size sorar; kalmayı seçmek minimumVersion'ı mevcut sürümünüze sabitler.",
+    },
+    {
+      text: '`minimumVersion` tabanınızın altına hiçbir şey inmez; güncellemeler o noktadan itibaren yalnızca stable kanalını izler.',
+      correct: true,
+      explanation:
+        'minimumVersion, bir kanal değişikliğinin sizi geriye götürmesini engelleyen tabandır.',
+    },
+    {
+      text: 'Claude Code, sürümler eşleşene kadar başlamayı reddeder.',
+      explanation:
+        'Başlamayı reddetmek, yönetilen requiredMinimumVersion/requiredMaximumVersion ayarlarının işidir.',
+    },
+    {
+      text: 'Bu ayar her kurulum yönteminde yok sayılır.',
+      explanation: 'Yalnızca Homebrew bunu yok sayar — kanalı cask adına göre seçer.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/doctor-update-channels"
+  questionId="q3"
+  lang="tr"
+  prompt='`DISABLE_AUTOUPDATER`, "1" olarak ayarlanmış. Hangi ifade doğrudur?'
+  options={[
+    {
+      text: 'Hiçbir yolla hiçbir güncelleme kurulamaz.',
+      explanation:
+        "Bu DISABLE_UPDATES'in işi. DISABLE_AUTOUPDATER yalnızca arka plan kontrolünü durdurur.",
+    },
+    {
+      text: 'Arka plan kontrolü durur, ama `claude update` ve `claude install` yine çalışır.',
+      correct: true,
+      explanation: 'Her yolun engellenmesi gerektiğinde DISABLE_UPDATES kullanın.',
+    },
+    {
+      text: 'Sizi ayrıca stable kanalına da geçirir.',
+      explanation: 'Kanal, bağımsız olarak autoUpdatesChannel ile ayarlanır.',
+    },
+    {
+      text: 'Yalnızca Homebrew kurulumlarına uygulanır.',
+      explanation:
+        'Homebrew zaten otomatik güncellenmez; bu ayar otomatik güncellenen kurulumları hedefler.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/doctor-update-channels"
+  questionId="q4"
+  lang="tr"
+  prompt="`claude doctor`, `Running: native (2.1.263)` bildiriyor ama `Config install method: npm` yazıyor. Bu en olası olarak ne anlama gelir?"
+  options={[
+    {
+      text: 'Zararsız bir etiketleme tuhaflığı; görmezden gelin.',
+      explanation:
+        'Bu iki satır arasındaki uyuşmazlık, ikinci ve çakışan bir kurulumun kendini belli ettiği tam da budur.',
+    },
+    {
+      text: "Birden fazla Claude Code kurulumunuz var ve hangisinin çalıştığı PATH'inize bağlı.",
+      correct: true,
+      explanation:
+        'troubleshooting sayfasının çakışan kurulumlar bölümünü izleyin ve istemediğiniz kurulumu kaldırın.',
+    },
+    {
+      text: 'Kimlik doğrulamanız yanlış yapılandırılmış.',
+      explanation: 'İki satırın da kimlik bilgileriyle bir ilgisi yok.',
+    },
+    {
+      text: 'Stable kanal etkin.',
+      explanation: 'Kanal, kendi `Auto-update channel` satırındadır.',
+    },
+  ]}
+/>
+
+**Sırada:** `m02-interact` modülü — Claude Code'la, ilk seferde doğru şeyi yapması için nasıl
+konuşulacağı.

@@ -1,6 +1,6 @@
 ---
 title: 'Claude Code’u kurmak'
-description: 'Claude Code’u native installer, Homebrew, WinGet, bir Linux paket yöneticisi veya npm ile macOS, Linux, Windows ve WSL üzerine kurun — sonra kurulumu `claude --version` ile kanıtlayın.'
+description: 'Claude Code’u yerel kurucu (native installer), Homebrew, WinGet, bir Linux paket yöneticisi veya npm ile macOS, Linux, Windows ve WSL üzerine kurun — sonra kurulumu claude --version ile kanıtlayın.'
 level: 1
 module: 'm01-start'
 order: 2
@@ -9,7 +9,7 @@ difficulty: intro
 tags: ['kurulum', 'setup', 'cli']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Advanced setup'
@@ -31,8 +31,429 @@ lab:
   repo_tag: 'lesson/m01-02-start'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l1-beginner/m01-start/02-install.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders Claude Code’u makinenize kurar. Her kurulum yöntemi aynı native binary’yi getirir; seçim yetenek değil, güncellemeden kimin sorumlu olduğu üzerinedir: native installer arka planda kendini günceller, Homebrew ve WinGet güncellemez, npm ise yalnızca global dizin yazılabilir olduğunda günceller. Ders sistem gereksinimlerini, macOS/Linux/Windows PowerShell/Windows CMD ve WSL için resmî kurulum komutlarını, Windows’ta native ile WSL 2 arasındaki seçimi (sandboxing yalnızca WSL 2’de desteklenir), apt/dnf/apk depolarını, npm paketini, Alpine gibi musl tabanlı dağıtımların ek gereksinimlerini ve `stable` kanalını ya da belirli bir sürümü kurmayı kapsar. Laboratuvar, kurulumu `claude --version` çıktısıyla — `2.1.263 (Claude Code)` biçiminde — kanıtlar.
+- Başlamadan önce makinenizi yayımlanmış sistem gereksinimleriyle karşılaştırmak.
+- Claude Code'u macOS, Linux, WSL, Windows PowerShell veya Windows CMD üzerinde yerel kurucu (native installer) ile kurmak.
+- Yerel kurucu, Homebrew, WinGet, bir apt/dnf/apk deposu ve npm arasında bilinçli seçim yapmak — ve her birinin güncelleme davranışı açısından size neye mal olduğunu söylemek.
+- `latest` yerine sabitlenmiş bir sürüm veya `stable` kanalını kurmak.
+- Kurulumu `claude --version` ile kanıtlamak ve başarısız olduğunda nereye bakacağınızı bilmek.
+
+**Ön koşullar.** `01-what-claude-code-is` dersi, bir terminal ve bir ağ bağlantısı. Henüz bir hesaba ihtiyacınız yok — oturum açmak bir sonraki dersin konusu. Windows'ta önce yerel (native) Windows mu yoksa WSL mi istediğinize karar verin; aşağıdaki Kavram bölümündeki tablo bu kararı netleştiriyor.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  `claude --version` zaten bir sürüm numarası yazdırıyorsa ve kurulumunuzun kendini nasıl
+  güncellediğinden memnunsanız bu dersi atlayın — çalışan bir kurulumun üzerine yeniden kurmak
+  yalnızca takip etmeniz gereken ikinci bir kopya yaratır. CLI kurulumu olmadan Claude Code'u
+  çalıştıran Desktop uygulamasını tercih ediyorsanız terminali tamamen atlayın. Ve yönetmediğiniz
+  bir makineye Claude Code kurmak için bu dersi kullanmayın: yerel kurucu ana dizininize yazar, ama
+  yönetilen ayarlara sahip bir kurumsal cihazda hangi kurulum yöntemini ve sürüm kanalını
+  kullanmanıza izin verildiğine dair zaten bir politika olabilir.
+</WhenNotToUse>
+
+## Kavram
+
+### Ne kuruyorsunuz
+
+Her kurulum yöntemi **aynı native binary'yi** getirir. npm paketi bir JavaScript derlemesi değildir:
+platforma özgü binary'yi `@anthropic-ai/claude-code-darwin-arm64` gibi bir optional dependency
+(isteğe bağlı bağımlılık) üzerinden çeker ve yerine bağlar; kurulan `claude`, çalışırken Node'u
+kendisi çağırmaz. Yani yöntemler arasındaki seçim bir yetenek meselesi değildir — **güncellemelerden
+kimin sorumlu olduğu** meselesidir.
+
+| Yöntem          | Otomatik güncellenir mi?                          | Elle güncelleme komutu                                  |
+| --------------- | ------------------------------------------------- | ------------------------------------------------------- |
+| Yerel kurucu    | Evet, arka planda                                 | `claude update`                                         |
+| Homebrew        | Hayır                                             | `brew upgrade claude-code`                              |
+| WinGet          | Hayır                                             | `winget upgrade Anthropic.ClaudeCode`                   |
+| apt / dnf / apk | Hayır (normal sistem güncellemenizle)             | `sudo apt update && sudo apt upgrade claude-code` (apt) |
+| npm             | Evet, npm global dizini yazılabilir değilse hariç | `npm install -g @anthropic-ai/claude-code@latest`       |
+
+Belgelerde önerilen yöntem yerel kurucudur ve kendini güncel tutan da odur.
+
+### Sistem gereksinimleri
+
+- **İşletim sistemi:** macOS 13.0+, Windows 10 1809+ veya Windows Server 2019+, Ubuntu 20.04+, Debian 10+, Alpine Linux 3.19+.
+- **Donanım:** 4 GB+ RAM, x64 veya ARM64 işlemci.
+- **Ağ:** bir internet bağlantısı.
+- **Kabuk (shell):** Bash, Zsh, PowerShell veya CMD.
+- **Konum:** Anthropic'in desteklediği ülkelerden biri.
+
+`ripgrep` normalde Claude Code'un içinde gelir, bu yüzden ayrıca kurmanıza gerek yoktur — aşağıda
+ele alınan musl tabanlı dağıtımlar hariç.
+
+### Windows: native mi, WSL mi
+
+| Seçenek       | Gerekli                                  | Sandbox        | Ne zaman kullanılır                                                                                                           |
+| ------------- | ---------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Yerel Windows | Hiçbir şey; Git for Windows isteğe bağlı | Desteklenmiyor | Windows'a özgü projeler ve araçlar                                                                                            |
+| WSL 2         | WSL 2 etkin                              | Destekleniyor  | Linux araç zincirleri veya [sandbox](/tr/playbook/glossary/#sandbox)'lı (izole edilmiş, kısıtlı bir ortamda) komut çalıştırma |
+| WSL 1         | WSL 1 etkin                              | Desteklenmiyor | WSL 2 kullanılamıyorsa                                                                                                        |
+
+Yerel Windows'ta [Git for Windows](https://git-scm.com/downloads/win) kurmak isteğe bağlıdır ama
+Claude'un hangi kabuk [tool](/tr/playbook/glossary/#tool)'unu (Claude'un dosya okumak, komut
+çalıştırmak gibi işleri yapmasını sağlayan araç) kullanacağını değiştirir: kuruluysa Claude Code
+`Bash` tool'u için Git Bash kullanır; kurulu değilse kabuk komutlarını bunun yerine `PowerShell`
+tool'u üzerinden çalıştırır. WSL içinde Linux kurucusunu çalıştırır ve `claude`'u WSL terminalinden
+başlatırsınız, asla PowerShell'den ya da CMD'den değil — bu sitedeki her komut bloğunun Windows
+(WSL) sekmesinin Linux komutunu göstermesinin sebebi de tam olarak budur.
+
+Hangi Windows kabuğunda olduğunuzdan emin değilseniz: komut isteminiz PowerShell'de `PS C:\`
+gösterir, CMD'de ise `PS` olmadan yalnızca `C:\` gösterir.
+
+### Kurulum sırasında sürüm seçmek
+
+Yerel kurucu bir sürüm numarası ya da bir kanal alır ve **kurulum sırasında seçtiğiniz kanal,
+otomatik güncellemeleriniz için varsayılanınız olur**:
+
+- argüman yoksa — `latest`, yeni özellikler yayımlanır yayımlanmaz gelir;
+- `stable` — genellikle yaklaşık bir hafta eski bir sürüm, büyük regresyonlu sürümleri atlar;
+- `2.1.89` gibi belirli bir sürüm, belirli bir build'i yeniden üretmeniz gerektiğinde.
+
+Homebrew aynı seçimi cask adıyla yapar: `claude-code` stable'ı, `claude-code@latest` ise latest'i
+izler. Sürüm kanalları kendi dersini alıyor — `05-doctor-update-channels`.
+
+### Tek örnek prompt
+
+Şu anda elinizde henüz bir [prompt](/tr/playbook/glossary/#prompt) (modele verdiğiniz istem) yok;
+bu yüzden bu dersin örnek prompt'u, kurulum biter bitmez bir sonraki dersin oturumunda yazacağınız
+şeydir:
+
+```text
+Give me a two-sentence tour of this repository: what it builds, and where the entry point is.
+Read only — do not change anything.
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · Claude Code'u kurun ve çalıştığını kanıtlayın"
+  lessonId="tr/l1-beginner/m01-start/install"
+  repoTag="lesson/m01-02-start"
+  steps={[
+    'İşletim sisteminizi, RAM’inizi ve kabuğunuzu yukarıdaki sistem gereksinimleriyle karşılaştırın. Windows’ta, tabloyu kullanarak yerel mi WSL mi olacağına karar verin.',
+    'Aşağıdaki işletim sistemi sekmelerinden platformunuza uygun kurulum komutunu çalıştırın. Yerel kurucu için Administrator ya da `sudo` gerekmez.',
+    'PATH’inizdeki yeni `claude`’un tanınması için terminalinizi kapatıp yeniden açın.',
+    '`claude --version` çalıştırın. Çalışan bir kurulum, bir sürüm numarasının ardından `(Claude Code)` yazdırır.',
+    'İsteğe bağlı: sonraki iki derste açacağınız gerçek bir projeniz olsun diye laboratuvar deposunu klonlayın (`git clone https://github.com/codechup/claude-code-lab && cd claude-code-lab && git checkout lesson/m01-02-start`).',
+    '`claude --version` `command not found` hatasıyla başarısız olursa körü körüne yeniden kurmayın — önce Kaynaklar’da bağlantısı verilen sorun giderme sayfasını açın ve tam hata mesajınızı eşleştirin.',
+  ]}
+  expected="`claude --version`, bir sürüm numarasının ardından `(Claude Code)` yazdırır — örneğin `2.1.263 (Claude Code)`."
+  checklist={[
+    'Makine, işletim sistemi, RAM ve kabuk gereksinimlerini karşılıyor',
+    'Bir kurulum komutu hatasız çalıştı',
+    'Kurulumdan sonra terminal yeniden başlatıldı',
+    '`claude --version`, bir sürüm ve `(Claude Code)` yazdırıyor',
+    'Hangi yöntemi kullandığınızı, dolayısıyla onu kimin güncellediğini biliyorsunuz',
+  ]}
+>
+  <Transcript src="content/_shared/transcripts/m01-start/02-install/01-version.txt" range="2-3" />
+</Lab>
+
+<Callout label="Not">
+  `lesson/m01-02-start` tag'i bilerek "yalnızca süreç" niteliğindedir: `-start` ve `-solution`
+  [commit](/tr/playbook/glossary/#commit)'leri (bir git deposundaki kaydedilmiş değişiklik anlık
+  görüntüsü) birbirinin aynısıdır, çünkü bu ders laboratuvarın kodunu değiştirmek yerine bir araç
+  kurar. Bu tag'i checkout etmek, size yalnızca `04-first-session` dersinde Claude Code'u
+  yöneltebileceğiniz gerçek bir depo sağlar.
+</Callout>
+
+### İşletim sistemine göre kurulum
+
+Aşağıdaki komutlar resmî kurulum sayfasından karakter karakter kopyalanmıştır.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+<CodeBlock title="yerel kurucu (önerilen)">
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+</CodeBlock>
+
+<CodeBlock title="Homebrew">
+
+```bash
+brew install --cask claude-code
+```
+
+</CodeBlock>
+
+  </Fragment>
+  <Fragment slot="linux">
+
+<CodeBlock title="yerel kurucu (önerilen)">
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+</CodeBlock>
+
+<CodeBlock title="apt (Debian, Ubuntu) — stable kanal">
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+sudo curl -fsSL https://downloads.claude.ai/keys/claude-code.asc \
+  -o /etc/apt/keyrings/claude-code.asc
+echo "deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/stable stable main" \
+  | sudo tee /etc/apt/sources.list.d/claude-code.list
+sudo apt update
+sudo apt install claude-code
+```
+
+</CodeBlock>
+
+  </Fragment>
+  <Fragment slot="windows">
+
+<CodeBlock title="PowerShell — yerel kurucu (önerilen)">
+
+```powershell
+irm https://claude.ai/install.ps1 | iex
+```
+
+</CodeBlock>
+
+<CodeBlock title="CMD — yerel kurucu">
+
+```batch
+curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd
+```
+
+</CodeBlock>
+
+<CodeBlock title="WinGet">
+
+```powershell
+winget install Anthropic.ClaudeCode
+```
+
+</CodeBlock>
+
+  </Fragment>
+</OSTabs>
+
+Yanlış Windows kabuğunda olduğunuzu iki hata mesajı söyler: `The token '&&' is not a valid statement
+separator` CMD komutunu PowerShell'de çalıştırdığınız, `'irm' is not recognized as an internal or
+external command` ise PowerShell komutunu CMD'de çalıştırdığınız anlamına gelir.
+
+apt üzerinde imzalama anahtarını doğrulamadan önce, `gpg --show-keys /etc/apt/keyrings/claude-code.asc`
+komutunun yazdırdığı parmak izinin `31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE` olduğunu doğrulayın.
+dnf ve apk'nin kendi depo kurulumları vardır; ikisi de kurulum sayfasında.
+
+### npm ve Alpine
+
+<CodeBlock title="npm (global)">
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+</CodeBlock>
+
+v2.1.198'den itibaren npm paketi Node.js 22 veya üzerini ister. Daha eski bir Node.js'te npm,
+başarısız olmak yerine bir `EBADENGINE` uyarısı yazdırır — kurulum tamamlanır ve `claude` yine
+çalışır, çünkü indirdiği binary çalışma zamanında Node.js'inizi kullanmaz. Bunu asla
+`sudo npm install -g` ile kurmayın.
+
+Alpine ve diğer musl/uClibc dağıtımları, kurulum komutu için `bash` ve `curl`'a, çalışma zamanında
+ise `libgcc`, `libstdc++` ve `ripgrep`'e ihtiyaç duyar; ardından `settings.json` içinde
+`USE_BUILTIN_RIPGREP` değerinin `0` olarak ayarlanması gerekir:
+
+<CodeBlock title="Alpine ön koşulları">
+
+```bash
+apk add bash curl libgcc libstdc++ ripgrep
+```
+
+</CodeBlock>
+
+### Belirli bir sürüm veya kanal kurmak
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash -s stable
+curl -fsSL https://claude.ai/install.sh | bash -s 2.1.89
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash -s stable
+curl -fsSL https://claude.ai/install.sh | bash -s 2.1.89
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```text
+& ([scriptblock]::Create((irm https://claude.ai/install.ps1))) stable
+& ([scriptblock]::Create((irm https://claude.ai/install.ps1))) 2.1.89
+```
+
+  </Fragment>
+</OSTabs>
+
+`claude --version` bundan sonra istediğiniz sürümü tam olarak yazdırır, örneğin
+`2.1.89 (Claude Code)`. Aynı iş sonradan `claude install stable` veya `claude install 2.1.118` ile
+de yapılabilir.
+
+## Anti-pattern'ler
+
+**`sudo npm install -g` ile kurmak.** Belgeler bunu büyük harflerle yapmamanızı söylüyor: izin
+sorunlarına ve bir güvenlik riskine yol açar. _Düzeltme:_ yerel kurucuyu kullanın ya da normal bir
+kullanıcının yazabilmesi için npm global prefix'inizi düzeltin.
+
+**Bozuk bir `claude`'u düzeltmek için ikinci kez kurmak.** Kurulumdan sonraki bir
+`command not found` hemen her zaman bir PATH ya da kabuk-yeniden-başlatma sorunudur; ikinci bir
+kurulum, `claude doctor`'ın sonradan çakışma olarak bildireceği ikinci bir kopya ekler.
+_Düzeltme:_ terminali yeniden başlatın, sonra tam hatanızı sorun giderme sayfasında eşleştirin.
+
+**Homebrew ya da WinGet'in sizi güncel tuttuğunu varsaymak.** İkisi de otomatik güncellenmez. İki
+aydır `brew upgrade claude-code` çalıştırmamış bir makine, iki aylık sürümün gerisindedir ve
+okuduğunuz sürüm notları eşleşmez. _Düzeltme:_ ya belirli bir programla güncelleyin, ya
+`CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE` değerini `1` yaparak güncellemeyi Claude Code'a yaptırın,
+ya da yerel kurucuyu kullanın.
+
+**Bir WSL kurulumu için Linux kurucusunu PowerShell'den çalıştırmak.** WSL bir Linux ortamıdır;
+Windows tarafında kurmak, beklediğiniz gibi WSL dosya sisteminizi göremeyen bir Windows binary'si
+verir size. _Düzeltme:_ önce WSL dağıtımını açın, sonra `curl -fsSL https://claude.ai/install.sh |
+bash` komutunu orada çalıştırın.
+
+**Bir sürümü sabitleyip unutmak.** `claude install 2.1.89`, bir hatayı yeniden üretmek için doğru
+araçtır, günlük çalışma için ise yanlış araçtır — düzeltmeleri sessizce almamaya başlarsınız.
+_Düzeltme:_ inceleme için sabitleyin, işiniz bitince `claude install latest` çalıştırın.
+
+<Callout variant="changed" label="Değişti">
+  macOS ve Linux'ta yerel kurucu, `~/.local/bin/claude`'u `~/.local/share/claude/versions/` içine
+  bir symlink olarak yönetir. v2.1.207'den itibaren bu başlatıcıyı kendi betiğinizle
+  değiştirirseniz, otomatik güncelleme ve `claude update` onu yerinde bırakır ve yeni sürümler onun
+  yanına kurulur; v2.1.207'den önce otomatik güncelleyici her güncellemede özel bir başlatıcının
+  üzerine yazardı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/install"
+  questionId="q1"
+  lang="tr"
+  prompt="Claude Code'u Homebrew ile kuruyorsunuz. Ardından ne olur?"
+  options={[
+    {
+      text: 'Native binary yerine bir JavaScript derlemesi alırsınız.',
+      explanation: 'Her yöntem — Homebrew, WinGet, npm, native — aynı native binary’yi getirir.',
+    },
+    {
+      text: 'Otomatik güncellenmez; güncellemeyi `brew upgrade claude-code` komutuyla siz kendiniz yaparsınız.',
+      correct: true,
+      explanation:
+        'Homebrew kurulumları otomatik güncellenmez. CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE değerini 1 yapmak, güncellemeyi Claude Code’a yaptırır.',
+    },
+    {
+      text: 'En güncel sürüm kanalına kilitlenirsiniz.',
+      explanation:
+        'Homebrew kanalı cask adına göre seçer: `claude-code` stable’ı, `claude-code@latest` ise latest’i izler.',
+    },
+    {
+      text: 'ripgrep’i de ayrıca kurmanız gerekir.',
+      explanation: 'ripgrep, musl tabanlı dağıtımlar dışında Claude Code’un içinde gelir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/install"
+  questionId="q2"
+  lang="tr"
+  prompt="Windows'ta kurulum yapıyorsunuz ve sandbox'lı komut çalıştırma istiyorsunuz. Hangi yolu seçersiniz?"
+  options={[
+    {
+      text: 'Git for Windows kurulu native Windows.',
+      explanation:
+        'Git for Windows, Bash tool’unu etkinleştirir; ama native Windows’ta sandbox desteklenmez.',
+    },
+    {
+      text: 'WSL 2, WSL terminali içinden Linux kurucusuyla kurmak.',
+      correct: true,
+      explanation: 'Belgelerin sandbox desteklediğini listelediği tek Windows seçeneği WSL 2’dir.',
+    },
+    {
+      text: 'WSL 1, PowerShell’den kurmak.',
+      explanation: 'WSL 1 sandbox desteklemez, ayrıca WSL içinden kurulur, PowerShell’den değil.',
+    },
+    {
+      text: 'winget install Anthropic.ClaudeCode.',
+      explanation: 'Bu native bir Windows kurulumudur ve sandbox desteklemez.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/install"
+  questionId="q3"
+  lang="tr"
+  prompt="Başarılı bir kurulumdan hemen sonra `claude --version` hiçbir şey yazdırmıyor, yalnızca `command not found` veriyor. Yapılacak ilk şey nedir?"
+  options={[
+    {
+      text: 'Kurulum komutunu sudo ile yeniden çalıştırmak.',
+      explanation:
+        'Belgeler sudo ile kurulumlara karşı açıkça uyarır ve ikinci bir kurulum çakışan bir kopya yaratır.',
+    },
+    {
+      text: 'Terminali kapatıp yeniden açmak, sonra tekrar denemek.',
+      correct: true,
+      explanation:
+        'Yeni bir PATH girdisi ancak yeni bir kabukta fark edilir. Hâlâ başarısız oluyorsa, tam hatanızı troubleshoot-install sayfasında eşleştirin.',
+    },
+    {
+      text: 'npm kurulum yöntemine geçmek.',
+      explanation:
+        'Yöntem değiştirmek bir PATH sorununu teşhis etmez; yalnızca başka bir kurulum ekler.',
+    },
+    {
+      text: 'ANTHROPIC_API_KEY ayarlamak.',
+      explanation: 'Bu kimlik doğrulamadır ve kabuğun bulamadığı bir binary’ye yardımcı olamaz.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m01-start/install"
+  questionId="q4"
+  lang="tr"
+  prompt="macOS'ta yerel kurucuyla stable kanalını hangi komut kurar?"
+  options={[
+    {
+      text: 'curl -fsSL https://claude.ai/install.sh | bash -s stable',
+      correct: true,
+      explanation:
+        'Kurulum sırasında verdiğiniz kanal, otomatik güncellemeleriniz için de varsayılanınız olur.',
+    },
+    {
+      text: 'curl -fsSL https://claude.ai/install.sh | bash --stable',
+      explanation: 'Kanal, `-s`’den sonra verilen bir betik argümanıdır, bash’in bir flag’i değil.',
+    },
+    {
+      text: 'brew install --cask claude-code@latest',
+      explanation: 'Bu Homebrew’dur ve `@latest`, stable değil latest kanalıdır.',
+    },
+    {
+      text: 'claude update --stable',
+      explanation:
+        '`claude update` bir kanal argümanı almaz; kanal `autoUpdatesChannel` ayarından gelir.',
+    },
+  ]}
+/>
+
+**Sırada:** `03-authenticate` sizi oturum açtırır — abonelik, Console, API key veya CI için uzun
+ömürlü bir [token](/tr/playbook/glossary/#token) (kimlik doğrulama için kullanılan, uzun süre
+geçerli bir erişim anahtarı).

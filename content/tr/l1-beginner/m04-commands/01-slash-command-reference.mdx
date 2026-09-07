@@ -1,15 +1,15 @@
 ---
 title: 'Yerleşik slash komut referansı'
-description: 'Claude Code ile gelen her slash komut (slash command), oturumda hangi anda başvuracağınıza göre gruplanmış hâlde; ayrıca her biri için tek satırlık anlam veren tam alfabetik tablo ve `/` menüsünün size neyi gösterdiğine nasıl karar verdiği.'
+description: 'Claude Code ile gelen her slash komut (slash command), oturumda hangi anda başvuracağınıza göre gruplanmış hâlde; ayrıca her biri için tek satırlık anlam veren tam alfabetik tablo ve / menüsünün size neyi gösterdiğine nasıl karar verdiği.'
 level: 1
 module: 'm04-commands'
 order: 1
 duration_min: 20
 difficulty: core
-tags: ['commands', 'reference', 'slash-commands']
+tags: ['komutlar', 'referans', 'slash-komutlar']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Commands'
@@ -27,6 +27,404 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Not:** Bu sayfanın tam Türkçe çevirisi henüz yapılmadı. `draft: true` kaldığı sürece sayfa gezinmede görünmez. Çeviri, `.claude/rules/i18n.md` kurallarına göre `content/en/l1-beginner/m04-commands/01-slash-command-reference.mdx` dosyasından üretilecek (D016, D018). Aşağıda dersin Türkçe özeti var.
+## Hedefler ve ön koşullar
 
-Bu ders, Claude Code'un yerleşik slash komut (slash command) referansıdır. Bir komutun yalnızca mesajın başında tanındığını, komut adından sonra gelen metnin argüman hâline geldiğini ve zincirlenen skill'lerin bu kuralın tek istisnası olduğunu açıklar. Komutları kullandığınız ana göre gruplar: bir depoda ilk oturum (`/init`, `/memory`, `/permissions`), görev sırasında (`/plan`, `/model`, `/effort`, `/context`, `/compact`, `/btw`), paralel çalışma (`/tasks`, `/background`, `/batch`), göndermeden önce (`/diff`, `/code-review`, `/security-review`), oturumlar arası (`/clear`, `/resume`, `/branch`, `/fork`) ve bir şey ters gittiğinde (`/rewind`, `/doctor`, `/debug`). Ardından resmî referanstaki her komutu tek satırlık anlamıyla veren tam tablo gelir; yerleşik komutlarla paket hâlinde gelen Skill ve Workflow girişleri ayrı işaretlenmiştir. Son bölüm, `/` menüsünün neden bu tablodan kısa olduğunu anlatır: planınıza, platformunuza ve ortamınıza göre bazı komutlar hiç görünmez, bazıları ise (`/heapdump` gibi) tasarım gereği gizlidir ve yalnızca tam adı yazınca ortaya çıkar.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Bir slash komutun (slash command) ne olduğunu, mesaj içinde nerede tanındığını ve komut adından sonraki metne ne olduğunu söylemek.
+- Doğru anda doğru komuta başvurmak: bir depodaki ilk oturum, görev ortası, paralel iş çalıştırma, göndermeden önce, oturumlar arası ve bir şey ters gittiğinde.
+- Tam yerleşik komut tablosunu okumak ve bir komutu adına göre değil, yapmak istediğiniz şeye göre bulmak.
+- **Yerleşik** bir komutu, paket hâlinde gelen bir **[Skill](/tr/playbook/glossary/#skill)**'den (`SKILL.md` ile tanımlanan, yeniden kullanılabilir bir talimat paketi) ve paket hâlinde gelen bir **[Workflow](/tr/playbook/glossary/#workflow)**'dan (arka planda işi birçok paralel yardımcıya dağıtan, uzun sürebilen otomatik görev akışı) ayırt etmek ve bu ayrımın neden önemli olduğunu söylemek.
+- Hakkında okuduğunuz bir komutun neden kendi `/` menünüzde görünmeyebileceğini ve gizli olanları nasıl bulacağınızı açıklamak.
+
+**Ön koşullar.** Oturum başlatabileceğiniz, çalışan bir Claude Code kurulumu (`m01-start`) ve bir [permission mode](/tr/playbook/glossary/#permission-mode) (Claude'un hangi eylemleri onay almadan yapabileceğini belirleyen mod) ile bir [context window](/tr/playbook/glossary/#context-window) (modelin bir seferde tutabildiği bağlamın üst sınırı) kavramlarını `m02-interact`'ten bilecek kadarı. Bu derste hiçbir kod düzenlenmiyor.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Slash komutlar Claude Code'u kontrol etmek içindir, işinizi yapmak için değil. Sıradan bir cümle
+  yeterliyse bir komuta başvurmayın — "src/payments'taki değişiklikleri incele ve neyin yanlış
+  göründüğünü söyle" demek, neredeyse uyan bir komut aramaktan genelde daha iyidir. Bu tabloyu
+  ezberlemeyin: buraya geri dönüp baktığınız bir referanstır ve `/help` ile `/` yazıp birkaç harf
+  girmek, hafızanızdan daha hızlı bir komut bulur. Ve onu kararlı bir API gibi görmeyin — komutlar
+  sürümler arasında eklenir, yeniden adlandırılır ve kaldırılır; bu yüzden bir komuta bağımlı bir
+  betik, bir sonraki dersin ele aldığı eşdeğer CLI bayrağından daha kırılgandır.
+</WhenNotToUse>
+
+## Kavram
+
+### Slash komut nedir
+
+Bir komut, Claude Code'u oturum içinden kontrol eder: model değiştirmek, izinleri yönetmek, bağlamı temizlemek, bir workflow çalıştırmak. Size sunulan komutları görmek için `/` yazın, ya da listeyi süzmek için `/`'in ardından birkaç harf yazın.
+
+Bir komutun nerede görünebileceğine dair iki kural var:
+
+- **Bir komut yalnızca mesajınızın başında tanınır.** Komut adından sonra gelen metin onun argümanı olur.
+- **Skill'ler bu kuralın istisnasıdır.** v2.1.199'dan itibaren, ardından başka skill'lerin geldiği bir skill çağrısı — `/skill-a /skill-b do XYZ` — başta adı geçen her skill'i yükler ve sondaki metni her birine argüman olarak geçirir. En fazla altı skill zincirlenebilir.
+
+Claude yanıt verirken bir komut gönderirseniz, Claude Code onu kuyruğa alır ve geçerli tur bittikten sonra çalıştırır. Bazı komutlar yanıtı kesmeden hemen çalışır — bunlar arasında `/status`, `/tasks` ve `/usage` var. Tam ekran render modunda, `/theme` ve `/help` gibi diyalog komutları da hemen açılır; v2.1.234'ten önce bu diyaloglar turun bitmesini beklerdi.
+
+### Tablodaki üç tür giriş
+
+Çoğu giriş, davranışı CLI'ya kodlanmış **yerleşik** komutlardır. İki tür farklı işaretlenir ve bu fark gerçektir:
+
+| Tür          | Nedir                                                                                                                                                                                              | Sonucu                                                                       |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Yerleşik     | CLI'ya kodlanmış davranış                                                                                                                                                                          | Deterministik; her seferinde aynı şeyi yapar                                 |
+| **Skill**    | Paket hâlinde gelen bir skill — tıpkı sizin yazdığınız skill'ler gibi Claude'a verilen bir [prompt](/tr/playbook/glossary/#prompt) (Claude'a verilen istek metni)                                  | Claude onu yorumlar; siz de aynı şekilde kendi skill'lerinizi yazabilirsiniz |
+| **Workflow** | Arka planda işi birçok [subagent](/tr/playbook/glossary/#subagent)'a (ana oturumun bir alt görevi devrettiği, kendi bağlamı olan yardımcı süreç) dağıtan, paket hâlinde gelen dinamik bir workflow | Uzun sürer; prompt'ta beklemek yerine `/workflows` ile izlersiniz            |
+
+Bunlardan ikisi yalnızca elle çağrılır: `/verify` yalnızca siz çağırdığınızda çalışır (v2.1.215'ten önce Claude onu kendiliğinden de çalıştırabiliyordu) ve `/deep-research` de aynı şekildedir (v2.1.218'den önce Claude onu kendiliğinden başlatabiliyordu).
+
+### Anına göre gerçekten başvurduğunuz komutlar
+
+Aşağıdaki tam tablo bir başvuru kaynağıdır. Ama şurası bir kez okunmaya değer, çünkü gününüzdeki bir anı bir komutla eşler.
+
+**Bir depoda ilk oturum.** Başlangıç bir `CLAUDE.md` üretmek için `/init` çalıştırın, sonra onu inceltmek için `/memory`. Projenin ihtiyaç duyduğu sunucuları kurmak için `/mcp` kullanın, istediğiniz subagent'ları oluşturması için Claude'dan isteyin ve onay kurallarınızı belirlemek için `/permissions` çalıştırın.
+
+**Görev sırasında.** Büyük bir değişiklikten önce `/plan`, [plan mode](/tr/playbook/glossary/#plan-mode)'a (Claude'un değişiklik yapmadan önce yalnızca okuyup bir plan sunduğu mod) geçer. `/model` ve `/effort`, hangi modeli kullandığınızı ve ne kadar akıl yürütme uyguladığını ayarlar. Konuşma uzadığında `/context` neyin pencereyi doldurduğunu gösterir, `/compact` ise yer açmak için onu özetler. Konuşma geçmişine eklenmemesi gereken yan bir soru için `/btw` kullanın.
+
+**Paralel iş çalıştırma.** `/tasks`, tamamlanmış subagent'lar dahil geçerli oturumun arka plan işlerini listeler. `/background`, oturumun tamamını bir [agent](/tr/playbook/glossary/#agent) (bir hedefi kendi başına adım adım yürüten yapay zekâ süreci) olarak arka planda çalışmaya devam ettirmek üzere ayırır ve terminalinizi serbest bırakır. Kod tabanının tamamına yayılan büyük bir değişiklik için `/batch`, işi bağımsız birimlere ayırır ve her birini kendi [worktree](/tr/playbook/glossary/#worktree)'sinde (aynı git deposunun başka bir klasörde, farklı bir dalda checkout edilmiş kopyası) çalıştırır.
+
+**Göndermeden önce.** `/diff` neyin değiştiğini gösterir. `/code-review`, geçerli diff'i doğruluk hataları ve temizlik için kontrol eder ve bulguları `--fix` ile uygulayabilir; bunun yerine bir [pull request](/tr/playbook/glossary/#pull-request)'i (bir branch'teki değişikliklerin gözden geçirilip ana dala birleştirilmesi için açılan istek) incelemek için `/code-review high 1234` gibi bir PR numarası verin. `/review` onun takma adıdır. `/code-review ultra`, cloud'da çoklu agent'lı bir inceleme çalıştırır. `/security-review`, diff'i güvenlik açıkları için kontrol eder.
+
+**Oturumlar arası.** `/clear`, proje hafızasını korurken yeni bir görevle sıfırdan başlar. `/resume` daha önceki bir konuşmaya döner, `/branch` geçerli konuşmayı farklı bir yön denemek için [branch](/tr/playbook/glossary/#branch)'ler (konuşmanın bu noktadaki hâlini kopyalayıp ayrı bir dalda sürdürme), `/fork` ise onu yeni bir arka plan oturumuna kopyalar. `/teleport`, bir web oturumunu bu terminale çeker, `/remote-control` ise bu yerel oturumu başka bir cihazdan sürdürmenizi sağlar.
+
+**Bir şey ters gittiğinde.** `/rewind`, kodu ve konuşmayı bir [checkpoint](/tr/playbook/glossary/#checkpoint)'e (konuşmanın veya kodun daha önceki bir anda kaydedilmiş hâli) geri sarar, ya da konuşmanın bir bölümünü özetler. `/doctor`, kurulum ve yapılandırma sorunlarını teşhis eden ve düzeltebilen bir kurulum kontrolü çalıştırır; `/debug` çalışma zamanı sorunlarını teşhis eder ve `/feedback`, oturum bağlamı eklenmiş bir hata bildirir.
+
+İşte bu dersin örnek prompt'u — bir komuta başvurmakla sadece sormak arasındaki farkı yaratan şekil:
+
+```text
+Before I open this PR: show me what changed, then check the diff for
+correctness bugs. Do not fix anything yet — list what you find.
+```
+
+Bu, `/diff`'in ardından `/code-review`'dır ve bunu tek cümlede söylemek, genelde ikisini de yazmaktan daha hızlıdır.
+
+### Tam yerleşik komut tablosu
+
+Claude Code'un birlikte geldiği her komut, resmî referansın sıraladığı sırayla. `<arg>` zorunlu bir argüman, `[arg]` isteğe bağlı bir argümandır. Anlamlar referanstan tek satıra sıkıştırılmıştır — tam davranış, sürüm gereksinimleri ve platform uyarıları için kaynak bağlantısını açın.
+
+| Komut                                   | Ne yapar                                                                                                                                                                                                                         |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/add-dir <path>`                       | Geçerli oturumda dosya erişimi için bir çalışma dizini ekler                                                                                                                                                                     |
+| `/advisor [model\|off]`                 | Kritik anlarda ikinci bir modele danışan advisor tool'unu açar veya kapatır                                                                                                                                                      |
+| `/agents`                               | Subagent oluşturmak ya da yönetmek için Claude'dan istemenizi, ya da agent dizinlerini doğrudan düzenlemenizi hatırlatan bir not yazdırır                                                                                        |
+| `/artifacts`                            | Sahip olduğunuz ya da sizinle paylaşılan [artifact](/tr/playbook/glossary/#artifact)'leri (Claude Code'un yayımlayabildiği, kendi başına çalışan web sayfalarını) listeler, sonra birini ekler, açar ya da bağlantısını kopyalar |
+| `/auto-mode-setup`                      | Projenizden ve son oturumlarınızdan `autoMode.environment` girdileri taslağı çıkarır, sonra kullanıcı ayarlarına kaydeder                                                                                                        |
+| `/autocompact [auto\|<tokens>]`         | Claude Code otomatik sıkıştırma yapmadan önce context window'un ne kadar dolacağını ayarlar                                                                                                                                      |
+| `/autofix-pr [prompt]`                  | Geçerli branch'in PR'ını izleyen, CI başarısız olduğunda ya da incelemeciler yorum yaptığında düzeltme gönderen bir web oturumu başlatır                                                                                         |
+| `/background [prompt]`                  | Oturumu arka planda çalışan bir agent olarak ayırır ve bu terminali serbest bırakır. Takma ad: `/bg`                                                                                                                             |
+| `/batch <instruction>`                  | **Skill.** Büyük bir değişikliği 5-30 bağımsız birime ayırır ve her birini kendi worktree'sinde çalıştırır                                                                                                                       |
+| `/branch [name]`                        | Konuşmayı bu noktada dallandırır ve o dala geçer, orijinali korur                                                                                                                                                                |
+| `/btw [question]`                       | Konuşma geçmişine eklemeden oturumla ilgili yan bir soru sorar                                                                                                                                                                   |
+| `/bug [report]`                         | Bir onay ekranıyla hata bildirir ya da konuşmanızı paylaşır. Takma ad: `/share`                                                                                                                                                  |
+| `/cd <path>`                            | Bu oturumu, konuşmayı koruyarak yeni bir çalışma dizinine taşır                                                                                                                                                                  |
+| `/chrome`                               | Claude in Chrome ayarlarını yapılandırır                                                                                                                                                                                         |
+| `/claude-api [subcommand]`              | **Skill.** Projenizin diline göre Claude API ve Managed Agents referans materyalini yükler                                                                                                                                       |
+| `/clear [name]`                         | Boş bağlamla yeni bir konuşma başlatır. Takma adlar: `/reset`, `/new`                                                                                                                                                            |
+| `/code-review [level] [flags] [target]` | **Skill.** Geçerli diff'i, bir PR'ı, bir branch'i ya da bir yolu hata ve temizlik için inceler. Takma ad: `/review`                                                                                                              |
+| `/color [color\|default]`               | Geçerli oturum için prompt çubuğunun rengini ayarlar                                                                                                                                                                             |
+| `/compact [instructions]`               | Konuşmayı o ana kadar özetleyerek bağlamda yer açar                                                                                                                                                                              |
+| `/config [key=value ...]`               | Ayarlar arayüzünü açar ya da bir ayarı doğrudan belirler. Takma ad: `/settings`                                                                                                                                                  |
+| `/context [all]`                        | Geçerli bağlam kullanımını renkli bir ızgara olarak görselleştirir, iyileştirme önerileriyle birlikte                                                                                                                            |
+| `/copy [N]`                             | Son asistan yanıtını — ya da geriye doğru N'inciyi — panoya kopyalar                                                                                                                                                             |
+| `/cost`                                 | `/usage` için takma ad                                                                                                                                                                                                           |
+| `/dataviz [request]`                    | **Skill.** Grafikler, çizelgeler ve dashboard'lar için tasarım rehberliği                                                                                                                                                        |
+| `/debug [description]`                  | **Skill.** Bu oturum için debug loglamayı açar ve debug logundan sorun giderir                                                                                                                                                   |
+| `/deep-research <question>`             | **Workflow.** Web aramalarını dağıtır, kaynakları çapraz kontrol eder ve kaynak gösteren bir rapor sentezler                                                                                                                     |
+| `/design [brief]`                       | **Skill.** UI mockup'larını, ekran akışlarını, landing page'leri ya da posterleri tek bir canvas üzerinde artboard olarak taslaklar                                                                                              |
+| `/design-login`                         | `/design-sync` için tasarım sistemi erişimini claude.ai hesabınızla yetkilendirir                                                                                                                                                |
+| `/design-sync [hint]`                   | **Skill.** Deponuzun React tasarım sistemini dönüştürür ve Claude Design'a yükler                                                                                                                                                |
+| `/desktop`                              | Geçerli oturumu Claude Code Desktop uygulamasında sürdürür. Takma ad: `/app`                                                                                                                                                     |
+| `/diff`                                 | Çalışma dizininizdeki değişiklikleri, Claude'un yaptığı düzenlemeler dahil, gözden geçirir                                                                                                                                       |
+| `/doctor`                               | **Skill.** Kurulum ve yapılandırma sorunlarını teşhis eden ve düzeltebilen bir kurulum kontrolü çalıştırır. Takma ad: `/checkup`                                                                                                 |
+| `/effort [level\|auto\|status]`         | [Effort](/tr/playbook/glossary/#effort) (modelin bir yanıt için harcadığı düşünme çabası) seviyesini ayarlar — `low`'dan `xhigh`'a, `max`, `ultracode` ya da `auto`; `status` mevcut seviyeyi yazdırır                           |
+| `/exit`                                 | CLI'dan çıkar. Takma ad: `/quit`                                                                                                                                                                                                 |
+| `/export [filename]`                    | Geçerli konuşmayı düz metin olarak dışa aktarır                                                                                                                                                                                  |
+| `/fast [on\|off]`                       | Hızlı modu açar ya da kapatır                                                                                                                                                                                                    |
+| `/feedback [report]`                    | Claude Code hakkında ürün geri bildirimi gönderir                                                                                                                                                                                |
+| `/fewer-permission-prompts`             | **Skill.** [Transcript](/tr/playbook/glossary/#transcript)'leri (kaydedilmiş gerçek oturum dökümlerini) yaygın salt-okunur çağrılar için tarar ve proje ayarlarına önceliklendirilmiş bir izin listesi ekler                     |
+| `/focus`                                | Odak görünümünü açar/kapatır: son prompt, tek satırlık bir tool özeti ve son yanıt. Yalnızca tam ekran                                                                                                                           |
+| `/fork [prompt]`                        | Konuşmayı yeni bir arka plan oturumuna kopyalar ve burada çalışmaya devam eder                                                                                                                                                   |
+| `/goal [condition\|clear]`              | Claude'un koşul sağlanana kadar turlar boyunca çalışmaya devam edeceği bir hedef belirler                                                                                                                                        |
+| `/heapdump`                             | Yüksek bellek kullanımını teşhis etmek için bir heap anlık görüntüsü ve bellek dökümü yazar. Menüde gizlidir                                                                                                                     |
+| `/help`                                 | Yardımı ve kullanılabilir komutları gösterir                                                                                                                                                                                     |
+| `/hooks`                                | Tool olayları için [hook](/tr/playbook/glossary/#hook) (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan komut) yapılandırmalarını görüntüler                                                                  |
+| `/ide`                                  | IDE entegrasyonlarını yönetir ve durumu gösterir                                                                                                                                                                                 |
+| `/import [codex\|gemini]`               | OpenAI Codex ya da Google Gemini CLI'daki yapılandırmayı Claude Code'a taşır                                                                                                                                                     |
+| `/init`                                 | Projeyi bir `CLAUDE.md` rehberiyle başlatır                                                                                                                                                                                      |
+| `/insights`                             | Bu makinedeki son oturumlarınızı analiz eden bir HTML rapor üretir                                                                                                                                                               |
+| `/install-github-app`                   | Bir depo için Claude GitHub App'ini, isteğe bağlı olarak GitHub Actions workflow'larıyla birlikte kurar                                                                                                                          |
+| `/install-slack-app`                    | Claude Slack uygulamasını kurar                                                                                                                                                                                                  |
+| `/keybindings`                          | Klavye kısayolları dosyanızı açar                                                                                                                                                                                                |
+| `/list-agents`                          | Claude'un mesaj gönderebileceği subagent'ları, takım arkadaşlarını ve diğer oturumları listeler. `/peers` de aynı işi yapar                                                                                                      |
+| `/login`                                | Anthropic hesabınıza giriş yapar                                                                                                                                                                                                 |
+| `/logout`                               | Anthropic hesabınızdan çıkış yapar                                                                                                                                                                                               |
+| `/loop [interval] [prompt]`             | **Skill.** Oturum açık kalırken bir prompt'u tekrar tekrar çalıştırır. Takma ad: `/proactive`                                                                                                                                    |
+| `/mcp [subcommand]`                     | [MCP server](/tr/playbook/glossary/#mcp-server) (Claude'a dış araç ve veri sağlayan sunucu) bağlantılarını ve OAuth kimlik doğrulamasını yönetir                                                                                 |
+| `/memory`                               | `CLAUDE.md` dosyalarını düzenler, auto memory'yi açar/kapatır ve auto memory girdilerini görüntüler                                                                                                                              |
+| `/mobile`                               | Claude mobil uygulamasını indirmek için bir QR kod gösterir. Takma adlar: `/ios`, `/android`                                                                                                                                     |
+| `/model [model]`                        | Modeli değiştirir ve yeni oturumlar için varsayılanınız olarak kaydeder                                                                                                                                                          |
+| `/passes`                               | Hesabınız uygunsa arkadaşlarınızla bir haftalık ücretsiz Claude Code paylaşır                                                                                                                                                    |
+| `/permissions`                          | Tool izinleri için allow, ask ve deny kurallarını yönetir. Takma ad: `/allowed-tools`                                                                                                                                            |
+| `/plan [description]`                   | Prompt'tan doğrudan plan mode'a girer, isteğe bağlı olarak başlanacak bir görevle birlikte                                                                                                                                       |
+| `/plugin [subcommand]`                  | [Plugin](/tr/playbook/glossary/#plugin)'leri (Claude Code'un temel araç kümesini genişleten eklentileri) yönetir — menüyü açar ya da `list`, `install`, `enable` ya da `disable` geçirir                                         |
+| `/powerup`                              | Animasyonlu gösterimli hızlı etkileşimli derslerle Claude Code özelliklerini keşfeder                                                                                                                                            |
+| `/privacy-settings`                     | Gizlilik ayarlarınızı görüntüler ve günceller. Yalnızca Pro ve Max aboneleri                                                                                                                                                     |
+| `/radio`                                | Tarayıcınızda Claude FM lo-fi radyosunu açar                                                                                                                                                                                     |
+| `/rate-limit-options`                   | Bir kullanım sınırı isteği engellediğinde çalışmaya devam etmenin yollarını gösterir. Menüde gizlidir                                                                                                                            |
+| `/recap`                                | İstek üzerine geçerli oturumun tek satırlık bir özetini üretir                                                                                                                                                                   |
+| `/release-notes`                        | Değişiklik günlüğünü etkileşimli bir sürüm seçicide görüntüler                                                                                                                                                                   |
+| `/reload-plugins [--force]`             | Yeniden başlatmadan bekleyen değişiklikleri uygulamak için tüm etkin plugin'leri yeniden yükler                                                                                                                                  |
+| `/reload-skills`                        | Diskteki değişikliklerin yeniden başlatmadan kullanılabilir olması için skill ve komut dizinlerini yeniden tarar                                                                                                                 |
+| `/remote-control`                       | Bu oturumu claude.ai üzerinden Remote Control ile erişilebilir yapar. Takma ad: `/rc`                                                                                                                                            |
+| `/remote-env`                           | Cloud agent'lar için varsayılan ortamı seçer                                                                                                                                                                                     |
+| `/rename [name]`                        | Geçerli oturumu yeniden adlandırır ve adı prompt çubuğunda gösterir                                                                                                                                                              |
+| `/resume [session]`                     | Bir konuşmayı ID'ye ya da ada göre sürdürür, ya da oturum seçiciyi açar. Takma ad: `/continue`                                                                                                                                   |
+| `/review [level] [flags] [target]`      | `/code-review`'ın takma adı, aynı effort seviyelerini ve bayrakları alır                                                                                                                                                         |
+| `/rewind`                               | Konuşmayı ve/veya kodu önceki bir noktaya geri sarar. Takma adlar: `/checkpoint`, `/undo`                                                                                                                                        |
+| `/run`                                  | **Skill.** Bir değişikliğin yalnızca testleri geçmekle kalmayıp gerçekten çalıştığını görmek için projenizin uygulamasını başlatır ve yönlendirir                                                                                |
+| `/run-skill-generator`                  | **Skill.** `/run` ve `/verify`'a uygulamanızı nasıl derleyip çalıştıracağını öğreten, projeye özel bir skill yazar                                                                                                               |
+| `/sandbox`                              | Desteklenen platformlarda [sandbox](/tr/playbook/glossary/#sandbox) (Claude'un komutlarını ana sisteminizden izole bir ortamda çalıştıran koruma katmanı) modunu açar/kapatır                                                    |
+| `/schedule [description]`               | Cloud'da çalışan [routine](/tr/playbook/glossary/#routine)'ler (belirli bir zamanlamada kendiliğinden çalışan görevler) oluşturur, günceller, listeler ya da çalıştırır. Takma ad: `/routines`                                   |
+| `/scroll-speed`                         | Fare tekerleği kaydırma hızını etkileşimli olarak ayarlar. Yalnızca tam ekran                                                                                                                                                    |
+| `/security-review`                      | Geçerli branch'inizdeki değişiklikleri güvenlik açıkları için analiz eder                                                                                                                                                        |
+| `/setup-bedrock`                        | Amazon Bedrock kimlik doğrulamasını, bölgeyi ve model sabitlemelerini yapılandırır. `CLAUDE_CODE_USE_BEDROCK=1` olana kadar gizlidir                                                                                             |
+| `/setup-vertex`                         | Google Cloud'un Agent Platform kimlik doğrulamasını ve sabitlemelerini yapılandırır. `CLAUDE_CODE_USE_VERTEX=1` olana kadar gizlidir                                                                                             |
+| `/simplify [target]`                    | **Skill.** Değişen kodu yeniden kullanım, sadeleştirme ve verimlilik için gözden geçirir ve düzeltmeleri uygular. Hata avı değildir                                                                                              |
+| `/skill-doctor`                         | Her skill'in bağlamda ne kadar yer kapladığını ve ne sıklıkla kullanıldığını gösterir                                                                                                                                            |
+| `/skills`                               | Kullanılabilir skill'leri listeler, filtreler ve bir skill'in görünürlüğünü değiştirir                                                                                                                                           |
+| `/stats`                                | `/usage` için takma ad, Stats sekmesinde açılır                                                                                                                                                                                  |
+| `/status`                               | Ayarları Status sekmesinde açar: sürüm, model, hesap ve bağlantı                                                                                                                                                                 |
+| `/statusline`                           | Durum satırını yapılandırır — ne istediğinizi tarif edin, ya da kabuk prompt'unuzdan otomatik yapılandırmak için boş çalıştırın                                                                                                  |
+| `/stickers`                             | Claude Code sticker'ları sipariş eder                                                                                                                                                                                            |
+| `/stop`                                 | Geçerli arka plan oturumunu durdurur. Yalnızca birine bağlıyken kullanılabilir                                                                                                                                                   |
+| `/subtask <task>`                       | Konuşmayı devralan ve sonucu geri bu konuşmaya bildiren, fork edilmiş bir subagent başlatır                                                                                                                                      |
+| `/tasks`                                | Geçerli oturumdaki arka plan işlerini görüntüler ve yönetir. `/bashes` de aynı işi yapar                                                                                                                                         |
+| `/team-onboarding`                      | Claude Code kullanım geçmişinizden bir takım oryantasyon rehberi üretir                                                                                                                                                          |
+| `/teleport`                             | Claude Code on the web'deki bir oturumu bu terminale çeker. `/tp` de aynı işi yapar                                                                                                                                              |
+| `/terminal-setup`                       | Yeni satır için bir Shift+Enter kısayolu kurar, ya da terminaliniz için eşdeğer düzeltmeyi uygular                                                                                                                               |
+| `/theme`                                | Renk temasını değiştirir; auto, daltonized, ANSI ve özel temalar dahil                                                                                                                                                           |
+| `/tui [default\|fullscreen]`            | Terminal arayüz render motorunu ayarlar ve konuşmanız bozulmadan onunla yeniden başlatır                                                                                                                                         |
+| `/ultrareview [PR or branch]`           | Bir cloud sandbox'ında derin, çoklu agent'lı bir kod incelemesi çalıştırır. Artık `/code-review ultra` tercih edilir                                                                                                             |
+| `/upgrade`                              | Daha üst bir plan katmanına geçmek için tarayıcınızda yükseltme sayfasını açar                                                                                                                                                   |
+| `/usage`                                | Oturum maliyetini, plan kullanım sınırlarını ve etkinlik istatistiklerini gösterir. `/cost` ve `/stats` takma adlarıdır                                                                                                          |
+| `/usage-credits`                        | Bir sınıra ulaştığınızda kullanım kredilerini yapılandırır, ya da yöneticinizden talep eder                                                                                                                                      |
+| `/verify`                               | **Skill.** Uygulamayı derleyip çalıştırarak ve sonucu gözlemleyerek bir değişikliğin gerektiği gibi çalıştığını doğrular                                                                                                         |
+| `/voice [hold\|tap\|off]`               | Sesli dikteyi açar/kapatır, ya da belirli bir modda etkinleştirir                                                                                                                                                                |
+| `/web-setup`                            | Yerel `gh` kimlik bilgilerinizi kullanarak GitHub hesabınızı Claude Code on the web'e bağlar                                                                                                                                     |
+| `/workflow-authoring`                   | **Skill.** Dinamik workflow betikleri yazmak için referansı yükler                                                                                                                                                               |
+| `/workflows`                            | Workflow'ları izlemek, duraklatmak, sürdürmek ya da kaydetmek için workflow ilerleme görünümünü açar                                                                                                                             |
+
+### `/` menünüz bu tablodan neden daha kısa
+
+Her komut her kullanıcıda görünmez. Kullanılabilirlik platformunuza, planınıza ve ortamınıza bağlıdır: `/desktop` yalnızca bir Claude aboneliğiyle giriş yapıldığında macOS ve x64 Windows'ta görünür, `/upgrade` ise Enterprise planlarında görünmez. Bilinmesi gereken dört davranış var:
+
+- **Vurgulama.** Claude Code, en üstteki öneriyi yalnızca `/`'den sonraki harfler bir komutun adıyla ya da takma adıyla eşleştiğinde vurgular — adın başından ya da içindeki bir kelimeden itibaren, `:`, `_` ve `-` yok sayılarak. `/adddir` yazmak `/add-dir`'i vurgular; `/new` yazmak, takma adı üzerinden `/clear`'ı vurgular. `Enter`, vurgulanan öneriyi çalıştırır.
+- **Bir yazım hatasından sonra.** Hiçbir şey vurgulanmaz. Yakın eşleşmeler listede kalır ve `Tab` ya da ok tuşlarıyla birini seçebilirsiniz, ama `Enter` yazdığınız metni olduğu gibi gönderir ve `Unknown command` bildirir.
+- **Size açık olmayan komutlar.** Menüden tamamen çıkarılırlar. Hiçbir şey eşleşmediğinde `No commands match "/name"` görürsünüz.
+- **Gizli komutlar.** Birkaç kullanılabilir komut — `/heapdump`, `/rate-limit-options`, `/setup-bedrock`, `/setup-vertex` — tasarım gereği menüden çıkarılmıştır. Kısmi bir ad hiçbir zaman gizli bir komutu menüye getirmez; tam adı yazarsanız çalışır.
+
+MCP server'lar da komut olarak görünen prompt'lar sunabilir; bu yüzden sunucuları yapılandırılmış bir proje, bu tablonun listelemediği girdiler gösterir.
+
+## Uygulamalı laboratuvar
+
+Bu dersin bir lab-repo alıştırması yok: buradaki her komut canlı, etkileşimli bir oturum üzerinde çalışır ve bir oturumun `/` menüsü, uydurma çıktı olmadan [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan, tek komutla çalıştırma) şekilde yakalanamayacak bir TUI yüzeyidir. Bunun yerine, Claude'un okumasında sakınca görmediğiniz herhangi bir dizinde, aşağıdakileri kendi terminalinizde yapın.
+
+<Lab
+  title="Laboratuvar · kendi komut menünüzü okuyun"
+  lessonId="tr/l1-beginner/m04-commands/slash-command-reference"
+  repoTag="none"
+  steps={[
+    '`claude` ile bir oturum başlatın, sonra tek bir `/` yazıp menüyü okuyun. Kabaca kaç girdi gördüğünüzü ve yukarıdaki tablodakilerden hangilerinin eksik olduğunu not edin — bunlar planınızın, platformunuzun ya da ortamınızın sunmadığı komutlardır.',
+    "`/adddir` yazın (tiresiz) ve `/add-dir`'in vurgulandığını doğrulayın. `Enter` yerine `Esc`'e basın.",
+    "`/new` yazın ve bunun `/clear`'ı vurguladığını doğrulayın — takma ad eşleşmesi. `Esc`'e basın.",
+    "`/heapdum` yazın ve hiçbir şeyin eşleşmediğini doğrulayın. Sonra tam adıyla `/heapdump` yazın ve göründüğünü doğrulayın — bu bir hata değil, gizli komut kuralıdır — ve `Esc`'e basın. `Enter`'a basmayın: göndermek, tüm konuşmanızı ve kimlik bilgilerinizi içeren bir heap anlık görüntüsünü Desktop'ınıza yazar.",
+    '`/help` çalıştırın ve listesini yukarıdaki tabloyla karşılaştırın. Sonra `/status` çalıştırın ve turun ortasında bile hemen açıldığını fark edin.',
+    'Pencereyi neyin doldurduğunu görmek için `/context` çalıştırın, sonra oturumun şu ana kadar neye mal olduğunu görmek için `/usage`.',
+  ]}
+  expected="Sizin / menünüz yukarıdaki tablonun bir alt kümesidir; /adddir, /add-dir'i ve /new, /clear'ı vurgular; /heapdum hiçbir şeyle eşleşmezken /heapdump eşleşir; /help, /status, /context ve /usage hiçbiri hata vermeden açılır."
+  checklist={[
+    '`/` menüsü açıldı ve yazdıkça süzüldü',
+    'Tiresiz bir önek, tireli komutu yine de vurguladı',
+    'Bir takma ad (`/new`), gerçek komutunu (`/clear`) vurguladı',
+    'Gizli bir komut yalnızca tam adıyla göründü',
+    'Kurulumunuzun sunmadığı, tablodaki en az üç komutun adını verebiliyorsunuz',
+  ]}
+/>
+
+Yukarıdaki her adım etkileşimli bir diyalogdur. Burada bilinçli olarak bir transcript yok: bir TUI menüsünü göstermenin dürüst yolu, onu size açtırmaktır — Claude Code'un bu biçimde hiç yazdırmadığı bir kaydı yapıştırmak değil.
+
+## Anti-pattern'ler
+
+**Bir komutu cümle ortasında yazmak.** `please /compact this` hiçbir şey yapmaz — bir komut yalnızca mesajın başında tanınır. _Düzeltme:_ komutu tek başına gönderin, sonra cümleyi.
+
+**Kuyruğa alınan bir komutun hemen çalıştığını varsaymak.** Claude yanıt verirken `/model opus` gönderin; çoğu komut için bu, turun bitmesini bekler. _Düzeltme:_ değişiklik geçerli tur için önemliyse önce `Esc` ile turu durdurun; fiilen ne geçerli olduğunu doğrulamak için `/status`'a bakın.
+
+**Bir slash komutun etrafında betik yazmak.** Komutlar etkileşimli bir oturumun içinde yaşar ve sürümler arasında değişir. _Düzeltme:_ betiklenen her şey için bir sonraki dersteki CLI bayraklarını kullanın — `claude -p`, `--model`, `--permission-mode` — bunlar kararlı yüzeydir.
+
+**Paket hâlinde gelen bir Skill'i yerleşik komut sanmak.** `/code-review`, `/simplify` ve `/doctor`, sabit prosedürler değil, Claude'a verilen prompt'lardır. Çıktıları modele ve diff'e göre değişir. _Düzeltme:_ bulgularını güvenilecek bir hüküm değil, okunacak bir inceleme olarak ele alın; kendi skill'lerinizi de aynı şekilde yazabileceğinizi unutmayın.
+
+**Bir komutun argümanlarını tahmin etmeye çalışmak.** Çoğu komut argümansız da makul bir şey yapar — `/model` bir seçici açar, `/resume` oturum seçiciyi açar, `/statusline` kendini otomatik yapılandırır. _Düzeltme:_ önce boş çalıştırın ve ne sunduğunu okuyun.
+
+**`/fork`, `/branch` ve `/subtask`'ı birbirine karıştırmak.** Hepsi bir konuşmayı kopyalar, farkları nerede son bulduğunuzdadır. _Düzeltme:_ `/branch` sizi kopyaya geçirir; `/fork` kopyayı siz burada kalırken ayrı bir arka plan oturumu olarak çalıştırır; `/subtask` işi, sonucu bu konuşmaya geri dönen bir subagent'a devreder. 03. ders ilk ikisini ayrıntılı ele alır.
+
+<Callout variant="changed" label="Değişti">
+  2025 dönemi eğitimlerinin hâlâ gösterdiği dört komut artık yok. `/pr-comments`, v2.1.91'de
+  kaldırıldı — bunun yerine pull request yorumlarını görüntülemesini Claude'dan isteyin. `/vim`,
+  v2.1.92'de kaldırıldı — düzenleme modlarını `/config` → Editor mode üzerinden değiştirin.
+  `/ultraplan` kaldırıldı — plan mode kullanın. Ve bağımsız `/output-style` komutu v2.1.73'te
+  kullanımdan kaldırıldı, v2.1.91'de tamamen kaldırıldı — `/config`'te bir stil seçin ya da
+  `outputStyle` ayarını doğrudan belirleyin.
+</Callout>
+
+<Callout variant="changed" label="Değişti">
+  `/btw` artık bir soru gerektirmiyor. Onu boş çalıştırın; katman, en son yan sorunuzu yeniden açar;
+  önceki cevaplar arasında geriye gitmek için `Left`'e, geçerli olana doğru dönmek için `Right`'a ve
+  listeyi temizlemek için `x`'e basın. v2.1.212'den önce boş bir `/btw`, bunun yerine bir kullanım
+  mesajı yazdırıyordu ve `Left`/`Right` gezinmesi v2.1.187 ya da sonrasını gerektiriyor.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/slash-command-reference"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir slash komut, mesajın neresinde tanınır?"
+  options={[
+    {
+      text: 'Yalnızca mesajın başında; addan sonraki her şey onun argümanı olur.',
+      correct: true,
+      explanation:
+        "Doğru. Paket hâlinde gelen skill'ler tek istisnadır: başta zincirlenen birkaçı, sondaki metni ayrı ayrı alır.",
+    },
+    {
+      text: 'Mesajın herhangi bir yerinde, kendi satırında olduğu sürece.',
+      explanation: 'Mesaj ortasındaki bir komut yalnızca metindir — hiçbir şey çalışmaz.',
+    },
+    {
+      text: 'Yalnızca bir oturumun ilk mesajında.',
+      explanation: 'Komutlar konuşmanın herhangi bir noktasında çalışır.',
+    },
+    {
+      text: 'Herhangi bir yerde, ama yalnızca Claude boştayken.',
+      explanation:
+        'Önemli olan boşta olması değil, konumdur — tur ortasında gönderilen bir komut genelde kuyruğa alınır ve sonra çalışır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/slash-command-reference"
+  questionId="q2"
+  lang="tr"
+  prompt="Referansta bir komut hakkında okudunuz, ama onu oturumunuzda yazınca Unknown command bildiriyor. En olası açıklama nedir?"
+  options={[
+    {
+      text: 'Kurulumunuz bozuk ve `claude doctor` gerektiriyor.',
+      explanation:
+        'Mümkün ama olası değil — kullanılabilirlik, tasarım gereği platforma, plana ve ortama göre değişir.',
+    },
+    {
+      text: 'Komut, platformunuzda, planınızda ya da ortamınızda size açık değil, bu yüzden menüden çıkarılmış.',
+      correct: true,
+      explanation:
+        "Aynen — `/desktop` bir abonelikle macOS ya da x64 Windows gerektirir, `/upgrade` Enterprise'da gizlidir, ve benzeri.",
+    },
+    {
+      text: 'Komutlar yalnızca tam ekran render modunda çalışır.',
+      explanation:
+        'Tam ekran, bazı diyalogların ne zaman açıldığını değiştirir, hangi komutların var olduğunu değil.',
+    },
+    {
+      text: 'Önce `/reload-skills` çalıştırmanız gerekiyor.',
+      explanation: 'O, kendi skill dizinlerinizi yeniden tarar, yerleşik komut kümesini değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/slash-command-reference"
+  questionId="q3"
+  lang="tr"
+  prompt="Skill olarak işaretlenmiş bir komutla sıradan bir yerleşik komut arasındaki fark nedir?"
+  options={[
+    {
+      text: "Bir Skill cloud'da çalışır; bir yerleşik komut yerel çalışır.",
+      explanation:
+        "Bu, bir Workflow'u ya da `/code-review ultra`'yı tarif eder, ve yalnızca kısmen.",
+    },
+    {
+      text: "Bir Skill, Claude'a verilen bir prompt'tur — kendi skill'leriniz için kullandığınız aynı mekanizma; bir yerleşik komut ise CLI'ya kodlanmış davranıştır.",
+      correct: true,
+      explanation:
+        "Doğru, ve bu yüzden bir Skill'in çıktısı modele ve girdiye göre değişirken bir yerleşik komutunki değişmez.",
+    },
+    {
+      text: 'Bir Skill argüman alamaz.',
+      explanation: "Skill'ler argüman alır, ve başta zincirlenen birkaçı bunları ayrı ayrı alır.",
+    },
+    {
+      text: "Skill'ler kullanımdan kaldırılıyor ve silinecek.",
+      explanation: "Skill'ler, kendi komutlarınızı eklemenin desteklenen yoludur.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/slash-command-reference"
+  questionId="q4"
+  lang="tr"
+  prompt="Üzerinde olduğunuz konuşmayı kaybetmeden farklı bir yaklaşım denemek istiyorsunuz, ve yeni yönde çalışmayı siz kendiniz sürdürmek istiyorsunuz. Hangi komut?"
+  options={[
+    {
+      text: '`/fork`',
+      explanation:
+        'O, konuşmayı ayrı bir arka plan oturumuna kopyalar ve sizi olduğunuz yerde bırakır.',
+    },
+    {
+      text: '`/branch`',
+      correct: true,
+      explanation:
+        'Branch, konuşmayı bu noktada kopyalar ve sizi kopyaya geçirir, orijinali korur.',
+    },
+    {
+      text: '`/subtask`',
+      explanation: "O, yan bir görevi sonucu bu konuşmaya dönen bir subagent'a devreder.",
+    },
+    {
+      text: '`/clear`',
+      explanation: 'O, boş bir konuşma başlatır — geçmiş taşınmaz.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m04-commands/slash-command-reference"
+  questionId="q5"
+  lang="tr"
+  prompt="`/heapdum` yazmak hiçbir eşleşme göstermiyor. Bu size ne anlatır?"
+  options={[
+    {
+      text: 'Komut kurulumunuzda yok.',
+      explanation: 'Var — sadece menüden çıkarılmış.',
+    },
+    {
+      text: 'Hiçbir şey: kısmi bir ad gizli bir komutu hiçbir zaman menüye getirmez, ve `/heapdump` tam yazıldığında yine de çalışır.',
+      correct: true,
+      explanation:
+        'Doğru. `/heapdump`, `/rate-limit-options`, `/setup-bedrock` ve `/setup-vertex` tasarım gereği gizlidir.',
+    },
+    {
+      text: 'Bir yazım hatası yaptınız, bu yüzden Enter Unknown command bildirirdi.',
+      explanation:
+        'Bu, görünür komutlara uygulanan yazım hatası kuralıdır; burada komut yanlış yazılmış değil, gizlidir.',
+    },
+    {
+      text: "Önce onu `/config`'te etkinleştirmeniz gerekir.",
+      explanation: 'Gizli komutlar etkinleştirme gerektirmez — yalnızca tam ad.',
+    },
+  ]}
+/>
+
+**Sırada:** `02-cli-flags`, oturumun dışına çıkar — `claude`'un nasıl başladığına karar veren bayraklar ve betikleyebileceğiniz headless `-p` modu.

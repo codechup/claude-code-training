@@ -1,15 +1,15 @@
 ---
 title: 'Checkpoint’ler ve /rewind'
-description: 'Gönderdiğiniz her prompt bir checkpoint oluşturur. Rewind menüsü (Esc Esc veya /rewind), altı seçeneği ve checkpoint’lemenin bilinçli olarak izlemediği dört şey.'
+description: 'Gönderdiğiniz her prompt, dosyalarınızın bir checkpoint’ini oluşturur. Rewind menüsünü (Esc Esc veya /rewind), altı seçeneğini ve checkpoint’lemenin bilinçli olarak izlemediği dört şeyi öğrenin — bir Bash komutunun değiştirdiği her şey dâhil.'
 level: 1
 module: 'm02-interact'
 order: 5
 duration_min: 10
 difficulty: core
-tags: ['checkpoints', 'rewind', 'undo', 'lab']
+tags: ['checkpoint', 'rewind', 'geri-alma', 'laboratuvar']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Checkpointing'
@@ -23,10 +23,303 @@ sources:
     title: 'How Claude Code works'
     url: 'https://code.claude.com/docs/en/how-claude-code-works.md'
     verified_at: 2026-09-07
+  - type: official
+    title: 'Interactive mode'
+    url: 'https://code.claude.com/docs/en/interactive-mode.md'
+    verified_at: 2026-09-07
 lab:
   repo_tag: 'lesson/m02-05-start'
 ---
 
-Bu ders checkpoint'leri (kontrol noktaları) anlatır: her kullanıcı prompt'u yeni bir checkpoint oluşturur, bir oturum en son 100 checkpoint'in dosya anlık görüntülerini saklar ve checkpoint'ler konuşmayla birlikte kaydedildiği için oturumu sürdürdükten sonra da `/rewind` çalışır. Rewind menüsü `/rewind` ile veya prompt girdisi **boşken** iki kez `Esc` ile açılır; altı seçeneği (kodu ve konuşmayı geri al, yalnızca konuşma, yalnızca kod, buradan itibaren özetle, buraya kadar özetle, vazgeç) tek tek işlenir. En kritik bölüm dört boşluktur: Bash komutlarının değiştirdiği dosyalar, çoğu subagent'ın düzenlemeleri, dışarıdan yapılan değişiklikler ve symlink/hard link yollar geri alınmaz — bunların karşılığı git'tir. Lab reposunda gerçek bir düzenleme yapılır ve geri alınır.
+## Hedefler ve ön koşullar
 
-> Bu sayfa henüz çevrilmemiş bir taslaktır; İngilizce kaynak ders tam metindir.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Bir [checkpoint](/tr/playbook/glossary/#checkpoint)'in (oturum sırasında dosyalarınızın otomatik alınan anlık görüntüsü) ne zaman oluşturulduğunu ve bir oturumun kaç tanesini sakladığını söylemek.
+- Rewind menüsünü iki şekilde açmak — `/rewind` ile ya da boş bir prompt girdisinde `Esc`'e iki kez basarak — ve altı seçeneğinden doğru olanı seçmek.
+- Checkpoint'lemenin geri yükle**mediği** dört değişiklik kategorisini sıralamak ve her boşluğu kapatan aracı adlandırmak.
+- **Summarize from here** / **Summarize up to here**'i hedefli bir `/compact` olarak kullanmak.
+- Bir Claude düzenlemesini TUI olmadan, bir [headless](/tr/playbook/glossary/#headless) (arayüzsüz, tek seferlik) ya da betiklenmiş çalıştırmadan geri almak.
+
+**Ön koşullar.** `02-tools-read-edit-run` dersi (checkpoint'ler dosya düzenleme tool'larını izler, bu yüzden bunların hangileri olduğunu bilmeniz gerekir) ve lab reposunun bir klonu.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Checkpoint'ler oturum düzeyinde bir kurtarma yöntemidir, sürüm kontrolü değil — dokümantasyon bunu
+  tam olarak bu sözlerle söylüyor. Bir Bash komutunun dokunduğu hiçbir şeyi kapsamazlar, çoğu
+  [subagent](/tr/playbook/glossary/#subagent)'ın (ana oturumdan ayrı, kendi bağlamında çalışan
+  yardımcı agent) yaptığı düzenlemeleri kapsamazlar ve dosya anlık görüntüleri, oturumun son bir
+  tanesini kaydetmesinden yaklaşık 30 gün sonra saklama temizliğinde silinir. Değişiklik bu öğleden
+  sonranın ötesinde önemliyse, bunu [commit](/tr/playbook/glossary/#commit)'leyin (değişikliğinizi
+  git geçmişine kalıcı olarak kaydedin). Commit'lenmemiş işleri olan bir depoda gerçekten riskli bir
+  şey denemek üzereyseniz, önce commit'leyin ya da stash'leyin ve güvenlik ağı olarak git'i
+  kullanın; `/rewind`'i, onun için tasarlandığı sıradan "bu tur ters gitti" durumu için kullanın.
+</WhenNotToUse>
+
+## Kavram
+
+### Neyin ne zaman checkpoint'lendiği
+
+- **Her kullanıcı prompt'u yeni bir checkpoint oluşturur.** Her düzenleme değil — her prompt.
+- Claude Code, düzenleme tool'larının değiştirmek üzere olduğu dosyaların anlık görüntüsünü, değişiklikten önce alır.
+- Bir oturum, dosya anlık görüntülerini **en son 100** checkpoint için saklar.
+- Checkpoint'ler konuşmayla birlikte kaydedilir; bu yüzden oturumu sürdürdükten sonra da `/rewind` çalışmaya devam eder.
+- Anlık görüntüler, varsayılan olarak oturumun son bir anlık görüntü kaydetmesinden yaklaşık 30 gün sonra saklama temizliğinde silinir. Anlık görüntüleri kalmamış bir checkpoint'e rewind yapmak `No files were restored` hatasıyla başarısız olabilir. Bunları daha uzun süre saklamak için `cleanupPeriodDays` değerini artırın.
+
+### Rewind menüsü
+
+<CodeBlock title="rewind menüsünü açma">
+
+```text
+/rewind                 # run the command, from anywhere in the session
+Esc Esc                 # press Escape twice while the prompt input is EMPTY
+```
+
+</CodeBlock>
+
+Prompt girdisinde metin varsa, çift `Esc` menüyü açmak yerine girdiyi temizler — temizlenen metin girdi geçmişinize eklenir, bu yüzden menüde işiniz bittikten sonra `Up`'a basarak geri getirebilirsiniz.
+
+Menü, bu oturumda gönderdiğiniz her prompt'u listeler. Bir nokta seçin, sonra bir eylem seçin:
+
+| Seçenek                           | Ne yapar                                                                                  |
+| --------------------------------- | ----------------------------------------------------------------------------------------- |
+| **Restore code and conversation** | İkisini de o noktaya geri döndürür                                                        |
+| **Restore conversation**          | Konuşmayı geri sarar, mevcut kodu korur                                                   |
+| **Restore code**                  | Dosya değişikliklerini geri alır, konuşmayı korur                                         |
+| **Summarize from here**           | Konuşmayı bu noktadan _itibaren_ bir özete sıkıştırır                                     |
+| **Summarize up to here**          | Konuşmanın bu noktadan _önceki_ kısmını sıkıştırır, sonraki mesajları olduğu gibi bırakır |
+| **Never mind**                    | Değişiklik yapmadan listeye döner                                                         |
+
+İki kod geri yükleme seçeneği **yalnızca** seçilen checkpoint'in geri alınacak izlenmiş dosya değişiklikleri olduğunda görünür. Konuşmayı geri yükledikten ya da **Summarize from here**'i seçtikten sonra, seçilen mesajdaki orijinal prompt, yeniden gönderebilmeniz ya da düzenleyebilmeniz için girdi alanına geri konur.
+
+Bir özeti yönlendirmek için ok tuşlarıyla bir **Summarize** seçeneğini vurgulayın ve satır _add context (optional)_ yazdığında talimatlarınızı girin, ardından `Enter`'a basın. Seçeneği numara tuşuyla seçmek, talimat olmadan hemen özetler. Özetleme diskteki dosyaları değiştirmez ve orijinal mesajlar oturumun [transcript](/tr/playbook/glossary/#transcript)'inde (kaydedilmiş oturum dökümü) kalır.
+
+Aynı Claude Code sürecinde daha önce `/clear` çalıştırdıysanız, rewind menüsü listenin en üstünde `/resume <session-id> (previous session)` etiketli bir girdi kazanır — bunu seçmek sizi `/clear`'dan önce etkin olan konuşmaya geri götürür. Bu girdi Claude Code v2.1.191 ya da üzerini gerektirir; daha eski sürümlerde `/resume` çalıştırıp listeden önceki oturumu seçmeniz gerekir.
+
+### Dört boşluk
+
+Bu, ezberlenmesi gereken kısım, çünkü her boşluğun farklı bir çözümü var:
+
+| Geri yüklenmeyen                            | Neden                                                                                                        | Neyi kapsar                                                                                                                                                 |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Bash komutlarının** değiştirdiği dosyalar | Yalnızca Claude'un dosya düzenleme tool'ları üzerinden yapılan doğrudan düzenlemeler izlenir                 | git                                                                                                                                                         |
+| Çoğu **subagent'ın** yaptığı düzenlemeler   | Bir arka plan fork'u, bir `/code-review --fix` çalıştırması — bu düzenlemeler checkpoint'lerinizde yer almaz | git. (Yalnızca _foreground_ forklanmış bir [skill](/tr/playbook/glossary/#skill)'in — yeniden kullanılabilir talimat paketi — değişiklikleri geri yüklenir) |
+| **Dışarıdan yapılan değişiklikler**         | Elle yapılan düzenlemeler ve diğer eşzamanlı oturumlar yakalanmaz                                            | git                                                                                                                                                         |
+| **Symlink'lenmiş ve hard link'li yollar**   | Bir geri yükleme bunları atlar ve `Restored the code, but skipped N files` uyarısını verir                   | Dosyayı kendiniz düzenleyin ya da Claude'dan düzenlemeyi tersine çevirmesini isteyin                                                                        |
+
+Uzak bir sisteme ulaşan hiçbir şey — bir veritabanı yazması, bir API çağrısı, bir deployment — checkpoint'lenemez. Bunun için [permission mode](/tr/playbook/glossary/#permission-mode) (Claude'un hangi eylemleri onay istemeden yapabileceğini belirleyen mod) ve permission rule'lar vardır.
+
+### Menü olmadan çalışmak
+
+İki geri alma yolu hiç TUI gerektirmez, ikisi de ezbere bilinmeye değer:
+
+- **İsteyin.** "Bunu geri al" sıradan bir talimattır; Claude, kendi düzenlemesini yaptığı tool'ların aynısıyla tersine çevirir.
+- **git.** Neyin değiştiğini görmek için `git diff`, onu atmak için `git checkout -- <path>`. Bu, bir Bash komutunun yaptığı bir değişikliği kapsayan tek yoldur.
+
+## Uygulamalı laboratuvar
+
+### Checkout'u hazırlama
+
+Bu laboratuvardaki her komut, lab reposunun bir klonundan çalıştırılır. Komutların kendisi her platformda aynıdır; farklı olan yalnızca onları birbirine nasıl bağladığınızdır.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-05-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-05-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git clone https://github.com/codechup/claude-code-lab.git; Set-Location claude-code-lab
+git checkout lesson/m02-05-start; npm ci
+npm test
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1'de `&&` operatörü yoktur, bu yüzden yukarıdaki sekmeler onun yerine `;` ile zincirlenir. Bu moduldeki her transcript, Claude Code'u Git Bash üzerinden çalıştıran native Windows'ta kaydedildi; bazı tool çıktılarının ters eğik çizgili yol ayırıcıları göstermesinin nedeni budur.
+
+Burada yazılan komutlarla aşağıdaki kayıtlar arasındaki bir fark: kaydedilen her çalıştırma ayrıca `--settings '{"language":"English"}'` bayrağını da geçti, çünkü kayıtları alan makinenin kullanıcı düzeyinde `language` ayarı Türkçe. Bayrak, görebilmeniz için transcript'teki komut satırlarında duruyor. Kendi ayarlarınız aynı geçersiz kılmayı gerektirmiyorsa bunu eklemeyin.
+
+`lesson/m02-05-start` etiketi, ekilmiş **B2** hatasını taşır: `src/store.ts` içindeki `isOverdue()`, `Date.parse(dueDate)`'i (milisaniye) `now() / 1000` (saniye) ile karşılaştırır; bu yüzden dünü geçmiş bir görev hiçbir zaman gecikmiş olarak bildirilmez. İki test başarısız olur.
+
+Lab gerçek bir düzenleme yapar, sonra onu geri alır — önce bir betiğin yapabileceği şekilde (sürdürülen bir oturumda isteyerek), sonra TUI'nin yaptığı şekilde.
+
+<Lab
+  title="Laboratuvar · bir düzenleme yapın, sonra onu üç şekilde geri alın"
+  lessonId="tr/l1-beginner/m02-interact/checkpoints-rewind"
+  repoTag="lesson/m02-05-start"
+  steps={[
+    'Tag’ı checkout edin ve kurun: `git checkout lesson/m02-05-start && npm ci`.',
+    'Hatayı yeniden üretin: `npm test`. `test/overdue.test.ts` içindeki iki test başarısız olur.',
+    'Claude’a gerçek düzeltmeyi yaptırın: `claude -p "isOverdue() in src/store.ts compares milliseconds against seconds, so overdue tasks are never reported. Fix it with a single Edit and run npm test." --model sonnet --output-format text --max-turns 16 --permission-mode acceptEdits --allowedTools "Read,Edit,Glob,Grep,Bash(npm test)"`',
+    'Düzenlemenin uygulandığını doğrulayın: `git diff -- src/store.ts` çıktısında `now() / 1000` ifadesinin `now()`’a dönüştüğü görülür.',
+    'Aynı oturumda isteyerek geri alın: `claude -p --continue "Undo the edit you just made to src/store.ts, then run git diff and show me the output." --model sonnet --output-format text --max-turns 10 --permission-mode acceptEdits --allowedTools "Read,Edit,Bash(git diff:*)"`',
+    'Doğrulayın: `git status` temizdir ve hata geri gelmiştir.',
+    'Şimdi bunu interaktif olarak yapın. `claude` çalıştırın, aynı düzeltmeyi isteyin, düzenlemeyi bekleyin, ardından boş bir prompt’ta `Esc`’e iki kez basın (ya da `/rewind` çalıştırın), gönderdiğiniz prompt’u seçin ve **Restore code**’u seçin. `git diff`’i tekrar kontrol edin.',
+    'Son olarak Bash boşluğunu kanıtlayın: `claude` çalıştırın ve aynı değişikliği `Edit` yerine `sed` ile yapmasını isteyin. Ardından `/rewind`’i açın — o checkpoint için kod geri yükleme seçenekleri yoktur, çünkü hiçbir şey izlenmemiştir.',
+  ]}
+  expected="Düzeltme çalıştırması tek bir satırı değiştirir ve 15 testin geçtiğini bildirir. `--continue` ile yapılan geri alma bunu tersine çevirir ve `git diff` hiçbir şey yazdırmaz. İnteraktif çalıştırmada **Restore code**, `src/store.ts`'i commit'lenmiş haline döndürür; `sed` varyantından sonra ise rewind menüsü o checkpoint için kod geri yükleme seçeneği sunmaz."
+  checklist={[
+    '`npm test`, düzeltmeden önce 15 testten 2’sini başarısız verdi',
+    'Düzeltme tam olarak bir satırı değiştirdi ve test paketini yeşile çevirdi',
+    '"Az önce yaptığın düzenlemeyi geri al" isteği düzenlemeyi geri aldı; bunu boş bir `git diff` doğruladı',
+    '`Esc Esc`, rewind menüsünü yalnızca prompt girdisi boşken açtı',
+    '`sed` varyantından sonra menü, o checkpoint için **Restore code** seçeneği sunmadı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/05-checkpoints-rewind/00-npm-test-before.txt"
+    range="2-9"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/05-checkpoints-rewind/01-edit-then-undo.txt"
+    range="2-3"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/05-checkpoints-rewind/02-undo-that.txt"
+    range="2-3"
+  />
+</Lab>
+
+Yukarıdaki iki kayıt headless yakalamalardır, bu yüzden menüyü değil _isteme_ yolunu gösterirler: `claude -p --continue` aynı oturumu sürdürür ve "az önce yaptığın düzenlemeyi geri al" isteği onu tersine çevirir. Rewind menüsünün kendisi bir terminal arayüzü (TUI) özelliğidir — ok tuşlarıyla gezip seçim yaptığınız bir liste — bu yüzden bu ders, onun bir ekran görüntüsünü uydurmak yerine tam tuşları ve seçenekleri anlatır. Menüyü kendi gözünüzle göreceğiniz yerler 7. ve 8. adımlardır.
+
+8. adım, gerçekten yapılması gereken adımdır. Bir `sed` ile yapılan değişiklikte kod geri yükleme seçeneklerinin _kaybolduğunu_ görmek, Bash boşluğunu okumaktan daha hızlı öğrenmenin yoludur.
+
+## Anti-pattern'ler
+
+**`/rewind`'i sürüm kontrolü gibi kullanmak.** Checkpoint'ler oturuma özeldir, en fazla 100 tanesi tutulur ve yaklaşık 30 gün sonra temizlenir. _Düzeltme:_ kaybetmekten üzüleceğiniz her şeyi commit'leyin; `/rewind`'i mevcut oturumun hataları için kullanın.
+
+**Bash ile yapılan bir değişikliğin kurtarılabilir olduğunu varsaymak.** `mv`, `rm`, `sed -i` ve dosyaları yeniden yazan bir betik, checkpoint'leme için tamamen görünmezdir. _Düzeltme:_ bir oturumun dosya değiştiren kabuk komutları çalıştırmasına izin vermeden önce commit'leyin.
+
+**Girdide metin varken çift `Esc`.** Bu, menüyü açmak yerine girdiyi temizler; ilk seferinde bir hata gibi görünür. _Düzeltme:_ önce girdiyi temizleyin ya da doğrudan `/rewind` çalıştırın; temizlenen metniniz `Up` tuşuyla erişebileceğiniz girdi geçmişindedir.
+
+**Kodu geri sarıp konuşmayı unutmak.** **Restore code**, konuşmanın düzenlemenin hâlâ var olduğunu sanmasına yol açar; bu yüzden bir sonraki tur, artık var olmayan bir dosya durumu üzerine inşa edilir. _Düzeltme:_ geçmişi özellikle istemiyorsanız **Restore code and conversation**'ı seçin.
+
+**Bir subagent'ın düzenlemelerini geri beklemek.** Arka plandaki bir fork ya da bir `/code-review --fix` çalıştırması ağacınızı düzenler, rewind bunları geri getirmez. _Düzeltme:_ git kullanın; yalnızca _foreground_ (ön planda) forklanmış bir skill'in değişiklikleri kapsanır.
+
+<Callout variant="changed" label="Değişti">
+  Artık bir `/clear`'ın ötesine rewind yapmak mümkün: aynı Claude Code sürecinde daha önce `/clear`
+  çalıştırdıysanız, rewind menüsü en üstte bir `/resume <session-id> (previous session)` girdisi
+  gösterir. Bunun için Claude Code v2.1.191 ya da üzeri gerekir; daha eski sürümlerde önceki
+  oturumu elle seçmek için `/resume` çalıştırmanız gerekiyordu.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/checkpoints-rewind"
+  questionId="q1"
+  lang="tr"
+  prompt="Claude Code bir checkpoint'i ne zaman oluşturur?"
+  options={[
+    {
+      text: 'Her kullanıcı prompt’unda',
+      correct: true,
+      explanation:
+        'Her prompt, kodunuzun durumunu yakalar; bir oturum en son 100 checkpoint’in anlık görüntülerini saklar.',
+    },
+    {
+      text: 'Her dosya düzenlemesinde',
+      explanation: 'Anlık görüntüler düzenleme başına değil, prompt başına alınır.',
+    },
+    {
+      text: 'Yalnızca `/rewind` çalıştırdığınızda',
+      explanation: 'O noktada artık iş işten geçmiş olurdu.',
+    },
+    { text: 'Her git commit’inde', explanation: 'Checkpoint’leme git’ten bağımsızdır.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/checkpoints-rewind"
+  questionId="q2"
+  lang="tr"
+  prompt="Claude, Bash tool'u üzerinden `mv old.ts new.ts` çalıştırarak bir dosyayı yeniden adlandırdı. `/rewind` bunu geri alabilir mi?"
+  options={[
+    {
+      text: 'Hayır — checkpoint’leme yalnızca Claude’un dosya düzenleme tool’ları üzerinden yapılan düzenlemeleri izler',
+      correct: true,
+      explanation: 'Bir Bash komutunun değiştirdiği her şey için kurtarma yolu git’tir.',
+    },
+    {
+      text: '“Restore code and conversation”’ı seçerseniz evet',
+      explanation: 'Yeniden adlandırma hiç anlık görüntülenmedi, geri yüklenecek bir şey yok.',
+    },
+    {
+      text: 'En son 100 checkpoint içindeyse evet',
+      explanation: 'Bu sınır kaç checkpoint tutulduğuyla ilgilidir, neyin izlendiğiyle değil.',
+    },
+    {
+      text: 'Yalnızca dosya 5.000 token’ın altındaysa',
+      explanation: 'O eşik compaction’a aittir, checkpoint’lemeye değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/checkpoints-rewind"
+  questionId="q3"
+  lang="tr"
+  prompt="`Esc`'e iki kez basıyorsunuz ve prompt girdisi sadece temizleniyor. Neden?"
+  options={[
+    {
+      text: 'Girdi boş değildi — çift `Esc`, rewind menüsünü yalnızca boş bir girdiden açar',
+      correct: true,
+      explanation:
+        'Temizlenen metin girdi geçmişinize kaydedilir, bu yüzden menüde işiniz bittikten sonra `Up`’a basarak onu geri getirebilirsiniz.',
+    },
+    { text: 'Oturumda henüz hiç checkpoint yok', explanation: 'Her prompt bir tane oluşturur.' },
+    {
+      text: 'Rewind, `acceptEdits` modunda devre dışıdır',
+      explanation: 'Rewind bir permission mode’a bağlı değildir.',
+    },
+    {
+      text: '`/rewind`’i önce çalıştırmadan kısayol etkinleşmez',
+      explanation: 'İkisi de aynı menünün iki farklı giriş kapısıdır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/checkpoints-rewind"
+  questionId="q4"
+  lang="tr"
+  prompt="Uzun bir hata ayıklama oturumu context'inizi doldurdu, ama başta verdiğiniz talimatlar hâlâ önemli. Hangi rewind seçeneği buna uyar?"
+  options={[
+    {
+      text: 'Hata ayıklamanın başladığı mesajda **Summarize from here**',
+      correct: true,
+      explanation:
+        'Konuşmayı o noktadan itibaren sıkıştırır, daha önceki talimatlarınızı olduğu gibi bırakır.',
+    },
+    {
+      text: 'Aynı mesajda **Summarize up to here**',
+      explanation: 'Bu, o noktadan *önceki* her şeyi sıkıştırır — burada istediğinizin tam tersi.',
+    },
+    {
+      text: 'İlk mesaja **Restore conversation**',
+      explanation: 'Bu, hata ayıklamayı sıkıştırmak yerine tamamen atar.',
+    },
+    {
+      text: '**Restore code**',
+      explanation: 'Bu, dosyaları geri alır ve context için hiçbir şey yapmaz.',
+    },
+  ]}
+/>
+
+**Sırada:** `06-context-basics`, aynı sorunun diğer yarısı — karar sizin yerinize verilmeden önce [context window](/tr/playbook/glossary/#context-window)'un (modelin bir seferde görebildiği metin miktarı) ne kadar dolu olduğunu görmek.

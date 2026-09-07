@@ -1,15 +1,15 @@
 ---
-title: 'Bellek hiyerarşisi, @import ve claudeMdExcludes'
+title: 'Bellek hiyerarşisi, @imports ve claudeMdExcludes'
 description: 'Dört kapsamdaki CLAUDE.md tek bir oturuma yüklenir ve birbirinin yerini almaz, arka arkaya eklenir. Yükleme sırasını, @path importlarının başlangıçta nasıl açıldığını ve claudeMdExcludes ile dosya atlamayı öğrenin.'
 level: 1
 module: 'm03-memory'
 order: 2
 duration_min: 15
 difficulty: core
-tags: ['memory', 'claude-md', 'imports', 'settings']
+tags: ['bellek', 'claude-md', 'importlar', 'ayarlar']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'How Claude remembers your project'
@@ -31,7 +31,332 @@ lab:
   repo_tag: 'none'
 ---
 
-Bu ders dört `CLAUDE.md` kapsamını (managed policy, kullanıcı, proje, local), bunların nasıl birbirine eklenerek yüklendiğini ve `@path` importlarının başlangıçta tamamen açıldığını anlatır. Ayrıca `claudeMdExcludes` ile monorepo'da ilgisiz dosyaların nasıl atlanacağını ve `/compact` sonrasında hangi bellek kaynaklarının geri yüklendiğini gösterir.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l1-beginner/m03-memory/02-hierarchy-imports.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Dört `CLAUDE.md` kapsamını — managed policy, kullanıcı, proje, local — adlandırmak ve her dosyanın işletim sisteminizde nerede durduğunu söylemek.
+- Yükleme sırasını anlatmak ve "arka arkaya eklenir"in neden "yerini alır"dan daha doğru bir tanım olduğunu açıklamak.
+- Başka bir dosyayı bir `CLAUDE.md` içine çekmek için `@path` [import](/tr/playbook/glossary/#import)'larını (bir dosyayı başka bir dosyanın içine başlangıçta olduğu gibi açıp yükleyen `@path` söz dizimi) kullanmak ve bunların bedelinin ne olduğunu söylemek.
+- Dış (external) import onay diyaloğunun ne zaman çıktığını ve nedenini bilmek.
+- İlgisiz bir üst dizin `CLAUDE.md` dosyasını `claudeMdExcludes` ile atlamak.
+
+**Ön koşullar.** `01-claude-md` dersi. Dosya oluşturabileceğiniz bir geçici klasör — bu laboratuvar kum havuzu deposunu kullanmaz.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  `@path` importlarını bir `CLAUDE.md`'yi düzenlemek için kullanın, asla küçültmek için değil: içe
+  aktarılan dosyalar, kendilerine referans veren dosyayla birlikte başlangıçta açılıp bağlama
+  yüklenir; yani 200 satırı beş importa bölmek, 200 satırı tek dosyada tutmakla tam olarak aynı
+  bağlam bedelini, yani aynı [token](/tr/playbook/glossary/#token) (bir dil modelinin metni işlerken
+  kullandığı temel ölçü birimi) maliyetini taşır. Sorununuz düzensizlik değil boyutsa, gerçekten
+  yardımcı olan mekanizma path-scoped [rule](/tr/playbook/glossary/#rule)'lardır (belirli bir dosya
+  yoluna `paths:` frontmatter'ıyla uygulanan talimat dosyası; `03-rules` dersi). Ve kendi projenizde
+  katılmadığınız bir kuralı susturmak için `claudeMdExcludes` kullanmayın — bu bir ayar anahtarı
+  değil, ekibinizle yapacağınız bir konuşmadır.
+</WhenNotToUse>
+
+## Kavram
+
+### Bir CLAUDE.md'nin yaşayabileceği dört yer
+
+Claude Code dört kapsama bakar. Aşağıdaki tablo yükleme sırasındadır, en geniş kapsam önce gelir; yani bir proje talimatı, bağlama bir kullanıcı talimatından sonra girer.
+
+| Kapsam                | Konum                                                                                                                                                   | Ne işe yarar                                        | Kiminle paylaşılır       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ------------------------ |
+| Managed policy        | macOS `/Library/Application Support/ClaudeCode/CLAUDE.md` · Linux ve WSL `/etc/claude-code/CLAUDE.md` · Windows `C:\Program Files\ClaudeCode\CLAUDE.md` | BT tarafından dağıtılan, kurum çapındaki talimatlar | Makinedeki herkesle      |
+| Kullanıcı talimatları | `~/.claude/CLAUDE.md`                                                                                                                                   | Tercihleriniz, her projede geçerli                  | Yalnızca siz, her yerde  |
+| Proje talimatları     | `./CLAUDE.md` ya da `./.claude/CLAUDE.md`                                                                                                               | Ekiple paylaşılan proje standartları                | Ekibiniz, git üzerinden  |
+| Local talimatlar      | `./CLAUDE.local.md`                                                                                                                                     | Bu proje için kişisel notlarınız                    | Yalnızca siz, bu projede |
+
+Bir kurum dosyayı tamamen atlayıp metni doğrudan `managed-settings.json` içinde `claudeMd` anahtarının altına koyabilir. Bu, yönetilen bir `CLAUDE.md` gibi davranır: kullanıcı ve proje dosyalarından önce yüklenir ve yalnızca managed/policy ayarlarında geçerlidir — `claudeMd`'yi kullanıcı, proje ya da local ayarlarında ayarlamak hiçbir şey yapmaz.
+
+### Birbirinin yerine geçmez, arka arkaya eklenirler
+
+İnsanların en çok yanlış anladığı kısım burası. Bulunan tüm dosyalar bağlama arka arkaya eklenir; sonraki bir dosya öncekinin yerini almaz.
+
+Claude Code, `CLAUDE.md` ve `CLAUDE.local.md`'yi çalışma dizininizden **ve üstündeki her dizinden** yükler. Claude'u `foo/bar/` içinde çalıştırırsanız `foo/bar/CLAUDE.md`, `foo/CLAUDE.md` ve bunların yanındaki her `CLAUDE.local.md` alınır. Ağaç boyunca içerik, dosya sisteminin kökünden çalışma dizininize doğru sıralanır; yani Claude'u başlattığınız yere daha yakın talimatlar en son okunur. Tek bir dizin içinde `CLAUDE.local.md`, `CLAUDE.md`'den sonra eklenir — kişisel notlarınız o düzeyde Claude'un okuduğu son şeydir.
+
+"Son okunan" ile "kazanan" aynı şey değildir. İki talimat gerçekten çelişiyorsa dokümantasyon, Claude'un ikisinden birini rastgele seçebileceğini söyler — güvenilir tek çözüm, bellek dosyalarınızı gözden geçirip kaybedeni silmektir. Sıralamanın size verdiği şey, dizideki belgelenmiş bir yerdir; aşağıdaki laboratuvar da son okunan dosyanın Claude'un hem uyduğu hem de kaynağı olarak adlandırdığı dosya olduğu bir çalıştırmayı gösterir: içe aktarılmış bir proje kuralına (`make ship`) karşı `make ship-dev` diyen bir `CLAUDE.local.md`.
+
+Çalışma dizininizin **altındaki alt dizinlerdeki** `CLAUDE.md` dosyaları farklı ele alınır: başlangıçta yüklenmezler. Claude o alt dizindeki bir dosyayı okuduğunda, talep üzerine (on demand) yüklenirler.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni), hiyerarşiyi hiçbir tahmine gerek kalmadan görünür kılan prompt'tur:
+
+```text
+Without reading any files, answer in two sentences: which release command
+applies on this machine, and which memory file does that instruction come from?
+```
+
+Claude'dan kendi kaynağını adlandırmasını istemek, görünmez bir mekanizmayı kontrol edilebilir bir şeye dönüştürür.
+
+### `@path` importları
+
+Bir `CLAUDE.md`, `@path/to/import` ile başka bir dosyayı içine çekebilir. İçe aktarılan (import edilen) dosyalar, kendilerine referans veren dosyayla birlikte başlangıçta açılıp yüklenir.
+
+- Hem göreli hem mutlak yollar çalışır. **Göreli yollar, çalışma dizininize değil, import'u içeren dosyaya göre çözülür.**
+- Importlar iç içe geçebilir, en fazla dört sıçrama (hop) derinliğinde.
+- Import ayrıştırması markdown kod aralıklarını (code span) ve fenced kod bloklarını atlar. Bir yolu import etmeden söz etmek için ters tırnak içine alın: `` `@README` `` düz metin olarak kalır, ters tırnak dışındaki `@README` ise dosyayı import eder.
+
+<CodeBlock title="CLAUDE.md">
+
+```text
+See @README for project overview and @package.json for available npm commands for this project.
+
+# Additional Instructions
+- git workflow @docs/git-instructions.md
+```
+
+</CodeBlock>
+
+Importlar aynı zamanda belirli bir [worktree](/tr/playbook/glossary/#worktree) (aynı deponun ayrı bir dizine çıkarılmış, kendi çalışma kopyasına sahip başka bir dalı) sorununun da çözümüdür. Gitignore'lanmış bir `CLAUDE.local.md`, yalnızca onu oluşturduğunuz worktree'de var olur. Kişisel talimatları bir deponun her worktree'sine taşımak için, bunun yerine ev dizininizden bir dosya import edin:
+
+<CodeBlock title="CLAUDE.local.md">
+
+```text
+# Individual Preferences
+- @~/.claude/my-project-instructions.md
+```
+
+</CodeBlock>
+
+<Callout label="Not">
+  O ev dizini import'u bir **external (dış) import**'tur: yolu çalışma dizininizin dışına çözülür.
+  Claude Code bir projede dış importlarla ilk karşılaştığında, dosyaları listeleyen bir onay
+  diyaloğu gösterir — çünkü bir proje dosyası, başkalarının
+  [commit](/tr/playbook/glossary/#commit)'leyebileceği (projeye kalıcı olarak kaydedebileceği) bir
+  şeydir. Reddederseniz importlar devre dışı kalır ve diyalog bir daha çıkmaz. Kullanıcı
+  kapsamındaki dosyalardaki importlar (`~/.claude/CLAUDE.md`, `~/.claude/rules/`) kendi yazdığınız
+  dosyalardır; bu yüzden masaüstündeki Cowork oturumları dışında diyalog olmadan yüklenirler.
+</Callout>
+
+### `--add-dir` dizinlerinden bellek yüklemek
+
+`--add-dir`, Claude'a ana çalışma dizininizin dışındaki bir dizine erişim verir, ama **varsayılan olarak o dizinin `CLAUDE.md` dosyaları yüklenmez**. Bir ortam değişkeniyle bunu açabilirsiniz:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude --add-dir ../shared-config
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude --add-dir ../shared-config
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$env:CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD = "1"
+claude --add-dir ../shared-config
+```
+
+  </Fragment>
+</OSTabs>
+
+Bu, ek dizinden `CLAUDE.md`, `.claude/CLAUDE.md`, `.claude/rules/*.md` ve `CLAUDE.local.md` dosyalarını yükler.
+
+### `claudeMdExcludes` ile dosya atlamak
+
+Bir [monorepo](/tr/playbook/glossary/#monorepo) (birden çok projenin tek bir depoda tutulduğu düzen) içinde "üstünüzdeki her dizin", başka birkaç ekibin talimatları anlamına gelebilir. `claudeMdExcludes`, dosyaları yol veya glob ile atlar. Desenler **mutlak** dosya yollarıyla eşleştirilir ve diziler ayar katmanları arasında birleşir (merge). Dışlama yalnızca size aitse `.claude/settings.local.json` içine koyun:
+
+<CodeBlock title=".claude/settings.local.json">
+
+```json
+{
+  "claudeMdExcludes": ["**/monorepo/CLAUDE.md", "/home/user/monorepo/other-team/.claude/rules/**"]
+}
+```
+
+</CodeBlock>
+
+Bilinmesi gereken iki sınır var. Managed policy `CLAUDE.md` dosyaları **dışlanamaz** — managed policy'nin bütün amacı zaten budur. Ve dışlamalar yalnızca kullanıcı, proje ve local bellek dosyalarına uygulanır.
+
+### `/compact` sonrasında hayatta kalan nedir
+
+Uzun bir oturum sıkıştırıldığında (compact), proje kökündeki `CLAUDE.md` ve kapsamsız rule'lar diskten yeniden enjekte edilir; [auto memory](/tr/playbook/glossary/#auto-memory) (Claude'un çalışırken kendiliğinden kaydettiği notlar) de öyle. Alt dizinlerdeki iç içe `CLAUDE.md` dosyaları ve `paths:` frontmatter'ı olan rule'lar, Claude onların uygulandığı dosyaları okudukça yeniden yüklenir — yani sıkıştırma sonrasında "kaybolmuş" gibi görünen bir talimat, muhtemelen yalnızca sohbette verilmişti ya da henüz yeniden tetiklenmemiş iç içe bir dosyada yaşıyordu.
+
+## Uygulamalı laboratuvar
+
+<Callout label="Not">
+  Bu laboratuvardaki her [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek
+  komutla çalıştırma) komut, önüne `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` konularak yakalandı; sizinki
+  de öyle olmalı. Auto memory depo başına anahtarlanır (`04-auto-memory` dersi), bu yüzden aynı
+  klonda daha önceki bir laboratuvarı yaparken Claude'un kaydettiği notlar ikinci bir cevap kaynağı
+  olurdu — ve buradaki bütün mesele, çalıştırmalar arasında tam olarak tek bir şeyin değişmesidir.
+</Callout>
+
+Bu laboratuvar kum havuzu deposu gerektirmez — geçici bir klasördeki üç küçük dosya, mekanizmayı görünür kılmaya yeter. `01-claude-md` dersinde olduğu gibi, her dosya [tool](/tr/playbook/glossary/#tool)'u (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işler için çağırdığı yerleşik araç) devre dışıdır; yani herhangi bir spesifik cevap, başlangıçta yüklenen bir bellek dosyasından gelmiş olmalıdır.
+
+<Lab
+  title="Laboratuvar · bir import'un yüklendiğini, sonra bir local dosyanın en son geldiğini izleyin"
+  lessonId="tr/l1-beginner/m03-memory/hierarchy-imports"
+  repoTag="none"
+  steps={[
+    'Önemsediğiniz hiçbir deponun dışında, içinde bir `notes/` alt klasörü olan geçici bir klasör açın.',
+    "`CLAUDE.md` dosyasını bir satır düz metin ve bir import ile yazın: `See @notes/conventions.md for this project's conventions.`",
+    'Boş bir klasörden hiçbir şekilde çıkarılamayacak iki gerçek içeren `notes/conventions.md` dosyasını yazın — örneğin release töreninin `make ship` olduğunu ve asla `npm publish` olmadığını, ve her pull request başlığının `[LAB-42]` gibi bir ticket kimliğiyle başladığını.',
+    'Her iki gerçeği de, her dosya tool\'u devre dışıyken sorun: `claude -p "Without reading any files, answer in one sentence: how is this project released, and what must a pull request title start with?" --model sonnet --max-turns 3 --output-format text --disallowedTools "Read,Glob,Grep,Bash,WebFetch,WebSearch"`',
+    "`CLAUDE.md`'nin yanına, çelişen tek bir satır içeren bir `CLAUDE.local.md` ekleyin: bu makinede release töreni `make ship` değil `make ship-dev`'dir.",
+    'Hangisinin geçerli olduğunu ve nereden geldiğini sorun: `claude -p "Without reading any files, answer in two sentences: which release command applies on this machine, and which memory file does that instruction come from?" --model sonnet --max-turns 3 --output-format text --disallowedTools "Read,Glob,Grep,Bash,WebFetch,WebSearch"`',
+    '`claude` çalıştırın, ardından `/context`, ve Memory files altında kaç girdi listelendiğini sayın.',
+  ]}
+  expected="İlk çalıştırma her iki gerçeği de notes/conventions.md'den aktarır, bu da @import'un başlangıçta açıldığını kanıtlar. İkinci çalıştırmada her iki dosya da yüklüdür, Claude `make ship-dev` cevabını verir ve kaynak olarak CLAUDE.local.md'yi adlandırır — ki bu, belgelenmiş sıralamanın onu koyduğu yerdir: aynı düzeyde CLAUDE.md'den sonra eklenir."
+  checklist={[
+    "Import edilen dosyanın gerçekleri, her dosya tool'u devre dışıyken Claude'a ulaşıyor",
+    "Import `@notes/conventions.md` olarak yazılmış, CLAUDE.md'ye göre çözülüyor",
+    "CLAUDE.local.md gitignore'lanmış (ya da klasör hiç bir depo değil)",
+    "İkinci çalıştırma notes/conventions.md değil CLAUDE.local.md'yi adlandırıyor",
+    '/context, Memory files altında birden fazla girdi listeliyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/02-hierarchy-imports/01-import-loads.txt"
+    range="2-3"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/02-hierarchy-imports/02-local-overrides.txt"
+    range="2-3"
+  />
+</Lab>
+
+İki kayıt da Türkçe cevap veriyor; ne prompt'ta ne de geçici klasörde bunu isteyen bir şey vardı. Hiyerarşi kendini gösteriyor: kayıtları yapan makinede Türkçe cevap isteyen bir kullanıcı kapsamı `~/.claude/CLAUDE.md` var, ve kullanıcı kapsamı her dizindeki her oturuma yüklenir — içinde yalnızca `make ship` hakkında iki dosya olan bir atılabilir klasör dahil.
+
+## Anti-pattern'ler
+
+**Bağlamdan tasarruf etmek için büyük bir `CLAUDE.md`'yi importlara bölmek.** Hiçbir şey tasarruf etmez. Import edilen dosyalar başlangıçta, tam olarak açılarak yüklenir. _Düzeltme:_ daha az bağlam istiyorsanız path-scoped rule'lar kullanın; importları düzen ve tek bir dosyayı birden çok [agent](/tr/playbook/glossary/#agent) (bir hedefi kendi başına adım adım yürüten yapay zekâ süreci) arasında paylaşmak için kullanın.
+
+**Bir import yolunu çalışma dizininize göre yazmak.** Göreli import yolları, import'u içeren dosyaya göre çözülür. Bunu `.claude/CLAUDE.md` içinde yanlış yaparsanız `@notes/x.md`, `.claude/notes/x.md`'yi işaret eder. _Düzeltme:_ yolu, import'u içeren dosyanın dizininde duruyormuş gibi okuyun.
+
+**`CLAUDE.local.md`'yi commit'lemek.** Bu dosya kişisel ve gitignore'lanmış olmak üzere tasarlanmıştır; commit'lenirse, aynı zamanda en son okunan dosya olma özelliğine de sahip, incelenmemiş bir proje talimatına dönüşür. _Düzeltme:_ oluşturduğunuz anda `.gitignore`'a ekleyin.
+
+**Gitignore'lanmış bir `CLAUDE.local.md`'nin her worktree'de olmasını beklemek.** Yalnızca onu oluşturduğunuz yerde vardır. _Düzeltme:_ ondan bir ev dizini dosyasını import edin ve dış import diyaloğunu bir kez kabul edin.
+
+**Kullanıcı kapsamındaki dosyanızın sebep olduğu bir cevabı prompt'a yormak.** `~/.claude/CLAUDE.md` içindeki kalıcı bir tercih, hiç mantıklı olmadığı projeler de dahil olmak üzere her projede, her zaman geçerlidir. _Düzeltme:_ bir sonuç sizi şaşırttığında prompt'u yeniden yazmadan önce `/context` çalıştırıp gerçekte neyin yüklü olduğunu okuyun.
+
+**Yönetilen (managed) bir dosyaya karşı `claudeMdExcludes`'a başvurmak.** Managed policy `CLAUDE.md`, hiçbir ayarla dışlanamaz. _Düzeltme:_ talimat yanlışsa, bu onu dağıtan kişiyle yapacağınız bir konuşmadır.
+
+<Callout variant="changed" label="Değişti">
+  Bir symlink üzerinden ulaştığınız bir rule dosyasını dışlamak artık iki durumda da çalışır: desen
+  ister `.claude/rules/` altındaki yolla ister link hedefiyle eşleşsin, ikisi de dosyayı dışlar.
+  v2.1.239'dan önce yalnızca link hedefiyle eşleşen bir desen işe yarıyordu.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/hierarchy-imports"
+  questionId="q1"
+  lang="tr"
+  prompt="Claude'u foo/bar/ içinde başlatıyorsunuz. foo/ içinde bir CLAUDE.md, foo/bar/ içinde bir tane daha var. Ne olur?"
+  options={[
+    {
+      text: 'Yalnızca foo/bar/CLAUDE.md yüklenir — en yakın dosya kazanır',
+      explanation:
+        'İkisi de yüklenir. Claude Code çalışma dizininden yukarı doğru yürür ve bulduklarını arka arkaya ekler.',
+    },
+    {
+      text: "İkisi de yüklenir, arka arkaya eklenir; foo/CLAUDE.md bağlamda foo/bar/CLAUDE.md'den önce görünür",
+      correct: true,
+      explanation:
+        'Doğru — kökten aşağıya sıralama, yani başlattığınız yere en yakın talimatlar en son okunur.',
+    },
+    {
+      text: 'Yalnızca foo/CLAUDE.md yüklenir, çünkü o proje köküdür',
+      explanation: 'Claude Code\'un burada "proje kökü" diye bir kavramı yok; tüm zinciri yürür.',
+    },
+    {
+      text: 'Claude Code bir çelişki hatası verir ve seçim yapmanızı ister',
+      explanation: 'Böyle bir uyarı yok. Çelişkiler rastgele çözülür, ki tehlikeli olan da budur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/hierarchy-imports"
+  questionId="q2"
+  lang="tr"
+  prompt="CLAUDE.md dosyanız 400 satır. Onu her biri 100 satırlık dört @path importuna bölüyorsunuz. Bu ne değiştirdi?"
+  options={[
+    {
+      text: 'Bağlam kullanımı çeyreğe düşer',
+      explanation:
+        'Hayır. Import edilen dosyalar başlangıçta açılıp yüklenir — token maliyeti aynıdır.',
+    },
+    {
+      text: 'Bağlam kullanımıyla ilgili hiçbir şey; yalnızca düzen daha iyi olur',
+      correct: true,
+      explanation:
+        "Dokümantasyonun söylediği tam olarak bu. Gerçek bir azalma için path-scoped rule'lar kullanın.",
+    },
+    {
+      text: 'Importlar yalnızca Claude eşleşen bir dosyayı okuduğunda yüklenir',
+      explanation: "Bu path-scoped rule'lardır. Importlar koşulsuz olarak başlangıçta yüklenir.",
+    },
+    {
+      text: 'Claude Code reddeder, çünkü importlar iki sıçramayla sınırlıdır',
+      explanation: 'Importlar en fazla dört sıçrama derinliğinde iç içe geçebilir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/hierarchy-imports"
+  questionId="q3"
+  lang="tr"
+  prompt="claudeMdExcludes hangi dosyayı ATLAYAMAZ?"
+  options={[
+    {
+      text: "Bir monorepo'daki üst düzey bir proje CLAUDE.md dosyası",
+      explanation: 'Bu onun asıl kullanım amacıdır.',
+    },
+    {
+      text: 'Başka bir ekibin .claude/rules/ dizini',
+      explanation: 'Mutlak yola karşı bir glob bunu dışlar.',
+    },
+    {
+      text: 'Bir managed policy CLAUDE.md dosyası',
+      correct: true,
+      explanation:
+        'Managed policy dosyaları dışlanamaz, böylece kurum çapındaki talimatlar her zaman geçerli olur.',
+    },
+    {
+      text: "Kendi CLAUDE.local.md'niz",
+      explanation: 'Local bellek dosyaları, diğerleri gibi dışlanabilir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/hierarchy-imports"
+  questionId="q4"
+  lang="tr"
+  prompt="CLAUDE.md dosyanızda @README'den bahsetmenin, dosyayı import etmek yerine düz metin olarak kalmasını istiyorsunuz. Nasıl?"
+  options={[
+    {
+      text: '\\@README olarak escape edin',
+      explanation: 'Ters eğik çizgiyle escape etmek belgelenen mekanizma değildir.',
+    },
+    {
+      text: 'Ters tırnak içine alın — import ayrıştırması kod aralıklarını ve fenced kod bloklarını atlar',
+      correct: true,
+      explanation:
+        'Doğru: ters tırnak içindeki `@README` düz metindir, dışındaki @README ise import eder.',
+    },
+    {
+      text: 'Bir HTML yorumunun içine koyun',
+      explanation:
+        'Blok düzeyindeki HTML yorumları bağlamdan tamamen çıkarılır — metin düz kalmaz, tamamen kaybolur.',
+    },
+    {
+      text: 'Hiçbir şey işe yaramaz; dosyadaki her @ bir importtur',
+      explanation: "Kod aralıkları ve fence'ler, import ayrıştırıcısı tarafından açıkça atlanır.",
+    },
+  ]}
+/>
+
+**Sırada:** `03-rules` — her oturuma yüklenen şeyi gerçekten azaltan mekanizma: `paths:` frontmatter'ı olan `.claude/rules/*.md`.

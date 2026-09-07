@@ -6,10 +6,10 @@ module: 'm03-memory'
 order: 1
 duration_min: 15
 difficulty: core
-tags: ['memory', 'claude-md', 'init']
+tags: ['bellek', 'claude-md', 'init']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'How Claude remembers your project'
@@ -27,7 +27,344 @@ lab:
   repo_tag: 'lesson/m03-01-start'
 ---
 
-Bu ders, `CLAUDE.md`'nin ne olduğunu, oturumun hangi anında okunduğunu ve içine hangi bilgilerin girmesi gerektiğini anlatır. `/init` ile ilk taslağı üretir, `/context` ile dosyanın gerçekten yüklendiğini doğrular ve laboratuvarda aynı komutu iki kez çalıştırarak — dosya yokken ve varken — Claude'un cevabının değiştiğini kanıtlarsınız.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l1-beginner/m03-memory/01-claude-md.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- `CLAUDE.md`'nin ne olduğunu ve oturumun hangi anında okunduğunu söylemek.
+- Belirli bir bilginin `CLAUDE.md` dosyasına mı, yola özel bir kurala mı, yoksa bir [skill](/tr/playbook/glossary/#skill)'e mi (Claude'un `/ad` ile çağırdığı ya da kendiliğinden yüklediği yeniden kullanılabilir talimat paketi) ait olduğuna karar vermek.
+- Dosyayı doğru yere koymak — `./CLAUDE.md` ya da `./.claude/CLAUDE.md` — ve ikisinin de neden işe yaradığını bilmek.
+- 200 satırı elle yazmak yerine `/init` ile bir taslak çıkarıp onu iyileştirmek.
+- Dosyanın yüklendiğini iki yolla kanıtlamak: etkileşimli bir oturumda `/context` ile, ve cevabı bu yüzden değişen bir [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) çalıştırmayla.
+
+**Ön koşullar.** Claude Code kurulu ve oturum açılmış olmalı (modül `m01-start`), ve yazma izniniz olan bir proje dizininde bir terminal. Laboratuvar kursun kum havuzu deposunu kullanır, dolayısıyla bir `codechup/claude-code-lab` `git clone`'u da gerekir.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  `CLAUDE.md` bağlamdır, zorunlu kılma değildir. Claude onu okur ve uymaya çalışır; sıkı bir uyumun
+  garantisi yoktur. Bir şeyin sabit bir anda olması gerekiyorsa — her
+  [commit](/tr/playbook/glossary/#commit)'ten (bir git deposuna kaydedilen değişiklik kümesi) önce,
+  her düzenlemeden sonra — bunun yerine bir [hook](/tr/playbook/glossary/#hook) (Claude Code'un
+  yaşam döngüsündeki belirli anlarda otomatik çalışan bir komut) yazın, çünkü hook'lar Claude'un
+  kararından bağımsız olarak kabuk komutu olarak çalışır. Bir şeyin tamamen engellenmesi gerekiyorsa
+  ayarlarda `permissions.deny` kullanın ya da bir `PreToolUse` hook'u yazın. Ve bir şey çok adımlı
+  bir prosedürse ya da yalnızca kod tabanının bir köşesini ilgilendiriyorsa, her tek oturuma
+  yüklenen bir dosyaya ait değildir: onu bir skill ya da yola özel bir kural yapın, böylece
+  bağlamdan yalnızca ilgili olduğunda yer kaplasın.
+</WhenNotToUse>
+
+## Kavram
+
+### Nedir
+
+Her Claude Code oturumu boş bir [context window](/tr/playbook/glossary/#context-window) (bağlam penceresi; modelin tek seferde görebildiği metin miktarı) ile başlar. `CLAUDE.md`, bilgiyi bu sınırın ötesine taşıyan iki mekanizmadan biridir — **sizin** yazdığınız mekanizma. (Diğeri, Claude'un kendisinin yazdığı [auto memory](/tr/playbook/glossary/#auto-memory)'dir (Claude'un oturum sırasında kendiliğinden kaydettiği notlar); bunu `04-auto-memory` dersi ele alır.)
+
+Dosya düz markdown'dır. Claude Code onu her konuşmanın başında okur ve sistem prompt'undan sonra bir kullanıcı mesajı olarak iletir. Bu ayrıntı önemlidir ve yukarıdaki "Ne zaman kullanılmamalı" bölümünün nedeni de budur: `CLAUDE.md`'ye koyduğunuz şey davranışı şekillendirir, onu zorunlu kılmaz.
+
+### Proje dosyası nereye konur
+
+Bir proje `CLAUDE.md`'si iki yerden birinde bulunabilir ve Claude Code ikisini de yükler:
+
+| Yol                   | Neden seçersiniz                                                           |
+| --------------------- | -------------------------------------------------------------------------- |
+| `./CLAUDE.md`         | Depo kökünde görünür; depoyu açan bir insan için açıktır.                  |
+| `./.claude/CLAUDE.md` | Proje kökünü temiz tutar, `.claude/` kurulumunuzun geri kalanının yanında. |
+
+İkisi de sürüm kontrolü üzerinden commit'lenir ve ekibinizle paylaşılır, dolayısıyla bir proje `CLAUDE.md`'si kişisel tercihlerinizi değil proje düzeyinde standartları taşımalıdır. Kişisel, projeye özel notlar proje kökündeki, `.gitignore`'a eklediğiniz `CLAUDE.local.md` dosyasına gider — bunu `02-hierarchy-imports` dersi ele alır.
+
+### İçine ne girer
+
+Dokümantasyon, işe yarayacak kadar somut bir tetikleyici listesi veriyor. Şu durumlarda `CLAUDE.md`'ye bir şey ekleyin:
+
+- Claude aynı hatayı ikinci kez yaparsa.
+- Bir kod incelemesi, Claude'un bu kod tabanı hakkında zaten bilmesi gereken bir şeyi yakalarsa.
+- Sohbete, geçen oturumda yazdığınız aynı düzeltmeyi tekrar yazıyorsanız.
+- Yeni bir ekip arkadaşının verimli olmak için aynı bağlama ihtiyacı olacaksa.
+
+Dosyayı, Claude'un her oturumda elinde tutması gereken gerçeklerle sınırlı tutun: derleme ve test komutları, kurallar, proje düzeni, "her zaman X yap" talimatları. Çok adımlı bir prosedürü bir skill'e taşıyın; yalnızca bir alanı ilgilendiren bir şeyi yola özel bir kurala taşıyın.
+
+Dosyanın ne kadar güvenilir biçimde izlendiğini üç nitelik belirler:
+
+- **Boyut.** 200 satırın altını hedefleyin. Daha uzun dosyalar daha fazla bağlam tüketir ve uyumu azaltır. Claude Code, 4 MiB'a kadar bir `CLAUDE.md`'yi tamamen yükler ve daha büyüğünü atlar — ama "yüklenmesi" "izlenmesi" ile aynı şey değildir.
+- **Yapı.** Markdown başlıkları ve madde işaretleri. Claude yapıyı tıpkı bir okuyucu gibi tarar; düzenli bölümler yoğun paragraflardan daha iyi sonuç verir.
+- **Özgüllük.** Doğrulanabilecek kadar somut talimatlar yazın. "Kodu düzgün biçimlendir" değil, "2 boşluklu girinti kullan". "Değişikliklerini test et" değil, "commit'lemeden önce `npm test` çalıştır".
+
+Bir şey daha: **tutarlılık**. İki talimat birbiriyle çelişirse Claude rastgele birini seçebilir. Memory dosyalarınızı eskimiş ve çelişen satırlar için gözden geçirmek tek seferlik değil, gerçek bir bakım işidir.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (modele verilen istem), dosya var olduktan sonra gerçekten işe yarayıp yaramadığını kontrol etmek için kullandığınız prompt'tur:
+
+```text
+Without reading any files, tell me in two sentences what this project's
+conventions say about fixing a bug that has a test.
+```
+
+Cevap somut geliyorsa dosya yüklenmiştir. Claude bilmediğini söylüyorsa yüklenmemiştir.
+
+<Callout label="Not">
+  Claude'un bağlamı dışında insan bakımcılara not bırakmanın işe yarayan bir yolu: bir
+  `CLAUDE.md`'deki blok düzeyi HTML yorumları (`<!-- … -->`) içerik enjekte edilmeden önce
+  çıkarılır. Kod blokları içindeki yorumlar korunur ve Claude dosyayı `Read` tool'uyla açarsa her
+  şey yeniden görünür olur.
+</Callout>
+
+### İlk taslağı `/init`'e yazdırın
+
+Boş bir dosyadan başlamazsınız. Bir projede `/init` çalıştırın; Claude kod tabanını analiz eder ve keşfedebildiği derleme komutları, test talimatları ve kurallarla başlangıç bir `CLAUDE.md` yazar. Bir `CLAUDE.md` zaten varsa `/init` üzerine yazmak yerine iyileştirme önerir.
+
+`/init`, diğer kodlama agent'larının bıraktığı yapılandırmaları da okur — `.cursor/rules/` ya da `.cursorrules` içindeki Cursor kuralları ve `.github/copilot-instructions.md` içindeki Copilot kuralları — ve ilgili kısımları ürettiği dosyaya dahil eder.
+
+Sonra iyileştirin. `/init` yalnızca koddan çıkarabildiğini yazabilir; bir `CLAUDE.md`'nin değerli yarısı çıkaramadığı yarısıdır: geçen ay sizi ısıran tuzak, aracın varsayılanından farklı olan kural, kimsenin düzenlemesine izin verilmeyen dosya.
+
+<CodeBlock title="proje CLAUDE.md dosyasının taslağını çıkarma ve kontrol etme">
+
+```text
+/init
+/memory
+/context
+```
+
+</CodeBlock>
+
+`/init` taslağı çıkarır, `/memory` dosyayı düzenlemeniz için editörünüzde açar, `/context` ise gerçekte neyin yüklendiğini gösterir — **Memory files** altındaki listeye bakın.
+
+Bir de etkileşimli, çok aşamalı bir `/init` var: `CLAUDE_CODE_NEW_INIT=1` ayarlayın; hangi öğelerin kurulacağını (CLAUDE.md dosyaları, skill'ler, hook'lar) sorar, kod tabanını bir [subagent](/tr/playbook/glossary/#subagent) (ana oturumdan görev devralan, kendi bağlamında çalışan yardımcı agent) ile keşfeder, takip soruları sorar ve hiçbir şey yazmadan önce gözden geçirilebilir bir öneri sunar.
+
+### Zaten bir AGENTS.md'niz varsa
+
+Claude Code `CLAUDE.md`'yi okur, `AGENTS.md`'yi değil. Deponuz başka bir [agent](/tr/playbook/glossary/#agent) (bir hedefi kendi başına adım adım yürüten, tool çağırabilen yapay zekâ süreci) için zaten `AGENTS.md` kullanıyorsa onu ikiye katlamayın — onu içe aktaran bir `CLAUDE.md` oluşturun ve altına Claude'a özgü talimatlar ekleyin:
+
+<CodeBlock title="CLAUDE.md">
+
+```markdown
+@AGENTS.md
+
+## Claude Code
+
+Use plan mode for changes under `src/billing/`.
+```
+
+</CodeBlock>
+
+Claude'a özgü eklemeniz gereken bir şey yoksa bir symlink de işe yarar — ama Windows'ta bir symlink oluşturmak Yönetici izni ya da Geliştirici Modu gerektirir, bu yüzden orada `@AGENTS.md` içe aktarmayı tercih edin.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+ln -s AGENTS.md CLAUDE.md
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+ln -s AGENTS.md CLAUDE.md
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+# Requires Developer Mode or an elevated shell; the @AGENTS.md import is the portable choice.
+New-Item -ItemType SymbolicLink -Path CLAUDE.md -Target AGENTS.md
+```
+
+  </Fragment>
+</OSTabs>
+
+## Uygulamalı laboratuvar
+
+<Callout label="Not">
+  Bu laboratuvardaki her headless komut, önüne `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` konularak
+  yakalandı; sizinkiler de öyle olmalı. Auto memory depo başına anahtarlanır (`04-auto-memory`
+  dersi), dolayısıyla aynı clone'da daha önceki bir laboratuvarı yaparken Claude'un kaydettiği
+  notlar ikinci bir cevap kaynağı olurdu — buradaki bütün mesele, iki çalıştırma arasında tam olarak
+  tek bir şeyin değişmesidir.
+</Callout>
+
+Bu laboratuvarın amacı "bir dosya yaz" değildir. Amaç, aynı prompt'u iki kez çalıştırarak dosyanın Claude'un bildiklerini gerçekten değiştirdiğini görmektir.
+
+Prompt, projeye özgü bir kuralı sorar: laboratuvar deposunda düzeltilmemesi gereken, `TEACHING SURFACE` diye işaretlenmiş iki yorum vardır. `--disallowedTools` ile her dosya tool'u kapatılır, dolayısıyla Claude gidip bakamaz — cevabı verebileceği tek yol, oturum başında yüklenen bir memory dosyasıdır.
+
+<Lab
+  title="Laboratuvar · bir CLAUDE.md dosyasının cevabı değiştirdiğini kanıtlayın"
+  lessonId="tr/l1-beginner/m03-memory/claude-md"
+  repoTag="lesson/m03-01-start"
+  steps={[
+    'Laboratuvar deposunu klonlayın: `git clone https://github.com/codechup/claude-code-lab` ve içine girin.',
+    '`git checkout lesson/m03-01-start` ile başlangıç tag’ini checkout edin, sonra `git ls-files` çalıştırıp listede bir CLAUDE.md olmadığını doğrulayın.',
+    '"Önce" cevabını, yalnızca memory dosyalarının cevap verebilmesi için her dosya tool’u kapalıyken yakalayın: `claude -p "Without reading any files, answer in two sentences: does this repository have any comments that I must not tidy up or delete, and if so, in which file? If you do not know, say you do not know." --model sonnet --max-turns 3 --output-format text --disallowedTools "Read,Glob,Grep,Bash,WebFetch,WebSearch"`',
+    '/init’in dosyanın taslağını çıkarmasına izin verin. Etkileşimli olarak: `claude` çalıştırın, sonra `/init`. Çalıştırmayı yeniden üretilebilir tutmak isterseniz headless olarak: `claude -p "/init" --model sonnet --permission-mode acceptEdits --max-turns 20 --output-format text`. Yazdığı her satırı okuyun.',
+    '/init’in ulaşamadığını kontrol edin ve elle ekleyin — sizden başka kimsenin aklında olmayan bir kural. Dosyayı ya `/memory` ile düzenleyin ya da Claude’dan eklemesini isteyin.',
+    '`/context` çalıştırın ve **Memory files** altındaki listeye bakın — CLAUDE.md’niz orada olmalı.',
+    '3. adımdaki aynı headless komutu tekrar çalıştırın. İki cevabı karşılaştırın.',
+  ]}
+  expected="'Önce' çalıştırması bilmediğini söyler. /init, komutları, mimariyi ve kuralları kapsayan yaklaşık 50 satırlık bir CLAUDE.md yazar. 'Sonra' çalıştırması ise src/api/server.ts dosyasını ve TEACHING SURFACE yorumlarını adlandırır — her dosya tool'u hâlâ kapalıyken, dolayısıyla tek olası kaynak oturum başında yüklenen CLAUDE.md'dir."
+  checklist={[
+    '"Önce" çalıştırması, dosya okumadan bilemeyeceğini kabul ediyor',
+    '/init, projenin ne yaptığı söylenmeden bir taslak CLAUDE.md üretti',
+    'Taslağı okudunuz ve /init’in çıkaramadığı en az bir şeyi eklediniz',
+    '/context, dosyayı Memory files altında listeliyor',
+    '"Sonra" çalıştırması, tüm dosya tool’ları hâlâ kapalıyken soruyu doğru cevaplıyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/01-claude-md/01-before-claude-md.txt"
+    range="2-3"
+  />
+  <Transcript src="content/_shared/transcripts/m03-memory/01-claude-md/03-init.txt" range="2-14" />
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/01-claude-md/02-after-claude-md.txt"
+    range="2-3"
+  />
+</Lab>
+
+Dosyaların nereye indiğine dikkat edin. `/init`, depo kökünde `./CLAUDE.md`'yi yazdı; önce/sonra çifti ise `./.claude/CLAUDE.md`'ye karşı yakalandı. İkisi de proje konumudur ve Claude Code ikisini de yükler — bu tam olarak bu dersteki tablonun konusudur — ama bu, iki kaydın tek değil iki farklı dosyaya işaret ettiği anlamına gelir.
+
+Ortadaki kayıt ikinci bir bakışı hak ediyor, çünkü hikâyeyi biraz karmaşıklaştırıyor. `/init`, `TEACHING SURFACE` kuralını kendi başına buldu — işaretleyici kaynak yorumlarında yazılıydı, dolayısıyla kodu okumak yeterliydi. `/init`'in ulaşamadığı şey, hiçbir yerde yazılı olmayan her şeydir: bir toplantıda alınan karar, bir kez sizi ısıran tuzak, bir kuralın var olma nedeni. Bu, bir `CLAUDE.md`'nin yalnızca sizin yazabileceğiniz yarısıdır ve 5. adımın var olma nedeni de budur.
+
+<Callout label="Not">
+  Her üç kayıt da Türkçe cevap veriyor ve prompt bunu hiç istemedi. Bu, kayıtta bir hata değil: onu
+  üreten makinenin kullanıcı kapsamında Türkçe cevap isteyen bir `~/.claude/CLAUDE.md` dosyası var,
+  ve kullanıcı kapsamındaki bir talimat her projedeki her oturuma yüklenir. Bu, unuttuğunuz memory
+  dosyalarının hâlâ her cevabı şekillendirdiğinin mümkün olan en net gösterimidir — ve
+  `02-hierarchy-imports` dersinin tam olarak konusu budur. Sizin kendi çalıştırmalarınız, kendi
+  memory dosyalarınızın istediği dilde cevap verecektir.
+</Callout>
+
+İki çalıştırma, birebir aynı komuttur. Aralarında değişen tek şey diskteki bir dosyadır.
+
+## Anti-pattern'ler
+
+**Kod tabanını anlatan bir `CLAUDE.md` yazmak.** Dizin düzenleri, bağımlılık listeleri ve mimari genel bakışlar, Claude'un depoyu okuyarak zaten çıkarabileceği şeylerdir — ve biri bir klasörü taşıdığı anda eskirler. `/doctor` bunları kırpmayı aktif olarak önerir. _Düzeltme:_ tuzakları, gerekçeleri ve aracın varsayılanından farklı kuralları tutun; turu silin.
+
+**200 satırı aşmasına izin vermek.** Daha fazla satır daha fazla uyum demek değildir; belirli bir noktadan sonra daha fazla bağlam harcaması ve daha az uyum demektir. _Düzeltme:_ Claude yalnızca eşleşen dosyalara dokunduğunda talimatların yüklenmesi için alana göre `.claude/rules/` (`03-rules` dersi) altına bölün.
+
+**Birbiriyle çelişen iki kural.** Kök dosyada "`async/await` tercih et" ve bir alt dizin dosyasında "`.then()` zincirleri kullan" demek, Claude'un sizin yerinize çözeceği ince bir nüans değildir — ikisinden birini seçebilir. _Düzeltme:_ memory dosyalarınıza bir şey eklerken onları baştan sona okuyun ve kaybedeni silin.
+
+**İçine bir prosedür koymak.** "Bir sürüm çıkarmak için: sürümü artır, changelog betiğini çalıştır, etiketle, push'la, sonra…" bir skill'dir. `CLAUDE.md` içinde bu, hiçbir zaman bir sürüm çıkarmayan yüzlercesi dâhil, her oturumda bağlam harcar. _Düzeltme:_ bunu talep üzerine yüklenen bir skill'e taşıyın.
+
+**Dosyanın var olduğu için yüklendiğini varsaymak.** Yanlış dizin, bir dışlama deseni, dosya adında bir yazım hatası — orada okunmadan durmasının pek çok yolu vardır. _Düzeltme:_ `/context` çalıştırın ve **Memory files** altına bakın. Orada yoksa Claude onu göremez.
+
+**Onu bir garanti gibi görmek.** "CLAUDE.md'de öyle yazıyor" çalışma zamanının kabul ettiği bir argüman değildir. _Düzeltme:_ mutlaka doğru olması gereken her şey için hook'u ya da izin kuralını da ekleyin.
+
+<Callout variant="changed" label="Değişti">
+  `/doctor` (takma adı `/checkup`) artık depoya kaydedilmiş bir `CLAUDE.md`'yi sizin için
+  kırpabiliyor: Claude'un kod tabanından çıkarabileceği içeriği keser, tuzakları, gerekçeleri ve
+  kuralları korur. Bu kırpma kontrolü Claude Code v2.1.206 veya üzerini gerektirir.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/claude-md"
+  questionId="q1"
+  lang="tr"
+  prompt="Aşağıdakilerden hangisi bir proje CLAUDE.md'sine girer?"
+  options={[
+    {
+      text: 'src/ için her klasörü açıklayan tam bir dizin ağacı',
+      explanation:
+        'Claude bunu depoyu okuyarak zaten çıkarır ve bu bilgi eskir. /doctor tam olarak bunu kırpmayı önerir.',
+    },
+    {
+      text: 'Yedi adımlı sürüm çıkarma prosedürü',
+      explanation:
+        'Çok adımlı bir prosedür bir skill’dir — her oturumda değil, talep üzerine yüklenmelidir.',
+    },
+    {
+      text: '"Göreli import’lar .ts uzantısını korur" gibi, aracın varsayılanından farklı bir kural',
+      correct: true,
+      explanation:
+        'Doğru: Claude’un çıkaramayacağı, aksi halde her oturumda yeniden anlatmanız gereken bir gerçek.',
+    },
+    {
+      text: 'Ayrıntılı test çıktısı için kişisel tercihiniz',
+      explanation:
+        'Bir proje CLAUDE.md’si commit’lenir ve paylaşılır. Kişisel proje tercihleri CLAUDE.local.md’ye gider.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/claude-md"
+  questionId="q2"
+  lang="tr"
+  prompt="CLAUDE.md'nizin gerçekten mevcut oturuma yüklendiğini doğrulamak istiyorsunuz. Ne çalıştırırsınız?"
+  options={[
+    {
+      text: '/context çalıştırıp Memory files altındaki listeyi okumak',
+      correct: true,
+      explanation: 'Belgelenmiş kontrol budur. Dosya orada yoksa Claude onu göremez.',
+    },
+    {
+      text: '/init çalıştırıp şikayet edip etmediğine bakmak',
+      explanation:
+        '/init bir CLAUDE.md taslağı çıkarır ya da iyileştirme önerir; mevcut oturum için bir yükleme kontrolü değildir.',
+    },
+    { text: 'claude doctor', explanation: 'Bu, kurulum ve ayar tanılamalarını bildirir.' },
+    {
+      text: 'Hiçbir şey — dosya depo kökündeyse zaten her zaman yüklenir',
+      explanation:
+        'Dışlama desenleri, yanlış dizin ve yazım hataları hepsi var olan ama okunmayan bir dosya üretebilir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/claude-md"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir kural, istisnasız her commit'ten önce uygulanmalı. Nereye girer?"
+  options={[
+    {
+      text: 'CLAUDE.md’ye, kalın ve büyük harflerle',
+      explanation:
+        'CLAUDE.md bağlamdır, zorunlu kılma değildir — vurgu onu bir garantiye dönüştürmez.',
+    },
+    {
+      text: 'Sabit bir yaşam döngüsü olayında kabuk komutu olarak çalışan bir hook',
+      correct: true,
+      explanation:
+        'Doğru. Hook’lar Claude’un kararından bağımsız uygulanır; dokümantasyon tam da bu durum için onlara işaret eder.',
+    },
+    {
+      text: '.claude/rules/ altında yola özel bir kural',
+      explanation:
+        'Bu, talimatları eşleşen dosyalarla sınırlar ama yine de zorunlu kılma değil bağlamdır.',
+    },
+    {
+      text: 'Auto memory',
+      explanation: 'Auto memory, Claude’un kendisinin yazdığı notlardır, bir kapı değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m03-memory/claude-md"
+  questionId="q4"
+  lang="tr"
+  prompt="Deponuzda başka bir kodlama agent'ı için zaten bir AGENTS.md var. Dokümantasyon ne öneriyor?"
+  options={[
+    {
+      text: 'Onu CLAUDE.md olarak yeniden adlandırmak',
+      explanation: 'Bu, AGENTS.md’yi okuyan diğer agent’ı bozar.',
+    },
+    {
+      text: 'İçeriğini yeni bir CLAUDE.md’ye kopyalamak',
+      explanation:
+        'Senkron tutulması gereken iki kopya, import’un tam olarak önlemeye çalıştığı sorundur.',
+    },
+    {
+      text: 'İlk satırı `@AGENTS.md` olan bir CLAUDE.md oluşturup altına Claude’a özgü talimatlar eklemek',
+      correct: true,
+      explanation:
+        'İki araç da tek bir gerçek kaynağını okur ve import’tan sonra hâlâ yalnızca Claude’a özgü talimatlar ekleyebilirsiniz.',
+    },
+    {
+      text: 'Hiçbir şey — Claude Code AGENTS.md’yi de okur',
+      explanation: 'Okumaz. Dokümantasyon açık: Claude Code CLAUDE.md’yi okur, AGENTS.md’yi değil.',
+    },
+  ]}
+/>
+
+**Sırada:** `02-hierarchy-imports` — aynı anda dört `CLAUDE.md` dosyası devredeyken ne olduğunu ve `@path` import'larıyla `claudeMdExcludes`'in neyin yükleneceğini nasıl kontrol etmenize izin verdiğini anlatır.

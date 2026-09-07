@@ -1,15 +1,15 @@
 ---
 title: 'Plan mode: keşfet, planla, onayla, uygula'
-description: 'Plan mode Claude’un okumasına, salt-okunur komut çalıştırmasına ve plan yazmasına izin verir; kaynağınıza dokunmasına izin vermez. Shift+Tab, /plan, üç onay seçeneği ve Ctrl+G.'
+description: 'Plan mode, Claude’un okumasına, salt-okunur komutlar çalıştırmasına ve bir plan yazmasına izin verir — ama kaynağınıza dokunmasına izin vermez. Shift+Tab döngüsünü, /plan önekini, üç onay seçeneğini, bir planı düzenlemek için Ctrl+G’yi öğrenin ve gerçek bir kayıtta plan mode’un doğrudan bir düzenlemeyi nasıl engellediğini görün.'
 level: 1
 module: 'm02-interact'
 order: 4
 duration_min: 15
 difficulty: core
-tags: ['plan-mode', 'permissions', 'lab']
+tags: ['plan-mode', 'izinler', 'laboratuvar']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Choose a permission mode'
@@ -27,6 +27,298 @@ lab:
   repo_tag: 'lesson/m02-04-start'
 ---
 
-Bu ders [plan mode](/tr/playbook/glossary/#plan-mode)'u (plan modu) anlatır: Claude dosyaları okur, keşif için komut çalıştırır ve bir plan yazar, ancak kaynağınızı düzenlemez. Moda girmenin üç yolu (`Shift+Tab`, tek bir prompt için `/plan` öneki, `claude --permission-mode plan`), plan hazır olduğunda sunulan üç onay seçeneği (**Yes, and use auto mode**, **Yes, manually approve edits**, **No, keep planning**) ve planı uygulamadan önce metin düzenleyicide açan `Ctrl+G` gösterilir. Lab reposunun zamana bağımlı test hatası (B5) üzerinde iki gerçek kayıt vardır: biri planı üretir ve `git status`'ı temiz bırakır, diğeri doğrudan bir düzenleme emrini plan mode'un nasıl engellediğini birebir alıntılar. Ders, planlamanın ne zaman maliyetini karşıladığını da söyler: diff'i tek cümleyle anlatabiliyorsanız planı atlayın.
+## Hedefler ve ön koşullar
 
-> Bu sayfa henüz çevrilmemiş bir taslaktır; İngilizce kaynak ders tam metindir.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Plan mode'a girmenin ve çıkmanın üç yolunu kullanmak: `Shift+Tab`, tek bir prompt için `/plan` öneki ve `claude --permission-mode plan`.
+- Plan mode'un tam olarak neyi engellediğini ve neye hâlâ izin verdiğini söylemek.
+- Bir plan hazır olduğunda Claude'un sunduğu üç onay seçeneğini okumak ve doğrusunu seçmek.
+- `Ctrl+G` ile önerilen bir planı çalışmaya başlamadan önce düzenlemek ve plan mode'u bir proje varsayılanı yapmak.
+- Planlamanın ne zaman getirdiği yükü karşıladığına — ve ne zaman karşılamadığına — karar vermek.
+
+**Ön koşullar.** `03-permissions` dersi ([plan mode](/tr/playbook/glossary/#plan-mode) (Claude'un değişiklik yapmadan önce yalnızca okuyup bir plan sunduğu mod) aslında bir [permission mode](/tr/playbook/glossary/#permission-mode)'dur — yani Claude Code oturumunun hangi eylemlere izin verdiğini belirleyen ayarlardan biridir) ve lab reposunun bir klonu.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Plan mode bir gidiş-dönüş turu ekler ve resmî dokümantasyon bunu açıkça söyler: kapsamı net ve
+  düzeltmesi küçük bir görev için — bir yazım hatası, bir log satırı, bir yeniden adlandırma —
+  Claude'dan bunu doğrudan yapmasını isteyin. Kılavuzun verdiği pratik kural işe yarar: **diff'i tek
+  cümleyle anlatabiliyorsanız planı atlayın.** Planlama; yaklaşımdan emin olmadığınızda, değişiklik
+  birden çok dosyaya dokunduğunda ya da değiştirilen kodu tanımadığınızda maliyetini karşılar.
+  Ayrıca izolasyon için de yanlış araçtır: plan mode Claude'un kaynağınızı düzenlemesini engeller,
+  ama bypass permissions'ın etkin olduğu bir oturumda Claude Code bu engelleri hiç uygulamaz.
+</WhenNotToUse>
+
+## Kavram
+
+### Plan mode nedir
+
+> Plan mode, Claude'a değişiklik yapmadan önce araştırma yapıp öneride bulunmasını söyler. Claude dosyaları okur, keşif için kabuk komutları çalıştırır ve bir plan yazar, ama kaynağınızı düzenlemez.
+
+Siz planı onaylayana kadar düzenlemeler engellenmiş kalır. Bunun istisnası, bypass permissions'ın etkin olduğu bir oturumdur: Claude yine düzenlemeden planlaması için _talimat_ alır, ama bu engeller fiilen uygulanmaz.
+
+Planlama sırasında nelerin yine de çalışacağı kurulumunuza bağlıdır. Auto mode (Claude'un bazı kabuk komutlarını sizden onay almadan otomatik olarak sınıflandırıp çalıştırdığı mod) kullanılabilir durumdaysa ve `useAutoModeDuringPlan` açıksa — varsayılan olarak açıktır — size sormak yerine sınıflandırıcı planlama sırasındaki kabuk komutlarını inceler: onaylanan komutlar çalışır, reddedilenler engellenir. Aksi halde, yerleşik salt-okunur kümenin dışındaki komutlar onay ister.
+
+### Girmek ve çıkmak
+
+<CodeBlock title="plan mode'a girip çıkmak">
+
+```bash
+# Start a whole session in plan mode
+claude --permission-mode plan
+
+# Inside a session: press Shift+Tab until the status bar reads
+#   ⏸ plan mode on
+# Press Shift+Tab again to leave plan mode without approving anything.
+
+# Plan for one prompt only: prefix it with /plan
+#   /plan add rate limiting to the API and tell me what changes
+
+# Make plan mode the default for a project's terminal sessions,
+# in .claude/settings.json:
+#   {"permissions": {"defaultMode": "plan"}}
+```
+
+</CodeBlock>
+
+VS Code eklentisiyle başlatılan konuşmalar, başlangıç permission mode'u için proje ayarlarını okumaz — bunun yerine VS Code kullanıcı ayarlarınızda `claudeCode.initialPermissionMode` değerini `plan` olarak ayarlayın.
+
+### Bir planı onaylamak
+
+Plan hazır olduğunda Claude onu sunar ve nasıl ilerlemek istediğinizi sorar. Seçenekler:
+
+| Seçenek                         | Ne yapar                                                                                                 |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| **Yes, and use auto mode**      | Onaylar ve auto mode'da devam eder. Auto mode kullanılamıyorsa **Yes, auto-accept edits** olarak görünür |
+| **Yes, manually approve edits** | Onaylar ve her düzenlemeyi tek tek gözden geçirmenizi sağlar                                             |
+| **No, keep planning**           | Plan mode'da kalır, neyin değişmesi gerektiğini söylersiniz                                              |
+
+Onaylamak plan mode'dan çıkar ve oturumu seçeneğin belirttiği moda geçirir; böylece Claude hemen düzenlemeye başlar. Bir tuşa basmadan önce bilinmesi gereken iki şey var:
+
+- **`Ctrl+G`, önerilen planı varsayılan metin düzenleyicinizde açar**, böylece Claude devam etmeden önce onu değiştirebilirsiniz. Bu, bu derste en yüksek kaldıraca sahip tuştur: bir planı düzeltmek bir düzenleme edimine mal olur; bir uygulamayı düzeltmek ise koca bir oturuma.
+- Bir planı kabul etmek, oturumu siz zaten adlandırmadıysanız plana dayanan bir **otomatik oluşturulmuş başlık** verir.
+
+Sonrasında yeniden planlamak için `Shift+Tab` ile geri dönün ya da bir sonraki prompt'unuzu `/plan` ile başlatın.
+
+### Dört aşamalı iş akışı
+
+Resmî kılavuzun önerdiği şekil, plan mode'un var olma sebebidir:
+
+1. **Keşfet.** `read /src/auth and understand how we handle sessions and login.` Claude okur ve cevap verir; hiçbir şey değişmez.
+2. **Planla.** `I want to add Google OAuth. What files need to change? What's the session flow? Create a plan.`
+3. **Uygula.** Onaylayın ya da `Shift+Tab` ile çıkın, sonra: `implement the OAuth flow from your plan. write tests for the callback handler, run the test suite and fix any failures.`
+4. **Commit yap.** `commit with a descriptive message and open a PR`
+
+Sessiz bir fayda daha var: plan mode'da yazılan bir plan, özetlenen sıradan konuşma geçmişinin aksine, [compaction](/tr/playbook/glossary/#compaction)'dan (uzun bir oturumda konuşma geçmişinin özetlenerek küçültülmesi) sonra **diskten yeniden enjekte edilir**. Uzun bir görevde plan, bozulmadan hayatta kalan birkaç şeyden biridir.
+
+## Uygulamalı laboratuvar
+
+### Depoyu kurmak
+
+Bu laboratuvardaki her komut, lab reposunun bir klonu üzerinden çalışır. Komutların kendisi her
+platformda aynıdır; farklı olan yalnızca onları nasıl zincirlediğinizdir.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-04-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-04-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git clone https://github.com/codechup/claude-code-lab.git; Set-Location claude-code-lab
+git checkout lesson/m02-04-start; npm ci
+npm test
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1'de `&&` operatörü yoktur, bu yüzden yukarıdaki sekmeler bunun yerine `;` ile
+zincirlenir. Bu modüldeki her [transcript](/tr/playbook/glossary/#transcript) (kaydedilmiş gerçek bir
+oturum dökümü), Claude Code'u Git Bash üzerinden çalıştıran yerel (native) bir Windows makinesinde
+kaydedildi; bazı tool çıktılarının ters eğik çizgili yol ayırıcıları göstermesinin sebebi budur.
+
+Burada yazılı komutlarla aşağıdaki kayıtlar arasında bir fark var: her kaydedilen çalıştırma ayrıca `--settings '{"language":"English"}'` bayrağını da geçti, çünkü kayıtları üreten makinenin kullanıcı düzeyinde `language` ayarı Türkçe. Bu bayrak, görebilmeniz için transcript'in komut satırlarında duruyor. Kendi ayarlarınız aynı geçersiz kılmayı gerektirmedikçe bunu kullanmayın.
+
+`lesson/m02-04-start`, ekilmiş **B5** hatasını taşır: `test/overdue.test.ts` içindeki "becomes overdue" testi, saati kontrol etmek yerine gerçek `setTimeout` beklemelerine karşı doğrulama yapar, bu yüzden başarısız olur. İyi bir planlama hedefidir, çünkü _düzeltme_ bir yargı çağrısıdır — testi değiştirmek, fonksiyonun imzasını değiştirmek ya da ikisini birden yapmak — ki resmî dokümantasyonun planlamanın tam olarak bunun için olduğunu söylediği durum budur.
+
+Aşağıdaki iki çalıştırma da `--permission-mode plan` ile [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) olarak kaydedildi.
+
+<Lab
+  title="Lab · zamana bağımlı bir test için plan yap, plan mode'un bir düzenlemeyi reddedişini izle"
+  lessonId="tr/l1-beginner/m02-interact/plan-mode"
+  repoTag="lesson/m02-04-start"
+  steps={[
+    'Tag’i checkout edin ve kurun: `git checkout lesson/m02-04-start && npm ci`.',
+    'Yeniden üretin: `npm test`. Bir test başarısız olur — “a task becomes overdue exactly when its due date passes” —, ~40 ms’lik gerçek bir bekleme sonrasında `true` bekleyip `false` alır.',
+    'Bir düzeltme değil, bir plan isteyin: `claude -p "test/overdue.test.ts has one test that depends on real time passing, so it fails. Do not change any files. Produce a plan for making that test deterministic: which files change, what the change is, and how I verify it afterwards." --model sonnet --output-format text --max-turns 14 --permission-mode plan`',
+    '`git status` çalıştırın. Ağaç temizdir: plan mode dosyaları okudu ve bir plan yazdı, depoda hiçbir şeyi değiştirmedi.',
+    'Şimdi hâlâ plan mode’dayken bir düzenlemeyi zorlamayı deneyin: `claude -p "Edit test/overdue.test.ts right now to use vi.useFakeTimers(). If the edit is blocked, quote the exact message you got and stop." --model sonnet --output-format text --max-turns 8 --permission-mode plan`. Alıntıladığı mesajı okuyun.',
+    '`git status`’u tekrar çalıştırın — hâlâ temiz.',
+    'Son olarak, bunu etkileşimli olarak yapın: `claude` çalıştırın, durum çubuğu `⏸ plan mode on` gösterene kadar `Shift+Tab`’a basın, aynı planlama sorusunu sorun, planı düzenleyicinizde açmak için `Ctrl+G`’ye basın, onu sıkılaştırın, sonra **Yes, manually approve edits** seçin.',
+  ]}
+  expected="Planlama çalıştırması bir kök neden, yalnızca teste dokunan bir düzeltme (`isOverdue` zaten enjekte edilebilir bir saat kabul ediyor) ve bir doğrulama komutu döndürür — ve `git status`'ü temiz bırakır. Zorlanan düzenleme çalıştırması, Claude Code'un plan-mode mesajını birebir alıntılar ve hiçbir değişiklik yapmaz."
+  checklist={[
+    'Başlamadan önce `npm test` tam olarak bir testte başarısız oluyor',
+    'Plan; kök nedeni, değişecek dosyayı ve nasıl doğrulanacağını adlandırıyor',
+    'Her iki plan-mode çalıştırmasından sonra da `git status` temiz',
+    'Engellenen çalıştırma, düzenleme yapmak yerine plan-mode mesajını alıntılıyor',
+    'Etkileşimli çalıştırmada `Ctrl+G`, planı düzenleyicinizde açtı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/04-plan-mode/00-npm-test-before.txt"
+    range="2-8"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/04-plan-mode/01-plan-mode.txt"
+    range="2-14"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/04-plan-mode/02-plan-mode-blocks-edits.txt"
+    range="2-7"
+  />
+</Lab>
+
+Bu kayıtlar hakkında üç dürüst not.
+
+**Plan bir dosyaya yazılır.** İlk transcript, `~/.claude/plans/` altında bir plan dosyasını adlandırarak biter (mutlak yol kayıtta redakte edilmiştir). Compaction'dan sonra yeniden enjekte edilen dosya budur, etkileşimli bir oturumda `Ctrl+G`'nin açtığı dosya da budur.
+
+**Planlama çalıştırması, bariz olandan daha iyi bir düzeltme buldu.** `isOverdue(task, now)`'ın zaten enjekte edilebilir bir saat kabul ettiğini fark etti, yani hiçbir kaynak değişikliği gerekmiyor — yalnızca test. Planı diff'ten ayırmanın değeri de bu: akıl yürütmeyi kod hâline gelmeden önce görürsünüz.
+
+**Headless plan mode, etkileşimli plan mode değildir.** Bu modülün başka bir kaydında Claude, "the `ExitPlanMode` tool is disabled in this session" bildirdi, çünkü bir onay diyaloğunu gösterecek kimse yok. `-p` içinde plan mode size planı verir ve durur; onay adımı bir terminal-oturumu özelliğidir. Betiklerde ve CI'da salt-okunur analiz için `-p --permission-mode plan` kullanın; onaylama/yeniden gözden geçirme döngüsünü istediğinizde etkileşimli oturumu kullanın.
+
+## Anti-pattern'ler
+
+**Tek satırlık bir değişikliği planlamak.** Bir yazım hatası için plan, bir gidiş-dönüş turuna mal olur ve kimsenin okumadığı bir belge üretir. _Düzeltme:_ diff'i tek cümleyle anlatabiliyorsanız doğrudan diff'i isteyin.
+
+**Göz gezdirdiğiniz bir planı onaylamak.** Onaylamak oturumu doğrudan bir düzenleme moduna geçirir, bu yüzden itiraz etmenin en ucuz anı plandır. _Düzeltme:_ onu okuyun; `Ctrl+G`'ye basıp düzenleyin; ya da **No, keep planning** seçin.
+
+**Plan mode'u bir sandbox gibi görmek.** Kaynağınıza yapılan düzenlemeleri engeller, ama bypass permissions'ın etkin olduğu bir oturumda bu engeller uygulanmaz; ayrıca güvenilmeyen kod için hiçbir zaman bir izolasyon sınırı olmamıştır. _Düzeltme:_ izolasyon için [sandbox](/tr/playbook/glossary/#sandbox)'ı (Claude'un komutlarını ana sisteminizden izole bir ortamda çalıştıran koruma katmanı), bir container'ı ya da bir VM'i kullanın.
+
+**Sonsuza kadar planlamak.** Art arda üç kez "no, keep planning" demek genellikle görevin yeterince tanımlanmadığı anlamına gelir, planın kötü olduğu anlamına değil. _Düzeltme:_ 01. derse geri dönün — hedefi, kısıtları ve kanıtı adlandırın — ve yeniden sorun.
+
+**`-p --permission-mode plan`'ın size bir onay diyaloğu vermesini beklemek.** Vermez; etkileşimli bir yüzey yoktur. _Düzeltme:_ dönen planı okuyun, sonra uygulamayı ayrı bir komut olarak çalıştırın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/plan-mode"
+  questionId="q1"
+  lang="tr"
+  prompt="Çalışan bir CLI oturumunun içinde plan mode'a hangi tuş dizisi ile girilir?"
+  options={[
+    {
+      text: '`Shift+Tab`, durum çubuğu `⏸ plan mode on` gösterene kadar art arda basarak',
+      correct: true,
+      explanation: 'Aynı tuş, hiçbir şeyi onaylamadan sizi geri çıkarır da.',
+    },
+    {
+      text: '`Esc` iki kez',
+      explanation: 'Bu, rewind menüsünü açar — bir sonraki dersin konusu.',
+    },
+    { text: '`Ctrl+G`', explanation: 'Bu, önerilen bir planı metin düzenleyicinizde açar.' },
+    {
+      text: 'Sohbette Claude’dan plan mode’a geçmesini istemek',
+      explanation:
+        'Resmî dokümantasyon açık: sohbette Claude’dan permission mode’u değiştirmesini istemek işe yaramaz.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/plan-mode"
+  questionId="q2"
+  lang="tr"
+  prompt="Labda, plan-mode çalıştırmasından sonra `git status` temizdi. Neden?"
+  options={[
+    {
+      text: 'Plan mode kaynağınıza yapılan düzenlemeleri engeller; Claude bunun yerine dosyaları okudu ve bir plan yazdı',
+      correct: true,
+      explanation:
+        'İkinci kayıt, Claude Code’un kendi plan-mode mesajını alıntılayarak engeli doğrudan gösteriyor.',
+    },
+    {
+      text: 'Prompt “do not change any files” dedi ve model buna uydu',
+      explanation:
+        'İfade yardımcı oldu, ama ikinci çalıştırma açıkça bir düzenleme *emretti* ve yine de engellendi — bunu uygulayan prompt değil, moddu.',
+    },
+    {
+      text: '`--max-turns 14` düzenleme yapamadan tükendi',
+      explanation: 'Çalıştırma tamamlandı ve eksiksiz bir plan döndürdü.',
+    },
+    {
+      text: 'Sonnet, Edit tool’unu kullanamaz',
+      explanation: 'Bu modülün diğer laboratuvarlarında `Edit`’i serbestçe kullanıyor.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/plan-mode"
+  questionId="q3"
+  lang="tr"
+  prompt="Ekranda bir plan var ve beş adımından biriyle aynı fikirde değilsiniz. En ucuz düzeltme nedir?"
+  options={[
+    {
+      text: 'Planı düzenleyicinizde açmak için `Ctrl+G`’ye basıp o adımı değiştirmek',
+      correct: true,
+      explanation:
+        'Onaydan önce planı düzenlemek bir düzenleme edimine mal olur; uygulamayı düzeltmek ise koca bir oturuma.',
+    },
+    {
+      text: 'Onaylayıp Claude o adıma geldiğinde düzeltmek',
+      explanation:
+        'Onaylamak oturumu hemen bir düzenleme moduna geçirir — artık bir belgeyi değil, kodu düzeltiyorsunuzdur.',
+    },
+    { text: '`Esc`’e iki kez basmak', explanation: 'Bu, planı değil rewind menüsünü açar.' },
+    {
+      text: '`/clear` çalıştırıp baştan başlamak',
+      explanation: 'Bu, planı üreten keşfi çöpe atar.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/plan-mode"
+  questionId="q4"
+  lang="tr"
+  prompt="Resmî kılavuza göre, plan mode için en iyi aday görev hangisidir?"
+  options={[
+    {
+      text: 'Auth akışını hiç okumadığınız, birden çok dosyaya dokunan bir uygulamaya OAuth eklemek',
+      correct: true,
+      explanation:
+        'Belirsiz yaklaşım, çok dosyalı değişiklik, tanınmayan kod — dokümantasyonun üç kriterinin üçü birden.',
+    },
+    {
+      text: 'Yerel bir değişkeni yeniden adlandırmak',
+      explanation: 'Diff’i tek cümleyle anlatabilirsiniz. Planı atlayın.',
+    },
+    {
+      text: 'Bir log satırı eklemek',
+      explanation: 'Aynı şekilde — plan, değişiklikten daha maliyetli.',
+    },
+    {
+      text: 'Test suite’ini çalıştırmak',
+      explanation: 'Planlanacak bir şey yok; bu tek bir komut.',
+    },
+  ]}
+/>
+
+**Sırada:** `05-checkpoints-rewind`, bir planı onayladıktan sonra sonuç yanlış çıkarsa ne olacağını ele alır — düzenlemelerin nasıl geri alınacağını.

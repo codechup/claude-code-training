@@ -1,15 +1,15 @@
 ---
 title: 'Bağlam temelleri: /context, /compact ve /clear'
-description: 'Context window her oturumu sınırlayan kaynaktır. Siz bir şey yazmadan önce onu ne doldurur, /context ile nasıl okunur, /compact ile nasıl şekillendirilir, /clear ile nasıl sıfırlanır.'
+description: 'Context window, her oturumu sınırlayan kaynaktır. Siz bir şey yazmadan önce onu neyin doldurduğunu görün, /context ile okuyun, /compact ile şekillendirin, /clear ile sıfırlayın ve otomatik bir sıkıştırmadan neyin sağ çıktığını öğrenin.'
 level: 1
 module: 'm02-interact'
 order: 6
 duration_min: 15
 difficulty: core
-tags: ['context', 'compact', 'commands']
+tags: ['context', 'compact', 'komutlar']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Explore the context window'
@@ -28,9 +28,256 @@ sources:
     url: 'https://code.claude.com/docs/en/checkpointing.md'
     verified_at: 2026-09-07
 lab:
-  repo_tag: 'none'
+  repo_tag: 'main'
 ---
 
-Bu ders context window'u (bağlam penceresi) yönetmeyi öğretir. Bir oturum asla boş başlamaz: siz yazmadan önce sistem prompt'u, `CLAUDE.md`, auto memory (`MEMORY.md`'nin ilk 200 satırı veya 25 KB'ı), ortam bilgisi, MCP tool adları ve skill açıklamaları yüklenir. Dört komut işlenir — `/context` (kategori bazlı canlı döküm), `/compact` ve odaklı biçimi `/compact <yönerge>`, otomatik sıkıştırmanın eşiğini belirleyen `/autocompact 500k` ve tamamen sıfırlayan `/clear` — ve bunlara `/rewind` menüsünün kısmi özetleme seçenekleri eklenir. Sıkıştırmadan sonra neyin diskten yeniden yüklendiği (CLAUDE.md, auto memory, plan dosyası) ile neyin özetlenip kaybolduğu (konuşma geçmişi, sohbete yazdığınız kurallar) bir tabloyla karşılaştırılır; gerçek bir JSON çıktı zarfı, pencerenin çoğunun aslında sizin konuşmanız olmadığını gösterir.
+## Hedefler ve ön koşullar
 
-> Bu sayfa henüz çevrilmemiş bir taslaktır; İngilizce kaynak ders tam metindir.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Bir şey yazmadan önce [context window](/tr/playbook/glossary/#context-window)'a (bağlam penceresi: modelin bir turda görebildiği, sınırlı kapasiteli tüm metin) nelerin yüklendiğini sıralamak ve "temiz" bir oturumun neden hiçbir zaman boş olmadığını açıklamak.
+- `/context` çıktısını okumak ve ona göre hareket etmek.
+- `/compact`, `/compact <instructions>`, `/autocompact <tokens>`, `/clear` ve bir [subagent](/tr/playbook/glossary/#subagent) (ana oturumdan ayrı, kendi bağlam penceresinde çalışan yardımcı agent) arasında doğru seçimi yapmak.
+- Otomatik bir sıkıştırmadan neyin sağ çıktığını ve neyin özetlenerek kaybolduğunu tahmin etmek.
+- Dolu bir context window'un ürettiği iki başarısızlık desenini tanımak: her şeyin bir arada olduğu oturum ve tekrarlanan başarısız düzeltmeler.
+
+**Ön koşullar.** `05-checkpoints-rewind` dersi (rewind menüsünün özetleme seçenekleri bu araç setinin bir parçasıdır).
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Refleks olarak sıkıştırma yapmayın. Sıkıştırma mesajları bir özetle değiştirir ve konuşmanın
+  başındaki ayrıntılı talimatlar bu süreçte kaybolabilir — bazen doğru hamle, bağlamın birikmesine
+  izin vermektir; çünkü tek bir sorunun derinlerindesinizdir ve geçmiş zaten işin kendisidir. Görev
+  ortasında `/clear` da yapmayın: bu, pencerenin tamamını sıfırlar, dolayısıyla `CLAUDE.md`'ye, bir
+  plan dosyasına ya da bir [commit](/tr/playbook/glossary/#commit)'e (bir Git deposuna kaydedilen
+  değişiklik anlık görüntüsü) yazılmamış her şey gider. Ve `/context` bir alışkanlık değil bir tanı
+  aracıdır; bir şey sizi şaşırttığında ya da uzun bir görevden önce çalıştırın, her turdan sonra
+  değil.
+</WhenNotToUse>
+
+## Kavram
+
+### Bir oturum asla boş değildir
+
+Siz ilk tuşa basmadan önce pencerede zaten sistem prompt'u, projenizin `CLAUDE.md` dosyası, auto memory (`MEMORY.md`'nin ilk 200 satırı ya da 25 KB'ı, hangisi önce gelirse), ortam bilgisi, MCP tool adları ve [skill](/tr/playbook/glossary/#skill) (`/ad` ile çağrılan ya da Claude'un kendisinin yüklediği yeniden kullanılabilir talimat paketi) açıklamaları bulunur. Sonra oturum daha da dolar: okunan her dosya, her komutun çıktısı, eşleşen bir dosyayla birlikte yüklenen, yollara (paths) göre kapsanmış her kural.
+
+Bu yüzden en iyi uygulamalar rehberi diğer her şeyin önüne tek bir kısıtı koyar: **"Claude'un context window'u hızla dolar ve doldukça performans düşer."** Pencere doldukça Claude daha önceki talimatları kaybetmeye ve daha çok hata yapmaya başlar. Kalıcı kurallar `CLAUDE.md`'de olmalı, konuşma geçmişinde değil — bunun pratik sonucu budur ve bir sonraki modülün konusu da tam olarak bu.
+
+### Dört komut
+
+<CodeBlock title="context komutları">
+
+```text
+/context              # live breakdown by category, with optimisation suggestions
+/context all          # the fuller view
+
+/compact              # summarise the conversation now
+/compact focus on the auth bug fix     # summarise, keeping what you name
+
+/autocompact 500k     # set how full the window gets before auto-compaction runs
+
+/clear                # reset the context window entirely
+
+/memory               # open and edit the CLAUDE.md and memory files /context lists
+```
+
+</CodeBlock>
+
+`/context`, hangi `CLAUDE.md` ve auto-memory dosyalarının gerçekten yüklendiğini de söyler — bir oturum sizi şaşırttığında "neden böyle davranıyor?" sorusuna cevap vermenin en hızlı yolu budur.
+
+Bir sonraki adımda neyin önemli olduğunu biliyorsanız, yönergeli `/compact`, yalnız başına `/compact`'tan kesinlikle daha iyidir: özet, otomatik geçişin tahmin ettiğini değil sizin seçtiğinizi korur. `/clear` ilgisiz bir işe geçmek içindir; rehberin tavsiyesi, görevler arasında bunu _sık sık_ kullanmaktır.
+
+Önceki dersten beşinci bir kaldıraç daha var: `/rewind` → **Summarize from here** / **Summarize up to here**, konuşmanın yalnızca bir bölümünü sıkıştırır. Oturumun gürültülü kısmı ortadaysa bunu kullanın.
+
+### Sıkıştırmadan ne sağ çıkar
+
+Sıkıştırma tekdüze değildir. Bir bağlam parçasını hangi mekanizmanın yüklediği önemlidir:
+
+| Mekanizma                                                                                                                                         | Sıkıştırmadan sonra                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sistem prompt'u ve output style                                                                                                                   | Değişmez — mesaj geçmişinin parçası değildir                                                                                                                      |
+| Proje kökündeki `CLAUDE.md` ve kapsamsız kurallar                                                                                                 | Diskten yeniden yüklenir                                                                                                                                          |
+| Auto memory                                                                                                                                       | Diskten yeniden yüklenir                                                                                                                                          |
+| Claude'un [plan mode](/tr/playbook/glossary/#plan-mode)'da (Claude'un değişiklik yapmadan önce yalnızca okuyup bir plan sunduğu mod) yazdığı plan | Diskten yeniden yüklenir                                                                                                                                          |
+| `paths:` frontmatter'ı olan kurallar                                                                                                              | Claude eşleşen dosyaları okudukça yeniden yüklenir                                                                                                                |
+| Alt dizinlerdeki iç içe `CLAUDE.md` dosyaları                                                                                                     | Claude o alt dizindeki dosyaları okudukça yeniden yüklenir                                                                                                        |
+| Claude'un okuduğu ya da düzenlediği dosyalar                                                                                                      | Claude Code en fazla beşini, en son değiştirilenden başlayarak yeniden okur                                                                                       |
+| Çağrılan skill gövdeleri                                                                                                                          | Yeniden eklenir; skill başına 5.000 [token](/tr/playbook/glossary/#token) (modelin metni işlerken kullandığı temel birim) ve toplamda 25.000 token ile sınırlıdır |
+| Daha önce [hook](/tr/playbook/glossary/#hook)'ların (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan komutlar) eklediği bağlam | Konuşmanın geri kalanıyla birlikte özetlenir                                                                                                                      |
+
+Bu tabloyu bir kez okuyunca standart tavsiyenin nedeni de netleşir. `CLAUDE.md`'deki bir kural her sıkıştırmadan sonra geri gelir; sohbete yazılan aynı kural gelmez. 5.000 token'ı aşan bir dosya, sıkıştırmadan sonra içeriğiyle değil bir yol referansı olarak geri gelir; `Read` yerine `Referenced file` olarak gösterilir.
+
+### Pencere dolduğunda
+
+Claude Code, sınıra yaklaştıkça otomatik olarak sıkıştırma yapar; dolayısıyla dolu bir pencere oturumunuzu bitirmez. Önce daha eski tool çıktılarını temizler, gerekirse sonra konuşmayı özetler. İstekleriniz ve önemli kod parçaları korunur; konuşmanın başındaki ayrıntılı talimatlar korunmayabilir.
+
+Otomatik geçiş sizin yerinize karar vermeden önce harekete geçmenin dört yolu var: odaklı sıkıştırma yapmak, rewind menüsünden konuşmanın bir bölümünü sıkıştırmak, tetikleme noktasını öne almak için `/autocompact <tokens>` çalıştırmak ya da büyük bir okumayı bir subagent'a devredip dosya içeriklerinin sizin değil _onun_ context window'una düşmesini sağlamak.
+
+Tek bir dosya ya da tool çıktısı, her özetten hemen sonra bağlamı yeniden dolduracak kadar büyükse, Claude Code birkaç denemeden sonra otomatik sıkıştırmayı durdurur ve döngüye girmek yerine bir hata gösterir.
+
+Daha küçük bir konuşma değil de daha büyük bir pencere gerekiyorsa: Fable 5.1, Fable 5, Sonnet 5, Opus 4.6 ve sonrası ile Sonnet 4.6, 1 milyon token'lık bir context window'u destekler — bu, 2. seviyenin konusudur.
+
+## Uygulamalı laboratuvar
+
+`/context`, terminalde canlı bir döküm çizer; bu yüzden etkileşimli bir oturuma aittir. Onu bir [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) prompt olarak göndermek — `claude -p "/context"` — bu ders yazılırken denendi ve döküm yerine sıradan bir sohbet cevabı üretti; `/context`'i gerçek bir oturumda çalıştırılacak bir şey olarak görün. Bu yüzden bu laboratuvar etkileşimli çalışır ve headless olarak yakalanabilen tek şey — `--output-format json`'ın döndürdüğü token ve maliyet zarfı — "o tur bana neye mal oldu" sorusunun dürüst vekili olarak aşağıda gösterilir. Bu kaydedilen çalıştırma ayrıca, kaydı alan makinenin Türkçe dil ayarını geçersiz kılmak için `--settings '{"language":"English"}'` bayrağını da geçti; aynı geçersiz kılmaya ihtiyacınız yoksa bu bayrağı kullanmayın.
+
+<Lab
+  title="Laboratuvar · kendi context window'unuzu okuyun"
+  lessonId="tr/l1-beginner/m02-interact/context-basics"
+  repoTag="main"
+  steps={[
+    'Lab deposunda `main` üzerinde etkileşimli bir oturum başlatın: `claude`.',
+    'Başka bir şey yapmadan önce `/context` çalıştırın. Kategorilere ve hangi `CLAUDE.md` ile memory dosyalarının yüklendiğini söylediğine bakın — her oturumun başladığı taban budur.',
+    'Çok okuma gerektiren bir şey isteyin: `read every file under src/ and test/ and summarise what this project does`.',
+    "`/context`'i tekrar çalıştırın ve karşılaştırın. Artık en büyük kategori dosya okumalarıdır.",
+    "`/compact focus on how paginate() is used` çalıştırın, ardından `/context`'i üçüncü kez çalıştırın. Konuşma kategorisi küçülür; yeniden eklenen kategoriler (CLAUDE.md, auto memory) küçülmez.",
+    "Görevi doğru şekilde değiştirin: `/clear` çalıştırın, ardından `/context`'i bir kez daha çalıştırın. Tabana yakın bir yere geri dönmüş olursunuz.",
+    'Şimdi maliyetin headless vekili: `claude -p "Read src/store.ts and name its exported functions." --model sonnet --output-format json --max-turns 6 --permission-mode plan | jq \'{num_turns, duration_ms, total_cost_usd, usage: .usage}\'`',
+    "Zarfı okuyun: `cache_read_input_tokens`, `input_tokens`'ı çok aşar; çünkü başlangıç bağlamı yeniden gönderilmek yerine önbelleğe alınır.",
+  ]}
+  expected="/context, ilk [prompt](/tr/playbook/glossary/#prompt)'unuzdan (Claude'a yazdığınız istek metni) önce bile dolu bir pencere gösterir; toplu okumadan sonra keskin biçimde büyür; odaklı /compact konuşmayı küçültürken CLAUDE.md ve auto memory olduğu gibi kalır; /clear pencereyi başlangıç tabanına yakın bir yere döndürür. JSON zarfı num_turns, duration_ms, total_cost_usd ve cache_read_input_tokens değerlerinin baskın olduğu bir usage bloğu bildirir."
+  checklist={[
+    "`/context` ilk prompt'tan önce doluydu",
+    'Toplu okuma, dosya okumaları kategorisini gözle görülür biçimde artırdı',
+    "`/compact focus on …`, konuşmayı küçülttü ama CLAUDE.md ya da auto memory'yi küçültmedi",
+    '`/clear`, pencereyi başlangıç tabanına yakın bir yere döndürdü',
+    "JSON zarfı, cache_read_input_tokens'ın input_tokens'tan çok daha büyük olduğunu gösteriyor",
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/06-context-basics/01-json-usage.txt"
+    range="2-40"
+  />
+</Lab>
+
+Bu kayıt, tek küçük bir dosya okuyan iki turluk bir oturumdur ve yine de 68.175 önbellekten okunan ve 9.318 yeni önbelleğe alınan girdi token'ı harcadı. Bunun neredeyse hiçbiri sizin prompt'unuz değildir: bu, sistem prompt'u, memory dosyaları, tool tanımları ve projenin kendi yapılandırmasıdır. Yönettiğiniz pencere, çoğunlukla konuşmanın kendisi değildir.
+
+## Anti-pattern'ler
+
+**Her şeyin bir arada olduğu oturum.** Bir görev, sonra alakasız bir soru, sonra tekrar ilk göreve dönüş — pencere artık ikisinin de ihtiyaç duymadığı şeylerle doludur. _Düzeltme:_ alakasız görevler arasında `/clear`.
+
+**Tekrar tekrar düzeltmek.** İki başarısız düzeltmeden sonra bağlamda iki başarısız yaklaşım durur ve üçüncü düzeltme onlarla yarışır. _Düzeltme:_ `/clear` yapıp öğrendiklerinizi içeren tek, daha iyi bir prompt yazın.
+
+**Kalıcı kuralları sohbete yazmak.** Konuşma geçmişi sıkıştırmada özetlenir; `CLAUDE.md` diskten yeniden eklenir. Üçüncü mesajda yazdığınız bir kural, doksanıncı mesaja gelindiğinde çoktan gitmiş olabilir. _Düzeltme:_ kalıcı kuralları `CLAUDE.md`'ye koyun (`m03-memory` modülü).
+
+**Sınırı belirsiz araştırma.** Hiçbir sınır koymadan "auth sistemini araştır" demek, iş başlamadan önce yüzlerce dosyayı pencerenize okutur. _Düzeltme:_ sınırlayın ya da okumaları kendi bağlamında kalacak bir subagent'a devredin.
+
+**`/compact` isterken `/clear` yapmak.** `/clear` bir sıfırlamadır, sıkıştırma değil; diskte olmayan her şey gider. _Düzeltme:_ görev ortasında `/compact <instructions>`; görev değiştirirken yalnızca `/clear`.
+
+Bu derste **Changed** callout'u yoktur: `research/deprecations.md`, Claude Code 2.1.263 itibarıyla context komutları için kaydedilmiş herhangi bir yerini alma (superseded) davranış içermiyor.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/context-basics"
+  questionId="q1"
+  lang="tr"
+  prompt="Hiçbir şey yazmadan önce, yepyeni bir oturumda `/context` çalıştırıyorsunuz. Ne görmeyi beklersiniz?"
+  options={[
+    {
+      text: "Dolu bir pencere: sistem prompt'u, CLAUDE.md, auto memory, ortam bilgisi, MCP tool adları ve skill açıklamaları",
+      correct: true,
+      explanation:
+        'Bir oturum asla boş değildir. `/context`, hangi CLAUDE.md ve memory dosyalarının yüklendiğini de söyler.',
+    },
+    {
+      text: 'Sıfır token kullanımı',
+      explanation: 'Başlangıç bağlamı, ilk kelimenizden önce yüklenir.',
+    },
+    {
+      text: "Yalnızca sistem prompt'u",
+      explanation: 'Memory dosyaları, tool adları ve skill açıklamaları da yüklenir.',
+    },
+    {
+      text: 'Bir hata — `/context` yalnızca ilk turdan sonra çalışır',
+      explanation: 'Her noktada çalışır ve ilk turdan önce en yararlı olduğu andır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/context-basics"
+  questionId="q2"
+  lang="tr"
+  prompt="Aşağıdakilerden hangisi bir sıkıştırmadan sonra özetlenip kaybolmak yerine diskten yeniden eklenir?"
+  options={[
+    {
+      text: 'Proje kökündeki `CLAUDE.md`',
+      correct: true,
+      explanation:
+        "Auto memory ve Claude'un plan mode'da yazdığı plan da öyledir. Konuşma geçmişi özetlenir.",
+    },
+    {
+      text: 'Üçüncü mesajda sohbete yazdığınız bir kural',
+      explanation: 'Bu bir konuşma geçmişidir — geri kalan her şeyle birlikte özetlenir.',
+    },
+    {
+      text: "Oturumda daha önce bir hook'un eklediği bağlam",
+      explanation:
+        "`compact` ile eşleşen bir SessionStart hook'u yeniden eklemedikçe, geri kalanla birlikte özetlenir.",
+    },
+    {
+      text: "Claude'un bu oturumda okuduğu her dosya",
+      explanation:
+        'Claude Code en fazla beşini, en son değiştirilenden başlayarak yeniden okur — hepsini değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/context-basics"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir görevin yarısındasınız ve pencere doluyor. Bir sonraki adımın tamamen API katmanıyla ilgili olduğunu biliyorsunuz. En iyi hamle nedir?"
+  options={[
+    {
+      text: '`/compact focus on the API changes`',
+      correct: true,
+      explanation:
+        'Yönergeyle sıkıştırma, otomatik geçişin tahmin ettiğini değil sizin adlandırdığınızı korur.',
+    },
+    {
+      text: '`/clear`',
+      explanation:
+        'Görev ortasındaki bir sıfırlama, diske yazılmamış her şeyi atar. Bunu alakasız görevler arasında kullanın.',
+    },
+    {
+      text: 'Hiçbir şey — otomatik sıkıştırma bunu halleder',
+      explanation:
+        'Halleder, ama özeti neyin önemli olduğuna dair bir tahmindir. Odağı adlandırmak kesinlikle daha iyidir.',
+    },
+    {
+      text: 'Terminali yeniden başlatmak',
+      explanation:
+        "Oturum, [checkpoint](/tr/playbook/glossary/#checkpoint)'leri (oturumun disk üzerinde kaydedilmiş anları) ve planı diskte durur ve devam ettirilebilir — ama yeniden başlatmak ne sıkıştırma yapar ne de bir odak belirler, dolayısıyla burada hiçbir şeyi çözmez.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l1-beginner/m02-interact/context-basics"
+  questionId="q4"
+  lang="tr"
+  prompt="Büyük bir araştırmayı bir subagent'a devretmek, context window'unuza neden yardımcı olur?"
+  options={[
+    {
+      text: "Subagent kendi context window'unda çalışır; tool çağrıları sizinkinin dışında kalır ve yalnızca bir özet geri döner",
+      correct: true,
+      explanation:
+        'Bu desenin tüm amacı budur — araştırma maliyeti sizin yönetmediğiniz bir pencerede ödenir.',
+    },
+    {
+      text: "Subagent'lar token tüketmez",
+      explanation: "Tüketirler; token'lar yalnızca sizin pencerenizde değildir.",
+    },
+    {
+      text: 'Subagent çıktısı sıkıştırmadan muaftır',
+      explanation: 'Geri dönen özet, sıradan bir konuşma geçmişidir.',
+    },
+    {
+      text: 'Bir subagent context sınırınızı yükseltir',
+      explanation: 'Sınırı devretme değil model belirler.',
+    },
+  ]}
+/>
+
+**Sırada:** `m03-memory` modülü — her sıkıştırmadan sağ çıkan kuralların gerçekte yaşadığı yer.
