@@ -1,0 +1,10 @@
+# Captured 2026-09-07, Claude Code 2.1.263, detached worktree of codechup/claude-code-lab at lesson/m03-03-start (.claude/CLAUDE.md present, no .claude/rules/). CLAUDE_CODE_DISABLE_AUTO_MEMORY=1. Verbatim.
+› claude -p "Read src/store.ts. Do not edit anything. Then list, as short bullets, the conventions this project expects for code under src/, and say for each where that convention comes from." --model sonnet --max-turns 4 --output-format text --allowedTools "Read"
+## src/ Altındaki Kod İçin Geçerli Konvansiyonlar
+
+- **Çekirdek mantık `src/store.ts` içinde toplanmalı; `src/cli.ts` ve `src/api/server.ts` sadece ince sarmalayıcı (wrapper) olmalı, bir hata kaynağında bir kez düzeltilmeli, iki sarmalayıcıda ayrı ayrı değil.** Kaynak: `.claude/CLAUDE.md` ("Conventions" bölümü) — `src/store.ts:1-2` üstündeki dosya başı yorumu da bunu doğruluyor.
+- **Zamanla ilgili testler gerçek saat dilimine (wall clock) bağımlı olmamalı; fonksiyonlara enjekte edilebilir bir `now`/clock parametresi verilmeli, testlerde her zaman sabit bir clock kullanılmalı.** Kaynak: `src/store.ts:79-84` üzerindeki JSDoc yorumu (`isOverdue` fonksiyonu, BUGS.md'deki "flaky-test lesson"a atıfta bulunuyor).
+- **Her BUGS.md'de listelenen hata, `-start` etiketinde başarısız olan, `-solution` etiketinde geçen bir testle birlikte gelmeli; bir hatayı testini gevşeterek veya silerek "düzeltmek" yasak.** Kaynak: `.claude/CLAUDE.md` ("Conventions" bölümü).
+- **`src/api/server.ts` içindeki iki `TEACHING SURFACE` yorumu kasıtlı olarak olduğu gibi bırakılmalı (m14 dersi için); BUGS.md güncellenmeden "temizlenmemeli".** Kaynak: `.claude/CLAUDE.md` ("Conventions" bölümü) — `src/store.ts` içinde bu konuya dair bir işaret yok, sadece CLAUDE.md'de belirtiliyor.
+
+**Not:** `src/store.ts` içinde `resetTasks` fonksiyonunun yanında "Test-only" (`src/store.ts:12`) yorumu var; bu bir proje çapında konvansiyon olarak CLAUDE.md'de yazılı değil, sadece kod içi bir açıklama — bu yüzden yukarıdaki listeye ayrı bir madde olarak eklemedim.

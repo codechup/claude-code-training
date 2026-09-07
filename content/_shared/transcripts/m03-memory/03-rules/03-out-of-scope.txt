@@ -1,0 +1,11 @@
+# Captured 2026-09-07, Claude Code 2.1.263, same worktree, rule still in place. Only the file Claude reads changed: test/store.test.ts does not match the rule pattern src/**. CLAUDE_CODE_DISABLE_AUTO_MEMORY=1. Verbatim.
+› claude -p "Read test/store.test.ts and no other file. Do not edit anything. Then list, as short bullets, the conventions this project expects for code under src/, and say for each where that convention comes from." --model sonnet --max-turns 4 --output-format text --allowedTools "Read"
+test/store.test.ts dosyasını okudum. src/ altındaki kod için testin ortaya koyduğu/beklediği kurallar ve her birinin kaynağı:
+
+- **Çekirdek mantık `src/store.ts` içinde toplanmalı** (`addTask`, `listTasks`, `paginate`, `resetTasks`, `InvalidTaskError` hepsi oradan import ediliyor) — Kaynak: `test/store.test.ts:2` (import satırı) ve ayrıca proje `.claude/CLAUDE.md` dosyasındaki "Core logic lives in `src/store.ts`" kuralı.
+- **Geçersiz görev girdileri `InvalidTaskError` fırlatmalı** (boş/whitespace başlık, negatif priority) — Kaynak: `test/store.test.ts:9-15`.
+- **Yeni eklenen bir görev varsayılan olarak `done: false` olmalı** — Kaynak: `test/store.test.ts:21`.
+- **`paginate` 1 tabanlı sayfa numarası ve sayfa boyutu alır, art arda dilimler döndürür** — Kaynak: `test/store.test.ts:29-30` ve `36-37`.
+- **`listTasks` bir `status` filtresi (`"open"` / `"done"`) desteklemeli** — Kaynak: `test/store.test.ts:45-46`.
+- **Modül importlarında açık `.ts` uzantısı kullanılmalı** — Kaynak: `test/store.test.ts:2` (`"../src/store.ts"`).
+- **Her `BUGS.md` hatası, ilgili `-start` etiketinde başarısız olan, `-solution` etiketinde geçen bir testle gelmeli; testler gevşetilerek/silinerek "düzeltilmemeli"** — Bu, dosyanın kendisinden değil, proje `.claude/CLAUDE.md` dosyasındaki kuraldan geliyor (test dosyasını okurken doğrudan görülmüyor, ancak testin varlığı bu kuralı doğruluyor).

@@ -1,0 +1,17 @@
+# Captured 2026-09-07, Claude Code 2.1.263, in a detached worktree of codechup/claude-code-lab at lesson/m03-01-start. CLAUDE_CODE_DISABLE_AUTO_MEMORY=1. Verbatim, except that only the headings and one section of the generated file are shown.
+› claude -p "/init" --model sonnet --permission-mode acceptEdits --max-turns 20 --output-format text
+CLAUDE.md dosyasını oluşturdum. İçerik; sık kullanılan komutları (test/typecheck/lint/tek test çalıştırma), CI akışını, `store.ts` etrafındaki mimariyi (CLI ve API'nin ince sarmalayıcı olduğu, modül düzeyindeki state ve `resetTasks`/`isolate: true` gerekliliği, enjekte edilebilir saat kullanımı), ve koddaki `TEACHING SURFACE` işaretli kasıtlı "temizlenmemesi gereken" bölümleri (token loglama, sanitize edilmemiş not render'ı) kapsıyor.
+› wc -l CLAUDE.md && grep "^#" CLAUDE.md
+51 CLAUDE.md
+# CLAUDE.md
+## What this is
+## Commands
+## Architecture
+### Intentional teaching surfaces — do not "clean up"
+## Conventions
+› sed -n "40,44p" CLAUDE.md
+Two spots in `src/api/server.ts` are deliberately left with rough edges for later lessons in the course, and are marked in-code as `TEACHING SURFACE`:
+
+- `getApiToken()` logs a token value on startup (placeholder value, never a real credential) — this is the anti-pattern a later secrets-handling lesson removes.
+- `renderNote()` concatenates unsanitized user input into a template string — this is the anti-pattern a later prompt-injection lesson fixes.
+

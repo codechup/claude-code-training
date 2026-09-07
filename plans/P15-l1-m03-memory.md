@@ -2,7 +2,7 @@
 id: P15
 title: "L1 Beginner module: Memory (m03-memory)"
 milestone: M1
-status: in_progress
+status: review
 owner: opus-p15-2026-09-07
 branch: plan/15-l1-m03-memory
 model_hint: opus
@@ -15,8 +15,12 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T07:57:33Z
-open_questions: []
+updated_at: 2026-09-07T08:45:14Z
+open_questions:
+  - 'Lab tag convention drift (P03/P22): docs/CURRICULUM.md §2 says `lesson/<module>-<NN>-start` (`lesson/m03-memory-01-start`), but the tags that exist in codechup/claude-code-lab are `lesson/m03-01-start` and `lesson/m03-03-start`. Lessons cite the real tags. One of the two should change.'
+  - 'research/deprecations.md (P03) has no entry for the `#` quick-memory shortcut, removed in Claude Code 2.0.70 (15 December 2025, official changelog). Lesson 05 carries the Changed callout; the deprecations table and the playbook changelog page (playbook/06-changed-since-2025, P42) still need the row — neither is in this plan''s owned_paths.'
+  - 'research/feature-inventory.md (P03) summarises memory as "hierarchy managed > user > project > local". memory.md describes concatenation in load order rather than override, and says a direct contradiction may be resolved arbitrarily. The one-line summary should be reworded.'
+  - 'docs/CURRICULUM.md §2 still describes lesson 05 as "`/memory`, `#` quick notes, ...". The `#` shortcut is gone; this plan corrected the wording on the module index pages it owns but not in CURRICULUM.md (P03 owns it).'
 ---
 
 ## Goal
@@ -97,5 +101,81 @@ A reviewer opens `npm run dev`, visits each of the 4 lessons at `/en/l1-beginner
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+### What was written
+
+Five EN lessons under `content/en/l1-beginner/m03-memory/`, matching `docs/CURRICULUM.md` §2
+exactly: `01-claude-md`, `02-hierarchy-imports`, `03-rules`, `04-auto-memory`,
+`05-memory-commands`. Five `draft: true` TR twins at mirrored paths. Nine real transcripts under
+`content/_shared/transcripts/m03-memory/`. Two new entries plus three module tags appended to
+`content/_shared/sources.json`. Both module `index.mdx` files now link their lesson list.
+
+### Delta from this plan's Deliverables (Step 1 — the curriculum wins)
+
+This plan's Deliverables section lists **4** lessons with different slugs
+(`01-claude-md-hierarchy-and-import`, `02-claude-rules`, `03-auto-memory`,
+`04-memory-command-and-quick-notes`). `docs/CURRICULUM.md` §2 lists **5**
+(`01-claude-md`, `02-hierarchy-imports`, `03-rules`, `04-auto-memory`, `05-memory-commands`),
+and Step 1 of this plan says to follow the doc. The five CURRICULUM slugs were written. The
+plan's Acceptance criteria also say `type: "doc"`; `src/content/schema.ts` has no such type —
+every lesson correctly uses `type: official`. Both are plan-text staleness, not content bugs.
+
+### Lab tags — a real drift
+
+`docs/CURRICULUM.md` §2 and the standing brief describe the tag convention as
+`lesson/<module>-<NN>-start`, i.e. `lesson/m03-memory-01-start`. The tags that actually exist in
+`codechup/claude-code-lab` use the abbreviated module id: `lesson/m03-01-start` and
+`lesson/m03-03-start` (see that repo's README "Lesson tag map"). The real tags are what the
+lessons cite. P03/P22 own the reconciliation — see `open_questions`.
+
+### Evidence and how it was captured
+
+Every headless command in every lab was run this session, against detached `git worktree`
+checkouts of the lab repo in a scratch directory (never a shared `git checkout`, because sibling
+sessions P13/P14/P16 use the same clone). All captures ran with
+`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` so the only variable between a before/after pair is the file
+on disk; the lessons now say so in a callout and the provenance headers record it.
+
+`/init` was run for real (`claude -p "/init" --model sonnet --permission-mode acceptEdits`) and
+produced a 51-line `./CLAUDE.md`. Two consequences went into the lesson: `/init` writes to the
+repo root while the before/after pair used `./.claude/CLAUDE.md` (both load, which is the
+lesson's own point), and `/init` *did* discover the `TEACHING SURFACE` convention from the source
+comments — so lesson 01 no longer claims that fact is underivable from the code.
+
+Every capture answers in **Turkish**. The recording machine has a user-scope `~/.claude/CLAUDE.md`
+asking for Turkish, and it overrode an explicit "Answer in English" in the prompt. This is
+disclosed in each lesson and is used as lesson 02's own evidence that user-scope memory loads
+everywhere. Same situation as `m01-start/01-what-claude-code-is`.
+
+Lesson 05 is TUI-heavy; its `/memory` steps are prose plus `<CodeBlock>`, never a faked screen.
+The two non-interactive steps ("add this to CLAUDE.md" vs "remember that") were captured for real
+and show the two phrasings landing in two different files.
+
+### Review counts (D071)
+
+- **fact-checker:** 62 claims confirmed, 0 contradicted, 2 reported unverifiable. Both were in
+  fact confirmed from primary sources fetched by this session that the agent's own fetches
+  truncated: `settings-reference.md` §`autoMemoryEnabled` ("**Per-session overrides**:
+  `CLAUDE_CODE_DISABLE_AUTO_MEMORY` takes precedence over this key for one session, in either
+  direction") and `changelog.md` `<Update label="2.0.70" description="December 15, 2025">`
+  ("Removed # shortcut for quick memory entry"). Both lessons now quote the source text inline so
+  the trail is visible. 0 unresolved.
+- **reviewer:** 0 blockers, 6 majors, 10 minors across two runs. Fixed: the lesson-05 lab now
+  carries a real transcript; the lesson-05 "Changed" callout moved from mid-Concept to after
+  Anti-patterns; lesson 03 no longer claims all four rule conventions are absent from
+  `.claude/CLAUDE.md` (the thin-wrapper one is in both, as its own transcript shows); lesson 04
+  now says `type:` sits under `metadata:`, matching the recording; the
+  `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` requirement is stated in labs 01–03; transcript READMEs list
+  every file with correct step numbers. Not accepted: the reviewer said the four "Changed" version
+  pins (v2.1.206, v2.1.211, v2.1.214, v2.1.239) lack an evidence trail — all four are stated
+  verbatim in `memory.md`, which every one of those lessons already cites.
+
+### Docs-vs-inventory drift found
+
+`research/feature-inventory.md` summarises memory precedence as "managed > user > project >
+local". The live `memory.md` describes something different: all discovered files are
+**concatenated** in load order (broadest scope first, root-down through the directory tree,
+`CLAUDE.local.md` appended after `CLAUDE.md` at each level), and a direct contradiction between
+two files may be resolved arbitrarily. The lessons teach the doc.
+
+`research/deprecations.md` has no entry for the removed `#` quick-memory shortcut.
 

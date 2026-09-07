@@ -1,0 +1,358 @@
+---
+title: 'The memory hierarchy, @imports and claudeMdExcludes'
+description: 'Four scopes of CLAUDE.md load into one session and are concatenated, not overridden. Learn the load order, how @path imports expand at launch, and how claudeMdExcludes skips files you do not want.'
+level: 1
+module: 'm03-memory'
+order: 2
+duration_min: 15
+difficulty: core
+tags: ['memory', 'claude-md', 'imports', 'settings']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'How Claude remembers your project'
+    url: 'https://code.claude.com/docs/en/memory.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Set up Claude Code in a monorepo or large codebase'
+    url: 'https://code.claude.com/docs/en/large-codebases.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Explore the context window'
+    url: 'https://code.claude.com/docs/en/context-window.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Name the four `CLAUDE.md` scopes — managed policy, user, project, local — and say where each file lives on your OS.
+- Explain the load order, and why "concatenated" is a more accurate word than "overridden".
+- Use `@path` imports to pull another file into a `CLAUDE.md`, and say what they cost.
+- Know when the external-import approval dialog appears, and why.
+- Skip an irrelevant ancestor `CLAUDE.md` with `claudeMdExcludes`.
+
+**Prerequisites.** Lesson `01-claude-md`. A scratch folder you can create files in — this lab does not use the sandbox repository.
+
+<WhenNotToUse>
+  Reach for `@path` imports to organise a `CLAUDE.md`, never to shrink it: imported files are
+  expanded and loaded into context at launch alongside the file that references them, so splitting
+  200 lines across five imports costs exactly the same context as 200 lines in one file. If your
+  problem is size rather than tidiness, path-scoped rules are the mechanism that actually helps
+  (lesson `03-rules`). And do not use `claudeMdExcludes` to mute a rule you disagree with in your
+  own project — that is a conversation with your team, not a settings key.
+</WhenNotToUse>
+
+## Concept
+
+### Four places a CLAUDE.md can live
+
+Claude Code looks in four scopes. The table is in load order, broadest first, so a project instruction lands in context after a user instruction.
+
+| Scope                | Location                                                                                                                                                 | What it is for                                 | Shared with             |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ----------------------- |
+| Managed policy       | macOS `/Library/Application Support/ClaudeCode/CLAUDE.md` · Linux and WSL `/etc/claude-code/CLAUDE.md` · Windows `C:\Program Files\ClaudeCode\CLAUDE.md` | Organisation-wide instructions, deployed by IT | Everyone on the machine |
+| User instructions    | `~/.claude/CLAUDE.md`                                                                                                                                    | Your preferences, in every project             | Just you, everywhere    |
+| Project instructions | `./CLAUDE.md` or `./.claude/CLAUDE.md`                                                                                                                   | Team-shared project standards                  | Your team, via git      |
+| Local instructions   | `./CLAUDE.local.md`                                                                                                                                      | Your personal notes for this project           | Just you, this project  |
+
+An organisation can skip the file entirely and put the text straight into `managed-settings.json` under the `claudeMd` key. It behaves like a managed `CLAUDE.md`: it loads before user and project files, and it is honoured only in managed and policy settings — setting `claudeMd` in user, project or local settings does nothing.
+
+### They are concatenated, not overridden
+
+This is the part people get wrong. All discovered files are concatenated into context; a later file does not replace an earlier one.
+
+Claude Code loads `CLAUDE.md` and `CLAUDE.local.md` from your working directory **and every directory above it**. Run Claude in `foo/bar/` and it picks up `foo/bar/CLAUDE.md`, `foo/CLAUDE.md` and any `CLAUDE.local.md` beside them. Across the tree, content is ordered from the filesystem root down to your working directory, so instructions closer to where you launched Claude are read last. Within one directory, `CLAUDE.local.md` is appended after `CLAUDE.md` — your personal notes are the last thing Claude reads at that level.
+
+"Read last" is not the same as "wins". Where two instructions genuinely contradict each other, the docs say Claude may pick one arbitrarily — reviewing your memory files and deleting the loser is the only reliable fix. What the ordering does give you is a documented place in the sequence, and the lab below shows a run where the last-read file is the one Claude both followed and named: a `CLAUDE.local.md` saying `make ship-dev` against an imported project convention saying `make ship`.
+
+`CLAUDE.md` files in **subdirectories below** your working directory are treated differently: they are not loaded at launch. They load on demand, when Claude reads a file in that subdirectory.
+
+This lesson's worked example prompt is the one that makes the hierarchy visible without any guesswork:
+
+```text
+Without reading any files, answer in two sentences: which release command
+applies on this machine, and which memory file does that instruction come from?
+```
+
+Asking Claude to name its own source turns an invisible mechanism into something you can check.
+
+### `@path` imports
+
+A `CLAUDE.md` can pull in another file with `@path/to/import`. Imported files are expanded and loaded at launch, alongside the file that references them.
+
+- Relative and absolute paths both work. **Relative paths resolve against the file containing the import**, not your working directory.
+- Imports can nest, to a maximum depth of four hops.
+- Import parsing skips markdown code spans and fenced code blocks. To mention a path without importing it, wrap it in backticks: `` `@README` `` stays literal text, while `@README` outside backticks imports the file.
+
+<CodeBlock title="CLAUDE.md">
+
+```text
+See @README for project overview and @package.json for available npm commands for this project.
+
+# Additional Instructions
+- git workflow @docs/git-instructions.md
+```
+
+</CodeBlock>
+
+Imports are also the answer to a specific worktree problem. A gitignored `CLAUDE.local.md` exists only in the worktree where you made it. To carry personal instructions across every worktree of a repository, import a file from your home directory instead:
+
+<CodeBlock title="CLAUDE.local.md">
+
+```text
+# Individual Preferences
+- @~/.claude/my-project-instructions.md
+```
+
+</CodeBlock>
+
+<Callout>
+  That home-directory import is an **external** import: its path resolves outside your working
+  directory. The first time Claude Code meets external imports in a project it shows an approval
+  dialog listing the files, because a project file is something other people can commit. Decline and
+  the imports stay disabled and the dialog does not come back. Imports in user-scope files
+  (`~/.claude/CLAUDE.md`, `~/.claude/rules/`) are files you wrote yourself, so outside Cowork
+  sessions on the desktop they load without a dialog.
+</Callout>
+
+### Loading memory from `--add-dir` directories
+
+`--add-dir` gives Claude access to a directory outside your main working directory, but **by default its `CLAUDE.md` files are not loaded**. Opt in with an environment variable:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude --add-dir ../shared-config
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude --add-dir ../shared-config
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$env:CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD = "1"
+claude --add-dir ../shared-config
+```
+
+  </Fragment>
+</OSTabs>
+
+That loads `CLAUDE.md`, `.claude/CLAUDE.md`, `.claude/rules/*.md` and `CLAUDE.local.md` from the additional directory.
+
+### Skipping files with `claudeMdExcludes`
+
+In a monorepo, "every directory above you" can mean several other teams' instructions. `claudeMdExcludes` skips files by path or glob. Patterns are matched against **absolute** file paths, and arrays merge across settings layers. Put it in `.claude/settings.local.json` when the exclusion is yours alone:
+
+<CodeBlock title=".claude/settings.local.json">
+
+```json
+{
+  "claudeMdExcludes": ["**/monorepo/CLAUDE.md", "/home/user/monorepo/other-team/.claude/rules/**"]
+}
+```
+
+</CodeBlock>
+
+Two limits worth knowing. Managed policy `CLAUDE.md` files **cannot** be excluded — that is the point of managed policy. And exclusions apply only to user, project and local memory files.
+
+### What survives `/compact`
+
+When a long session compacts, the project-root `CLAUDE.md` and unscoped rules are re-injected from disk, as is auto memory. Nested `CLAUDE.md` files in subdirectories and rules with `paths:` frontmatter are reloaded as Claude reads files they apply to — so an instruction that "disappeared" after compaction was probably given only in conversation, or lives in a nested file that has not been re-triggered yet.
+
+## Hands-on lab
+
+<Callout>
+  Every headless command in this lab was captured with `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` in front
+  of it, and yours should be too. Auto memory is keyed per repository (lesson `04-auto-memory`), so
+  notes Claude saved while you were doing an earlier lab in the same clone would be a second source
+  of answers — and the whole point here is that exactly one thing changes between runs.
+</Callout>
+
+This lab needs no sandbox repository — three small files in a scratch folder are enough to make the mechanism visible. As in lesson `01-claude-md`, every file tool is disabled, so any specific answer must have come from a memory file loaded at launch.
+
+<Lab
+  title="Lab · watch an import load, then watch a local file land last"
+  lessonId="en/l1-beginner/m03-memory/hierarchy-imports"
+  repoTag="none"
+  steps={[
+    'Make a scratch folder outside any repository you care about, with a `notes/` subfolder inside it.',
+    "Write `CLAUDE.md` with one line of prose and one import: `See @notes/conventions.md for this project's conventions.`",
+    'Write `notes/conventions.md` with two facts nothing could derive from an empty folder — for example that the release ritual is `make ship` and never `npm publish`, and that every pull request title starts with a ticket id like `[LAB-42]`.',
+    'Ask for both facts with every file tool disabled: `claude -p "Without reading any files, answer in one sentence: how is this project released, and what must a pull request title start with?" --model sonnet --max-turns 3 --output-format text --disallowedTools "Read,Glob,Grep,Bash,WebFetch,WebSearch"`',
+    'Add a `CLAUDE.local.md` beside `CLAUDE.md` containing one contradicting line: on this machine the release ritual is `make ship-dev`, not `make ship`.',
+    'Ask which one applies, and where it came from: `claude -p "Without reading any files, answer in two sentences: which release command applies on this machine, and which memory file does that instruction come from?" --model sonnet --max-turns 3 --output-format text --disallowedTools "Read,Glob,Grep,Bash,WebFetch,WebSearch"`',
+    'Run `claude`, then `/context`, and count how many entries are listed under Memory files.',
+  ]}
+  expected="The first run states both facts from notes/conventions.md, proving the @import expanded at launch. In the second run both files are loaded, Claude answers `make ship-dev`, and it names CLAUDE.local.md as the source — which is where the documented ordering puts it, appended after CLAUDE.md at the same level."
+  checklist={[
+    "The imported file's facts reach Claude with every file tool disabled",
+    'The import is written as `@notes/conventions.md`, resolved relative to CLAUDE.md',
+    'CLAUDE.local.md is gitignored (or the folder is not a repo at all)',
+    'The second run names CLAUDE.local.md, not notes/conventions.md',
+    '/context lists more than one entry under Memory files',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/02-hierarchy-imports/01-import-loads.txt"
+    range="2-3"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/02-hierarchy-imports/02-local-overrides.txt"
+    range="2-3"
+  />
+</Lab>
+
+Both recordings answer in Turkish, which nothing in the prompt or the scratch folder asked for. That is the hierarchy demonstrating itself: the machine that captured them has a user-scope `~/.claude/CLAUDE.md` requesting Turkish answers, and user scope loads into every session in every directory — including a throwaway folder that contains nothing but two files about `make ship`.
+
+## Anti-patterns
+
+**Splitting a big `CLAUDE.md` into imports to save context.** It does not save any. Imported files load at launch, expanded, in full. _Fix:_ if you want less context, use path-scoped rules; use imports for organisation and for sharing one file between agents.
+
+**Writing an import path relative to your working directory.** Relative import paths resolve against the file containing the import. Get that wrong in `.claude/CLAUDE.md` and `@notes/x.md` points at `.claude/notes/x.md`. _Fix:_ read the path as if you were standing in the importing file's directory.
+
+**Committing `CLAUDE.local.md`.** It is meant to be personal and gitignored; committed, it becomes an unreviewed project instruction that also happens to be the last one read. _Fix:_ add it to `.gitignore` the moment you create it.
+
+**Expecting a gitignored `CLAUDE.local.md` in every worktree.** It exists only where you made it. _Fix:_ import a home-directory file from it, and accept the external-import dialog once.
+
+**Blaming the prompt for an answer your user-scope file caused.** A standing preference in `~/.claude/CLAUDE.md` applies in every project, forever, including the ones where it makes no sense. _Fix:_ when a result surprises you, run `/context` and read what is actually loaded before rewriting the prompt.
+
+**Reaching for `claudeMdExcludes` against a managed file.** Managed policy `CLAUDE.md` cannot be excluded by any setting. _Fix:_ if the instruction is wrong, that is a conversation with whoever deploys it.
+
+<Callout variant="changed">
+  Excluding a rules file you reach through a symlink now works whether the pattern matches the path
+  under `.claude/rules/` or the link target — either one excludes the file. Before v2.1.239, only a
+  pattern matching the link target worked.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/hierarchy-imports"
+  questionId="q1"
+  lang="en"
+  prompt="You launch Claude in foo/bar/. There is a CLAUDE.md in foo/ and one in foo/bar/. What happens?"
+  options={[
+    {
+      text: 'Only foo/bar/CLAUDE.md loads — the nearest file wins',
+      explanation:
+        'Both load. Claude Code walks up from the working directory and concatenates what it finds.',
+    },
+    {
+      text: 'Both load, concatenated, with foo/CLAUDE.md appearing in context before foo/bar/CLAUDE.md',
+      correct: true,
+      explanation:
+        'Right — root-down ordering, so the instructions closest to where you launched are read last.',
+    },
+    {
+      text: 'Only foo/CLAUDE.md loads, because it is the project root',
+      explanation:
+        'Claude Code has no notion of "the project root" here; it walks the whole chain.',
+    },
+    {
+      text: 'Claude Code raises a conflict error and asks you to choose',
+      explanation:
+        'There is no such prompt. Contradictions are resolved arbitrarily, which is the danger.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/hierarchy-imports"
+  questionId="q2"
+  lang="en"
+  prompt="Your CLAUDE.md is 400 lines. You split it into four @path imports of 100 lines each. What did that change?"
+  options={[
+    {
+      text: 'Context usage drops to a quarter',
+      explanation:
+        'No. Imported files are expanded and loaded at launch — the token cost is the same.',
+    },
+    {
+      text: 'Nothing about context usage; only the organisation is better',
+      correct: true,
+      explanation:
+        'Exactly what the docs say. For an actual reduction, use path-scoped rules instead.',
+    },
+    {
+      text: 'The imports load only when Claude reads a matching file',
+      explanation: 'That is path-scoped rules. Imports load at launch, unconditionally.',
+    },
+    {
+      text: 'Claude Code refuses, because imports are capped at two hops',
+      explanation: 'Imports can nest to a maximum depth of four hops.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/hierarchy-imports"
+  questionId="q3"
+  lang="en"
+  prompt="Which file can claudeMdExcludes NOT skip?"
+  options={[
+    {
+      text: 'An ancestor project CLAUDE.md in a monorepo',
+      explanation: 'That is its main use case.',
+    },
+    {
+      text: "Another team's .claude/rules/ directory",
+      explanation: 'A glob against the absolute path excludes it.',
+    },
+    {
+      text: 'A managed policy CLAUDE.md',
+      correct: true,
+      explanation:
+        'Managed policy files cannot be excluded, so organisation-wide instructions always apply.',
+    },
+    {
+      text: 'Your own CLAUDE.local.md',
+      explanation: 'Local memory files are excludable like the rest.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/hierarchy-imports"
+  questionId="q4"
+  lang="en"
+  prompt="You want a mention of @README in your CLAUDE.md to stay as literal text instead of importing the file. How?"
+  options={[
+    {
+      text: 'Escape it as \\@README',
+      explanation: 'Backslash escaping is not the documented mechanism.',
+    },
+    {
+      text: 'Wrap it in backticks — import parsing skips code spans and fenced code blocks',
+      correct: true,
+      explanation: 'Right: `@README` inside backticks is literal, @README outside them imports.',
+    },
+    {
+      text: 'Put it inside an HTML comment',
+      explanation:
+        'Block-level HTML comments are stripped from context entirely — the text would vanish, not stay literal.',
+    },
+    {
+      text: 'Nothing works; every @ in the file is an import',
+      explanation: 'Code spans and fences are explicitly skipped by the import parser.',
+    },
+  ]}
+/>
+
+**Next:** `03-rules` — the mechanism that actually reduces what loads into every session: `.claude/rules/*.md` with `paths:` frontmatter.

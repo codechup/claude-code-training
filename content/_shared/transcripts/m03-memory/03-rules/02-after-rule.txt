@@ -1,0 +1,12 @@
+# Captured 2026-09-07, Claude Code 2.1.263, same worktree, immediately after writing .claude/rules/style.md. Same prompt, same flags. CLAUDE_CODE_DISABLE_AUTO_MEMORY=1. Verbatim.
+› claude -p "Read src/store.ts. Do not edit anything. Then list, as short bullets, the conventions this project expects for code under src/, and say for each where that convention comes from." --model sonnet --max-turns 4 --output-format text --allowedTools "Read"
+src/store.ts dosyasını okudum (düzenleme yapmadım). Bu proje için src/ altındaki kod için beklenen kurallar ve kaynakları şöyle:
+
+- **Named export kullanılmalı, default export yok** — `.claude/rules/style.md`
+- **CLI (`src/cli.ts`) ve API (`src/api/server.ts`) ince (thin) wrapper olarak kalmalı; iş mantığı `src/store.ts`'de yaşamalı** — hem `.claude/CLAUDE.md` ("Conventions" bölümü) hem de `.claude/rules/style.md` bunu belirtiyor; `store.ts` dosyasının en üstündeki yorum (satır 1-2) da bunu doğruluyor.
+- **`src/store.ts`'e eklenen her yeni davranış, `test/` altında karşılık gelen bir testle gelmeli** — `.claude/rules/style.md`
+- **Relative import'lar açık `.ts` uzantısı kullanmalı** (proje derleme adımı olmadan TypeScript'i doğrudan Node 24 üzerinde çalıştırıyor) — `.claude/rules/style.md`; dosyanın kendisindeki `import { ... } from "./types.ts"` satırı (satır 5) bu kurala uyuyor.
+- **`BUGS.md`'deki her bug, `-start` etiketinde başarısız olan ve `-solution` etiketinde geçen bir testle gelir; testi gevşeterek veya silerek "düzeltme" yapılmamalı** — `.claude/CLAUDE.md`
+- **`src/api/server.ts` içindeki `TEACHING SURFACE` olarak işaretli iki yorum, ileride (m14 dersi) kullanılmak üzere olduğu gibi bırakılmalı** — `.claude/CLAUDE.md` (bu, `store.ts` dosyasını değil `server.ts`'i ilgilendiriyor ama genel proje kuralı olarak not düşüyorum)
+
+Not: `.claude/rules/style.md` dosyası git status'a göre henüz izlenmeyen (untracked, `?? .claude/rules/`) yeni bir dosya — yani bu kural seti commit edilmemiş.

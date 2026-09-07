@@ -1,0 +1,297 @@
+---
+title: '/memory, quick notes, and pruning what you remember'
+description: 'The commands that let you see and change what Claude remembers: /memory to browse and edit every memory file, /context to check what actually loaded, and asking Claude directly instead of the removed # shortcut.'
+level: 1
+module: 'm03-memory'
+order: 5
+duration_min: 10
+difficulty: core
+tags: ['memory', 'commands', 'maintenance']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'How Claude remembers your project'
+    url: 'https://code.claude.com/docs/en/memory.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Commands'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code changelog'
+    url: 'https://code.claude.com/docs/en/changelog.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Use `/memory` to list, open and edit every memory file across user and project scope.
+- Tell `/memory` and `/context` apart, and know which question each one answers.
+- Add something to memory by asking, and choose whether it lands in auto memory or in `CLAUDE.md`.
+- Prune a stale memory, and know where the pruning has to happen.
+- Recognise the removed `#` shortcut in an old tutorial and know what replaced it.
+
+**Prerequisites.** Lessons `01-claude-md` through `04-auto-memory`. An interactive Claude Code session — everything here is TUI, not headless.
+
+<WhenNotToUse>
+  `/memory` is an interactive editor: it opens files in your editor and, for a terminal editor like
+  Vim, hands over the terminal until you exit. None of that belongs in a script, a CI job or a
+  `claude -p` run. Automation edits memory files the ordinary way — they are plain markdown on disk,
+  and a script should write them directly rather than driving a TUI. And `/memory` is not a load
+  check: it lists locations, including ones that do not exist yet, which is a different question
+  from what the current session actually read.
+</WhenNotToUse>
+
+## Concept
+
+### `/memory` — see and edit everything
+
+`/memory` lists your `CLAUDE.md`, `CLAUDE.local.md` and other memory file locations across user and project scopes. It includes user and project `CLAUDE.md` entries for files that **do not exist yet**, which is the fast way to create one: select an entry and, if the file is missing, it is created first and then opened.
+
+It does three things in one screen:
+
+- Select any file to open it in your editor.
+- Toggle auto memory on or off (this writes `autoMemoryEnabled` to `~/.claude/settings.json`).
+- Open the auto memory folder, to browse what Claude has saved for this repository.
+
+<CodeBlock title="in an interactive session">
+
+```text
+/memory
+```
+
+</CodeBlock>
+
+How the editor behaves depends on which one you use. A GUI editor such as VS Code opens the file in a separate window and you can keep using the session while it is open. A terminal editor such as Vim takes over the terminal until you exit it.
+
+### `/memory` versus `/context`
+
+They answer two different questions, and confusing them is the most common way to spend twenty minutes debugging nothing:
+
+| Command    | Question it answers                                                        |
+| ---------- | -------------------------------------------------------------------------- |
+| `/memory`  | What memory files exist, or could exist, and let me edit them              |
+| `/context` | What actually loaded into **this** session — see the **Memory files** list |
+
+If an instruction is not being followed, `/context` first. A file that is missing from that list is a file Claude cannot see, and no amount of rewording it will help.
+
+<CodeBlock title="the debugging order">
+
+```text
+/context
+/memory
+/doctor
+```
+
+</CodeBlock>
+
+`/context` tells you what loaded, `/memory` lets you fix it, and `/doctor` (alias `/checkup`) proposes trims for a checked-in `CLAUDE.md` — cutting content Claude can derive from the codebase and keeping pitfalls, rationale and conventions that differ from tool defaults.
+
+### Quick notes: ask, do not type a prefix
+
+When you ask Claude to remember something — "always use pnpm, not npm", or "remember that the API tests require a local Redis instance" — Claude saves it to auto memory.
+
+This lesson's worked example prompt is the one that puts the note where you want it rather than where Claude guesses:
+
+```text
+Add this to CLAUDE.md: relative imports keep the explicit .ts extension,
+because this project runs TypeScript on Node without a build step.
+```
+
+The distinction is worth being deliberate about:
+
+| You want it…                                  | Say                             | It lands in                          |
+| --------------------------------------------- | ------------------------------- | ------------------------------------ |
+| Remembered for you, on this machine, per repo | "Remember that …"               | Auto memory (`~/.claude/projects/…`) |
+| Committed, shared with the team               | "Add this to CLAUDE.md: …"      | The project `CLAUDE.md`              |
+| Written by your own hand                      | `/memory`, then select the file | Whichever file you selected          |
+
+Older tutorials tell you to start a message with `#` instead. That shortcut is gone — see the Changed callout after the anti-patterns below.
+
+### Pruning
+
+Memory files are excluded from the transcript retention sweep — `MEMORY.md` and its topic files stay until you or Claude edits or deletes them. Nothing expires on its own, so pruning is a thing you do, not a thing that happens.
+
+Prune in the place the memory lives:
+
+- **A stale `CLAUDE.md` line** — `/memory`, open the file, delete the line. Or let `/doctor` propose the trim.
+- **A stale auto memory** — `/memory`, open the auto memory folder, delete the topic file, and delete its line from `MEMORY.md`. Both are plain markdown; editing them by hand is expected, not a hack.
+- **A `MEMORY.md` that has grown past 200 lines** — the overflow is silently not loaded. Merge entries down to one line each and push detail into topic files.
+- **Two instructions that contradict each other** — this is the one worth hunting for. Claude may pick either arbitrarily, so an outdated rule you never deleted is not neutral; it is a coin flip. Review your `CLAUDE.md`, your nested `CLAUDE.md` files and your `.claude/rules/` together, not one at a time.
+
+For debugging which instruction files load, when and why, there is an `InstructionsLoaded` hook — useful when a path-scoped rule or a lazily-loaded subdirectory file is behaving unexpectedly. Hooks are module `m07-hooks`.
+
+## Hands-on lab
+
+Most of this lab is interactive, and a `/memory` screen is a TUI: inventing a picture of one would be a fabricated recording, so those steps are described in prose and you run them yourself. The last two steps are not interactive, and the recording below is a real capture of them — the same two phrasings, side by side, landing in two different places.
+
+<Lab
+  title="Lab · audit, edit and prune your own memory"
+  lessonId="en/l1-beginner/m03-memory/memory-commands"
+  repoTag="none"
+  steps={[
+    'Open a project you actually work in and start a session with `claude`.',
+    'Run `/context` and write down what is listed under **Memory files**. That is the ground truth for this session.',
+    'Run `/memory`. Compare its list with what you just wrote down: entries that exist but did not load, and entries offered for files that do not exist yet.',
+    'Select your user CLAUDE.md (`~/.claude/CLAUDE.md`). If you have never made one, selecting it creates it. Read it end to end — including anything you added months ago and forgot.',
+    'Delete one line you no longer stand behind, save, and exit the editor.',
+    'From the /memory screen, open the auto memory folder and read MEMORY.md. Delete one topic file that is stale, and remove its line from the index.',
+    'Start a fresh session and run `/context` again. The Memory files list should reflect your edits.',
+    'Now make the two phrasings land in different places. In a scratch folder, run: `claude -p "Add this to CLAUDE.md: <one convention your project actually has>. Then tell me in one sentence which file you wrote." --model sonnet --max-turns 6 --output-format text --permission-mode acceptEdits`, then `cat CLAUDE.md`.',
+    'In the same folder, run: `claude -p "Remember that <one fact about your local setup>. Then tell me in one sentence where you saved that." --model sonnet --max-turns 6 --output-format text --permission-mode acceptEdits`. Check that CLAUDE.md is byte-for-byte unchanged, and read the new line in the auto memory MEMORY.md.',
+  ]}
+  expected="/context lists the memory files this session loaded; /memory lists locations, including files that do not exist yet, and lets you open any of them. After your edits, a fresh session's /context reflects them. And the last two runs land in two different files: asking for CLAUDE.md writes CLAUDE.md in the working directory, while asking Claude to remember something leaves CLAUDE.md untouched and adds a line to the auto memory index instead."
+  checklist={[
+    'You can state the difference between /memory and /context in one sentence',
+    'You read your user-scope CLAUDE.md end to end',
+    'At least one stale line or memory file is gone',
+    'You know whether "remember this" or "add this to CLAUDE.md" is the right phrasing for a given fact',
+    "A fresh session's /context shows the change",
+    'The "Add this to CLAUDE.md" run wrote CLAUDE.md, and you read the line it added',
+    'The "Remember that" run left CLAUDE.md unchanged and wrote to auto memory instead',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/05-memory-commands/01-where-it-lands.txt"
+    range="2-13"
+  />
+</Lab>
+
+That is the table above, verified rather than asserted: the wording you choose decides the file. (The replies are in Turkish because the capturing machine has a user-scope memory file asking for it — see lesson `02-hierarchy-imports`.)
+
+## Anti-patterns
+
+**Using `/memory` to check whether a file loaded.** It lists locations, including ones that do not exist yet. That is not the same question. _Fix:_ `/context`, and read the **Memory files** list.
+
+**Adding, never removing.** Nothing expires. Every line you add is a line loaded into every session until you delete it, and old advice does not politely stand aside for new advice. _Fix:_ treat memory files like code — review and delete on the same schedule you add.
+
+**Saying "remember this" for something the team needs.** That lands in auto memory: machine-local, uncommitted, invisible to everyone else. _Fix:_ say "add this to CLAUDE.md" when you mean the project, and commit it.
+
+**Fixing a conflict by adding a third instruction.** "Ignore the rule above about tabs" leaves both earlier rules in context and adds a new one to disagree with. _Fix:_ delete the wrong one.
+
+**Following a 2025 tutorial's `#` shortcut.** It was removed in 2.0.70; typing it does nothing special. _Fix:_ ask Claude to edit `CLAUDE.md`, or open it with `/memory`.
+
+**Driving `/memory` from a script.** It is a TUI that can hand your terminal to Vim. _Fix:_ memory files are plain markdown on disk — write them directly.
+
+<Callout variant="changed">
+  Older tutorials tell you to start a message with `#` to add a quick memory entry. The official
+  changelog’s 2.0.70 entry (15 December 2025) reads "Removed # shortcut for quick memory entry (tell
+  Claude to edit your CLAUDE.md instead)", and no current page documents it. Ask Claude to edit your
+  `CLAUDE.md`, or open the file with `/memory`. Typing `#` at the start of a prompt today is just a
+  prompt that begins with a hash.
+</Callout>
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/memory-commands"
+  questionId="q1"
+  lang="en"
+  prompt="Claude is ignoring an instruction in your project CLAUDE.md. What is the first command to run?"
+  options={[
+    {
+      text: '/context, and check the Memory files list',
+      correct: true,
+      explanation:
+        'It answers the only question that matters first: did the file actually load into this session?',
+    },
+    {
+      text: '/memory, to re-read the file',
+      explanation: 'It lists and edits locations — it does not tell you what this session loaded.',
+    },
+    {
+      text: '/compact, to free room for it',
+      explanation: 'Compaction does not fix an instruction that was never loaded.',
+    },
+    {
+      text: '/init, to regenerate the file',
+      explanation: 'That suggests improvements to an existing file; it is not a diagnosis.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/memory-commands"
+  questionId="q2"
+  lang="en"
+  prompt="You want a convention committed and shared with your team. What do you say to Claude?"
+  options={[
+    {
+      text: '"Remember that we always use pnpm."',
+      explanation: 'That phrasing saves it to auto memory — machine-local and uncommitted.',
+    },
+    {
+      text: '"Add this to CLAUDE.md: we always use pnpm, never npm."',
+      correct: true,
+      explanation: 'Asking for CLAUDE.md explicitly is what puts it in a file you can commit.',
+    },
+    {
+      text: '"# we always use pnpm"',
+      explanation:
+        'The # shortcut was removed in 2.0.70; that is now just a prompt starting with a hash.',
+    },
+    {
+      text: 'Nothing — it will infer it from your lockfile',
+      explanation: 'It might, per session. A committed instruction is not a guess.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/memory-commands"
+  questionId="q3"
+  lang="en"
+  prompt="What does selecting a /memory entry for a file that does not exist do?"
+  options={[
+    { text: 'Shows an error', explanation: 'Those entries are listed deliberately.' },
+    {
+      text: 'Creates the file, then opens it in your editor',
+      correct: true,
+      explanation: 'Which makes /memory the quickest way to start a user or project CLAUDE.md.',
+    },
+    {
+      text: 'Runs /init to generate contents first',
+      explanation: 'It creates an empty file; /init is a separate command.',
+    },
+    {
+      text: 'Hides the entry until the file exists',
+      explanation:
+        'The opposite — non-existent user and project CLAUDE.md entries are shown on purpose.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/memory-commands"
+  questionId="q4"
+  lang="en"
+  prompt="An auto memory from six months ago is wrong. What removes it?"
+  options={[
+    {
+      text: 'Nothing — it expires with the retention sweep',
+      explanation:
+        'Memory files are explicitly excluded from that sweep; they stay until edited or deleted.',
+    },
+    {
+      text: 'Deleting its topic file and its line in MEMORY.md, via /memory or any editor',
+      correct: true,
+      explanation:
+        'They are plain markdown. Editing them by hand is the documented way to audit memory.',
+    },
+    {
+      text: 'Telling Claude it was wrong once',
+      explanation: 'That may add a correcting memory; it does not remove the old file.',
+    },
+    {
+      text: '/compact',
+      explanation: 'Auto memory is re-injected from disk after compaction, unchanged.',
+    },
+  ]}
+/>
+
+**Next:** module `m04-commands` — the full built-in slash command table, the CLI flags behind them, and how to find your way back to a session you closed yesterday.

@@ -1,0 +1,327 @@
+---
+title: 'Auto memory: MEMORY.md and its four types'
+description: 'Auto memory is the half of the system Claude writes. Learn the four memory types, where the files live, the 200-line MEMORY.md index limit, and how to turn it off — then watch a real session write its first two memories.'
+level: 1
+module: 'm03-memory'
+order: 4
+duration_min: 15
+difficulty: core
+tags: ['memory', 'auto-memory', 'settings']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'How Claude remembers your project'
+    url: 'https://code.claude.com/docs/en/memory.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Explore the .claude directory'
+    url: 'https://code.claude.com/docs/en/claude-directory.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say what auto memory is, who writes it, and how it differs from `CLAUDE.md`.
+- Name the four memory types — `user`, `feedback`, `project`, `reference` — and what goes in each.
+- Find the memory directory for a repository, and read `MEMORY.md` and its topic files.
+- Explain the 200-line / 25 KB index limit and why it exists.
+- Turn auto memory off for one session, one project, or entirely.
+
+**Prerequisites.** Lesson `01-claude-md`. A scratch folder for the lab, and a terminal.
+
+<WhenNotToUse>
+  Auto memory is machine-local: files are not shared across machines or cloud environments, and they
+  are not in version control. Anything your team needs — build commands, conventions, architecture
+  decisions — belongs in a committed `CLAUDE.md` or a rule, not in notes on one laptop. Turn auto
+  memory off entirely in a shared or ephemeral environment, in a CI runner where a per-project
+  directory would accumulate for no one, and in any session where you would rather nothing about the
+  conversation persisted afterwards.
+</WhenNotToUse>
+
+## Concept
+
+### Two systems, one context window
+
+Both memory systems load at the start of every conversation, and Claude treats both as context rather than enforced configuration. The split is about who writes them:
+
+|                  | CLAUDE.md files                           | Auto memory                                                                                       |
+| ---------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Who writes it    | You                                       | Claude                                                                                            |
+| What it contains | Instructions and rules                    | Learnings and patterns                                                                            |
+| Scope            | Project, user, or org                     | Per repository, shared across worktrees                                                           |
+| Loaded into      | Every session                             | Every session (first 200 lines or 25 KB)                                                          |
+| Use for          | Coding standards, workflows, architecture | Your preferences, corrections you give Claude, project context Claude cannot derive from the code |
+
+### The four types
+
+As it works, Claude saves four kinds of note. The docs describe the kind as a `type` field in the memory file's frontmatter; in the recording below it appears as `type:` under a `metadata:` block in that frontmatter. The four kinds are:
+
+- **`user`** — your role, expertise and working preferences.
+- **`feedback`** — corrections you give Claude, and approaches you confirm.
+- **`project`** — ongoing work, deadlines and decisions Claude cannot derive from the code or git history.
+- **`reference`** — where to find information outside the project, such as an issue tracker or a dashboard.
+
+Two exclusions matter as much as the four inclusions. Claude **skips anything it can derive from the codebase** — architecture, file paths, a debugging fix — and it **skips anything your `CLAUDE.md` files already say**. It also does not save something every session; it decides case by case whether a fact would be useful in a future conversation.
+
+This is the sentence to hold on to: auto memory is for what the code cannot tell Claude and you have not written down.
+
+### Where the files live
+
+Each project gets its own directory at `~/.claude/projects/<project>/memory/`. The `<project>` segment is derived from the git repository, so **every worktree and subdirectory of one repo shares a single auto memory directory**. Outside a git repository, the project root is used instead.
+
+<CodeBlock title="~/.claude/projects/<project>/memory/">
+
+```text
+MEMORY.md           # Index, one line per memory, loaded into every session
+user_role.md        # One memory
+feedback_testing.md # One memory
+...                 # Any other topic files Claude creates
+```
+
+</CodeBlock>
+
+`MEMORY.md` is an index, not a store. Claude reads and writes files in this directory throughout a session, using `MEMORY.md` to keep track of what is where. **Topic files are not loaded at startup** — Claude reads them on demand with its ordinary file tools when it needs the detail.
+
+You can move the directory with `autoMemoryDirectory` in `settings.json`, read from any settings scope. The value must be an absolute path or start with `~/`:
+
+<CodeBlock title="settings.json">
+
+```json
+{
+  "autoMemoryDirectory": "~/my-custom-memory-dir"
+}
+```
+
+</CodeBlock>
+
+Set from a project's `.claude/settings.json` or `.claude/settings.local.json`, Claude Code honours it under the same workspace-trust rule as hooks in settings files — a cloned repository can supply those files, so trust is checked first.
+
+### The 200-line index limit
+
+The first 200 lines of `MEMORY.md`, or the first 25 KB, whichever comes first, are loaded at the start of every conversation. Anything past that threshold is not loaded.
+
+Claude Code enforces this actively. After Claude writes to `MEMORY.md` it measures the file: near a limit, Claude is reminded to shorten it — one line per entry, detail into topic files, stale entries merged or dropped. Over a limit, the write still succeeds but Claude Code returns an error telling Claude to rewrite the index, because everything past the limit is dropped on the next load.
+
+That limit applies only to `MEMORY.md`. A `CLAUDE.md` is loaded in full up to 4 MiB, and a larger one is skipped entirely.
+
+Retention is deliberately separate too: Claude Code deletes old session transcripts after the `cleanupPeriodDays` period, but the memory directory is excluded from that sweep. `MEMORY.md` and its topic files stay until you or Claude edits or deletes them.
+
+### Turning it off
+
+Auto memory is on by default. Three levers, from narrowest to broadest:
+
+| Scope       | How                                                                                                |
+| ----------- | -------------------------------------------------------------------------------------------------- |
+| One session | `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` — takes precedence over the setting, in either direction       |
+| One project | `"autoMemoryEnabled": false` in that project's settings                                            |
+| Everywhere  | The auto memory toggle in `/memory`, which writes `autoMemoryEnabled` to `~/.claude/settings.json` |
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 claude -p "Summarise the failing test." --output-format text
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 claude -p "Summarise the failing test." --output-format text
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$env:CLAUDE_CODE_DISABLE_AUTO_MEMORY = "1"
+claude -p "Summarise the failing test." --output-format text
+```
+
+  </Fragment>
+</OSTabs>
+
+When `autoMemoryEnabled` is `false`, Claude neither reads from nor writes to the memory directory. The settings reference is explicit about the ranking: `CLAUDE_CODE_DISABLE_AUTO_MEMORY` is listed as `autoMemoryEnabled`’s per-session override and takes precedence over it "in either direction", so the variable can turn auto memory back on for one session as well as off.
+
+### What this looks like in a real project
+
+This training site's own repository is a worked example of the division of labour, and it is public, so you can read every file in it. Its committed `CLAUDE.md` holds what every session must know — the session protocol, the hard rules about evidence and public-repo hygiene, the command list. Its `.claude/rules/content.md` carries lesson-authoring conventions behind `paths: ['content/**/*.mdx', 'content/_shared/**']`, so they cost context only while someone is actually editing a lesson. Neither file records that a particular contributor prefers PowerShell commands, or that they were corrected last week about transcript formatting. That is the auto-memory half — per person, per machine, uncommitted, and nobody else's business.
+
+The worked example prompt for this lesson is the one that puts something in that half deliberately:
+
+```text
+Remember for future sessions: I am a technical writer, not the maintainer of
+this project, and I always want commands given for Windows PowerShell first.
+```
+
+## Hands-on lab
+
+Auto memory writes real files, so the honest way to see it is to let it write some and then read them off disk.
+
+<Lab
+  title="Lab · make Claude take a note, then read the note"
+  lessonId="en/l1-beginner/m03-memory/auto-memory"
+  repoTag="none"
+  steps={[
+    'Make an empty scratch folder outside any repository you care about. Because it is not a git repo, its memory directory is keyed on the folder itself, which keeps this experiment isolated.',
+    'Confirm auto memory is on: run `claude`, then `/memory`, and check the auto memory toggle. Leave it on.',
+    'From the scratch folder, run: `claude -p "Remember for future sessions: I am a technical writer, not the maintainer of this project, and I always want commands given for Windows PowerShell first. Then tell me in one sentence what you saved." --model sonnet --max-turns 6 --output-format text --permission-mode acceptEdits`',
+    'Find the directory: `ls ~/.claude/projects/` on macOS and Linux, `Get-ChildItem $HOME/.claude/projects/` on PowerShell. The entry for your scratch folder is the one with a `memory/` subdirectory.',
+    'Read `MEMORY.md` in it. Then read one of the topic files it links to, and look at its frontmatter: `type`, and a `modified` ISO 8601 timestamp.',
+    'Delete a memory file you disagree with, and edit MEMORY.md to drop its line. Both are plain markdown; nothing stops you.',
+  ]}
+  expected="MEMORY.md contains one short line per memory, each linking to a topic file. The topic files carry frontmatter with a type field — `user` for who you are, `feedback` for the standing correction — plus a modified timestamp, and a body explaining what to apply and why."
+  checklist={[
+    'The session reported what it saved',
+    '~/.claude/projects/<project>/memory/ exists and contains MEMORY.md',
+    'MEMORY.md is an index: one line per memory, linking to a topic file',
+    'One topic file has `metadata.type: user`, another has `metadata.type: feedback`',
+    'A topic file carries a `modified` ISO 8601 timestamp',
+    'You can edit or delete any of it by hand',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/04-auto-memory/01-auto-memory-written.txt"
+    range="2-24"
+  />
+</Lab>
+
+The absolute path in that recording is redacted to `~/.claude/projects/<project>/`; nothing else is changed. Two things in it are worth pausing on. Claude classified the two facts differently and unprompted — `type: user` for who the person is, `type: feedback` for the standing correction, both under the `metadata:` block — and it split them into two topic files with a two-line index, which is the shape the 200-line limit is designed to encourage. (The reply is in Turkish because the capturing machine has a user-scope memory file asking for it; see lesson `02-hierarchy-imports`.)
+
+## Anti-patterns
+
+**Relying on auto memory for anything a teammate needs.** It is machine-local and not in version control, so "Claude already knows" is true for exactly one person. _Fix:_ if it matters to the team, move it into `CLAUDE.md` or a rule and commit it.
+
+**Never reading it.** Notes accumulate quietly and stay until edited or deleted — they are excluded from the transcript retention sweep. A stale preference from six months ago is still shaping answers today. _Fix:_ run `/memory`, open the auto memory folder, and read it now and then.
+
+**Letting `MEMORY.md` become the store instead of the index.** Past 200 lines or 25 KB the overflow is simply not loaded, so the memories you think are active are invisible. _Fix:_ one line per entry, detail in topic files — and take the "shorten the index" reminder seriously when it appears.
+
+**Assuming a subagent inherits it.** The main conversation's auto memory is not loaded into subagents; the exception is a fork, which inherits the parent conversation. A subagent's own memory, enabled with its `memory` frontmatter field, is a separate directory. _Fix:_ do not use auto memory as a channel between a session and its subagents.
+
+**Leaving it on in a shared or throwaway environment.** A CI runner or a shared box accumulates a per-project directory nobody will ever read. _Fix:_ `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` for the session, or `autoMemoryEnabled: false` for the project.
+
+**Expecting per-worktree memories.** The `<project>` segment is derived from the git repository, so every worktree of one repo writes into one directory. _Fix:_ if you need genuinely separate notes, that is what `autoMemoryDirectory` is for.
+
+<Callout variant="changed">
+  When Claude writes a memory file that already begins with YAML frontmatter, Claude Code now stamps
+  the write time into a `modified` field as an ISO 8601 timestamp, so both you and Claude can see
+  how current a fact is. Files with no frontmatter never get one added. The `modified` field
+  requires Claude Code v2.1.214 or later.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/auto-memory"
+  questionId="q1"
+  lang="en"
+  prompt="Which of these would Claude save to auto memory?"
+  options={[
+    {
+      text: 'That the HTTP handlers live in src/api/server.ts',
+      explanation: 'Derivable from the codebase — explicitly one of the things auto memory skips.',
+    },
+    {
+      text: 'That you prefer pnpm over npm, after you correct it once',
+      correct: true,
+      explanation:
+        'A `feedback`-type memory: a correction you gave that would be useful next session.',
+    },
+    {
+      text: 'A build command your CLAUDE.md already documents',
+      explanation: 'It skips anything the CLAUDE.md files already say.',
+    },
+    {
+      text: 'The stack trace of the bug it just fixed',
+      explanation: 'A one-off debugging detail, derivable and not useful in a future conversation.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/auto-memory"
+  questionId="q2"
+  lang="en"
+  prompt="What exactly is loaded from the memory directory at the start of a session?"
+  options={[
+    {
+      text: 'Every file in the directory',
+      explanation: 'Topic files are read on demand, not at startup.',
+    },
+    {
+      text: 'The first 200 lines of MEMORY.md, or the first 25 KB, whichever comes first',
+      correct: true,
+      explanation: 'And content past that threshold is simply not loaded.',
+    },
+    {
+      text: 'MEMORY.md in full, however long it is',
+      explanation: 'There is a hard read limit on the index.',
+    },
+    {
+      text: 'Nothing, until you run /memory',
+      explanation: 'The index loads automatically; /memory is for browsing and editing.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/auto-memory"
+  questionId="q3"
+  lang="en"
+  prompt="You have three git worktrees of the same repository. How many auto memory directories are there?"
+  options={[
+    {
+      text: 'Three — one per worktree',
+      explanation: 'The <project> segment is derived from the repository, not the checkout path.',
+    },
+    {
+      text: 'One, shared by all three',
+      correct: true,
+      explanation: 'All worktrees and subdirectories within the same repo share one directory.',
+    },
+    { text: 'One per branch', explanation: 'Branches are not part of the key at all.' },
+    {
+      text: 'None — auto memory is disabled in worktrees',
+      explanation: 'It works normally there.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/auto-memory"
+  questionId="q4"
+  lang="en"
+  prompt="You want auto memory off for one headless run only, without changing any settings file. What do you use?"
+  options={[
+    {
+      text: 'CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 in front of the command',
+      correct: true,
+      explanation:
+        'A per-session override that takes precedence over autoMemoryEnabled, in either direction.',
+    },
+    {
+      text: '"autoMemoryEnabled": false in ~/.claude/settings.json',
+      explanation: 'That is the everywhere-and-permanently lever, not a one-run one.',
+    },
+    {
+      text: 'The /memory toggle',
+      explanation: 'That writes autoMemoryEnabled to your user settings — again, not per run.',
+    },
+    {
+      text: 'Deleting MEMORY.md before the run',
+      explanation: 'Claude would simply write a new one.',
+    },
+  ]}
+/>
+
+**Next:** `05-memory-commands` — `/memory`, asking Claude to remember something, and pruning what has gone stale.

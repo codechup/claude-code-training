@@ -1,0 +1,364 @@
+---
+title: 'Write a project CLAUDE.md with /init'
+description: 'CLAUDE.md is the file Claude Code reads at the start of every session. Learn what belongs in it, what does not, how /init drafts one for you — then prove a real session changes its answer once the file exists.'
+level: 1
+module: 'm03-memory'
+order: 1
+duration_min: 15
+difficulty: core
+tags: ['memory', 'claude-md', 'init']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'How Claude remembers your project'
+    url: 'https://code.claude.com/docs/en/memory.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Explore the .claude directory'
+    url: 'https://code.claude.com/docs/en/claude-directory.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Commands'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m03-01-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say what `CLAUDE.md` is and when in a session it is read.
+- Decide whether a given fact belongs in `CLAUDE.md`, in a path-scoped rule, or in a skill.
+- Put the file in the right place — `./CLAUDE.md` or `./.claude/CLAUDE.md` — and know why either works.
+- Draft one with `/init` and refine it, instead of writing 200 lines by hand.
+- Prove the file is loaded, two ways: `/context` in an interactive session, and a headless run whose answer changes because of it.
+
+**Prerequisites.** Claude Code installed and signed in (module `m01-start`), and a terminal in a project directory you can write to. The lab uses the course sandbox repository, so a `git clone` of `codechup/claude-code-lab` too.
+
+<WhenNotToUse>
+  `CLAUDE.md` is context, not enforcement. Claude reads it and tries to follow it; there is no
+  guarantee of strict compliance. If a thing must happen at a fixed moment — before every commit,
+  after every edit — write a hook instead, because hooks run as shell commands regardless of what
+  Claude decides. If a thing must be blocked outright, use `permissions.deny` in settings, or a
+  `PreToolUse` hook. And if a thing is a multi-step procedure, or only matters for one corner of the
+  codebase, it does not belong in a file that loads into every single session: make it a skill or a
+  path-scoped rule, so it costs context only when it is relevant.
+</WhenNotToUse>
+
+## Concept
+
+### What it is
+
+Every Claude Code session starts with a fresh context window. `CLAUDE.md` is one of the two mechanisms that carry knowledge across that boundary — the one **you** write. (The other is auto memory, which Claude writes; lesson `04-auto-memory` covers it.)
+
+The file is plain markdown. Claude Code reads it at the start of every conversation and delivers it as a user message after the system prompt. That detail matters, and it is the reason for the "When not to use" section above: what you put in `CLAUDE.md` shapes behaviour, it does not enforce it.
+
+### Where the project file goes
+
+A project `CLAUDE.md` can live in either of two places, and Claude Code loads both:
+
+| Path                  | Why you would pick it                                                    |
+| --------------------- | ------------------------------------------------------------------------ |
+| `./CLAUDE.md`         | Visible at the repository root; obvious to a human opening the repo.     |
+| `./.claude/CLAUDE.md` | Keeps the project root clean, next to the rest of your `.claude/` setup. |
+
+Both are committed and shared with your team through source control, so a project `CLAUDE.md` should carry project-level standards, not your personal preferences. Personal, project-specific notes go in `CLAUDE.local.md` at the project root, which you add to `.gitignore` — that is lesson `02-hierarchy-imports`.
+
+### What belongs in it
+
+The docs give a usefully concrete trigger list. Add something to `CLAUDE.md` when:
+
+- Claude makes the same mistake a second time.
+- A code review catches something Claude should have known about this codebase.
+- You type the same correction into chat that you typed last session.
+- A new teammate would need the same context to be productive.
+
+Keep it to facts Claude should hold in every session: build and test commands, conventions, project layout, "always do X" rules. Move a multi-step procedure to a skill; move something that only matters for one area to a path-scoped rule.
+
+Three qualities decide how reliably the file is followed:
+
+- **Size.** Target under 200 lines. Longer files consume more context and reduce adherence. Claude Code loads a `CLAUDE.md` of up to 4 MiB in full and skips a larger one — but "it loads" is not the same as "it is followed."
+- **Structure.** Markdown headers and bullets. Claude scans structure the way a reader does; organised sections beat dense paragraphs.
+- **Specificity.** Write instructions concrete enough to verify. "Use 2-space indentation", not "format code properly". "Run `npm test` before committing", not "test your changes".
+
+One more: **consistency**. If two instructions contradict each other, Claude may pick one arbitrarily. Reviewing your memory files for stale and conflicting lines is real maintenance work, not a one-off.
+
+This lesson's worked example prompt is the one you use once the file exists, to check it actually landed:
+
+```text
+Without reading any files, tell me in two sentences what this project's
+conventions say about fixing a bug that has a test.
+```
+
+If the answer comes back specific, the file is loaded. If Claude says it does not know, it is not.
+
+<Callout>
+  A useful trick for keeping notes to human maintainers out of Claude's context: block-level HTML
+  comments (`<!-- … -->`) in a `CLAUDE.md` are stripped before the content is injected. Comments
+  inside code blocks are preserved, and everything is visible again if Claude opens the file with
+  the `Read` tool.
+</Callout>
+
+### Let `/init` write the first draft
+
+You do not start from a blank file. Run `/init` in a project and Claude analyses the codebase and writes a starting `CLAUDE.md` with the build commands, test instructions and conventions it can discover. If a `CLAUDE.md` already exists, `/init` suggests improvements rather than overwriting it.
+
+`/init` also reads configuration other coding agents left behind — Cursor rules in `.cursor/rules/` or `.cursorrules`, and Copilot rules in `.github/copilot-instructions.md` — and folds the relevant parts into what it generates.
+
+Then refine. `/init` can only write down what it can derive from the code; the valuable half of a `CLAUDE.md` is the half it cannot: the pitfall that bit you last month, the convention that differs from the tool's default, the file nobody is allowed to tidy up.
+
+<CodeBlock title="drafting and checking a project CLAUDE.md">
+
+```text
+/init
+/memory
+/context
+```
+
+</CodeBlock>
+
+`/init` drafts, `/memory` opens the file in your editor to refine it, and `/context` shows what actually loaded — look for the list under **Memory files**.
+
+There is also an interactive, multi-phase `/init`: set `CLAUDE_CODE_NEW_INIT=1` and it asks which artifacts to set up (CLAUDE.md files, skills, hooks), explores the codebase with a subagent, asks follow-up questions, and presents a reviewable proposal before writing anything.
+
+### If you already have an AGENTS.md
+
+Claude Code reads `CLAUDE.md`, not `AGENTS.md`. If your repository already uses `AGENTS.md` for another agent, do not duplicate it — create a `CLAUDE.md` that imports it, and add Claude-specific instructions underneath:
+
+<CodeBlock title="CLAUDE.md">
+
+```markdown
+@AGENTS.md
+
+## Claude Code
+
+Use plan mode for changes under `src/billing/`.
+```
+
+</CodeBlock>
+
+A symlink works too if you have nothing Claude-specific to add — but on Windows creating one needs Administrator privileges or Developer Mode, so prefer the `@AGENTS.md` import there.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+ln -s AGENTS.md CLAUDE.md
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+ln -s AGENTS.md CLAUDE.md
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+# Requires Developer Mode or an elevated shell; the @AGENTS.md import is the portable choice.
+New-Item -ItemType SymbolicLink -Path CLAUDE.md -Target AGENTS.md
+```
+
+  </Fragment>
+</OSTabs>
+
+## Hands-on lab
+
+<Callout>
+  Every headless command in this lab was captured with `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` in front
+  of it, and yours should be too. Auto memory is keyed per repository (lesson `04-auto-memory`), so
+  notes Claude saved while you were doing an earlier lab in the same clone would be a second source
+  of answers — and the whole point here is that exactly one thing changes between runs.
+</Callout>
+
+The point of this lab is not "write a file". It is to see, with the same prompt run twice, that the file changed what Claude knows.
+
+The prompt asks about a project-specific convention: the lab repository has two comments marked `TEACHING SURFACE` that must not be tidied up. Every file tool is switched off with `--disallowedTools`, so Claude cannot go and look — the only way it can answer is from a memory file loaded at session start.
+
+<Lab
+  title="Lab · prove a CLAUDE.md changes the answer"
+  lessonId="en/l1-beginner/m03-memory/claude-md"
+  repoTag="lesson/m03-01-start"
+  steps={[
+    'Clone the lab repository: `git clone https://github.com/codechup/claude-code-lab` and change into it.',
+    'Check out the start tag with `git checkout lesson/m03-01-start`, then run `git ls-files` and confirm no CLAUDE.md is listed.',
+    'Capture the "before" answer with every file tool disabled, so only memory files can supply one: `claude -p "Without reading any files, answer in two sentences: does this repository have any comments that I must not tidy up or delete, and if so, in which file? If you do not know, say you do not know." --model sonnet --max-turns 3 --output-format text --disallowedTools "Read,Glob,Grep,Bash,WebFetch,WebSearch"`',
+    'Let /init draft the file. Interactively: run `claude`, then `/init`. Headlessly, if you would rather keep the run reproducible: `claude -p "/init" --model sonnet --permission-mode acceptEdits --max-turns 20 --output-format text`. Read every line of what it wrote.',
+    "Check what /init could not reach and add it by hand — a convention that lives in nobody's head but yours. Either edit the file via `/memory`, or ask Claude to add it.",
+    'Run `/context` and check the list under **Memory files** — your CLAUDE.md should be there.',
+    'Run the exact same headless command from step 3 again. Compare the two answers.',
+  ]}
+  expected="The before run says it does not know. /init writes a CLAUDE.md of roughly 50 lines covering commands, architecture and conventions. The after run then names src/api/server.ts and the TEACHING SURFACE comments — with every file tool still disabled, so the only possible source is the CLAUDE.md loaded at session start."
+  checklist={[
+    'The "before" run admits it cannot know without reading files',
+    '/init produced a draft CLAUDE.md without being told what the project does',
+    'You read the draft and added at least one thing /init could not derive',
+    '/context lists the file under Memory files',
+    'The "after" run answers the question correctly with all file tools still disabled',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/01-claude-md/01-before-claude-md.txt"
+    range="2-3"
+  />
+  <Transcript src="content/_shared/transcripts/m03-memory/01-claude-md/03-init.txt" range="2-14" />
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/01-claude-md/02-after-claude-md.txt"
+    range="2-3"
+  />
+</Lab>
+
+Note where the files landed. `/init` wrote `./CLAUDE.md` at the repository root, while the before/after pair was captured against `./.claude/CLAUDE.md`. Both are project locations and Claude Code loads both, which is exactly the point of the table earlier in this lesson — but it does mean the two recordings are pointing at two different files, not one.
+
+That middle recording is worth a second look, because it complicates the neat story. `/init` found the `TEACHING SURFACE` convention on its own — the marker is written in the source comments, so reading the code was enough. What `/init` cannot reach is anything that is not written down anywhere: the decision made in a meeting, the pitfall that bit you once, the reason a rule exists. That is the half of a `CLAUDE.md` only you can write, and it is why step 5 exists.
+
+<Callout>
+  All three recordings answer in Turkish, and the prompt never asked for it. That is not a glitch in
+  the capture: the machine that produced it has a user-scope `~/.claude/CLAUDE.md` asking for
+  Turkish answers, and a user-scope instruction loads into every session in every project. It is the
+  clearest possible demonstration that memory files you forgot about are still shaping every answer
+  — and it is exactly what lesson `02-hierarchy-imports` is about. Your own runs will answer in
+  whatever language your own memory files ask for.
+</Callout>
+
+The two runs are byte-for-byte the same command. The only thing that changed between them is a file on disk.
+
+## Anti-patterns
+
+**Writing a `CLAUDE.md` that describes the codebase.** Directory layouts, dependency lists and architecture overviews are things Claude derives by reading the repository — and they go stale the moment someone moves a folder. `/doctor` will actively propose trimming them. _Fix:_ keep pitfalls, rationale and conventions that differ from tool defaults; delete the tour.
+
+**Letting it grow past 200 lines.** More lines is not more adherence; it is more context spent and, past a point, less adherence. _Fix:_ split by area into `.claude/rules/` (lesson `03-rules`) so instructions load only when Claude touches matching files.
+
+**Two rules that contradict each other.** "Prefer `async/await`" in the root file and "use `.then()` chains" in a subdirectory file is not a subtle nuance Claude will resolve for you — it may pick either. _Fix:_ read your memory files end to end when you add to them, and delete the loser.
+
+**Putting a procedure in it.** "To cut a release: bump the version, run the changelog script, tag, push, then…" is a skill. In `CLAUDE.md` it costs context in every session, including the hundreds that never cut a release. _Fix:_ move it to a skill that loads on demand.
+
+**Assuming the file is loaded because it exists.** Wrong directory, an exclusion pattern, a typo in the filename — plenty of ways for it to be sitting there unread. _Fix:_ `/context`, and look under **Memory files**. If it is missing, Claude cannot see it.
+
+**Treating it as a guarantee.** "It says right there in CLAUDE.md" is not an argument the runtime accepts. _Fix:_ for anything that must be true, add the hook or the permission rule as well.
+
+<Callout variant="changed">
+  `/doctor` (alias `/checkup`) can now trim a checked-in `CLAUDE.md` for you: it cuts content Claude
+  can derive from the codebase and keeps pitfalls, rationale and conventions. The trim check
+  requires Claude Code v2.1.206 or later.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/claude-md"
+  questionId="q1"
+  lang="en"
+  prompt="Which of these belongs in a project CLAUDE.md?"
+  options={[
+    {
+      text: 'A full directory tree of src/ with a line explaining each folder',
+      explanation:
+        'Claude derives that by reading the repo, and it goes stale. /doctor proposes trimming exactly this.',
+    },
+    {
+      text: 'The seven-step release procedure',
+      explanation:
+        'A multi-step procedure is a skill — it should load on demand, not every session.',
+    },
+    {
+      text: 'A convention that differs from the tool default, like "relative imports keep the .ts extension"',
+      correct: true,
+      explanation:
+        'Right: a fact Claude cannot derive, that you would otherwise re-explain every session.',
+    },
+    {
+      text: 'Your personal preference for verbose test output',
+      explanation:
+        'A project CLAUDE.md is committed and shared. Personal project preferences go in CLAUDE.local.md.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/claude-md"
+  questionId="q2"
+  lang="en"
+  prompt="You want to confirm your CLAUDE.md actually loaded into the current session. What do you run?"
+  options={[
+    {
+      text: '/context, and read the list under Memory files',
+      correct: true,
+      explanation:
+        'That is the documented check. If the file is missing there, Claude cannot see it.',
+    },
+    {
+      text: '/init, and see whether it complains',
+      explanation:
+        '/init drafts or suggests improvements to a CLAUDE.md; it is not a load check for the current session.',
+    },
+    { text: 'claude doctor', explanation: 'That reports installation and settings diagnostics.' },
+    {
+      text: 'Nothing — if the file is in the repo root it is always loaded',
+      explanation:
+        'Exclusion patterns, the wrong directory and typos all produce a file that exists and is not read.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/claude-md"
+  questionId="q3"
+  lang="en"
+  prompt="A rule must apply before every commit, without exception. Where does it go?"
+  options={[
+    {
+      text: 'CLAUDE.md, in bold and in capitals',
+      explanation:
+        'CLAUDE.md is context, not enforcement — emphasis does not turn it into a guarantee.',
+    },
+    {
+      text: 'A hook, which runs as a shell command at a fixed lifecycle event',
+      correct: true,
+      explanation:
+        'Right. Hooks apply regardless of what Claude decides; the docs point at them for exactly this case.',
+    },
+    {
+      text: 'A path-scoped rule under .claude/rules/',
+      explanation:
+        'That scopes instructions to matching files, but it is still context rather than enforcement.',
+    },
+    { text: 'Auto memory', explanation: 'Auto memory is notes Claude writes itself, not a gate.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/claude-md"
+  questionId="q4"
+  lang="en"
+  prompt="Your repository already has an AGENTS.md for another coding agent. What does the doc recommend?"
+  options={[
+    {
+      text: 'Rename it to CLAUDE.md',
+      explanation: 'That breaks the other agent, which reads AGENTS.md.',
+    },
+    {
+      text: 'Copy its contents into a new CLAUDE.md',
+      explanation: 'Two copies to keep in sync is the problem the import exists to avoid.',
+    },
+    {
+      text: 'Create a CLAUDE.md whose first line is `@AGENTS.md`, then add Claude-specific instructions below it',
+      correct: true,
+      explanation:
+        'Both tools read one source of truth, and you can still add Claude-only instructions after the import.',
+    },
+    {
+      text: 'Nothing — Claude Code reads AGENTS.md too',
+      explanation:
+        'It does not. The docs are explicit: Claude Code reads CLAUDE.md, not AGENTS.md.',
+    },
+  ]}
+/>
+
+**Next:** `02-hierarchy-imports` — what happens when there are four `CLAUDE.md` files in play at once, and how `@path` imports and `claudeMdExcludes` let you control what loads.

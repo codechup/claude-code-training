@@ -1,0 +1,369 @@
+---
+title: 'Path-scoped rules with .claude/rules/'
+description: 'Rules split instructions into topic files, and paths: frontmatter makes a rule load only when Claude touches matching files. Write one against the sandbox repo and watch it appear and disappear from Claude answers.'
+level: 1
+module: 'm03-memory'
+order: 3
+duration_min: 15
+difficulty: core
+tags: ['memory', 'rules', 'claude-directory']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'How Claude remembers your project'
+    url: 'https://code.claude.com/docs/en/memory.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Explore the .claude directory'
+    url: 'https://code.claude.com/docs/en/claude-directory.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Explore the context window'
+    url: 'https://code.claude.com/docs/en/context-window.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m03-03-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Put a topic-scoped instruction in `.claude/rules/<topic>.md` instead of growing `CLAUDE.md`.
+- Write `paths:` frontmatter with glob patterns so a rule loads only when Claude reads matching files.
+- Say precisely what triggers a path-scoped rule — and what does not.
+- Choose between a rule, a `CLAUDE.md` entry and a skill.
+- Use `~/.claude/rules/` for personal conventions across every project.
+
+**Prerequisites.** Lessons `01-claude-md` and `02-hierarchy-imports`. A clone of `codechup/claude-code-lab` for the lab.
+
+<WhenNotToUse>
+  A rule still loads into context — every session for an unscoped rule, and on every matching file
+  read for a scoped one. For instructions that only matter while you are doing one particular task,
+  a skill is the better home: it loads when you invoke it or when Claude judges it relevant to your
+  prompt, not before. And a path-scoped rule is a poor choice for anything that must survive
+  `/compact` intact, because scoped rules live in message history and are summarised away with
+  everything else, reloading only when a matching file is read again.
+</WhenNotToUse>
+
+## Concept
+
+### Rules are `CLAUDE.md`, split by topic
+
+Put markdown files in `.claude/rules/`. Each covers one topic, with a descriptive filename. All `.md` files are discovered recursively, so subdirectories work:
+
+<CodeBlock title="a project's .claude/ layout">
+
+```text
+your-project/
+├── .claude/
+│   ├── CLAUDE.md           # Main project instructions
+│   └── rules/
+│       ├── code-style.md   # Code style guidelines
+│       ├── testing.md      # Testing conventions
+│       └── security.md     # Security requirements
+```
+
+</CodeBlock>
+
+A rule **without** `paths:` frontmatter is loaded at launch with the same priority as `.claude/CLAUDE.md`. So splitting an unscoped `CLAUDE.md` into unscoped rules buys you tidiness, exactly like `@path` imports — and exactly like imports, it buys you no context back.
+
+The frontmatter is what makes rules different.
+
+### `paths:` frontmatter
+
+Add a `paths` list of glob patterns and the rule becomes conditional: it applies only when Claude works with matching files.
+
+<CodeBlock title=".claude/rules/api.md">
+
+```markdown
+---
+paths:
+  - 'src/api/**/*.ts'
+---
+
+# API Development Rules
+
+- All API endpoints must include input validation
+- Use the standard error response format
+- Include OpenAPI documentation comments
+```
+
+</CodeBlock>
+
+The trigger is specific and worth memorising: **path-scoped rules fire when Claude reads a file matching the pattern** — not on every tool use, and not because the file merely exists in the repo. If Claude never opens a file under `src/api/`, that rule never enters the conversation. Matching also works when Claude reaches a file through a symlinked path into the project directory.
+
+Common patterns:
+
+| Pattern                | Matches                               |
+| ---------------------- | ------------------------------------- |
+| `**/*.ts`              | All TypeScript files in any directory |
+| `src/**/*`             | All files under `src/`                |
+| `*.md`                 | Markdown files in the project root    |
+| `src/components/*.tsx` | React components in one directory     |
+
+You can list several patterns, and use brace expansion for multiple extensions:
+
+<CodeBlock title=".claude/rules/typescript.md">
+
+```markdown
+---
+paths:
+  - 'src/**/*.{ts,tsx}'
+  - 'lib/**/*.ts'
+  - 'tests/**/*.test.ts'
+---
+```
+
+</CodeBlock>
+
+Braces multiply: `src/*.{ts,tsx}` expands to two patterns, `{a,b}/{c,d}/*.{ts,tsx}` to eight. A rule's whole `paths` list shares one budget of 1,000 expanded patterns and 4 MiB; patterns without braces do not count against it. A pattern that would blow the budget is used unexpanded, and its literal braces then match nothing.
+
+One glob footgun: `[` starts a bracket expression. A pattern like `photos [2024/**` that cannot be read as one is invalid — it matches nothing, while the rule's other patterns keep working. Escape a literal bracket as `photos \[2024/**`.
+
+### User-level rules
+
+`~/.claude/rules/` applies to every project on your machine. Use it for preferences that are yours rather than the project's — commit message style, how you like tests laid out. User-level rules are loaded **before** project rules, which gives project rules higher priority.
+
+### Rule, CLAUDE.md, or skill?
+
+This lesson's worked example prompt is the one that forces Claude to show its own sources, which is how you tell the three apart in practice:
+
+```text
+Read src/store.ts. Do not edit anything. Then list, as short bullets, the
+conventions this project expects for code under src/, and say for each where
+that convention comes from.
+```
+
+The answer names `.claude/CLAUDE.md`, `.claude/rules/style.md` or nothing at all — and that tells you whether your rule is where you think it is.
+
+<DecisionTree
+  title="Where does this instruction belong?"
+  desc="Always relevant instructions go in CLAUDE.md; instructions tied to an area of the codebase go in a path-scoped rule; multi-step procedures go in a skill."
+  nodes={[
+    { id: 'start', x: 0, y: 60, width: 150, lines: ['A new standing', 'instruction'] },
+    { id: 'q1', x: 190, y: 60, width: 160, lines: ['Multi-step', 'procedure?'] },
+    { id: 'skill', x: 390, y: 10, width: 150, lines: ['Skill', 'loads on demand'] },
+    { id: 'q2', x: 390, y: 110, width: 160, lines: ['Only for one', 'area of the code?'] },
+    { id: 'rule', x: 590, y: 60, width: 160, lines: ['.claude/rules/ with', 'paths: frontmatter'] },
+    { id: 'claudemd', x: 590, y: 160, width: 150, lines: ['CLAUDE.md', 'every session'] },
+  ]}
+  edges={[
+    { from: 'start', to: 'q1' },
+    { from: 'q1', to: 'skill', label: 'yes' },
+    { from: 'q1', to: 'q2', label: 'no' },
+    { from: 'q2', to: 'rule', label: 'yes' },
+    { from: 'q2', to: 'claudemd', label: 'no' },
+  ]}
+/>
+
+### Sharing rules across projects
+
+`.claude/rules/` supports symlinks, so one maintained set of rules can serve several repositories. Symlinks are resolved and loaded normally, and circular symlinks are detected and handled.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+ln -s ~/shared-claude-rules .claude/rules/shared
+ln -s ~/company-standards/security.md .claude/rules/security.md
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+ln -s ~/shared-claude-rules .claude/rules/shared
+ln -s ~/company-standards/security.md .claude/rules/security.md
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+# Requires Developer Mode or an elevated shell.
+New-Item -ItemType SymbolicLink -Path .claude/rules/shared -Target $HOME/shared-claude-rules
+New-Item -ItemType SymbolicLink -Path .claude/rules/security.md -Target $HOME/company-standards/security.md
+```
+
+  </Fragment>
+</OSTabs>
+
+## Hands-on lab
+
+<Callout>
+  Every headless command in this lab was captured with `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` in front
+  of it, and yours should be too. Auto memory is keyed per repository (lesson `04-auto-memory`), so
+  notes Claude saved while you were doing an earlier lab in the same clone would be a second source
+  of answers — and the whole point here is that exactly one thing changes between runs.
+</Callout>
+
+Three runs of almost the same command. The first two differ only by whether the rule file exists; the third differs only by which file Claude is asked to read — and that third run is the one that proves the scoping is real rather than decorative.
+
+<Lab
+  title="Lab · write a path-scoped rule and watch it switch on and off"
+  lessonId="en/l1-beginner/m03-memory/rules"
+  repoTag="lesson/m03-03-start"
+  steps={[
+    'Check out the start tag with `git checkout lesson/m03-03-start`, then run `npm ci`. It already carries the `.claude/CLAUDE.md` you wrote in lesson 01, and no `.claude/rules/` yet.',
+    'Capture the "before" answer, allowing only the Read tool: `claude -p "Read src/store.ts. Do not edit anything. Then list, as short bullets, the conventions this project expects for code under src/, and say for each where that convention comes from." --model sonnet --max-turns 4 --output-format text --allowedTools "Read"`. Note which sources it names.',
+    "Create `.claude/rules/style.md` with `paths: ['src/**']` frontmatter and four conventions: prefer named exports and no default exports; keep `src/cli.ts` and `src/api/server.ts` thin; new behaviour in `src/store.ts` gets a matching test in `test/`; relative imports use an explicit `.ts` extension. Three of those four appear nowhere in `.claude/CLAUDE.md` — the thin-wrapper one does, deliberately, so you can see what a convention with two homes looks like in the answer.",
+    'Run the exact same command from step 2 again.',
+    'Now change one thing — the file Claude reads — and run: `claude -p "Read test/store.test.ts and no other file. Do not edit anything. Then list, as short bullets, the conventions this project expects for code under src/, and say for each where that convention comes from." --model sonnet --max-turns 4 --output-format text --allowedTools "Read"`',
+    'Compare all three. Ask yourself why the third run cannot see the rule even though the file is still sitting on disk.',
+  ]}
+  expected="Run 1 cites only .claude/CLAUDE.md, and says nothing about named exports, the .ts extension or a matching test. Run 2 adds those three and attributes each to .claude/rules/style.md — and cites both files for the thin-wrapper convention, which really is in both. Run 3, reading test/store.test.ts, never mentions style.md at all: test/ does not match src/**, so the rule never enters the conversation."
+  checklist={[
+    'The rule file has YAML frontmatter with a `paths` list',
+    'Three of its four conventions are absent from .claude/CLAUDE.md, so their attribution is unambiguous',
+    'Run 2 names .claude/rules/style.md as the source of the new bullets',
+    'Run 3 does not mention the rule, and does not state "no default exports"',
+    'You can explain the difference between runs 2 and 3 in one sentence',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/03-rules/01-before-rule.txt"
+    range="2-10"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/03-rules/02-after-rule.txt"
+    range="2-12"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m03-memory/03-rules/03-out-of-scope.txt"
+    range="2-11"
+  />
+</Lab>
+
+Read the third recording carefully. It does mention the explicit `.ts` extension — but it attributes that to the import line in the test file it just read, not to a rule. The rule really is absent; Claude simply noticed the same thing from the code. That is the difference between an instruction and an inference, and it is why a lab like this asks for sources rather than for conclusions.
+
+(As in the rest of this module, the captures answer in Turkish because the machine that recorded them has a user-scope memory file asking for Turkish — see lesson `02-hierarchy-imports`.)
+
+## Anti-patterns
+
+**Splitting an unscoped `CLAUDE.md` into unscoped rules and expecting a context saving.** Rules without a `paths` field load at launch, unconditionally. _Fix:_ the saving comes from `paths:`, not from the file split.
+
+**Scoping a rule that has to be true everywhere.** "Never commit secrets" behind `paths: ['src/**']` is off duty every time Claude is not reading `src/`. _Fix:_ leave genuinely global instructions unscoped, or in `CLAUDE.md`.
+
+**Assuming a rule fires because a matching file exists.** The trigger is Claude _reading_ a matching file. A session that never opens `src/api/` never sees the API rule. _Fix:_ if you need it earlier, drop the scope or point the session at the area first.
+
+**Expecting a scoped rule to survive `/compact`.** Path-scoped rules and nested `CLAUDE.md` files live in message history and are summarised away; they reload as Claude re-reads matching files. _Fix:_ if an instruction must persist across compaction, drop the `paths:` frontmatter or move it to the project-root `CLAUDE.md`.
+
+**Writing a glob you never verified.** `photos [2024/**` matches nothing. A pattern with runaway brace expansion is used unexpanded and its literal braces match nothing either. _Fix:_ prove the rule fires by asking Claude to read one matching file and name its sources, exactly as this lab does.
+
+**Restating in a rule what `CLAUDE.md` already says.** Duplicated instructions cost context twice and drift apart. _Fix:_ one home per fact.
+
+<Callout variant="changed">
+  Rules that load on demand — path-scoped rules and rules in nested `.claude/rules/` directories —
+  are now skipped when you exclude `project` from `--setting-sources`. Before v2.1.211 they loaded
+  even then.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/rules"
+  questionId="q1"
+  lang="en"
+  prompt="When does a rule with `paths: ['src/api/**/*.ts']` enter the conversation?"
+  options={[
+    {
+      text: 'At session start, like every other rule',
+      explanation: 'That is a rule with no `paths` field. A scoped rule waits.',
+    },
+    {
+      text: 'When Claude reads a file matching the pattern',
+      correct: true,
+      explanation: 'Right — reading a matching file is the trigger, not every tool use.',
+    },
+    {
+      text: 'On every tool call, once the session has touched src/ at least once',
+      explanation: 'The docs are explicit that it is not on every tool use.',
+    },
+    {
+      text: 'Only if you mention src/api/ in your prompt',
+      explanation: 'Your wording is irrelevant; the file read is what matters.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/rules"
+  questionId="q2"
+  lang="en"
+  prompt="Which change actually reduces what loads into every session?"
+  options={[
+    {
+      text: 'Moving 100 lines of CLAUDE.md into an @path import',
+      explanation: 'Imports expand at launch — same cost.',
+    },
+    {
+      text: 'Moving 100 lines into .claude/rules/style.md with no frontmatter',
+      explanation: 'An unscoped rule loads at launch with the same priority as .claude/CLAUDE.md.',
+    },
+    {
+      text: 'Moving 100 lines into .claude/rules/style.md with a `paths:` list',
+      correct: true,
+      explanation: 'Now it costs context only in sessions that actually read matching files.',
+    },
+    {
+      text: 'Wrapping the 100 lines in an HTML comment',
+      explanation: 'That removes them from context entirely — they stop being instructions at all.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/rules"
+  questionId="q3"
+  lang="en"
+  prompt="You have a personal commit-message convention you want in every project on your machine. Where does it go?"
+  options={[
+    {
+      text: "Each project's .claude/rules/",
+      explanation:
+        'That means editing every repo, and committing your personal taste to shared repositories.',
+    },
+    {
+      text: '~/.claude/rules/, which applies everywhere and loads before project rules',
+      correct: true,
+      explanation: 'Right — user-level rules, loaded first, so project rules keep higher priority.',
+    },
+    {
+      text: 'A managed policy CLAUDE.md',
+      explanation: 'That is for organisation-wide deployment by IT, not personal preference.',
+    },
+    {
+      text: 'Auto memory, by telling Claude once',
+      explanation: 'Auto memory is per repository, so it would not follow you to a new project.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m03-memory/rules"
+  questionId="q4"
+  lang="en"
+  prompt="Between user-level rules and project rules, which has higher priority?"
+  options={[
+    {
+      text: 'User-level, because they load first',
+      explanation: 'Loading first is exactly why they do not: project rules are read after them.',
+    },
+    {
+      text: 'Project rules',
+      correct: true,
+      explanation:
+        'User-level rules are loaded before project rules, giving project rules higher priority.',
+    },
+    {
+      text: 'Neither — they are merged with no ordering',
+      explanation: 'There is a documented order.',
+    },
+    { text: 'Whichever file is larger', explanation: 'Size has nothing to do with precedence.' },
+  ]}
+/>
+
+**Next:** `04-auto-memory` — the other half of the system: the notes Claude writes about your project without being asked.
