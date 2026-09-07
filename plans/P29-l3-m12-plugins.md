@@ -2,8 +2,8 @@
 id: P29
 title: "L3 Advanced module: Plugins (m12-plugins)"
 milestone: M2
-status: todo
-owner: null
+status: in_progress
+owner: opus-p29-2026-09-07
 branch: plan/29-l3-m12-plugins
 model_hint: opus
 effort_hint: high
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-07T10:55:13Z
 open_questions: []
 ---
 

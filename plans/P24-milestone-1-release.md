@@ -2,7 +2,7 @@
 id: P24
 title: Milestone M1 release
 milestone: M1
-status: review
+status: done
 owner: sonnet-p24-2026-09-07
 branch: plan/24-milestone-1-release
 model_hint: sonnet
@@ -12,7 +12,7 @@ owned_paths:
   - docs/release/M1-release.md
 shared_paths: []
 estimate: S
-updated_at: 2026-09-07T10:46:43Z
+updated_at: 2026-09-07T10:55:09Z
 open_questions:
   - "P17/P19/P20/P21's plan-file Handoff notes were wiped back to the unfilled placeholder by later sibling squash merges (each L2 branch carried a stale copy of the 'claim P17-P21' commit); status is correctly 'done' (fixed on main by commit a62ab3c/PR #42) but the notes bodies are not. Real text survives at commits f909a64 (P17), cc9e27b (P19), 7df3ff8 (P20), 96eb711 (P21) and is quoted in docs/release/M1-release.md sec 8. Recommend a small chore(plans) follow-up PR to restore them in place."
   - "One apt-repository base URL (https://downloads.claude.ai/claude-code/apt/stable, content/en/l1-beginner/m01-start/02-install.mdx) 404s on a bare curl GET; confirmed byte-identical to the official setup.md and not a browsable page, so this is a link-checker false positive, not a real defect. No action needed unless a future lychee run wants it added to lychee.toml's exclude list."
