@@ -43,7 +43,7 @@ Format: `NN-slug` — objective (duration, difficulty). "Lab" names the lab-repo
 2. `02-hierarchy-imports` — Managed → user → project → local precedence; `@path` imports; `claudeMdExcludes` (15 min, core)
 3. `03-rules` — Path-scoped `.claude/rules/*.md` for per-area conventions (15 min, core) Lab
 4. `04-auto-memory` — Auto-memory: `MEMORY.md` index, memory types (user/feedback/project/reference), when Claude writes it (15 min, core)
-5. `05-memory-commands` — `/memory`, `#` quick notes, editing and pruning memories (10 min, core)
+5. `05-memory-commands` — `/memory`, editing and pruning memories; the removed `#` quick-note shortcut as a "Changed" note (10 min, core)
 
 **m04-commands — Built-in commands and the terminal** (D021, D075)
 1. `01-slash-command-reference` — The full built-in slash command table with one-line meanings (20 min, core)

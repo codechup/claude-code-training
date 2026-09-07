@@ -16,6 +16,7 @@ Lesson rule (D044): a removed or changed behaviour appears only as a short **Cha
 | Syntax highlighting for 1c, gml, isbl, mathematica, maxima, sqf | Removed | none (footnote only) |
 | Hook JSON `{"decision": "block"}` for PreToolUse | Current shape is `hookSpecificOutput.permissionDecision: allow|deny|block` (+ `permissionDecisionReason`); exit 2 still blocks regardless of JSON | Hooks lesson (m07-01/02) |
 | `anthropic.skilljar.com/claude-code-in-action` | Course lives at `academy.claude.com/courses/claude-code-in-action` | Sources |
+| `#` quick-note shortcut (append a line to CLAUDE.md/memory from the prompt) | Removed in 2.0.70 (2025-12-15, per the changelog); use `/memory` or edit the memory files directly — found by P15 against the live `memory.md` | Memory lesson (m03-05) |
 | `TodoWrite` tool as the session checklist | Disabled by default; superseded by the `Task*` tools (`TaskCreate`, `TaskUpdate`, `TaskList`, …) — verified against `tools-reference.md` 2026-09-07 | Tools lesson (L1 m02), m01 lesson 1 |
 
 Recent additions worth a "New" badge (last ~6 months): Fable 5.1 (1M context), `/diff` panel, per-session cache analytics in `/cost`, `/design` canvas, `/skill-doctor`, spend limits in `/usage`, artifact MCP connectors, cross-session messaging on Bedrock/Vertex/Foundry, keyless sign-in, `modelPicker`, `--permission-prompts none`, `claude plugin eval`.
