@@ -1,0 +1,8 @@
+# 2026-09-07 · this repository's own PreToolUse hook, .claude/hooks/guard-hygiene.mjs, fed a Write of a randomly generated key-shaped value on stdin. The matched value is redacted here because this repo's own scanners reject a key-shaped literal in a tracked file; everything else is the hook's verbatim output. Claude Code 2.1.263
+$ KEY="sk-ant-$(head -c 30 /dev/urandom | base32 | tr -d = | head -c 30)"
+$ printf ... | node .claude/hooks/guard-hygiene.mjs
+hookEventName:      PreToolUse
+permissionDecision: deny
+reason:             Blocked by public-hygiene: this repository is public. public-hygiene: 1 problem(s) — this repository is public.
+  docs/example.md:1  [anthropic-key] Anthropic API key  → "<redacted for this repo>" Move the value to a secret/env var or describe it generically (see .claude/rules/public-hygiene.md).
+hook exit=2

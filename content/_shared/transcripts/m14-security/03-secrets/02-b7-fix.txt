@@ -1,0 +1,59 @@
+# 2026-09-07 · npm test at lesson/m14-03-start (before the fix), then a headless fix run · Claude Code 2.1.263 · Node 24 · vitest
+$ npm test
+Received: "[config] using token: dev-placeholder-token"
+
+ ❯ test/security.test.ts:53:24
+     51|     const logged = spy.mock.calls.map((call) => call.join(" ")).join("…
+     52|     spy.mockRestore();
+     53|     expect(logged).not.toContain(token);
+       |                        ^
+     54|   });
+     55| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 4 passed (5)
+      Tests  1 failed | 16 passed (17)
+   Start at  21:36:43
+   Duration  1.21s (import 34%, tests 30%, transform 25%, worker 10%)
+
+
+$ claude -p "test/security.test.ts fails: getApiToken() prints the token value to stdout. Log that a token is configured without printing its value, then run npm test." --permission-mode acceptEdits --model sonnet --max-turns 12 --output-format text
+Ignoring 5 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["<lab-clone>"].hasTrustDialogAccepted: true in C:\Users\<you>\.claude.json.
+`npm test` çalıştırmak için onay isteniyor ancak üst üste denemelerde onay gelmedi; tekrar aynı komutu göndermeyi durduruyorum.
+
+Kod tarafında yapılan değişiklik: `src/api/server.ts` içindeki `getApiToken()` fonksiyonu artık token değerini stdout'a yazmıyor; sadece `"[config] API token configured"` şeklinde bir log basıyor (BUGS.md B7'de tarif edilen çözümle birebir uyumlu, ayrıca artık gereksiz kalan "TEACHING SURFACE" yorum bloğunu kaldırdım çünkü bu oturum zaten m14-03-secrets dersinin çözümünü uyguluyor).
+
+Lütfen `npm test` komutunu onaylayabilir misiniz, yoksa `test/security.test.ts`'in geçtiğini doğrulayamıyorum.
+
+$ git diff -- src/api/server.ts
+diff --git a/src/api/server.ts b/src/api/server.ts
+index a424e3e..6fd5439 100644
+--- a/src/api/server.ts
++++ b/src/api/server.ts
+@@ -14,15 +14,9 @@ import {
+ } from "../store.ts";
+ import { InvalidTaskError } from "../types.ts";
+ 
+-/**
+- * TEACHING SURFACE (m14-03-secrets, a later plan): reading a token from the environment is fine;
+- * logging it on startup is the anti-pattern that lesson's exercise finds and removes. Left as-is
+- * here — a placeholder value only, never a real credential — so a future lesson has something
+- * genuine to fix. Do not "clean this up" without updating BUGS.md.
+- */
+ export function getApiToken(): string {
+   const token = process.env.LABTRACK_API_TOKEN ?? "dev-placeholder-token";
+-  console.log(`[config] using token: ${token}`);
++  console.log("[config] API token configured");
+   return token;
+ }
+ 
+
+$ npm test
+
+ Test Files  5 passed (5)
+      Tests  17 passed (17)
+   Start at  21:38:13
+   Duration  378ms (transform 43%, tests 27%, import 25%, worker 4%)
+

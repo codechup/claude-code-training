@@ -1,0 +1,384 @@
+---
+title: 'Managed settings and auto-mode configuration'
+description: 'Deploy a policy every developer gets and nobody can override, then teach the auto-mode classifier which repos, buckets and domains your organisation actually trusts — with the built-in rule list printed from a real run.'
+level: 3
+module: 'm14-security'
+order: 4
+duration_min: 15
+difficulty: advanced
+tags: ['security', 'managed-settings', 'auto-mode', 'admin', 'allowlists']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Deploy managed settings'
+    url: 'https://code.claude.com/docs/en/managed-settings.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure auto mode'
+    url: 'https://code.claude.com/docs/en/auto-mode-config.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Choose a permission mode'
+    url: 'https://code.claude.com/docs/en/permission-modes.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Server-managed settings'
+    url: 'https://code.claude.com/docs/en/server-managed-settings.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Write a `managed-settings.json`, place it at the right path for each OS, and prove it landed.
+- Say which four things a developer can still change despite a managed policy.
+- Name the "only managed settings count" locks — `allowManagedPermissionRulesOnly`, `allowManagedHooksOnly`, `allowManagedMcpServersOnly`, `sandbox.network.allowManagedDomainsOnly` — and what each one shuts off.
+- Explain the difference between a `permissions.deny` rule and an `autoMode.hard_deny` rule, and pick the right one.
+- Write `autoMode.environment` entries that stop the classifier blocking routine internal work, and know why `"$defaults"` matters.
+
+**Prerequisites.** Lessons `01`–`03` of this module. You do not need administrator rights to follow along: every inspection command here is read-only, and the policy file is shown rather than deployed.
+
+<WhenNotToUse>
+  This is organisation-scale configuration. If you are one developer on one machine, put your rules
+  in `~/.claude/settings.json` and stop — a managed settings file you deploy to yourself buys you
+  nothing except a file you will forget about and a policy you cannot override when it gets in the
+  way. And do not reach for `autoMode` overrides to fix a single false positive: state the intent in
+  your next message and let Claude retry, or add one `allow` rule. Replacing a built-in rule list is
+  a decision about your whole fleet.
+</WhenNotToUse>
+
+## Concept
+
+### Managed settings, and what they are not
+
+Managed settings are the settings your organisation deploys to every developer's machine. Claude Code applies them above every other level — user, project, local and `--settings` — with a small set of documented exceptions where a _stricter_ value from a lower level still counts.
+
+A minimal policy looks like this:
+
+<CodeBlock title="managed-settings.json">
+
+```json
+{
+  "permissions": {
+    "deny": ["Read(./.env)", "Read(./secrets/**)"],
+    "disableBypassPermissionsMode": "disable",
+    "disableAutoMode": "disable"
+  },
+  "allowManagedPermissionRulesOnly": true
+}
+```
+
+</CodeBlock>
+
+That file blocks two reads, removes `bypassPermissions` from every session, removes auto mode from the `Shift+Tab` cycle (a session started with `--permission-mode auto` starts in Manual instead), and makes managed settings the **only** source of permission rules. Claude Code then ignores `allow`, `ask` and `deny` rules in user, project, local and `--settings` files, ignores `--allowedTools`, hides the always-allow choices in permission prompts, and stops saving new rules. `--disallowedTools` and the session's own `deny` and `ask` rules still apply, because they only ever restrict.
+
+Place it at the system path for the OS:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+sudo mkdir -p "/Library/Application Support/ClaudeCode"
+sudo cp managed-settings.json "/Library/Application Support/ClaudeCode/managed-settings.json"
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+sudo mkdir -p /etc/claude-code
+sudo cp managed-settings.json /etc/claude-code/managed-settings.json
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+New-Item -ItemType Directory -Force "C:\Program Files\ClaudeCode"
+Copy-Item managed-settings.json "C:\Program Files\ClaudeCode\managed-settings.json"
+```
+
+  </Fragment>
+</OSTabs>
+
+The file is one of **four** delivery mechanisms:
+
+| Mechanism                         | How it is delivered                                                                                   | When Claude Code reads it                                                                                  |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Server-managed settings           | The claude.ai admin console, or a self-hosted Claude apps gateway                                     | Fetched at startup, polled hourly                                                                          |
+| MDM or OS-level policy            | A macOS configuration profile, or the Windows `HKLM` registry value, via Jamf, Intune or Group Policy | At startup, re-checked every 30 minutes                                                                    |
+| File-based                        | `managed-settings.json` in the system directory on each machine                                       | At startup, reloaded when the file changes                                                                 |
+| `HKCU` registry (Windows and WSL) | A Windows `HKCU` registry value, for when you cannot write `HKLM`                                     | At startup, re-checked every 30 minutes — used **only** when no other managed source delivers a policy key |
+
+The MDM and file rows together are called _endpoint-managed_ settings, because the policy lives on the developer's device; the server-managed row is fetched instead. `policyHelper` is not a fifth mechanism: it is a delivery-control key, alongside `wslInheritsWindowsSettings` and `managedSourcesBehavior`, that names an executable computing the policy _within_ the MDM or file mechanism you already chose.
+
+When more than one mechanism reaches the same machine, Claude Code by default applies one and ignores the others; `managedSourcesBehavior` is the opt-in that composes every source.
+
+### Proving it landed
+
+Run `/status` on the machine and read the `Setting sources` line. When a managed source is in effect it names which one Claude Code selected: `(remote)`, `(plist)`, `(HKLM)`, `(file)`, `(drop-ins)`, `(file + drop-ins)`, `(HKCU)`, `(parent process)`, `(helper)`, or a merged list ending in `, merged`. A second line, `Skipped sources`, names any managed source that was found but not selected — that line is how you tell "the policy never reached the machine" from "a higher-priority source overrode it".
+
+If the line is missing entirely, Claude Code found no managed source delivering a policy key. Run `claude doctor` to list entries it dropped: invalid entries are repaired or skipped individually with a warning, and a top-level key whose value still fails is dropped while every remaining valid key keeps being enforced.
+
+A few keys deliberately **fail closed** rather than being dropped when invalid — an invalid `allowedMcpServers` is enforced as an empty allowlist, `allowManagedHooksOnly` and `allowManagedMcpServersOnly` are treated as `true`, `availableModels` becomes an empty allowlist, `forceLoginOrgUUID` permits no organisation, and `crossSessionInbound` becomes `refuse`. `requiredMinimumVersion` and `requiredMaximumVersion` fail _open_ by design.
+
+And a managed settings file that is present but not parseable as a JSON object makes Claude Code **refuse to start**, naming the source — even when another admin source supplies a valid policy. An absent file is fine; an empty one counts as `{}`.
+
+### What a developer can still change
+
+The docs name four things that sit outside the "managed always wins" rule, and it is worth knowing them before you promise a control to a security reviewer:
+
+1. **The model.** A managed `model` is a default, not a lock. `--model` and `ANTHROPIC_MODEL` still pick the model for a session — deploy `availableModels` to restrict the choice.
+2. **Local admin rights.** A developer who is an administrator can edit the managed source itself. That is why MDM redeploys on a schedule.
+3. **The server-managed cache.** An edit to the local cache lasts only until the next successful fetch.
+4. **Other tools.** Managed settings bind Claude Code. A developer calling the API from something else is not under them.
+
+### Auto mode: two different kinds of rule
+
+There are two gates, and they are not interchangeable.
+
+`permissions.deny` is a tool-pattern rule evaluated by Claude Code **before the classifier is consulted**. Neither the classifier nor user intent can override it. Put anything that must never run here.
+
+`autoMode.hard_deny` / `soft_deny` / `allow` are prose rules read by the classifier, in four tiers: `hard_deny` blocks unconditionally; `soft_deny` blocks next; `allow` overrides matching `soft_deny` entries; and explicit user intent overrides the remaining soft blocks — but only when your message _directly and specifically_ describes the action. "Clean up the repo" does not authorise a force push; "force-push this branch" does.
+
+The classifier reads `autoMode` from `~/.claude/settings.json`, from managed settings, and from `--settings` — **never** from a repository's `.claude/settings.json` or `.claude/settings.local.json`, because a checked-in repo or a build step could otherwise inject its own allow rules. Entries from each scope combine, and a developer can extend the lists but cannot remove a managed entry. Note the honest caveat in the docs: because `allow` acts as an exception to soft blocks, a developer-added `allow` can override an organisation `soft_deny`. The combination is additive, not a hard policy boundary — which is exactly why `permissions.deny` exists.
+
+### `autoMode.environment`
+
+For most organisations this is the only field you need. By default the classifier trusts the working directory and the repo's configured remotes, and treats everything else as external — so pushing to your company's source-control org or writing to a team bucket gets blocked until you say those are yours.
+
+<CodeBlock title="~/.claude/settings.json or managed-settings.json">
+
+```json
+{
+  "autoMode": {
+    "environment": [
+      "$defaults",
+      "Organization: Acme Corp. Primary use: software development",
+      "Source control: github.example.com/acme-corp and all repos under it",
+      "Trusted cloud buckets: s3://acme-build-artifacts, gs://acme-ml-datasets",
+      "Trusted internal domains: *.corp.example.com, api.internal.example.com",
+      "Key internal services: Jenkins at ci.example.com, Artifactory at artifacts.example.com",
+      "Internal package registry: npm and PyPI mirrors at artifacts.example.com"
+    ]
+  }
+}
+```
+
+</CodeBlock>
+
+Entries are prose, not regex. Write them the way you would describe your infrastructure to a new engineer.
+
+<Callout>
+  The literal string `"$defaults"` splices the built-in entries in at that position. Setting
+  `environment`, `allow`, `soft_deny` or `hard_deny` **without** it replaces that whole list — so
+  omitting it from `soft_deny` discards every built-in soft block, including force push, `curl |
+  bash`, production deploys and auto-mode bypass, and omitting it from `hard_deny` discards the
+  built-in data-exfiltration rule. Each section is evaluated independently.
+</Callout>
+
+Here is this lesson's worked example prompt, for an admin drafting the entries:
+
+```text
+Read our CI config and git remotes, and draft autoMode.environment entries naming our
+source control org, internal package registry and CI host. Keep "$defaults" first and
+do not write to any settings file — print the JSON.
+```
+
+`/auto-mode-setup` does that job interactively, drafting entries from the project, your settings, and the hosts and command names in your recent sessions (never your messages), then writing the accepted draft to `~/.claude/settings.json`.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · read the policy you are about to override"
+  lessonId="en/l3-advanced/m14-security/managed-settings"
+  repoTag="none"
+  steps={[
+    'Print the classifier’s built-in rules as JSON: `claude auto-mode defaults`. It is long — each rule is one prose string.',
+    'Read one rule in full without piping through jq: `claude auto-mode defaults --label "Data Exfiltration"`. Matching is a case-insensitive prefix on each rule’s label.',
+    'Reduce the output to the rule labels so you can see the shape of the policy — pipe the JSON into a few lines of Node that print each list’s length and each rule’s label.',
+    'Print what the classifier actually uses in your session, with your settings applied and defaults elsewhere: `claude auto-mode config`.',
+    'In a session, run `/permissions` and open the **Auto mode** tab. Entries from managed settings or `--settings` appear read-only; anything you change is saved to `~/.claude/settings.json`.',
+    'Run `/status` and find the `Setting sources` line. If your machine has no managed policy, the line names no enterprise source — that absence is the result.',
+  ]}
+  expected="claude auto-mode defaults prints four lists — hard_deny, soft_deny, allow and environment — as prose strings. Reduced to labels they are 1, 69, 17 and 21 entries respectively for Claude Code 2.1.263."
+  checklist={[
+    '`claude auto-mode defaults` printed a JSON object with the four lists',
+    '`--label` returned one rule and left the other sections as empty lists',
+    'You can name the single hard_deny rule',
+    '`claude auto-mode config` reflects your own settings where you have set them',
+    'The **Auto mode** tab in `/permissions` shows which scope each entry came from',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m14-security/04-managed-settings/01-automode-defaults.txt"
+    range="2-8"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m14-security/04-managed-settings/01-automode-defaults.txt"
+    range="75-114"
+  />
+</Lab>
+
+Two things stand out in that recording.
+
+**There is exactly one `hard_deny` rule, and it is called Data Exfiltration.** Everything else the classifier blocks — 69 rules at the time of capture, from `Git Destructive` and `Production Deploy` through `Credential Leakage`, `Self-Modification` and five browser-exfiltration rules — is a _soft_ block that your explicit intent can clear. That is the single most useful fact about auto mode: it is built to be argued with, except about sending your data somewhere it does not belong.
+
+**The 21 `environment` slots are the configuration surface.** They are not rules; they are the context the rules are read against — `Trusted repo`, `Source control`, `Trusted internal domains`, `Sensitive data locations & audiences`, `Host containment`, and so on. Most default to `None configured` or to a conservative heuristic, such as treating any host whose name carries `prod` as a sensitive remote target. Naming concrete targets makes the protective rules apply to _those_ instead of the heuristic.
+
+### Adding a human checkpoint without leaving auto mode
+
+Auto mode allows pushes to any branch of the repository you are working in, and pull-request creation, by default. If you want a person in the loop, say so as rules rather than as a request:
+
+<CodeBlock title="~/.claude/settings.json">
+
+```json
+{
+  "permissions": {
+    "ask": ["Bash(git push *)", "Bash(gh pr create *)"]
+  },
+  "autoMode": {
+    "classifyAllShell": true
+  }
+}
+```
+
+</CodeBlock>
+
+Content-scoped ask rules are evaluated before the classifier and always prompt, even in auto mode. `classifyAllShell` suspends _every_ Bash and PowerShell allow rule while auto mode is active, so the classifier sees every shell command — it trades latency for coverage, and it closes the gap where a narrow rule like `Bash(npm test)` lets an unanticipated argument through unseen. It requires v2.1.193 or later.
+
+## Anti-patterns
+
+**Writing an `autoMode` block into a project's `.claude/settings.json`.** The classifier does not read it — deliberately, so a checked-in repository cannot widen its own trust. _Fix:_ `~/.claude/settings.json` or managed settings.
+
+**Overriding a rule list without `"$defaults"`.** One custom `soft_deny` entry, written without the marker, silently discards every built-in soft block. _Fix:_ include `"$defaults"`, and run `claude auto-mode config` afterwards to confirm what is actually in force.
+
+**Using `autoMode.hard_deny` for something that must never run.** It is a prose rule inside the classifier; it does not apply outside auto mode, and it is not a tool-pattern gate. _Fix:_ `permissions.deny` in managed settings, which blocks before the classifier is consulted and cannot be overridden.
+
+**Promising a security reviewer that managed settings pin the model.** A managed `model` is a default; `--model` still wins for the session. _Fix:_ deploy `availableModels` (and `enforceAvailableModels`).
+
+**Deploying a policy and never checking `/status`.** A higher-priority managed source, or a file at the wrong path, fails quietly from the developer's point of view. _Fix:_ read `Setting sources` and `Skipped sources` on one machine before rolling out.
+
+**Turning telemetry off to "reduce data sharing" without reading the consequences.** `DISABLE_TELEMETRY` also stops the usage data feeding your own analytics dashboard, and it turns off feature-flag fetching — which makes Remote Control, the auto-mode default and other flag-dependent features unavailable for those developers. _Fix:_ decide deliberately; the next lesson covers what each variable actually controls.
+
+<Callout variant="changed">
+  The classifier no longer reads `autoMode` from `.claude/settings.local.json`; before v2.1.207 it
+  did. Move any `autoMode` block still living in that file to `~/.claude/settings.json`, or it is
+  silently ignored. Verified against `auto-mode-config.md` for Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m14-security/managed-settings"
+  questionId="q1"
+  lang="en"
+  prompt="Where does the auto mode classifier NOT read `autoMode` configuration from?"
+  options={[
+    {
+      text: "A repository's .claude/settings.json",
+      correct: true,
+      explanation:
+        'Both project files are excluded on purpose: a checked-out repo or a build step could otherwise inject its own allow rules.',
+    },
+    { text: '~/.claude/settings.json', explanation: 'That is the per-developer scope.' },
+    { text: 'Managed settings', explanation: 'That is the organisation-wide scope.' },
+    { text: 'The --settings flag', explanation: 'That is the per-invocation scope.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m14-security/managed-settings"
+  questionId="q2"
+  lang="en"
+  prompt="You add one custom rule to autoMode.soft_deny and omit the $defaults marker string. What happens?"
+  options={[
+    {
+      text: 'Your rule is added to the built-in soft blocks.',
+      explanation:
+        'Only if you include "$defaults" — the marker is what splices the built-ins back in.',
+    },
+    {
+      text: 'Your rule replaces every built-in soft block, including force push and curl | bash.',
+      correct: true,
+      explanation:
+        'Setting a list without "$defaults" takes full ownership of it. Run `claude auto-mode defaults` and copy what you mean to keep.',
+    },
+    {
+      text: 'The whole autoMode block is ignored as invalid.',
+      explanation: 'It is valid — that is what makes the mistake easy to miss.',
+    },
+    {
+      text: 'The hard_deny list is replaced too.',
+      explanation: 'Each section is evaluated independently.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m14-security/managed-settings"
+  questionId="q3"
+  lang="en"
+  prompt="An action must never run, regardless of what a developer writes in their own settings or says in the conversation. Which mechanism?"
+  options={[
+    {
+      text: 'autoMode.hard_deny in managed settings',
+      explanation:
+        'It blocks unconditionally inside the classifier, but the classifier only runs in auto mode — it is not a tool-pattern gate.',
+    },
+    {
+      text: 'permissions.deny in managed settings',
+      correct: true,
+      explanation:
+        'Deny rules block before the classifier is consulted, apply in every permission mode, and a managed value cannot be overridden.',
+    },
+    {
+      text: 'A line in the organisation’s CLAUDE.md',
+      explanation: 'CLAUDE.md steers both Claude and the classifier, but it is guidance.',
+    },
+    {
+      text: 'permissions.ask in managed settings',
+      explanation: 'That guarantees a prompt, not a refusal.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m14-security/managed-settings"
+  questionId="q4"
+  lang="en"
+  prompt="A managed settings file exists on the machine but the policy is not applying. What tells you whether a higher-priority source overrode it?"
+  options={[
+    {
+      text: 'The `Skipped sources` line in /status',
+      correct: true,
+      explanation:
+        'It names each managed source Claude Code found and did not select, which distinguishes "never reached the machine" from "overridden".',
+    },
+    {
+      text: 'claude --version',
+      explanation: 'That prints the version only.',
+    },
+    {
+      text: 'The absence of any error at startup',
+      explanation:
+        'A file that is present but unparseable makes Claude Code refuse to start; silence tells you nothing about precedence.',
+    },
+    {
+      text: '/permissions, which lists the file each rule came from',
+      explanation:
+        'That helps with rules, but it does not report which managed source was skipped.',
+    },
+  ]}
+/>
+
+**Next:** `05-data-and-retention` — what actually leaves your machine, how long it is kept, and every switch that changes it.

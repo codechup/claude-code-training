@@ -2,7 +2,7 @@
 id: P31
 title: "L3 Advanced module: Security (m14-security)"
 milestone: M2
-status: in_progress
+status: review
 owner: opus-p31-2026-09-07
 branch: plan/31-l3-m14-security
 model_hint: opus
@@ -15,8 +15,12 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T11:17:06Z
-open_questions: []
+updated_at: 2026-09-07T19:21:19Z
+open_questions:
+  - 'No sandbox transcript: the capture machine is native Windows, where the docs say the Bash sandbox is unsupported. A session on macOS/Linux/WSL2 should capture a real sandbox denial (a write outside the working directory, and a host outside `sandbox.network.allowedDomains`) and add it to lesson 01.'
+  - 'research/deprecations.md line 17 is stale: it gives the PreToolUse shape as `permissionDecision: allow|deny|block`. The live `hooks.md` (fetched 2026-09-07) gives `allow|deny|ask|defer`, with `block` only via exit code 2. Its owning plan should correct it.'
+  - 'research/deprecations.md line 9 is incomplete: `defaultMode: auto|bypassPermissions` is honoured from user, `--settings` **and** managed settings, not only user or managed.'
+  - 'The lab repo has no `lesson/m14-01-*`, `m14-04-*` or `m14-05-*` tags. Lessons 01 and 04 run against a scratch folder and the CLI itself; lesson 05 has no lab. If P22 (or its successor) tags these, the frontmatter should be updated.'
 ---
 
 ## Goal
@@ -97,5 +101,130 @@ A reviewer opens `npm run dev`, visits each of the 4 lessons at `/en/l3-advanced
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+**Session:** `opus-p31-2026-09-07`, worktree `../cct-wt-31`, branch `plan/31-l3-m14-security`.
+
+**Curriculum drift (followed the doc, not this plan).** `docs/CURRICULUM.md` §2 lists **five** lessons for
+`m14-security`, not the four this plan's Deliverables section names, and the slugs differ. Per Step 1 the
+curriculum wins. Written:
+
+| # | slug | duration / difficulty | lab tag |
+|---|---|---|---|
+| 01 | `permission-model-and-sandbox` | 20 / core | `none` (no `lesson/m14-01-*` tag exists) |
+| 02 | `prompt-injection` | 20 / core | `lesson/m14-02-start` |
+| 03 | `secrets` | 20 / core | `lesson/m14-03-start` |
+| 04 | `managed-settings` | 15 / advanced | `none` |
+| 05 | `data-and-retention` | 10 / advanced | `none` |
+
+TR twins exist at the mirrored paths as `draft: true` stubs with identical frontmatter (title/description/tags
+translated) and a one-paragraph Turkish summary. `/new-lesson` was not available in this session's skill list,
+so the files were written directly from the shape of the reference lesson
+`content/en/l1-beginner/m01-start/01-what-claude-code-is.mdx`.
+
+**Transcripts (10 files, all captured this session, D093/D099).** Under
+`content/_shared/transcripts/m14-security/`:
+
+- `01-permission-model-and-sandbox/01-default.txt`, `02-accept-edits.txt`, `03-plan.txt`, `04-dontask.txt` —
+  the same fix request run four times in a scratch folder, resetting the file between runs. Only `acceptEdits`
+  edited it; `default` stopped for an approval a headless run cannot supply; `plan` and `dontAsk --allowedTools Read`
+  both ended at the turn limit with the file untouched.
+- `02-prompt-injection/01-injection-attempt.txt` — a planted `SYSTEM:`-shaped instruction appended to the lab
+  `README.md` at `lesson/m14-02-start`. **Claude did not follow it**: it named the injection, refused, and
+  `ls INJECTED.txt` confirms nothing was written. The capture also incidentally records the workspace-trust
+  defence firing (`Ignoring 5 permissions.allow entries … this workspace has not been trusted`).
+  Plus `02-b6-failing.txt` and `03-b6-fix.txt` (B6 fixed, 16/16 green).
+- `03-secrets/01-gitleaks.txt`, `02-b7-fix.txt` (B7 fixed, 17/17 green), `03-hygiene-hook.txt`.
+- `04-managed-settings/01-automode-defaults.txt` — `claude auto-mode defaults` reduced to rule labels:
+  1 `hard_deny`, 69 `soft_deny`, 17 `allow`, 21 `environment` slots.
+
+**Sandbox: not demonstrable on the capture machine.** The capture host is native Windows, where the docs state
+the sandbox is unsupported. WSL2 (Ubuntu) is present with `bwrap` but no Claude Code install and no `socat`;
+installing and authenticating a second Claude Code there was out of scope. Lesson 01 therefore says so explicitly
+and shows `/sandbox` and the settings JSON in `<CodeBlock>`/`<OSTabs>` rather than faking a sandbox-denial
+transcript. **Open follow-up:** a session on macOS/Linux/WSL2 should capture a real sandbox denial (a write
+outside the working directory, and a network host outside `allowedDomains`) and add it to lesson 01.
+
+**Two redaction decisions, both deliberate.**
+
+1. Local paths and the account name are redacted to `<you>`, `<lab-clone>` and `<lab-checkout>` as the content
+   rules require.
+2. The planted secret is **generated at capture time** and never written down. `gitleaks` was run with
+   `--redact`, and the hygiene-hook capture replaces the matched value with `<redacted for this repo>`; the
+   headers say so. This is not cosmetic: a key-shaped literal in a committed transcript would be caught by this
+   repo's own `scripts/check-public-hygiene.mjs` (`anthropic-key`, `github-token`) and by its `gitleaks` CI job,
+   so an unredacted capture literally cannot be committed here. A first attempt used an `AKIA…EXAMPLE…` value and
+   gitleaks reported **no leaks** — gitleaks' default allowlist skips common placeholder text. That finding is
+   taught in lesson 03 rather than hidden.
+
+**Tools.** `gitleaks` was not installed on the capture machine; 8.30.1 was downloaded to a scratch directory for
+the run. Claude Code 2.1.263 — matches `verified_version`. Note that the capture machine has global preferences
+asking for Turkish answers, so several model replies are in Turkish; each lesson glosses the relevant sentence in
+prose rather than editing the recording (same situation the m01 reference lesson documents).
+
+**Verification.** `npm run gate` (168 files) · `npm run typecheck` (0 errors) · `npm run lint` ·
+`npm test` (22 files, 184 tests) · `npm run build` ending `check-no-inline-script (dist): OK (118 files scanned)`
+with `dist/en/l3-advanced/m14-security/` holding all five lesson pages plus the index ·
+`node scripts/check-raw-colors.mjs` · `node scripts/check-public-hygiene.mjs` · `node tools/plan/cli.ts check` ·
+Playwright on port 4431 (`e2e/a11y.spec.ts` plus a temporary module spec at 390 px and 1280 px): **28 passed**,
+0 serious/critical axe violations. Both temporary Playwright files were deleted afterwards.
+TR drafts are excluded from the build, so the module spec asserts the five EN lesson routes, the EN module index
+and the TR module index.
+
+**Two build failures worth recording for the next author.** MDX rejects `\"` escapes inside a JSX string
+attribute (a `<Quiz prompt="… \"$defaults\" …">`), and a nested backtick inside inline code silently becomes an
+MDX expression — `${token}` inside a prose sentence built the page and then failed at render with
+`token is not defined`. Both were fixed by rewording.
+
+**Sources registry.** `m14-security` appended to the `modules` array of the 14 existing entries this module cites
+(append-only, no reordering beyond the file's own id sort); one new entry added, `docs-monitoring-usage`.
+
+**Review pipeline (D071).** Both agents were run read-only from the worktree root with
+`--permission-mode plan`.
+
+- **fact-checker** — ran per lesson. Every checkable Claude Code product claim across the five
+  lessons came back CONFIRMED against live fetches. **1 WRONG, fixed:** lesson 04 named
+  `policyHelper` as the fourth managed-settings delivery mechanism; the live `managed-settings.md`
+  names the four as server-managed, MDM/OS policy, file-based and the Windows/WSL `HKCU` registry,
+  with `policyHelper` classified as a delivery *control* key. Replaced with the doc's own table.
+  **Flagged-as-unverifiable and resolved this session:** the `allowManagedPermissionRulesOnly`
+  ignored-source list (re-read from the raw `settings-reference.md`, and `--settings` was missing
+  from the lesson — added); the `app.version`/`app.entrypoint` attribute keys (present verbatim in
+  `monitoring-usage.md`'s standard-attributes table; the agent's fetch was lossy); and the four
+  gitleaks claims, which the agent could not fetch but which are first-hand evidence from this
+  session's own run (D093) — the `EXAMPLE`-placeholder allowlist behaviour was *observed*, not
+  inferred. Counts: 4 lessons clean after fixes, 1 WRONG fixed, 0 left unverifiable in lesson text.
+- **reviewer** — **VERDICT: CHANGES REQUESTED (0 blockers, 1 major)**, now fixed. The major:
+  lesson 01's `<WhenNotToUse>` cites the `sandbox-environments` page without a matching `sources[]`
+  entry (D041–D043). Added to both the EN lesson and its TR twin. The reviewer also asked for a
+  consistent rule on inline links; the rule this module now follows is **official
+  `code.claude.com/docs` pages go in `sources[]`; upstream tool homepages (bubblewrap, gitleaks)
+  stay inline**, since they are tool references rather than doctrine. Everything else passed:
+  template order and section presence on all five, frontmatter vs. `CURRICULUM.md` §2, all 11
+  `<Transcript>` references resolving with in-bounds ranges and matching prose, 4 quiz questions
+  each with exactly one correct answer, every anti-pattern carrying a `_Fix:_`, EN/TR frontmatter
+  parity, and public-repo hygiene.
+
+**Source verification (D043).** Every `sources[].url` across the five EN lessons was fetched this
+session; all 16 answered `200`. The raw markdown of each cited doc page was pulled with `curl` and
+read during authoring — no claim in these lessons came from memory.
+
+**Three corrections applied from a pre-PR review pass, worth recording because each was a real
+error:**
+
+1. Lesson 03's anti-pattern claimed a `Read(./.env)` deny rule leaves `cat .env` open. It does not:
+   `permissions.md` says Read/Edit deny rules cover the file commands Claude Code recognises in
+   Bash (`cat`, `head`, `tail`, `sed`) and redirection targets. What they miss is an arbitrary
+   subprocess that opens the file itself. Corrected.
+2. Lesson 01's `~/.claude/settings.json` example carried a `denyRead`/`allowRead` pair whose own
+   explanation says it only works in project settings. Split into a correctly titled second block.
+3. `base32` is not in the stock macOS toolchain, so the lab's key generator failed there. macOS
+   variants added.
+
+**Open questions / follow-ups.**
+
+- The sandbox-denial capture above.
+- No `lesson/m14-01-*`, `m14-04-*` or `m14-05-*` tags exist. Lessons 01 and 04 run against a scratch folder and
+  against Claude Code's own CLI respectively, which is fine; lesson 05 has no lab at all and says so in one line
+  under the heading, per `.claude/rules/content.md` §1.
+- The `lesson/m14-02-start` fix run also edited `BUGS.md` unprompted. Harmless, left in the transcript verbatim,
+  and used in the lesson as the reason to read the diff — but P22 may want to know.
 

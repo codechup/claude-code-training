@@ -1,0 +1,44 @@
+---
+title: 'Prompt injection: bir agent’a nasıl ulaşır ve onu ne durdurur'
+description: 'Güvenilmeyen metin dosyalar, web sayfaları ve tool sonuçları üzerinden gelir. Gerçek bir headless oturumda başarısız olan bir enjeksiyon denemesini izleyin, aynı hatayı lab API’sinde düzeltin ve dokümanların gerçekten sunduğu savunmaları katmanlayın.'
+level: 3
+module: 'm14-security'
+order: 2
+duration_min: 20
+difficulty: core
+tags: ['güvenlik', 'prompt-injection', 'güvenilmeyen-içerik', 'hooks']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Security'
+    url: 'https://code.claude.com/docs/en/security.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Choose a permission mode'
+    url: 'https://code.claude.com/docs/en/permission-modes.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure permissions'
+    url: 'https://code.claude.com/docs/en/permissions.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Catch security issues as Claude writes code'
+    url: 'https://code.claude.com/docs/en/security-guidance.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Hooks reference'
+    url: 'https://code.claude.com/docs/en/hooks.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'codechup/claude-code-lab — the course lab repository'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m14-02-start'
+---
+
+## Özet
+
+Bu ders, İngilizce aslından henüz çevrilmedi (taslak). Konusu: prompt injection, yani saldırganın asistanın okuyacağı bir yere veri değil talimat gibi görünen metin yerleştirmesi. Agent tabanlı bir araçta bu metin birçok kanaldan gelir: bir bağımlılığın `README` dosyası, bir kod yorumu, bir GitHub issue gövdesi, getirilen bir web sayfası, bir MCP server'ın döndürdüğü JSON. Ders, Claude Code'un gerçekten sunduğu katmanları tek tek ve sınırlarıyla birlikte ele alır: permission sistemi, `curl` ve `wget` için otomatik onay olmaması, `WebFetch`'in izole context window'u, hostname tabanlı WebFetch güvenlik kontrolü, trust doğrulaması (`-p` ile devre dışıdır), auto mode classifier'ının tool sonuçlarını görmemesi ve gelen tool sonuçlarını tarayan sunucu tarafı prob. Laboratuvarda `lesson/m14-02-start` etiketine bir `SYSTEM:` biçimli talimat yerleştirilir ve gerçek bir headless oturumun bunu izlemediği kayıtla gösterilir; ardından aynı hatanın kod hâli (`renderNote()` içinde güvenilmeyen metnin şablona doğrudan eklenmesi) düzeltilir ve kalıcı savunmalar — deny kuralı, ask kuralı ve `PreToolUse` hook'u — eklenir.

@@ -1,0 +1,299 @@
+---
+title: 'Data, retention and telemetry'
+description: 'What leaves your machine, who keeps it and for how long, what zero data retention does and does not cover, and every environment variable that changes the answer — plus the OpenTelemetry export your organisation can run itself.'
+level: 3
+module: 'm14-security'
+order: 5
+duration_min: 10
+difficulty: advanced
+tags: ['security', 'data-usage', 'retention', 'telemetry', 'opentelemetry', 'zdr']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Data usage'
+    url: 'https://code.claude.com/docs/en/data-usage.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Zero data retention'
+    url: 'https://code.claude.com/docs/en/zero-data-retention.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Monitoring'
+    url: 'https://code.claude.com/docs/en/monitoring-usage.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Deploy managed settings'
+    url: 'https://code.claude.com/docs/en/managed-settings.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Security'
+    url: 'https://code.claude.com/docs/en/security.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say whether your prompts and code can be used to train a model, based on your plan.
+- State the retention period for your account type, and where the local plaintext copy lives.
+- List the two kinds of operational telemetry Claude Code sends and the variable that turns each off.
+- Say what zero data retention covers, what it does not, and which features it disables outright.
+- Configure an OpenTelemetry export so your organisation measures usage from its own collector.
+
+**Prerequisites.** Lesson `04-managed-settings` — every control here is an `env` entry your administrator can deploy the same way.
+
+<WhenNotToUse>
+  This lesson describes what Anthropic's own documentation says about data handling as of Claude
+  Code 2.1.263. It is not legal advice and it is not a substitute for your contract: the Commercial
+  Terms, the Consumer Terms and the Privacy Policy govern, and the Trust Center holds the compliance
+  artifacts a reviewer will actually ask for. If you are answering a security questionnaire, cite
+  those, not a training page. And do not switch telemetry off as a reflex — read the section on what
+  else it turns off first.
+</WhenNotToUse>
+
+## Concept
+
+### Training
+
+**Consumer plans (Free, Pro, Max)** get a choice: when the setting is on, Anthropic trains new models using data from those accounts, Claude Code usage included. It is changeable at any time in your privacy settings.
+
+**Commercial users** — Team and Enterprise plans, the API, third-party platforms and Claude Gov — keep the existing policy: Anthropic does not train generative models on code or prompts sent to Claude Code under commercial terms, unless the customer has chosen to provide data, for example through the Development Partner Program, which an organisation admin opts into and which is first-party API only.
+
+### Retention
+
+| Account                                              | Retention                                 |
+| ---------------------------------------------------- | ----------------------------------------- |
+| Consumer, data use for model improvement **on**      | 5 years                                   |
+| Consumer, data use for model improvement **off**     | 30 days                                   |
+| Commercial (Team, Enterprise, API), standard         | 30 days                                   |
+| Enterprise with zero data retention                  | Not stored after the response is returned |
+| Transcripts shared via `/feedback`, `/bug`, `/share` | 5 years                                   |
+| A session transcript shared after the quality survey | Up to 6 months                            |
+
+Separately from all of that, there is a **local plaintext copy**: Claude Code stores session transcripts on your own machine under `~/.claude/projects/` for 30 days by default, so sessions can be resumed. Change the window with `cleanupPeriodDays`. Transcripts of sessions started or most recently continued in Claude Desktop or Cowork are exempt from that limit by default. This is the copy most threat models forget, and it is the one you can actually delete.
+
+### What leaves the machine
+
+Claude Code runs locally and sends prompts and model outputs over TLS 1.2+ to serve the model. Beyond that, two kinds of operational telemetry:
+
+- **Metrics** — latency, reliability and usage patterns, sent to Anthropic and to third-party logging infrastructure. They **never include your code, prompts or file paths**. `DISABLE_TELEMETRY=1` opts out.
+- **Error reports** — error messages and stack traces from Claude Code's own internals, to a third-party error tracking service, with known patterns of secrets, file paths, email addresses and other personal information redacted before anything leaves. `DISABLE_ERROR_REPORTING=1` opts out. Error reporting is only on at all when you sign in with a Pro or Max subscription, on v2.1.198 or later, connecting directly to the Claude API, and your organisation has no ZDR or HIPAA agreement.
+
+`/feedback` is different in kind: it sends a copy of your conversation history, **including code**. `/bug` and `/share` submit through the same path, and `DISABLE_FEEDBACK_COMMAND=1` turns it off. On Bedrock, Google Cloud's Agent Platform or with no Anthropic credentials configured, `/feedback` writes a local archive under `~/.claude/feedback-bundles/` instead of sending anything.
+
+The **session quality survey** ("How is Claude doing this session?") records only your rating — no transcripts, no inputs, no outputs, not even when you pick Dismiss. The follow-up that asks whether Anthropic may look at your transcript is a separate, opt-in step: choosing **Yes** uploads the conversation, subagent transcripts and the raw session log, with known API key and token patterns redacted but source code uploaded as-is.
+
+One check runs regardless of provider and regardless of `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`: before a `WebFetch`, the requested **hostname** — only the hostname, not the path or the page — goes to `api.anthropic.com` to be checked against a safety blocklist. `skipWebFetchPreflight: true` opts out, at the cost of fetching without consulting the blocklist.
+
+### Every switch, in one place
+
+<CodeBlock title="managed-settings.json or ~/.claude/settings.json">
+
+```json
+{
+  "env": {
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "DISABLE_FEEDBACK_COMMAND": "1",
+    "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1"
+  },
+  "cleanupPeriodDays": 7,
+  "skipWebFetchPreflight": false
+}
+```
+
+</CodeBlock>
+
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` turns all of the non-essential traffic off at once, surveys included. It does not affect the WebFetch check or the official plugin marketplace auto-install, each of which has its own opt-out.
+
+<Callout>
+  `DISABLE_TELEMETRY` and `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` also disable **feature-flag
+  fetching**. That is not a side note: with flags off, a terminal session's built-in starting
+  permission mode falls back to Manual, Remote Control stops working, `/auto-mode-setup` cannot run,
+  and your organisation's analytics dashboard stops receiving usage data for those developers.
+  `DISABLE_ERROR_REPORTING` does not have this effect.
+</Callout>
+
+Default behaviour also varies by provider. On Amazon Bedrock, Google Cloud's Agent Platform, Microsoft Foundry and Claude Platform on AWS, error reporting, telemetry and bug reporting are **off by default**; session quality surveys and the WebFetch check are the exceptions and run anyway.
+
+### Zero data retention
+
+ZDR is available to qualified accounts on Claude for Enterprise. It is not part of the standard Enterprise plan and cannot be switched on from admin settings — an Anthropic account team enables it per organisation, and it does not carry over to a new organisation under the same account.
+
+With ZDR on, prompts and model responses from Claude Code sessions are processed in real time and not stored after the response is returned, except where needed to comply with law or combat misuse. Data tied to a policy violation may still be retained for up to 2 years.
+
+What it does **not** cover: chat on claude.ai, Cowork, user and seat management, third-party integrations and MCP servers, and Claude Code Analytics — which stores no prompts or responses but does collect productivity metadata such as account emails and usage statistics.
+
+What it **disables** outright, at the backend: Claude Code on the web, cloud sessions from the desktop app, Claude Tag, Artifacts, feedback submission (`/feedback`, `/bug`, `/share`) and Remote Control. Each of those needs server-side storage of a transcript or of published content.
+
+One routing trap worth naming: ZDR applies to requests that authenticate into the ZDR-enabled organisation. A developer signed in with a personal account, or with an API key from a different organisation, is not covered. Deploy `forceLoginMethod` and `forceLoginOrgUUID` in managed settings to require the right login.
+
+### Measuring it yourself
+
+If the reason you are here is "we need to know what our developers are doing", the answer is not to read Anthropic's telemetry — it is to run your own collector. Claude Code exports OpenTelemetry metrics and events:
+
+<CodeBlock title="managed-settings.json — OpenTelemetry export">
+
+```json
+{
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector.example.com:4317",
+    "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer example-token"
+  }
+}
+```
+
+</CodeBlock>
+
+Eight metrics ship today: `claude_code.session.count`, `claude_code.lines_of_code.count`, `claude_code.pull_request.count`, `claude_code.commit.count`, `claude_code.cost.usage` (USD), `claude_code.token.usage` (tokens), `claude_code.code_edit_tool.decision`, and `claude_code.active_time.total` (seconds). To verify a metrics setup, look for `claude_code.session.count` arriving when a session starts; for a logs-only setup, submit a prompt and look for the `claude_code.user_prompt` event.
+
+Standard attributes include `session.id`, `organization.id`, `user.account_uuid`, `user.email` when authenticated via OAuth, `terminal.type`, and a random anonymous `user.id` generated on first run and stored in `~/.claude.json` — which the docs note contains no personal information and is not derived from your Claude account. Several attributes are opt-in (`app.version`, `app.entrypoint`) and several opt-out (`OTEL_METRICS_INCLUDE_SESSION_ID`, `OTEL_METRICS_INCLUDE_ACCOUNT_UUID`), so a privacy-conscious deployment has real knobs.
+
+`claude --debug` reports exporter failures as `[3P telemetry]` errors; lines prefixed `[Anthropic telemetry]` are Anthropic's separate operational telemetry and do not indicate a problem with your collector.
+
+Here is this lesson's worked example prompt — one you can run against your own settings before an audit:
+
+```text
+Read my settings files and tell me, as a table: which telemetry each one turns on or
+off, where my local transcripts are kept and for how long, and which of these settings
+a project file could override. Do not change anything.
+```
+
+## Hands-on lab
+
+This lesson has no lab: every control here is a settings value or an environment variable, and the outcomes that matter — a retention period, a training policy, an organisation's ZDR status — are contractual rather than observable from a terminal. Verify it the way an auditor would: read your own settings files, check `cleanupPeriodDays` and the contents of `~/.claude/projects/` on your machine, and confirm the organisation-level answers with your Anthropic account team and the Trust Center.
+
+## Anti-patterns
+
+**Assuming "we're on Enterprise" means zero data retention.** ZDR is not included in the standard Enterprise plan and cannot be enabled from admin settings. _Fix:_ confirm with your account team, and remember it does not carry to new organisations.
+
+**Turning off telemetry and then wondering why auto mode stopped defaulting on.** `DISABLE_TELEMETRY` also kills feature-flag fetching, which the built-in `auto` starting mode, Remote Control and `/auto-mode-setup` depend on. _Fix:_ if the goal is only to stop error reports, set `DISABLE_ERROR_REPORTING` instead.
+
+**Forgetting the local transcripts.** Server-side retention says nothing about `~/.claude/projects/`, which holds your sessions in plaintext for 30 days by default. _Fix:_ set `cleanupPeriodDays` to what your policy actually allows, and know that Desktop and Cowork sessions are exempt by default.
+
+**Treating `/feedback` as a bug tracker.** It sends your conversation history including code, retained for 5 years. _Fix:_ choose deliberately how much history to include, and set `DISABLE_FEEDBACK_COMMAND=1` where policy requires it.
+
+**Enforcing ZDR without enforcing login.** ZDR follows the authenticated organisation, so a personal login sidesteps it entirely. _Fix:_ deploy `forceLoginMethod` and `forceLoginOrgUUID`.
+
+**Blocking `api.anthropic.com` at the firewall and expecting WebFetch to work.** The domain safety check runs first; if it cannot reach the endpoint, fetches fail. _Fix:_ allowlist the domain, or set `skipWebFetchPreflight: true` and pair it with `WebFetch` permission rules.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m14-security/data-and-retention"
+  questionId="q1"
+  lang="en"
+  prompt="Where does Claude Code keep a plaintext copy of your session transcripts, and for how long by default?"
+  options={[
+    {
+      text: '~/.claude/projects/, for 30 days, adjustable with cleanupPeriodDays',
+      correct: true,
+      explanation:
+        'The local cache exists so sessions can be resumed; Desktop and Cowork sessions are exempt from the limit by default.',
+    },
+    {
+      text: 'It does not — transcripts only exist server-side.',
+      explanation: 'They are stored locally in plaintext.',
+    },
+    {
+      text: '~/.claude/feedback-bundles/, for 5 years',
+      explanation:
+        'That directory holds feedback archives written when /feedback cannot send to Anthropic.',
+    },
+    {
+      text: 'In the repository, under .claude/',
+      explanation: 'Session transcripts are not written into your project.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m14-security/data-and-retention"
+  questionId="q2"
+  lang="en"
+  prompt="Which of these is still fully covered by zero data retention?"
+  options={[
+    {
+      text: 'Claude Code model inference on Claude for Enterprise',
+      correct: true,
+      explanation:
+        'That is precisely ZDR’s scope: prompts and responses are processed in real time and not stored afterwards.',
+    },
+    {
+      text: 'Chat conversations on claude.ai',
+      explanation: 'Explicitly outside ZDR’s scope.',
+    },
+    {
+      text: 'Data processed by third-party MCP servers',
+      explanation: 'Not covered — you have to review those services’ own data handling separately.',
+    },
+    {
+      text: 'Claude Code Analytics',
+      explanation:
+        'It stores no prompts or responses, but it does collect productivity metadata such as account emails, under standard retention.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m14-security/data-and-retention"
+  questionId="q3"
+  lang="en"
+  prompt="What is the documented side effect of setting DISABLE_TELEMETRY=1 across an organisation?"
+  options={[
+    {
+      text: 'Feature-flag fetching stops, so Remote Control, the built-in auto-mode default and the analytics dashboard are affected.',
+      correct: true,
+      explanation:
+        'The variable does more than silence metrics; DISABLE_ERROR_REPORTING does not have this effect.',
+    },
+    {
+      text: 'Prompts stop being sent to the model.',
+      explanation: 'Model traffic is essential — telemetry is the operational data alongside it.',
+    },
+    {
+      text: 'The WebFetch domain safety check is disabled.',
+      explanation:
+        'That check runs regardless of provider and is not affected by the non-essential-traffic switch.',
+    },
+    {
+      text: 'Local transcripts stop being written.',
+      explanation: 'That is governed by cleanupPeriodDays, not by telemetry settings.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m14-security/data-and-retention"
+  questionId="q4"
+  lang="en"
+  prompt="Which metric should you look for to confirm an OpenTelemetry metrics export is working?"
+  options={[
+    {
+      text: 'claude_code.session.count',
+      correct: true,
+      explanation: 'Claude Code emits it when a session starts, which makes it the quickest check.',
+    },
+    {
+      text: 'claude_code.user_prompt',
+      explanation: 'That is an event, used to verify a logs-only setup.',
+    },
+    {
+      text: 'claude_code.cost.usage',
+      explanation: 'It exists, in USD, but it only appears once there is spend to report.',
+    },
+    {
+      text: 'otel.exporter.ok',
+      explanation: 'No such metric — exporter failures surface as [3P telemetry] lines in --debug.',
+    },
+  ]}
+/>

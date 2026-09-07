@@ -1,0 +1,44 @@
+---
+title: 'İzin modeli ve sandbox'
+description: 'Altı permission mode, onları geçersiz kılan kurallar, hiçbir modun otomatik onaylamadığı korumalı ve kritik yollar ve bir komut çalışmaya başladıktan sonra nereye erişebileceğini işletim sistemi düzeyinde sınırlayan Bash sandbox’ı.'
+level: 3
+module: 'm14-security'
+order: 1
+duration_min: 20
+difficulty: core
+tags: ['güvenlik', 'permissions', 'sandbox', 'permission-modes']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Choose a permission mode'
+    url: 'https://code.claude.com/docs/en/permission-modes.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure permissions'
+    url: 'https://code.claude.com/docs/en/permissions.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure the sandboxed Bash tool'
+    url: 'https://code.claude.com/docs/en/sandboxing.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Sandbox environments'
+    url: 'https://code.claude.com/docs/en/sandbox-environments.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Security'
+    url: 'https://code.claude.com/docs/en/security.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Özet
+
+Bu ders, İngilizce aslından henüz çevrilmedi (taslak). Konusu: Claude Code'un iki ayrı güvenlik katmanı. Permission mode'lar ve permission kuralları, bir tool çağrısı çalışmadan **önce** Claude Code tarafından değerlendirilir; sandbox ise komut çalışmaya başladıktan sonra işletim sistemi tarafından uygulanır ve yalnızca Bash komutlarını ve alt süreçlerini kapsar. Ders altı modu (`default`/Manual, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions`), kuralların deny → ask → allow sırasıyla değerlendirilmesini, hiçbir modun otomatik onaylamadığı korumalı yolları (`.git`, `.claude`, shell başlangıç dosyaları) ve kritik yolları (kök dizin, home dizini, çalışma dizini ve üstleri) anlatır. Sandbox tarafında dosya sistemi ve ağ izolasyonu ayrı iki katmandır: varsayılan olarak hiçbir alan adı önceden izinli değildir ve okuma erişimi `~/.ssh` dâhil tüm makineyi kapsar. Sandbox macOS, Linux ve WSL2'de çalışır; native Windows desteklenmez. Laboratuvarda aynı görev dört farklı permission mode ile headless olarak çalıştırılır ve yalnızca `acceptEdits` çalıştırmasının dosyayı değiştirdiği gerçek kayıtlarla gösterilir.

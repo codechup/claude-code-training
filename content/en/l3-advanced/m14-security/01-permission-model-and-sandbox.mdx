@@ -1,0 +1,420 @@
+---
+title: 'The permission model and the sandbox'
+description: 'Six permission modes, the rules that outrank them, the protected and critical paths no mode auto-approves, and the OS-level Bash sandbox that contains what a command can reach once it runs.'
+level: 3
+module: 'm14-security'
+order: 1
+duration_min: 20
+difficulty: core
+tags: ['security', 'permissions', 'sandbox', 'permission-modes']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Choose a permission mode'
+    url: 'https://code.claude.com/docs/en/permission-modes.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure permissions'
+    url: 'https://code.claude.com/docs/en/permissions.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure the sandboxed Bash tool'
+    url: 'https://code.claude.com/docs/en/sandboxing.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Sandbox environments'
+    url: 'https://code.claude.com/docs/en/sandbox-environments.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Security'
+    url: 'https://code.claude.com/docs/en/security.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Name the six permission modes, say what each runs without asking, and pick the right one for a given job.
+- Explain why permission rules and permission modes are different layers, and which one wins when they disagree.
+- Say what a **protected path** and a **critical path** are, and why no allow rule and no `PreToolUse` hook can approve a write or a removal that touches one.
+- Describe what the Bash sandbox enforces — filesystem isolation, network isolation — and where it runs.
+- State honestly what `bypassPermissions` does and does not protect you from.
+
+**Prerequisites.** A working Claude Code install (`claude --version`), and the earlier permissions material in level 1. This lesson is the security-shaped view of the same machinery: not "how do I stop being asked", but "what can this session reach if something goes wrong".
+
+<WhenNotToUse>
+  Do not reach for this lesson's controls as a substitute for isolation. A permission mode decides
+  whether a tool call runs; the sandbox decides what a Bash command can touch once it does. Neither
+  is a boundary against a hostile repository, a hostile MCP server, or code you are about to execute
+  for the first time — for that you want a container, a VM, or a throwaway machine, and the
+  `sandbox-environments` page compares those. And if your reason for tightening permissions is that
+  you do not trust the change Claude proposed, the fix is to read the diff, not to add a rule.
+</WhenNotToUse>
+
+## Concept
+
+### Two layers, enforced in different places
+
+Claude Code has two independent safety layers, and mixing them up is the single most common source of confusion.
+
+**Permission rules and permission modes** are evaluated by Claude Code _before_ a tool runs, from the tool name and its arguments. They apply to every tool — `Bash`, `Read`, `Edit`, `WebFetch`, MCP tools.
+
+**The sandbox** is enforced by the operating system on the _running_ process. It applies only to Bash commands and their children, and it holds regardless of what the model chose to run — even when an allowed command turns out to do more than its name suggested.
+
+The docs put it plainly: permission decisions are made from the command string; the OS enforces the sandbox boundary on the process. That is why the two are worth having together.
+
+### The six modes
+
+| Mode                            | What runs without asking                                                                                                            | Best for                            |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `default` (labelled **Manual**) | Reads only                                                                                                                          | Reviewing every action yourself     |
+| `acceptEdits`                   | Reads, file edits, and common filesystem commands (`mkdir`, `touch`, `mv`, `cp`, `rm`, `rmdir`, `sed`) inside the working directory | Iterating on code you are reviewing |
+| `plan`                          | Reads, plus classifier-approved commands when auto mode is available                                                                | Exploring before changing anything  |
+| `auto`                          | Everything, with a classifier reviewing actions in the background                                                                   | Long tasks, fewer prompts           |
+| `dontAsk`                       | Only pre-approved tools                                                                                                             | Locked-down CI and scripts          |
+| `bypassPermissions`             | Everything                                                                                                                          | Isolated containers and VMs only    |
+
+Two naming details that trip people up. The mode that reviews every action is **Manual** in the CLI, the IDE extensions and the desktop app, but its config value is `default`; `manual` is accepted as an alias from v2.1.200. And on Pro, Max and Team plans in a terminal or the VS Code extension, the built-in _starting_ mode is `auto`, not Manual — `claude -p` and the Agent SDK still start in `default`.
+
+Switch with `Shift+Tab` during a session. From `auto` the first press goes to `default`, then the cycle runs `default` → `acceptEdits` → `plan` → back. `bypassPermissions` only joins the cycle if you started with it enabled; `dontAsk` never joins it and must be set with the flag.
+
+### Rules outrank modes
+
+Modes set a baseline. `permissions.allow`, `permissions.ask` and `permissions.deny` sit on top, and they are evaluated **deny, then ask, then allow** — first match wins, and specificity does not change the order. A broad `Bash(aws *)` deny blocks a call that also matches a narrower `Bash(aws s3 ls)` allow, so a deny rule cannot carry allowlist exceptions.
+
+Deny rules block in every mode, `bypassPermissions` included. Allow rules have no effect in `bypassPermissions`. And a bare tool name in a deny rule — `Bash` — removes the tool from Claude's context entirely, so Claude never sees it; a scoped rule like `Bash(rm *)` leaves the tool available and blocks matching calls.
+
+<Callout>
+  Permission rules are enforced by Claude Code, not by the model. An instruction in your prompt or
+  your `CLAUDE.md` shapes what Claude *tries* to do; it does not change what Claude Code *allows*.
+  To grant or revoke access, use `/permissions`, a settings rule, a permission mode, or a
+  `PreToolUse` hook.
+</Callout>
+
+Here is this lesson's worked example prompt — a boundary stated as a rule rather than as a wish:
+
+```text
+Add an ask rule so I am prompted before any push, and a deny rule for reads of .env,
+then show me the resolved rules from /permissions.
+```
+
+### The paths no mode auto-approves
+
+Two lists exist specifically to survive a mode that would otherwise skip the prompt.
+
+**Protected paths** are never auto-approved except in `bypassPermissions` (and in planning sessions where bypass permissions are available). They cover the directories Claude Code loads its own configuration and code from, plus the ones that define your repository and shell: `.git`, `.config/git`, `.vscode`, `.idea`, `.husky`, `.cargo`, `.devcontainer`, `.yarn`, `.mvn`, and `.claude` (except `.claude/worktrees`); and files including `.gitconfig`, `.gitmodules`, the shell startup files (`.bashrc`, `.zshrc`, `.profile`, `.envrc`, …), `.npmrc`, `.yarnrc`, `.pre-commit-config.yaml`, `.mcp.json` and `.claude.json`. Crucially, a `permissions.allow` entry such as `Edit(.claude/**)` does **not** pre-approve these: the safety check runs before allow rules are evaluated.
+
+**Critical paths** are about deletion. Claude Code never lets an allow rule or a `PreToolUse` hook returning `"allow"` approve an `rm` or `rmdir` that targets the filesystem root, a top-level directory, your home directory, a Windows drive root, or your working directory and its parents. Hiding it inside `$(...)`, backticks or `<(...)` does not skip the check, and a glob under a shell variable — `rm -rf "$DIR"/*` — counts, because an empty variable turns it into a removal from the root.
+
+### The sandbox
+
+The sandboxed Bash tool is two independent layers.
+
+**Filesystem isolation.** By default sandboxed commands can write to the working directory, the session temp directory, and anything added with `--add-dir` / `permissions.additionalDirectories`. They can _read_ the whole computer except denied directories — which, the docs note explicitly, still includes `~/.aws/credentials` and `~/.ssh/` unless you say otherwise. Inside the writable region the sandbox still refuses writes to its own protected list (the `.claude` settings and hook directories, `.mcp.json`, shell startup files, `.git/hooks` and `.git/config`), because a command that could edit those could grant itself permissions on the next run.
+
+**Network isolation.** Traffic goes through a proxy outside the sandbox. **No domains are pre-allowed.** The first time a command needs a new domain you are prompted, or in auto mode the classifier decides; `sandbox.network.allowedDomains` pre-allows, and `strictAllowlist` denies anything outside the list instead of prompting.
+
+Enforcement is OS-level: Seatbelt on macOS, [bubblewrap](https://github.com/containers/bubblewrap) on Linux and WSL2. **Native Windows is not supported** — on Windows you run Claude Code inside a WSL2 distribution. WSL1 is not supported either, because bubblewrap needs kernel features WSL2 has and WSL1 does not.
+
+The sandbox's **auto-allow mode** is not the same thing as the permission system's **auto mode**: auto-allow approves Bash commands because the boundary contains them; auto mode uses a classifier to review actions. They work independently and can be combined — except in plan mode, where auto-allow does not widen approvals.
+
+Even in auto-allow mode, explicit deny rules still apply, `rm`/`rmdir` against a critical path still goes through the regular flow, and a content-scoped ask rule such as `Bash(git push *)` still prompts.
+
+### What `bypassPermissions` actually is
+
+It disables permission prompts and safety checks so tool calls execute immediately, including writes to protected paths. The docs are blunt about the limit: it **offers no protection against prompt injection or unintended actions**. A few things still stop it — an explicit ask rule, a critical-path `rm`, `AskUserQuestion`, and the cross-session messaging safeguards — and on Linux and macOS Claude Code refuses to start in this mode as root or under `sudo`. You cannot enter it from a session that did not start with it enabled, and an administrator can remove it entirely with `permissions.disableBypassPermissionsMode: "disable"`.
+
+If what you actually wanted was "far fewer prompts", the honest answer is auto mode plus the sandbox, not this.
+
+## Hands-on lab
+
+<Callout>
+  This lab runs in a scratch folder, not against the course lab repository — there is no
+  `lesson/m14-01-*` tag, because what you are exercising is Claude Code's own behaviour rather than
+  a defect in a project.
+</Callout>
+
+<Lab
+  title="Lab · watch four permission modes decide the same task differently"
+  lessonId="en/l3-advanced/m14-security/permission-model-and-sandbox"
+  repoTag="none"
+  steps={[
+    'Make a scratch folder outside any repository you care about and write one buggy file into it: a `math.js` whose `add()` returns `a - b`, with a comment admitting the bug.',
+    'Run the same fix request four times, resetting `math.js` between runs, changing only the mode: `claude -p "Fix the bug in math.js so add() returns a + b, then tell me in one sentence what you did." --permission-mode default --model sonnet --max-turns 4 --output-format text`',
+    'Repeat with `--permission-mode acceptEdits`, then `--permission-mode plan`, then `--permission-mode dontAsk --allowedTools Read`.',
+    'After each run, `cat math.js` and record whether the file changed.',
+    'Open a normal interactive session and run `/permissions`. Add `Bash(git push *)` under **Ask** and `Read(./.env)` under **Deny**, then look at which settings file each rule was written to.',
+    'Run `/sandbox`. On macOS, Linux or WSL2 the panel opens with Mode, Overrides and Config tabs; on native Windows there is no sandbox to configure — read the Config tab list of denied-within-allowed paths if you have one.',
+  ]}
+  expected="Only the acceptEdits run edits math.js. The default run stops and asks for permission it can never receive in a headless run; the plan and dontAsk runs end at the turn limit with the file untouched."
+  checklist={[
+    'The `default` run left `math.js` unchanged and said it was waiting for approval',
+    'The `acceptEdits` run changed `a - b` to `a + b`',
+    'The `plan` run left the file unchanged',
+    'The `dontAsk` run with only `Read` allowed left the file unchanged',
+    'Your ask and deny rules appear in `/permissions` with the file they came from',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m14-security/01-permission-model-and-sandbox/01-default.txt"
+    range="2-8"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m14-security/01-permission-model-and-sandbox/02-accept-edits.txt"
+    range="2-8"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m14-security/01-permission-model-and-sandbox/03-plan.txt"
+    range="2-7"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m14-security/01-permission-model-and-sandbox/04-dontask.txt"
+    range="2-7"
+  />
+</Lab>
+
+Three things in those four recordings are worth stopping on.
+
+The machine that produced them has global Claude Code preferences asking for Turkish answers, so the model replied in Turkish even though the prompt was English. That is not an error in the recording: your standing preferences and memory files shape every session, headless ones included. The first reply reads "I am waiting for permission to edit the file; please approve so I can fix `add()` to return `a + b`" — the Manual-mode refusal, in another language.
+
+Second: `--permission-mode default` in a headless `-p` run has nobody to ask. The request simply does not happen. That is the honest shape of Manual mode in automation, and the reason `dontAsk` exists for CI: it auto-denies instead of waiting.
+
+Third: `plan` and `dontAsk` both ended at `Error: Reached max turns (4)` with the file untouched, but for different reasons — plan mode blocks edits until you approve a plan, while `dontAsk` auto-denied every call that would otherwise have prompted. In that mode Claude runs only what your allow rules cover — here the single `Read` the `--allowedTools` flag pre-approved — plus the built-in read-only Bash commands and anything a `PreToolUse` hook approves.
+
+### Turning the sandbox on
+
+The `/sandbox` panel writes your choice to the project's `.claude/settings.local.json`. To turn it on everywhere, put it in `~/.claude/settings.json`:
+
+<CodeBlock title="~/.claude/settings.json">
+
+```json
+{
+  "sandbox": {
+    "enabled": true,
+    "filesystem": {
+      "allowWrite": ["~/.kube", "/tmp/build"]
+    },
+    "network": {
+      "allowedDomains": ["github.com", "*.npmjs.org"]
+    },
+    "credentials": {
+      "files": [
+        { "path": "~/.aws/credentials", "mode": "deny" },
+        { "path": "~/.ssh", "mode": "deny" }
+      ],
+      "envVars": [
+        { "name": "GITHUB_TOKEN", "mode": "deny" },
+        { "name": "NPM_TOKEN", "mode": "deny" }
+      ]
+    }
+  }
+}
+```
+
+</CodeBlock>
+
+There is no built-in credential deny list: only the files and variables you name are restricted.
+
+Fencing reads is the one rule that has to go in _project_ settings, because a bare `.` resolves relative to the settings source — to the project root in `.claude/settings.json`, but to `~/.claude` in the user file:
+
+<CodeBlock title=".claude/settings.json — block the home directory, keep the project readable">
+
+```json
+{
+  "sandbox": {
+    "enabled": true,
+    "filesystem": {
+      "denyRead": ["~/"],
+      "allowRead": ["."]
+    }
+  }
+}
+```
+
+</CodeBlock>
+
+When read rules overlap, the more specific path wins: a narrow `allowRead` re-opens part of a denied region, and a `denyRead` holds inside a wider allow — so a broad allow cannot silently re-expose a secret.
+
+### Installing the sandbox dependencies
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+# Nothing to install: the sandbox uses the built-in Seatbelt framework.
+claude
+# then, in the session:
+# /sandbox
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+sudo apt-get install bubblewrap socat
+# optional seccomp filter (adds Unix domain socket blocking)
+npm install -g @anthropic-ai/sandbox-runtime
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+# The sandbox does not run on native Windows. Check your WSL version first:
+wsl -l -v
+# then run Claude Code inside a WSL2 distribution and install the Linux dependencies there.
+```
+
+  </Fragment>
+</OSTabs>
+
+The capture machine for this lesson runs native Windows, so there is no sandbox transcript here: the sandbox is unavailable on that platform, exactly as the docs state. If the sandbox cannot start — missing dependencies or an unsupported platform — Claude Code warns and runs commands **unsandboxed** by default. Set `sandbox.failIfUnavailable` to `true` when sandboxing is a gate rather than a convenience.
+
+## Anti-patterns
+
+**Treating `bypassPermissions` as "trusted mode".** It is not a trust setting; it is the absence of checks, and the docs say it offers no protection against prompt injection. _Fix:_ use auto mode for fewer prompts, and reserve `bypassPermissions` for a container or VM you are willing to lose.
+
+**Writing an allow rule to silence a protected-path prompt.** `Edit(.claude/**)` in your settings does not pre-approve `.claude` writes — the protected-path check runs first. _Fix:_ answer the prompt with **Yes, and allow Claude to edit its own settings for this session** when you mean it, and leave the check in place.
+
+**Believing a broad deny with a narrow allow gives you an exception.** Deny is evaluated first and first match wins, so `Bash(aws *)` denies `aws s3 ls` no matter what your allow list says. _Fix:_ write the deny narrowly, or express the exception as an ask rule.
+
+**Assuming the sandbox protects your credentials by default.** Default read access covers the whole computer, `~/.aws/credentials` and `~/.ssh/` included. _Fix:_ list them under `sandbox.credentials` or `filesystem.denyRead`.
+
+**Turning `sandbox.filesystem.disabled` on to make a tool work.** With the filesystem layer off, a sandboxed command can write your shell startup files or `~/.claude/settings.json` and widen its own access next run. _Fix:_ grant the one path with `sandbox.filesystem.allowWrite` instead.
+
+**Stating a boundary only in conversation.** "Don't push until I review" does steer the auto-mode classifier, but it is re-read from the transcript on every check and can be lost to context compaction. _Fix:_ for a hard guarantee, write an ask or deny rule.
+
+<Callout variant="changed">
+  `permissions.defaultMode` set to `auto` or `bypassPermissions` in a project's
+  `.claude/settings.json` or `.claude/settings.local.json` is silently ignored — `auto` falls back
+  to the built-in default and `bypassPermissions` starts the session in Manual. Both values only
+  take effect from user, `--settings` or managed settings. Verified against `permission-modes.md`
+  for Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m14-security/permission-model-and-sandbox"
+  questionId="q1"
+  lang="en"
+  prompt="Your settings contain a deny rule `Bash(aws *)` and an allow rule `Bash(aws s3 ls)`. What happens when Claude tries `aws s3 ls`?"
+  options={[
+    {
+      text: 'It runs, because the allow rule is more specific.',
+      explanation:
+        'Rule specificity does not change evaluation order. Deny is checked first and wins.',
+    },
+    {
+      text: 'It is blocked by the deny rule.',
+      correct: true,
+      explanation:
+        'Rules are evaluated deny, then ask, then allow; the first match wins, so a deny rule cannot carry allowlist exceptions.',
+    },
+    {
+      text: 'You are prompted, because the rules conflict.',
+      explanation: 'There is no conflict resolution by prompt — the deny simply matches first.',
+    },
+    {
+      text: 'It depends on the permission mode.',
+      explanation: 'Deny rules block in every mode, including bypassPermissions.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m14-security/permission-model-and-sandbox"
+  questionId="q2"
+  lang="en"
+  prompt="Which statement about the Bash sandbox is correct?"
+  options={[
+    {
+      text: 'It runs on macOS, Linux and WSL2, and pre-allows no network domains by default.',
+      correct: true,
+      explanation:
+        'Seatbelt on macOS, bubblewrap on Linux and WSL2; native Windows is unsupported, and the first command needing a new domain prompts or goes to the classifier.',
+    },
+    {
+      text: 'It applies to every tool Claude Code has.',
+      explanation: 'It applies only to Bash commands and their child processes.',
+    },
+    {
+      text: 'It blocks reads of ~/.ssh by default.',
+      explanation:
+        'Default read access covers the whole computer except denied directories — credential files included, unless you list them.',
+    },
+    {
+      text: 'It is a permission mode you select with Shift+Tab.',
+      explanation:
+        '/sandbox is not a permission mode; it restricts what a command can reach once it runs.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m14-security/permission-model-and-sandbox"
+  questionId="q3"
+  lang="en"
+  prompt="You need Claude to run unattended in CI with an exact list of what it may do, and the session must never wait for input. Which mode?"
+  options={[
+    {
+      text: '--permission-mode default',
+      explanation:
+        'Manual mode asks, and in a headless run there is nobody to answer — the action simply never happens.',
+    },
+    {
+      text: '--permission-mode dontAsk with --allowedTools',
+      correct: true,
+      explanation:
+        'dontAsk auto-denies anything that would prompt, running only your allow rules, read-only Bash commands, and calls a PreToolUse hook approves.',
+    },
+    {
+      text: '--dangerously-skip-permissions',
+      explanation:
+        'That skips the checks entirely rather than pre-defining what is allowed; it belongs in a container, not in place of an allowlist.',
+    },
+    {
+      text: '--permission-mode acceptEdits',
+      explanation:
+        'That auto-approves edits and a few filesystem commands, but everything else still prompts.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m14-security/permission-model-and-sandbox"
+  questionId="q4"
+  lang="en"
+  prompt="Which of these is NOT auto-approved in any permission mode, including bypassPermissions?"
+  options={[
+    {
+      text: 'A file edit inside the working directory',
+      explanation: 'That is auto-approved from acceptEdits upwards.',
+    },
+    {
+      text: 'An `rm -rf` whose target is a critical path such as your home directory',
+      correct: true,
+      explanation:
+        'No allow rule and no PreToolUse hook returning "allow" can approve a critical-path removal; each mode either prompts, classifies or denies it.',
+    },
+    {
+      text: 'A read of a file in the project',
+      explanation: 'Reads inside the working directory run without asking in every mode.',
+    },
+    {
+      text: 'A `WebFetch` of a preapproved documentation domain',
+      explanation: 'Those are on a built-in preapproved list.',
+    },
+  ]}
+/>
+
+**Next:** `02-prompt-injection` — what happens when the untrusted text is not a command you approved, but a file Claude read.

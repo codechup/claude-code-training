@@ -1,0 +1,19 @@
+# 2026-09-07 · gitleaks 8.30.1 · lesson/m14-03-start with the lab .gitleaks.toml copied in and a randomly generated, key-shaped fake value written to deploy.env · Claude Code 2.1.263
+$ printf "AWS_ACCESS_KEY_ID=%s\n" "AKIA$(head -c 20 /dev/urandom | base32 | tr -d = | head -c 16)" > deploy.env
+$ gitleaks dir . --config .gitleaks.toml --redact --no-color --no-banner -v; echo "exit=$?"
+Finding:     REDACTED
+Secret:      REDACTED
+RuleID:      aws-access-token
+Entropy:     3.684184
+File:        deploy.env
+Line:        1
+Fingerprint: deploy.env:aws-access-token:1
+
+9:36PM INF scanned ~72551 bytes (72.55 KB) in 16.3ms
+9:36PM WRN leaks found: 1
+exit=1
+
+$ rm deploy.env && gitleaks dir . --config .gitleaks.toml --redact --no-color --no-banner; echo "exit=$?"
+9:36PM INF scanned ~72512 bytes (72.51 KB) in 14.7ms
+9:36PM INF no leaks found
+exit=0

@@ -1,0 +1,40 @@
+---
+title: 'Managed settings ve auto mode yapılandırması'
+description: 'Her geliştiricinin aldığı ve kimsenin geçersiz kılamayacağı bir policy dağıtın, ardından auto mode classifier’ına organizasyonunuzun gerçekten güvendiği depoları, bucket’ları ve alan adlarını öğretin — yerleşik kural listesi gerçek bir çalıştırmadan alınmış hâliyle.'
+level: 3
+module: 'm14-security'
+order: 4
+duration_min: 15
+difficulty: advanced
+tags: ['güvenlik', 'managed-settings', 'auto-mode', 'yönetim', 'izin-listeleri']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Deploy managed settings'
+    url: 'https://code.claude.com/docs/en/managed-settings.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure auto mode'
+    url: 'https://code.claude.com/docs/en/auto-mode-config.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Choose a permission mode'
+    url: 'https://code.claude.com/docs/en/permission-modes.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Server-managed settings'
+    url: 'https://code.claude.com/docs/en/server-managed-settings.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Özet
+
+Bu ders, İngilizce aslından henüz çevrilmedi (taslak). Konusu: organizasyon ölçeğinde yapılandırma. Managed settings, her geliştiricinin makinesine dağıtılan ve Claude Code'un diğer tüm seviyelerin üstünde uyguladığı ayarlardır; dosya macOS'ta `/Library/Application Support/ClaudeCode/`, Linux ve WSL'de `/etc/claude-code/`, Windows'ta `C:\Program Files\ClaudeCode\` altına konur ve `/status` çıktısındaki `Setting sources` satırıyla doğrulanır. Ders `allowManagedPermissionRulesOnly`, `allowManagedHooksOnly`, `allowManagedMcpServersOnly` ve `sandbox.network.allowManagedDomainsOnly` kilitlerini, geçersiz değerlerde kapalı tarafa düşen (fail-closed) anahtarları ve bir geliştiricinin yine de değiştirebildiği dört şeyi anlatır. Auto mode tarafında `permissions.deny` (classifier'dan önce çalışır, geçersiz kılınamaz) ile `autoMode.hard_deny`/`soft_deny`/`allow` (classifier içindeki prose kurallar) ayrımı, `autoMode.environment` girdileri ve `"$defaults"` işaretçisinin neden kritik olduğu ele alınır. Laboratuvarda `claude auto-mode defaults` çıktısı gerçek bir çalıştırmadan alınır: tek bir `hard_deny` kuralı (Data Exfiltration), 69 `soft_deny`, 17 `allow` ve 21 `environment` yuvası.
