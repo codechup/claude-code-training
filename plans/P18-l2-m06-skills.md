@@ -2,8 +2,8 @@
 id: P18
 title: "L2 Intermediate module: Skills (m06-skills)"
 milestone: M1
-status: todo
-owner: null
+status: in_progress
+owner: opus-p18-2026-09-07
 branch: plan/18-l2-m06-skills
 model_hint: opus
 effort_hint: high
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-07T08:56:13Z
 open_questions: []
 ---
 

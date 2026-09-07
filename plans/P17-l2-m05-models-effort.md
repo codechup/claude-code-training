@@ -2,8 +2,8 @@
 id: P17
 title: "L2 Intermediate module: Models and effort (m05-models-effort)"
 milestone: M1
-status: todo
-owner: null
+status: in_progress
+owner: opus-p17-2026-09-07
 branch: plan/17-l2-m05-models-effort
 model_hint: opus
 effort_hint: high
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-07T08:56:12Z
 open_questions: []
 ---
 
