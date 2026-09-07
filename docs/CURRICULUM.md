@@ -77,7 +77,7 @@ Format: `NN-slug` — objective (duration, difficulty). "Lab" names the lab-repo
 3. `03-format-on-save` — Lab: PostToolUse formatter (Prettier/gofmt) (15 min, core) Lab
 4. `04-notify-when-done` — Lab: Notification/Stop → desktop and Slack notification (15 min, core) Lab
 5. `05-session-start-context` — Lab: SessionStart loads STATE.md; Stop runs the test suite (20 min, core) Lab
-6. `06-event-catalogue` — All 32 events grouped (lifecycle, prompt, tools, agents/tasks, elicitation) with a use for each (20 min, advanced)
+6. `06-event-catalogue` — All 33 events grouped (lifecycle, prompt, tools, agents/tasks, elicitation) with a use for each (20 min, advanced)
 7. `07-debugging-hooks` — `/hooks`, logs, common failures, hook precedence across scopes (15 min, advanced)
 
 **m08-git — Git workflows with Claude** (D022)
