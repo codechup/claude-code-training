@@ -1,0 +1,45 @@
+---
+title: 'Laboratuvar: inceleme → doğrulama → düzeltme hattı'
+description: 'Lab deposuna gerçek bir hatayı geri koyun, sonra üç ajanlı bir workflow ile hatayı bulun, iki bağımsız ajana doğrulatın ve ancak ondan sonra bir şeyin değişmesine izin verin — çalıştırmanın gerçekte ne kadara mal olduğunu da okuyun.'
+level: 4
+module: 'm16-orchestration'
+order: 4
+duration_min: 30
+difficulty: core
+tags: ['workflow', 'pipeline', 'laboratuvar', 'code-review']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Orchestrate subagents at scale with dynamic workflows'
+    url: 'https://code.claude.com/docs/en/workflows.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Create custom subagents'
+    url: 'https://code.claude.com/docs/en/sub-agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run Claude Code programmatically'
+    url: 'https://code.claude.com/docs/en/headless.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Agent SDK TypeScript reference'
+    url: 'https://code.claude.com/docs/en/agent-sdk/typescript.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'claude-code-lab (tag lesson/m16-04-start)'
+    url: 'https://github.com/codechup/claude-code-lab/tree/lesson/m16-04-start'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m16-04-start'
+---
+
+## Özet
+
+Bu laboratuvar, `lesson/m16-04-start` etiketinde `BUGS.md`'deki B1 hatasını (`paginate()` içindeki off-by-one) tek satırlık bir düzenlemeyle geri koyar, `npm test` ile dört testin kırmızıya döndüğünü kanıtlar ve ardından üç ajanlı bir workflow'u headless olarak çalıştırır: bir ajan `file:line` işaretçileriyle aday bulguları listeler, iki ajan bunları birbirinden bağımsız olarak dosyaya ve `BUGS.md`'ye karşı yeniden okuyup `confirmed`/`rejected` olarak işaretler, ve yalnızca ikisinin de onayladığı bulgu rapor edilir. Neden tek ajan değil de üç aşama sorusunun cevabı burada somutlaşır: yanlış pozitif bir bulgunun bedeli, istenmeyen bir kod değişikliği yerine bir `rejected` oyu olur. Ders, çalıştırmanın kendi kanıtlarını okumayı öğretir — `journal.jsonl`'daki üç ajan kimliği, JSON zarfındaki `total_cost_usd` ve iki modelli `modelUsage`, ve workflow ajanlarının `subagent_stats.spawned` alanında görünmemesi. Yazma yetkisi olan üçüncü aşama, kapsamı daraltılmış bir uzantı olarak ayrı ele alınır.
+
+<Callout label="Çeviri bekleniyor">
+  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
+  İngilizce mevcuttur.
+</Callout>

@@ -1,0 +1,355 @@
+---
+title: 'ultracode: the keyword, the effort level, and what a run costs'
+description: 'ultracode is a Claude Code setting, not a model effort level: xhigh reasoning plus automatic workflow orchestration. Where the keyword fires, where it deliberately does not, how the size guideline bounds a run, and what the docs actually say about cost.'
+level: 4
+module: 'm16-orchestration'
+order: 2
+duration_min: 15
+difficulty: core
+tags: ['ultracode', 'effort', 'workflows', 'cost']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Orchestrate subagents at scale with dynamic workflows'
+    url: 'https://code.claude.com/docs/en/workflows.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Model configuration'
+    url: 'https://code.claude.com/docs/en/model-config.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage costs effectively'
+    url: 'https://code.claude.com/docs/en/costs.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m16-04-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say why `ultracode` is a Claude Code setting rather than a model effort level, and what it turns on beyond `xhigh` reasoning.
+- Name every route that turns it on, and the one environment variable that silently disables its orchestration half.
+- Predict whether the `ultracode` keyword fires for a given prompt — including the routes where it deliberately does not.
+- Choose a size guideline and say what agent count each value aims for.
+- State what the docs actually claim about workflow cost, and what they do not claim.
+
+**Prerequisites.** Lesson `01-workflows` (the Workflow tool and its script), and effort levels from L2 `m05-models-effort`.
+
+<WhenNotToUse>
+  `ultracode` plans a workflow for _every_ substantive task in the session, so each request uses
+  more tokens and takes longer than at lower effort levels. That is the wrong trade for routine work
+  — a small edit, a question about a file, a commit message — and for any session where you are
+  watching cost closely, since ultracode sessions also switch off the large-run warning. It is
+  unavailable on models without `xhigh` effort, and it is not a substitute for asking for a workflow
+  once: if only one task in the session deserves orchestration, ask for that one task and leave the
+  session at `high`.
+</WhenNotToUse>
+
+## Concept
+
+### A setting, not an effort level
+
+`/effort` offers `low`, `medium`, `high`, `xhigh` and `max` — model reasoning levels — and then
+offers `ultracode`, which is something else. **Ultracode is a Claude Code setting**: it sends `xhigh`
+to the model _and_ has Claude orchestrate dynamic workflows for substantive tasks. With it on, Claude
+plans a workflow for each substantive task instead of waiting for you to ask, and a single request
+can turn into several workflows in a row — one to understand the code, one to make the change, one
+to verify it.
+
+Every route that turns it on:
+
+| Route                                                       | What it does                                                                                                        |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `/effort ultracode`                                         | Turns it on for the current session                                                                                 |
+| `claude --effort ultracode`                                 | Starts the session at `xhigh` with ultracode on (2.1.203 or later)                                                  |
+| `"ultracode": true` in a settings file, or via `--settings` | Persists it, so every session starts with it                                                                        |
+| The `/model` picker's effort slider                         | Move it to `ultracode` with the arrow keys; on for the current session, even if you save that model as your default |
+| Agent SDK                                                   | `applyFlagSettings()` accepts `effortLevel: "ultracode"`                                                            |
+
+Two gaps are worth memorising. The persisted `effortLevel` setting and the
+`CLAUDE_CODE_EFFORT_LEVEL` environment variable **do not accept `ultracode`** — that value has its
+own `ultracode` settings key. And when `CLAUDE_CODE_EFFORT_LEVEL` is set to anything other than
+`xhigh`, requests run at that level and ultracode's workflow orchestration stays inactive; selecting
+ultracode then warns you that the variable overrides effort for the session. Where workflows are
+turned off entirely, `--effort ultracode` sets `xhigh` effort only.
+
+`/effort ultracode` lasts for the current session. Drop back with `/effort high` when you return to
+routine work.
+
+### The keyword, and where it does not fire
+
+To run a single task as a workflow without changing the session's effort level, include the keyword
+`ultracode` in your prompt — or ask in your own words, since Claude treats "use a workflow" as the
+same opt-in:
+
+```text
+ultracode: audit every API endpoint under src/routes/ for missing auth checks
+```
+
+Claude Code highlights the keyword in your input. The keyword only chooses how Claude structures the
+work: the agents' tool calls receive the same permission checks and sandboxing as any other tool call
+in the session. If you did not mean it, press `Option+W` (macOS) or `Alt+W` (Windows and Linux) to
+dismiss the highlight for this prompt, or backspace with the cursor right after the highlighted
+keyword. To stop it triggering at all, turn off **Ultracode keyword trigger** in `/config`.
+
+The keyword is an opt-in **only in a prompt you type yourself**: at the interactive prompt, in an IDE
+extension panel, in a Remote Control client, or in an Agent SDK application that stamps your keyboard
+input's `origin` as `{ kind: "human" }`. It does not start a workflow when it reaches the session
+another way:
+
+- a prompt passed with `-p`
+- a prompt an Agent SDK application sends without stamping it as human input
+- a scheduled task prompt
+- a webhook payload or pull request comment relayed into the conversation
+
+That last one is the security point, not a quirk: a keyword that anyone could put in a PR comment
+would be a way to spend your tokens. The lab below is that rule, measured.
+
+### Bounding the size
+
+A **size guideline** tells Claude how many agents to aim for when it writes a workflow. Claude Code
+sends it as advice, not a cap, so a prompt that calls for a different scale still overrides it
+(2.1.202 or later):
+
+| Value          | Agent count Claude aims for                         |
+| -------------- | --------------------------------------------------- |
+| `unrestricted` | No guideline: Claude sizes the workflow to the task |
+| `small`        | Fewer than 5 agents                                 |
+| `medium`       | Fewer than 15 agents                                |
+| `large`        | Fewer than 50 agents                                |
+
+The default is `medium` (2.1.219 or later; earlier versions defaulted to `unrestricted`). Set it in
+the **Dynamic workflow size** row of `/config`, with `/config workflowSizeGuideline=small`, or with
+the `workflowSizeGuideline` key in a settings file — the settings file wins, and Claude Code then
+hides the `/config` row. Changes take effect on the next prompt, and the runtime's own caps still
+apply regardless.
+
+### What the docs say about cost
+
+Be careful here: there is no published multiplier for ultracode, and you should not invent one. What
+the official pages state is:
+
+- A workflow spawns many agents, so a single run **can use meaningfully more tokens** than working
+  through the same task in conversation. Runs count toward your plan's usage and rate limits like any
+  other session.
+- With ultracode on, **each request uses more tokens and takes longer** than at lower effort levels,
+  and a single request can become several workflows in a row.
+- Claude Code flags a run that grows unusually large: when a workflow schedules **more than 25
+  agents**, or its projected token total passes **1.5 million**, the progress line shows a
+  `Large workflow` warning pointing you at `/workflows`. The warning is advisory — it does not pause
+  or limit the run. Choosing a size guideline replaces the 25-agent threshold with that guideline's
+  count, and **sessions with ultracode on do not show the warning at all**, because turning it on
+  already opts you in to large runs.
+- The runtime's caps — 16 concurrent agents, 4,096 items per `parallel()`/`pipeline()` call, 1,000
+  agents per run — bound the cost of a runaway script.
+- For comparison, the costs page does give one number for the sibling feature: **agent teams use
+  approximately 7× more tokens than standard sessions when teammates run in plan mode**. That is a
+  figure about agent teams, not about workflows or ultracode.
+
+The practical advice the docs give is the one to keep: **run the workflow on a small slice first** —
+one directory instead of the whole repo, a narrow question instead of a broad one. The `/workflows`
+view shows each agent's token usage as the run progresses, and you can stop the run there, usually
+without losing completed work. Check `/model` before a large run if you usually switch to a smaller
+model for routine work, and ask for a smaller model on stages that do not need the strongest one.
+
+### Turning workflows off
+
+Toggle **Dynamic workflows** off in `/config`, set `"disableWorkflows": true` in
+`~/.claude/settings.json`, or set `CLAUDE_CODE_DISABLE_WORKFLOWS=1` (read at startup). For an
+organisation, `"disableWorkflows": true` in managed settings, or the toggle on the Claude Code admin
+settings page. When workflows are disabled the bundled workflow commands and the
+`/workflow-authoring` skill are unavailable, the `ultracode` keyword no longer triggers a run, and
+`ultracode` disappears from the `/effort` menu.
+
+## Hands-on lab
+
+<Callout>
+  This lab measures a documented negative: that the `ultracode` keyword does not start a workflow
+  from a `-p` prompt. The evidence is the absence of a workflow, so the checklist below is about
+  reading the envelope carefully rather than watching something happen.
+</Callout>
+
+<Lab
+  title="Lab · prove the keyword does not fire in headless mode"
+  lessonId="en/l4-master/m16-orchestration/ultracode"
+  repoTag="lesson/m16-04-start"
+  steps={[
+    'In your lab clone at `lesson/m16-04-start`, run a headless prompt whose first word is the keyword: `claude -p "ultracode: list the names of the functions exported from src/store.ts" --model haiku --max-turns 6 --output-format json --allowedTools Read,Grep,Glob`',
+    "Pipe the envelope through jq and read `num_turns`, `total_cost_usd` and `modelUsage`: `jq '{subtype, num_turns, total_cost_usd, models: (.modelUsage|keys), spawned: .subagent_stats.spawned}'`",
+    'Note that the answer arrived turn by turn, on one model, for cents — no workflow was planned, and the keyword was treated as ordinary prompt text.',
+    'Now open an interactive session in the same directory and type the same prompt. Claude Code highlights the keyword; press `Option+W` (macOS) or `Alt+W` (Windows and Linux) to dismiss the highlight rather than running it.',
+    'Run `/config` and find the **Dynamic workflow size** row. Set it to `small` with `/config workflowSizeGuideline=small`, and confirm the workflow’s `Running in background` line reports `small size (/config)` on your next run.',
+  ]}
+  expected="The headless run returns subtype: success in two turns, on one model, with no workflow: the keyword reached the session with -p, which is one of the documented routes where it is not an opt-in. The interactive session highlights the same keyword."
+  checklist={[
+    '`num_turns` is small and no run directory was created under ~/.claude/projects/',
+    '`modelUsage` lists exactly the model you passed to --model',
+    'The cost is in cents, not dollars',
+    'The interactive session highlights the keyword; the headless one did not act on it',
+    'You can state the four routes where the keyword does not fire',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m16-orchestration/02-ultracode/01-keyword-in-headless.txt"
+    range="2-12"
+  />
+</Lab>
+
+Two things in that capture are worth stopping on. `spawned: 0` and a single entry in `modelUsage`
+say plainly that nothing was orchestrated — compare it with the same envelope for a real workflow run
+in `04-pipeline-lab`, where `modelUsage` carries two models and the run cost about thirty times as
+much. And the answer itself came back in Turkish: the machine that produced this
+recording has global Claude Code preferences asking for Turkish, and a `-p` session loads your
+preferences like any other. Your standing memory shapes headless runs too.
+
+## Anti-patterns
+
+**Putting `ultracode` in a scripted prompt and expecting orchestration.** In `-p`, in an SDK message
+without a human `origin`, in a scheduled task and in a relayed webhook or PR comment, the keyword is
+plain text. _Fix:_ in automation, ask for the `Workflow` tool explicitly and allow it — the keyword is
+a human's opt-in, not an API.
+
+**Leaving ultracode on all session.** It plans a workflow for every substantive task, including the
+ones that needed one delegated read. _Fix:_ `/effort high` for routine work; use the keyword for the
+one task that deserves a workflow.
+
+**Setting `CLAUDE_CODE_EFFORT_LEVEL` and then selecting ultracode.** Unless the variable is `xhigh`,
+requests run at the variable's level and the orchestration half stays inactive. _Fix:_ unset the
+variable, or use the `ultracode` settings key.
+
+**Quoting a cost multiplier for ultracode.** The docs give thresholds and caps, not a factor; the
+only published multiple — roughly 7× — is for agent teams whose teammates run in plan mode. _Fix:_
+measure your own run from the `/workflows` view or the JSON envelope's `total_cost_usd`, and quote
+that.
+
+**Treating the `Large workflow` warning as a limit.** It is advisory, it does not pause anything, and
+it does not appear at all when ultracode is on. _Fix:_ set a size guideline, and stop runs yourself
+from `/workflows`.
+
+<Callout variant="changed">
+  `--effort ultracode` requires Claude Code 2.1.203 or later; before that the flag printed `Unknown
+  --effort value 'ultracode'` and the session started at the default effort. And since 2.1.210 the
+  keyword no longer starts a workflow from a `-p` prompt, an unattributed SDK message, a scheduled
+  task or a relayed webhook or PR comment — before that version, it did.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m16-orchestration/ultracode"
+  questionId="q1"
+  lang="en"
+  prompt="Why is ultracode described as a setting rather than an effort level?"
+  options={[
+    {
+      text: 'It sends xhigh to the model and additionally has Claude orchestrate dynamic workflows',
+      correct: true,
+      explanation:
+        'Two things at once — which is why the effortLevel key and CLAUDE_CODE_EFFORT_LEVEL do not accept it.',
+    },
+    {
+      text: 'It is slower than max',
+      explanation: 'Speed is not what separates it; orchestration is.',
+    },
+    {
+      text: 'It only applies to subagents',
+      explanation: 'It applies to the session’s substantive tasks.',
+    },
+    {
+      text: 'It changes the model, not the effort',
+      explanation: 'It does not select a model; it needs one that supports xhigh.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m16-orchestration/ultracode"
+  questionId="q2"
+  lang="en"
+  prompt="A pull request comment relayed into a session contains the word ultracode. What happens?"
+  options={[
+    {
+      text: 'A workflow starts, using the repository owner’s quota',
+      explanation:
+        'That was true before 2.1.210. It is exactly the risk the current behaviour removes.',
+    },
+    {
+      text: 'Nothing special: the keyword is an opt-in only in a prompt you type yourself',
+      correct: true,
+      explanation:
+        'Relayed payloads, -p prompts, scheduled tasks and unattributed SDK messages do not trigger it.',
+    },
+    {
+      text: 'Claude Code asks you to approve the workflow',
+      explanation: 'No approval prompt appears, because no workflow is planned.',
+    },
+    {
+      text: 'The session switches to xhigh effort',
+      explanation: 'Effort is unchanged.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m16-orchestration/ultracode"
+  questionId="q3"
+  lang="en"
+  prompt="You set the size guideline to `small`. What have you actually done?"
+  options={[
+    {
+      text: 'Capped the run at 5 agents; the runtime rejects a sixth',
+      explanation: 'The guideline is advice to Claude, not a cap. The runtime caps are separate.',
+    },
+    {
+      text: 'Told Claude to aim for fewer than 5 agents, and moved the large-run warning threshold to that count',
+      correct: true,
+      explanation: 'A prompt that calls for a different scale can still override the guideline.',
+    },
+    {
+      text: 'Disabled the Large workflow warning',
+      explanation: 'Only turning ultracode on does that.',
+    },
+    {
+      text: 'Limited each agent to 5 turns',
+      explanation: 'It is about agent count, not turns.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m16-orchestration/ultracode"
+  questionId="q4"
+  lang="en"
+  prompt="Which cost statement is supported by the official docs?"
+  options={[
+    {
+      text: 'Ultracode costs about 7x a normal session',
+      explanation:
+        'The ~7x figure is for agent teams whose teammates run in plan mode, not for ultracode.',
+    },
+    {
+      text: 'A workflow warns you when it schedules more than 25 agents or projects more than 1.5M tokens — unless ultracode is on',
+      correct: true,
+      explanation: 'And the warning is advisory: it never pauses or limits the run.',
+    },
+    {
+      text: 'Workflow runs do not count toward plan usage limits',
+      explanation: 'They count like any other session.',
+    },
+    {
+      text: 'The runtime stops a run at $10',
+      explanation: 'There is no spend cap in the runtime; the caps are on agents and list sizes.',
+    },
+  ]}
+/>
+
+**Next:** `03-agent-teams-messaging` — the other two ways to run many Claudes at once, and the tools
+they talk to each other with.

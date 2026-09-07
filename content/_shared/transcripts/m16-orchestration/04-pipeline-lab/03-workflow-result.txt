@@ -1,0 +1,15 @@
+# 2026-09-07 · Claude Code 2.1.263 · same run as 02-workflow-json.txt
+# $ jq -r '.result' run.json
+Workflow tamamlandı (3 ajan: 1 tarayıcı + 2 bağımsız doğrulayıcı, hiçbir dosya değiştirilmedi). Doğrulanmış bulgu:
+
+**Onaylanan bulgu (her iki doğrulayıcı da "confirmed" dedi):**
+
+- **`src/store.ts:63`** — `paginate()` fonksiyonunda off-by-one hatası.
+  - Kod şu an `const start = page * pageSize;` şeklinde, ancak fonksiyonun kendi dokümantasyonu (satır 61) sayfaların 1-indeksli olduğunu ve sayfa 1'in ilk sayfa olduğunu belirtiyor.
+  - `page=1, pageSize=2` için bu, dilimlemeyi index 2'den başlatıyor — yani 1-2 numaralı öğeler değil 3-4 numaralı öğeler dönüyor, ve sayfa 1'deki ilk öğeler hiçbir şekilde alınamıyor.
+  - Bu, `BUGS.md`'de belgelenen **B1 (Off-by-one in pagination)** hatasının tam karşılığı; belgelenen düzeltme `const start = (page - 1) * pageSize;`.
+  - Her iki doğrulayıcı ajan da `git diff` ile bu satırın çalışma kopyasında (working tree) doğru olan `(page - 1) * pageSize`'dan tekrar hatalı `page * pageSize`'a geri döndürülmüş olduğunu teyit etti — yani daha önce düzeltilmiş bir hata yeniden ortaya çıkmış.
+
+Tarayıcı ajanının incelediği diğer adaylar (`isOverdue`, `addTask` doğrulaması, `loadFromDisk`'in ENOENT yönetimi, `listTasks`'ın filtre/sıralaması) beklenen doğru davranışla eşleşti ve bulgu olarak raporlanmadı, dolayısıyla doğrulama aşamasına hiç girmedi.
+
+**Sonuç:** Tek doğrulanmış bulgu B1'in yeniden ortaya çıkmış hali (`src/store.ts:63`). Hiçbir dosyada değişiklik yapılmadı.

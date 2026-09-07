@@ -1,0 +1,41 @@
+---
+title: 'Workflow tool: ajanları orkestre eden script'
+description: 'Dinamik bir workflow, Claude’un yazdığı ve bir runtime’ın çalıştırdığı bir JavaScript scriptidir: agent(), pipeline(), parallel(), phase() ve JSON şemalarıyla onlarca subagent arka planda çalışırken sizin context’inizde yalnızca sonuç kalır.'
+level: 4
+module: 'm16-orchestration'
+order: 1
+duration_min: 20
+difficulty: core
+tags: ['workflow', 'orkestrasyon', 'subagent', 'şema']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Orchestrate subagents at scale with dynamic workflows'
+    url: 'https://code.claude.com/docs/en/workflows.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run agents in parallel'
+    url: 'https://code.claude.com/docs/en/agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Create custom subagents'
+    url: 'https://code.claude.com/docs/en/sub-agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Agent SDK TypeScript reference'
+    url: 'https://code.claude.com/docs/en/agent-sdk/typescript.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m16-04-start'
+---
+
+## Özet
+
+Bu ders, dinamik workflow'u (iş akışı) diğer paralel çalışma yollarından ayıran tek soruyla başlar: planı kim tutuyor? Subagent'larda, skill'lerde ve agent team'lerde planı Claude tutar ve her ara sonuç bir context window'a düşer; workflow'da ise planı script tutar, ara sonuçlar script değişkenlerinde kalır ve Claude'un context'ine yalnızca nihai cevap gelir. Ders, gerçek bir çalıştırmadan üretilmiş bir script üzerinden `export const meta` bloğunu, `phase()`, `agent()`, `parallel()`, `pipeline()` ve `log()` çağrılarını, `args` global'ini ve bir aşamadan diğerine sözleşme görevi gören JSON şemalarını satır satır okur. Runtime'ın sınırlarını (16 eşzamanlı ajan, tek çağrıda 4.096 öğe, çalıştırma başına 1.000 ajan, `import()` yasağı, `Date.now()`/`Math.random()`'ın hata fırlatması) ve her çalıştırmanın scriptini `~/.claude/projects/` altına yazdığını gösterir. Laboratuvarda küçük bir workflow headless olarak başlatılır — `-p` oturumunda onay diyaloğu olmadığı için `Workflow` tool'una izin verilerek — ve Claude'un yazdığı script ile çalıştırma dizini kendi gözünüzle incelenir.
+
+<Callout label="Çeviri bekleniyor">
+  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
+  İngilizce mevcuttur.
+</Callout>

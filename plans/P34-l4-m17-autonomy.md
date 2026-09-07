@@ -2,8 +2,8 @@
 id: P34
 title: "L4 Master module: Autonomy (m17-autonomy)"
 milestone: M2
-status: todo
-owner: null
+status: in_progress
+owner: lead-fable
 branch: plan/34-l4-m17-autonomy
 model_hint: opus
 effort_hint: high
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-07T19:26:13Z
 open_questions: []
 ---
 

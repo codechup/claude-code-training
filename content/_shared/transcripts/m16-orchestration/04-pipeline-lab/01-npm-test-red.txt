@@ -1,0 +1,107 @@
+# 2026-09-07 · Claude Code 2.1.263 · lab repo lesson/m16-04-start, B1 reintroduced in src/store.ts
+# $ npm test; echo "exit=$?"
+
+> claude-code-lab@1.0.0 test
+> vitest run
+
+
+ RUN  v5.0.0 <lab-clone>
+
+ ❯ test/store.test.ts (6 tests | 2 failed) 11ms
+   ❯ paginate (2)
+     × page 1 returns the first page, not the second 6ms
+     × page 2 continues right after page 1 1ms
+ ❯ test/api.test.ts (4 tests | 2 failed) 118ms
+   ❯ labtrack API (4)
+     × POST /tasks then GET /tasks returns it 18ms
+     × GET /tasks?page=1&pageSize=2 returns the first two items, in order 67ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  test/api.test.ts > labtrack API > POST /tasks then GET /tasks returns it
+AssertionError: expected [] to include 'write docs'
+ ❯ test/api.test.ts:41:44
+     39|     const list = await fetch(`${baseUrl}/tasks`);
+     40|     const body = (await list.json()) as { items: Array<{ title: string…
+     41|     expect(body.items.map((t) => t.title)).toContain("write docs");
+       |                                            ^
+     42|   });
+     43|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  test/api.test.ts > labtrack API > GET /tasks?page=1&pageSize=2 returns the first two items, in order
+AssertionError: expected [ 'c', 'd' ] to deeply equal [ 'a', 'b' ]
+
+- Expected
++ Received
+
+  [
+-   "a",
+-   "b",
++   "c",
++   "d",
+  ]
+
+ ❯ test/api.test.ts:63:44
+     61|     const res = await fetch(`${baseUrl}/tasks?page=1&pageSize=2`);
+     62|     const body = (await res.json()) as { items: Array<{ title: string …
+     63|     expect(body.items.map((t) => t.title)).toEqual(["a", "b"]);
+       |                                            ^
+     64|   });
+     65| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  test/store.test.ts > paginate > page 1 returns the first page, not the second
+AssertionError: expected [ 'task 3', 'task 4' ] to deeply equal [ 'task 1', 'task 2' ]
+
+- Expected
++ Received
+
+  [
+-   "task 1",
+-   "task 2",
++   "task 3",
++   "task 4",
+  ]
+
+ ❯ test/store.test.ts:30:39
+     28|     const all = listTasks();
+     29|     const page1 = paginate(all, 1, 2);
+     30|     expect(page1.map((t) => t.title)).toEqual(["task 1", "task 2"]);
+       |                                       ^
+     31|   });
+     32|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  test/store.test.ts > paginate > page 2 continues right after page 1
+AssertionError: expected [ 'task 5' ] to deeply equal [ 'task 3', 'task 4' ]
+
+- Expected
++ Received
+
+  [
+-   "task 3",
+-   "task 4",
++   "task 5",
+  ]
+
+ ❯ test/store.test.ts:37:39
+     35|     const all = listTasks();
+     36|     const page2 = paginate(all, 2, 2);
+     37|     expect(page2.map((t) => t.title)).toEqual(["task 3", "task 4"]);
+       |                                       ^
+     38|   });
+     39| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  2 failed | 3 passed (5)
+      Tests  4 failed | 13 passed (17)
+   Start at  22:35:18
+   Duration  363ms (transform 41%, tests 29%, import 25%, worker 4%)
+
+exit=1

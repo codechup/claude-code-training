@@ -1,0 +1,331 @@
+---
+title: 'Lab: a review → verify → fix pipeline'
+description: 'Reintroduce a real bug into the lab repo, then run a three-agent workflow that finds it, has two independent agents verify the finding, and only then lets anything be changed — and read what the run actually cost.'
+level: 4
+module: 'm16-orchestration'
+order: 4
+duration_min: 30
+difficulty: core
+tags: ['workflows', 'pipeline', 'lab', 'code-review']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Orchestrate subagents at scale with dynamic workflows'
+    url: 'https://code.claude.com/docs/en/workflows.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Create custom subagents'
+    url: 'https://code.claude.com/docs/en/sub-agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run Claude Code programmatically'
+    url: 'https://code.claude.com/docs/en/headless.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Agent SDK TypeScript reference'
+    url: 'https://code.claude.com/docs/en/agent-sdk/typescript.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'claude-code-lab (tag lesson/m16-04-start)'
+    url: 'https://github.com/codechup/claude-code-lab/tree/lesson/m16-04-start'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m16-04-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Run a multi-phase workflow end to end against a real repository, headlessly and reproducibly.
+- Design a pipeline whose middle phase is a cheap, read-only gate between "an agent thinks there is a bug" and "an agent edited the file".
+- Prove from the run's own artefacts — the journal, the persisted script, the JSON envelope — how many agents ran, which ran together, and what it cost.
+- Decide, from evidence, whether the extra phase paid for itself.
+
+**Prerequisites.** Lessons `01-workflows` and `02-ultracode`. A clone of the lab repository and Node 24. The lab runs headlessly, so nothing here needs an interactive terminal.
+
+<WhenNotToUse>
+  This pipeline shape earns its cost when a false positive would be expensive — an unwanted edit, a
+  wrong fix committed on a Friday — and when the review can be split into independent lenses. It is
+  the wrong shape for a change you already understand (just make it), for a repo whose test suite
+  already tells you the answer in three seconds, and for anything where you want to inspect each
+  stage before the next: a workflow takes no input once it starts, so a pipeline that needs your
+  sign-off between review and fix should be two workflows, not one.
+</WhenNotToUse>
+
+## Concept
+
+### Why three phases and not one
+
+A single "review and fix this file" agent conflates two failure modes. A false-positive finding
+becomes a real, unwanted code change; and there is no checkpoint between the model's opinion and the
+edit. Splitting **review** from **verify** inserts a cheap, read-only gate: the verifier re-reads the
+actual file, rather than trusting the reviewer's description of it, and only findings that survive
+reach a phase that can write anything.
+
+The pipeline you build here:
+
+1. **Review** (read-only). One agent reads `src/store.ts`, lists candidate correctness bugs, each
+   with a stable id, a `file:line` pointer and a one-line summary. It answers into a JSON schema, so
+   the next phase gets fields, not prose.
+2. **Verify** (read-only, independent, in parallel). Two agents receive the same candidate list and
+   independently re-check each one against the file and `BUGS.md`, returning `confirmed` or
+   `rejected` with a reason. Two verifiers, not one, so a single agent's misreading does not decide.
+3. **Fix** (write access, scoped). Only findings both verifiers confirmed reach it; it applies the
+   minimal change, runs `npm test` and `npm run typecheck` after each one, and stops if either goes
+   red.
+
+The lab runs phases 1 and 2 for real, read-only, and leaves phase 3 as a scoped extension — which is
+also the honest ordering: run the read-only slice first, look at what it costs and what it found,
+then decide whether to give an agent write access.
+
+### The shape of the script
+
+Claude writes the script; you describe the task. The script it wrote for this exact task is the one
+`01-workflows` dissected — `phase('Find')`, one `agent()` with a findings schema, then
+`phase('Verify')` and a `parallel([...])` of two schema-shaped verifier agents, with the confirmed
+set computed by intersecting the two verdict maps in plain JavaScript. Note where the intersection
+happens: **in the script**, not in an agent. Consensus logic is exactly the kind of thing that should
+be code you can read, not a judgement you have to trust.
+
+The one worked example prompt for this lesson is the one the lab runs:
+
+```text
+Use a workflow with exactly 3 agents to review src/store.ts in this repo for
+correctness bugs: one agent lists candidate findings with file:line pointers,
+then two agents independently verify each candidate against the file and
+BUGS.md and mark it confirmed or rejected. Do not edit any file. Wait for the
+workflow to finish and report the confirmed findings only.
+```
+
+Three constraints in that prompt do real work: **exactly 3 agents** bounds the run, **do not edit any
+file** keeps the whole thing read-only, and **wait for the workflow to finish** asks the session to
+report the finished result — a workflow runs in the background by design, so say what you want back.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · run a review → verify pipeline over a reintroduced bug"
+  lessonId="en/l4-master/m16-orchestration/pipeline-lab"
+  repoTag="lesson/m16-04-start"
+  steps={[
+    'Check out the tag and install: `git checkout lesson/m16-04-start && npm ci`. Read `WORKFLOW.md` at the matching `-solution` tag if you want the brief this lab was built from.',
+    'Reintroduce bug B1 from `BUGS.md` with a one-line edit in `src/store.ts`: change `const start = (page - 1) * pageSize;` to `const start = page * pageSize;`.',
+    'Prove the bug is live: `npm test` now fails four tests — two in `test/store.test.ts` and two in `test/api.test.ts`, because the CLI and the API are both thin wrappers over the same function.',
+    'Run the pipeline headlessly with the prompt above: `--model sonnet --max-turns 12 --output-format json --allowedTools "Workflow,Read,Grep,Glob" --settings \'{"workflowSizeGuideline":"small"}\'`, redirecting stdout to `run.json`.',
+    "Read the envelope: `jq '{subtype, is_error, num_turns, duration_api_ms, total_cost_usd, models: (.modelUsage|keys), spawned: .subagent_stats.spawned}' run.json`.",
+    "Read the report: `jq -r '.result' run.json`. Check that the confirmed finding is B1 at the line you edited — and that nothing else was reported as confirmed.",
+    "Count the agents from the run’s own journal: `jq -c '{type, agentId}' ~/.claude/projects/*/<session-id>/subagents/workflows/*/journal.jsonl`. Three distinct agent ids, and the two verifiers start before the first one’s result is followed by anything else.",
+    'Confirm nothing was written: `git status` shows only your one-line change.',
+  ]}
+  expected="npm test fails four tests before the run. The workflow returns subtype: success with exactly one confirmed finding — the off-by-one at src/store.ts:63 — and both verifiers agree. The journal shows three agents: one Find agent, then two Verify agents started back to back. The repository is unchanged apart from the bug you introduced."
+  checklist={[
+    'The four failing tests are the two paginate tests and the two API list tests',
+    '`subtype` is `success` and `permission_denials` is empty',
+    'The report names `src/store.ts` and the off-by-one, and matches B1 in `BUGS.md`',
+    'The journal has three distinct `agentId` values, with two `started` lines back to back',
+    '`subagent_stats.spawned` is 0 even though three agents ran — workflow agents are not counted there',
+    '`git status` shows only the one-line change you made in step 2',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m16-orchestration/04-pipeline-lab/01-npm-test-red.txt"
+    range="2-18"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m16-orchestration/04-pipeline-lab/02-workflow-json.txt"
+    range="2-14"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m16-orchestration/04-pipeline-lab/03-workflow-result.txt"
+    range="2-15"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m16-orchestration/04-pipeline-lab/04-journal.txt"
+    range="2-8"
+  />
+</Lab>
+
+Four things in those recordings deserve a second look.
+
+**The journal is the proof, not the summary.** Six lines, three agent ids: one `started`/`result`
+pair for the finder, then two `started` lines back to back — the parallel verifiers — and their two
+results. A model's claim that it "ran three agents" is not evidence; this file is.
+
+**`subagent_stats.spawned` is 0.** The envelope's subagent counters stayed empty even though three
+agents did the work. The docs do not describe how workflow agents appear in those counters, so take
+this as an observation from this run rather than a documented rule — but a useful one: if you are
+asserting in CI that delegation happened, assert on the run directory and the journal, not on
+`subagent_stats`.
+
+**`modelUsage` lists two models.** The session ran with `--model sonnet`, and the envelope recorded
+usage under both `claude-sonnet-5` and `claude-fable-5-1` for a total of $0.94 against $0.03 for the
+plain headless question in `02-ultracode`. The Agent SDK reference says `modelUsage` carries per-model
+totals for every model call made through the query pipeline, "including the main loop, subagents, and
+internal calls such as compaction and Workflow agents", and `workflows.md` says workflow agents follow
+the same model-selection order as subagents; which stage of this run used the second model is not
+something the envelope alone tells you. Read it as: orchestration is not free, and its cost is not all on the model you
+named.
+
+**The report came back in Turkish.** The machine that produced this recording has global Claude Code
+preferences asking for Turkish answers, and a workflow's final report is written by your session like
+any other answer. The finding itself is right — `src/store.ts:63`, both verifiers `confirmed`, cross
+-checked against `BUGS.md`'s B1 — but the language is a reminder that your standing memory reaches
+into orchestrated runs too.
+
+### Extending it to a fix phase
+
+Once the read-only slice does what you expect, add the third phase — deliberately, and scoped:
+
+<CodeBlock title="the fix phase, added to the prompt">
+
+```text
+...then, for each confirmed finding only, apply the minimal fix to the file
+named in that finding, run npm test and npm run typecheck after each change,
+and stop immediately if either goes red.
+```
+
+</CodeBlock>
+
+Give the run `--permission-mode acceptEdits` and add `Edit`, `Bash(npm test)` and
+`Bash(npm run typecheck)` to `--allowedTools`.
+Two rules keep it safe: the fix agent may only touch the files named in confirmed findings, and a red
+suite stops the pipeline rather than triggering a fix-the-fix loop. If you would not let a colleague
+push the change unreviewed, do not let phase 3 run unattended either.
+
+## Anti-patterns
+
+**A verifier that rubber-stamps.** If every finding comes back `confirmed`, the phase is decoration.
+_Fix:_ make the verifier re-read the file at the given line rather than judging the reviewer's
+description, and check its verdicts against a case you know is not a bug.
+
+**One verifier.** A single second opinion that agrees with the first is the same opinion twice when
+both read the same prose. _Fix:_ two independent verifiers, and compute the intersection in the
+script.
+
+**A fix phase with unscoped tools.** An agent with `Edit` and no boundary wanders into files nobody
+reviewed. _Fix:_ scope the tools, and name the files it may touch in the finding it is acting on.
+
+**No stop condition.** A pipeline that keeps fixing after the suite goes red will happily fix its own
+fix. _Fix:_ stop on red and hand it back to a person.
+
+**Believing the summary over the artefacts.** The final report is a model's account of the run.
+_Fix:_ read `journal.jsonl`, the persisted script and `git status` — all three exist precisely so you
+do not have to take the summary's word.
+
+<Callout variant="changed">
+  In `claude -p` there is never a workflow approval dialog; the run starts only if the `Workflow`
+  call passes ordinary permission evaluation. That is why the lab passes `--allowedTools
+  "Workflow,Read,Grep,Glob"` — an allow rule naming `Workflow` approves every workflow, and
+  `Workflow(<name>)` approves one saved workflow by name. Verified against `workflows.md` for 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m16-orchestration/pipeline-lab"
+  questionId="q1"
+  lang="en"
+  prompt="What does the verify phase buy you that a single review-and-fix agent does not?"
+  options={[
+    {
+      text: 'A read-only checkpoint between “an agent thinks there is a bug” and “an agent edited the file”',
+      correct: true,
+      explanation: 'A false positive costs a rejected verdict instead of an unwanted commit.',
+    },
+    { text: 'Speed', explanation: 'It adds a phase; it does not make the run faster.' },
+    {
+      text: 'Fewer tokens',
+      explanation: 'More agents, more tokens. The gate buys correctness, not economy.',
+    },
+    {
+      text: 'A guarantee the fix is right',
+      explanation: 'It raises the bar for what reaches the fix phase; nothing guarantees a fix.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m16-orchestration/pipeline-lab"
+  questionId="q2"
+  lang="en"
+  prompt="After the run, `subagent_stats.spawned` is 0. What does that tell you?"
+  options={[
+    {
+      text: 'The workflow never started',
+      explanation:
+        'The run directory, the journal and the report all exist — three agents did run.',
+    },
+    {
+      text: 'Nothing about the workflow: its agents run in the workflow runtime, not as conversation subagents',
+      correct: true,
+      explanation: 'Assert on the journal and the run directory instead.',
+    },
+    {
+      text: 'The agents failed and returned null',
+      explanation: 'A null result would still be a spawned agent, and the journal shows results.',
+    },
+    {
+      text: 'The size guideline blocked them',
+      explanation: 'The guideline is advice about how many agents to aim for, not a block.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m16-orchestration/pipeline-lab"
+  questionId="q3"
+  lang="en"
+  prompt="Where should the “both verifiers agreed” logic live?"
+  options={[
+    {
+      text: 'In the script, as plain JavaScript over the two schema-shaped results',
+      correct: true,
+      explanation: 'Consensus is code you can read and rerun, not a judgement you have to trust.',
+    },
+    {
+      text: 'In a fourth agent that reads both verdict lists',
+      explanation:
+        'That adds an agent, a context window and another opinion to a purely mechanical step.',
+    },
+    {
+      text: 'In the fix agent’s prompt',
+      explanation:
+        'The fix phase should receive confirmed findings, not decide what counts as one.',
+    },
+    {
+      text: 'In the meta block',
+      explanation: 'meta holds name, description and phases — literal values only.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m16-orchestration/pipeline-lab"
+  questionId="q4"
+  lang="en"
+  prompt="A run starts agents A, B, C and D in that order. B fails. You relaunch the workflow. What runs again?"
+  options={[
+    {
+      text: 'B, C and D — a failed agent reruns, and so does every agent that started after it',
+      correct: true,
+      explanation:
+        'A returns its cached result. That is why a mid-fan-out failure reruns work that had finished.',
+    },
+    { text: 'Only B', explanation: 'Everything that started after the failure runs again too.' },
+    {
+      text: 'All four',
+      explanation: 'Completed agents before the failure return their saved results.',
+    },
+    {
+      text: 'Nothing — a stopped run cannot be relaunched',
+      explanation:
+        'You can relaunch within the same session; Claude Code replays in the order agents started.',
+    },
+  ]}
+/>
+
+**Next:** `05-designing-multi-agent` — the roles, contracts and hand-offs behind a pipeline like this
+one, and the failure modes to design against.

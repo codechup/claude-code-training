@@ -1,0 +1,348 @@
+---
+title: 'Designing a multi-agent pipeline: roles, contracts, hand-offs'
+description: 'Choose the right primitive, give each agent one job and one output shape, put the decisions in code rather than in a prompt, and design against the failure modes that only appear once several agents are running.'
+level: 4
+module: 'm16-orchestration'
+order: 5
+duration_min: 20
+difficulty: advanced
+tags: ['orchestration', 'design', 'workflows', 'agent-teams', 'failure-modes']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Orchestrate subagents at scale with dynamic workflows'
+    url: 'https://code.claude.com/docs/en/workflows.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Orchestrate teams of Claude Code sessions'
+    url: 'https://code.claude.com/docs/en/agent-teams.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run agents in parallel'
+    url: 'https://code.claude.com/docs/en/agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Create custom subagents'
+    url: 'https://code.claude.com/docs/en/sub-agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'How Claude Code uses prompt caching'
+    url: 'https://code.claude.com/docs/en/prompt-caching.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m16-04-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Pick between a subagent, a skill, an agent team and a workflow for a given task, and defend the choice in one sentence.
+- Write a role as a job plus an output shape, and say why the shape is the contract.
+- Decide what belongs in a prompt and what belongs in the script.
+- Name the failure modes that only appear with several agents — rubber-stamping, unscoped writes, replay cost, non-determinism, coordination overhead — and the design that prevents each.
+- Size a run: how many agents, how big a task, and where the human sign-off goes.
+
+**Prerequisites.** Lessons `01-workflows` through `04-pipeline-lab`. This lesson has no new API in it: it is about the decisions you make before you write the prompt.
+
+<WhenNotToUse>
+  Do not design a pipeline for a problem you have not yet solved once by hand. Orchestration
+  multiplies whatever your process already is: if the review criteria are vague, five agents produce
+  five vague reviews and a synthesis that averages them. And do not orchestrate to feel thorough —
+  more agents means more tokens, more coordination and more surface for one bad hand-off to poison
+  the result. A single well-prompted session with a test suite beats a badly designed team every
+  time.
+</WhenNotToUse>
+
+## Concept
+
+### Choose the primitive first
+
+Four mechanisms can run a multi-step task, and the deciding question is who holds the plan and where
+intermediate results live.
+
+- **Subagent** — a worker Claude spawns for a side task whose intermediate output you never want to
+  see. Cheapest. Choose it when only the result matters.
+- **Skill** — instructions Claude follows in its own context. Choose it when the work is a procedure,
+  not a fan-out.
+- **Agent team** — peer sessions with a shared task list, supervised by a lead, able to challenge
+  each other. Choose it when the value comes from discussion between the workers — competing
+  hypotheses, cross-layer work — and you are willing to pay for it.
+- **Workflow** — a script the runtime executes, holding the loop, the branching and the intermediate
+  results. Choose it when the same step runs across many items, when the orchestration itself should
+  be repeatable, or when you want a quality pattern (cross-checking, adversarial review) applied the
+  same way every time.
+
+A blunt heuristic that follows from the docs' own numbers: a handful of long-running peers is a team;
+dozens to hundreds of agents per run is a workflow; a few delegated tasks per turn is a subagent.
+
+### A role is a job plus an output shape
+
+The pipeline in `04-pipeline-lab` has three roles, and each one is a single job:
+
+| Role   | Job                                              | Sees                         | May write            | Returns                                                |
+| ------ | ------------------------------------------------ | ---------------------------- | -------------------- | ------------------------------------------------------ |
+| Review | Find candidate correctness bugs                  | The file, `BUGS.md`          | Nothing              | `{ findings: [{ id, file, line, summary, details }] }` |
+| Verify | Re-check each candidate independently            | The candidate list, the file | Nothing              | `{ verdicts: [{ id, verdict, reason }] }`              |
+| Fix    | Apply the minimal change for a confirmed finding | The confirmed findings       | Only the named files | The change plus a test result                          |
+
+The `schema` on an `agent()` call is not decoration: it is the **contract** between stages. Prose
+hand-offs force the next agent to re-derive structure before it can act, and a re-derivation is a
+place to be wrong. A stable `id` field matters as much as the rest — it is what lets a downstream
+stage join two agents' answers together without matching on text.
+
+Note what the roles do _not_ share: the verifier does not receive the reviewer's reasoning as
+authority, only its claims. Independence is the whole point of the phase.
+
+### Put the decisions in the script
+
+Once two agents have answered, something has to decide what "both agreed" means. That belongs in the
+script, in plain JavaScript, where you can read it, diff it between runs and rerun it — not in a
+fourth agent's judgement. The generated script from the lab does exactly this, intersecting the two
+verdict maps and passing on only the findings both marked `confirmed`.
+
+The general rule: **agents for judgement that needs a model, code for logic that does not.**
+Filtering, joining, counting, thresholding, deduplicating and ordering are code. Reading a file and
+forming an opinion about it is an agent.
+
+The runtime pushes you the same way. A script cannot touch the filesystem or the shell, cannot load
+modules, and cannot call `Date.now()`, `Math.random()` or a no-argument `new Date()` — those throw,
+so that a relaunched run repeats the same `agent()` calls. Determinism in the orchestration is a
+feature: it is what makes a resumed run replay rather than re-guess.
+
+### Design the hand-offs, and the failures
+
+Every hand-off is a place where a run quietly goes wrong. The five that matter:
+
+**Rubber-stamping.** A verifier that reads the reviewer's description instead of the file confirms
+everything. _Design against it:_ give the verifier the pointer, not the argument; make it re-read;
+and run a control case you know is clean.
+
+**Unscoped writes.** A fix agent with `Edit` and no boundary edits files nobody reviewed. _Design
+against it:_ scope tools per role, name the files in the finding, and stop on a red test rather than
+letting a fix-the-fix loop start.
+
+**Replay cost.** When an agent fails mid-fan-out, relaunching returns the completed agents _before_
+it from cache but reruns it and everything that started after it — so a failure at the front of a
+wide fan-out is expensive. _Design against it:_ keep fan-outs of expensive agents narrow, put cheap
+discovery first, and let `agent()`'s `null` result be handled (`pipeline()` keeps the `null` in the
+array) rather than crashing the script.
+
+**Coordination overhead.** For teams, the docs are concrete: start with 3–5 teammates, aim for 5–6
+tasks each, and expect diminishing returns — three focused teammates often outperform five scattered
+ones. Two teammates editing the same file overwrite each other; nothing arbitrates. _Design against
+it:_ disjoint file ownership, and self-contained tasks that produce a clear deliverable.
+
+**No place for a human.** A workflow takes no input once it starts. If a stage genuinely needs your
+sign-off, it is a boundary between two workflows, not a phase inside one.
+
+### Sizing and cost, deliberately
+
+Set a size guideline (`small` is fewer than 5 agents, `medium` fewer than 15, `large` fewer than 50)
+and remember it is advice to Claude, not a cap; the runtime's caps — 16 concurrent agents, 4,096
+items per `parallel()`/`pipeline()` call, 1,000 agents per run — are the real ceiling. Run a small
+slice first: one directory, one narrow question. Ask for a smaller model on stages that do not need
+the strongest one, since workflow agents follow the same model-selection order as subagents.
+
+One efficiency detail worth designing for: agents in the same run can read each other's prompt cache
+when they match on model, effort level, agent type, tools, output schema and working directory. In a
+fan-out, Claude Code holds all but the first agent until the first response begins — capped by
+`CLAUDE_CODE_WORKFLOW_PREFIX_STAGGER_MS`, 5,000 ms by default — so the rest read the cached prefix.
+Practically: **make the agents in one fan-out identical except for their input.** Ten agents with ten
+different tool lists throw that away.
+
+## Hands-on lab
+
+<Callout>
+  This lab has no new commands: it is a design review of a run you already made in
+  `04-pipeline-lab`, using its own artefacts as the evidence. If you skipped that lesson, run it
+  first — the script below is the one that run produced.
+</Callout>
+
+<Lab
+  title="Lab · review the orchestration your own run produced"
+  lessonId="en/l4-master/m16-orchestration/designing-multi-agent"
+  repoTag="lesson/m16-04-start"
+  steps={[
+    'Open the persisted script from your pipeline run: `~/.claude/projects/*/<session-id>/workflows/scripts/*.js`.',
+    'For each `agent()` call, write down its role in five words, what it may write, and the exact shape it returns. If you cannot name the output shape, the stage has no contract — that is the finding.',
+    'Find every decision the script makes without an agent (filters, joins, intersections). Ask, for each, whether a model was needed. Then find every decision an agent makes that could have been code.',
+    'Identify the control case: which candidate did the verifiers reject, and why? If they confirmed everything, add a deliberately harmless line to `src/store.ts` and rerun the read-only pipeline to see whether the verify phase catches it.',
+    'Cost the design: from the JSON envelope, divide `total_cost_usd` by the number of agents in the journal, then estimate the same task as a single delegated subagent. Write one sentence saying whether the verify phase paid for itself.',
+    'Rewrite the run as an agent team in prose only — who the lead is, what each teammate owns, what would go in the shared task list — and say in one sentence why the workflow is or is not the better fit here.',
+  ]}
+  expected="A short written design review: three roles with their contracts, the list of decisions that live in code rather than in an agent, one control case, a per-agent cost, and a defensible answer to 'workflow or team?' for this task."
+  checklist={[
+    'Every `agent()` call in the script has a one-job description and a named output shape',
+    'You can point at the line where the script decides consensus, and it is not an agent',
+    'You have a rejected finding, or a rerun that produced one',
+    'You have a per-agent cost from your own envelope, not an estimate',
+    'Your team-versus-workflow answer names who holds the plan',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m16-orchestration/01-workflows/01-generated-script.txt"
+    range="2-7"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m16-orchestration/01-workflows/01-generated-script.txt"
+    range="72-88"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m16-orchestration/04-pipeline-lab/04-journal.txt"
+    range="2-8"
+  />
+</Lab>
+
+The tail of that script is the design in miniature: two verifier agents constrained by the same
+schema, then four lines of plain JavaScript that decide what survives. Everything a model was needed
+for happens inside `agent()`; everything else is code you can read in ten seconds. When you review
+your own pipelines, that ratio is the first thing to look at.
+
+## Anti-patterns
+
+**Roles that overlap.** "Reviewer" and "second reviewer" with the same prompt produce correlated
+opinions and cost twice as much. _Fix:_ give each role a different lens (security, performance, test
+coverage) or a different job (find, verify, fix) — never the same job twice.
+
+**A synthesis agent that is really a filter.** Spawning an agent to merge two lists is paying a
+context window for an intersection. _Fix:_ merge in the script; use an agent for synthesis only when
+it must weigh, rank or explain.
+
+**Prompts that carry structure.** "Report findings as a numbered list" is a schema written in the
+weakest possible way. _Fix:_ pass a `schema` and let the runtime enforce the shape.
+
+**A fan-out of heterogeneous agents.** Different tools, models or schemas per agent throw away the
+shared prompt-cache prefix and pay for the same preamble many times. _Fix:_ keep a fan-out uniform;
+vary the input, not the configuration.
+
+**Designing for the happy path.** Agents fail, get stopped, and hit API errors; `agent()` then
+resolves to `null`, and a relaunch reruns everything downstream of the failure. _Fix:_ handle `null`,
+keep expensive fan-outs narrow, and put cheap stages first.
+
+**Orchestrating away a missing checkpoint.** If what you actually want is to look at the findings
+before anything is changed, no amount of phases inside one workflow gives you that. _Fix:_ two
+workflows, with you in between.
+
+<Callout variant="changed">
+  Agent teams are experimental and off by default (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`), and
+  they cannot be nested — teammates cannot spawn teammates, and only the lead manages the team. Any
+  design you read from 2025-era material that assumes explicit team creation is out of date: the
+  `TeamCreate`/`TeamDelete` tools no longer exist as of 2.1.178.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m16-orchestration/designing-multi-agent"
+  questionId="q1"
+  lang="en"
+  prompt="Five hundred files need the same mechanical migration, each verified afterwards. Which primitive?"
+  options={[
+    {
+      text: 'A workflow: the same step across many items, with the orchestration itself repeatable',
+      correct: true,
+      explanation:
+        'pipeline() runs one agent per item; the runtime caps and the size guideline bound the run.',
+    },
+    {
+      text: 'An agent team of ten teammates',
+      explanation:
+        'Teams are a handful of long-running peers, and coordination overhead grows with the count.',
+    },
+    {
+      text: 'One subagent with a very long prompt',
+      explanation: 'One context window cannot hold five hundred files of work.',
+    },
+    {
+      text: 'A skill',
+      explanation: 'A skill is a procedure Claude follows, not a fan-out mechanism.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m16-orchestration/designing-multi-agent"
+  questionId="q2"
+  lang="en"
+  prompt="Why is a JSON schema on an agent() call called the contract between stages?"
+  options={[
+    {
+      text: 'It fixes the fields the next stage can rely on, so no agent has to re-derive structure from prose',
+      correct: true,
+      explanation:
+        'A stable id also lets the script join two agents’ answers without matching on text.',
+    },
+    {
+      text: 'It stops the agent from using tools it should not',
+      explanation: 'Tool scoping does that; the schema shapes the answer.',
+    },
+    { text: 'It caches the result', explanation: 'Caching is about prompt prefixes, not schemas.' },
+    {
+      text: 'It makes the agent deterministic',
+      explanation: 'It constrains the output’s shape, not the reasoning.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m16-orchestration/designing-multi-agent"
+  questionId="q3"
+  lang="en"
+  prompt="Your pipeline must not change anything until you have read the findings. How do you build that?"
+  options={[
+    {
+      text: 'Run the read-only stages as one workflow, read the report, then run the fix as a second workflow',
+      correct: true,
+      explanation:
+        'A workflow takes no input once it starts, so a sign-off is a boundary between runs.',
+    },
+    {
+      text: 'Add an approval phase inside the workflow',
+      explanation: 'There is no mid-run user input; only agent permission prompts can pause a run.',
+    },
+    {
+      text: 'Pause the run in /workflows and resume it after reading',
+      explanation:
+        'Pausing helps you stop a run, but the script has no place to receive your decision.',
+    },
+    {
+      text: 'Use ultracode so Claude asks first',
+      explanation: 'Ultracode removes prompts rather than adding them.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m16-orchestration/designing-multi-agent"
+  questionId="q4"
+  lang="en"
+  prompt="Which fan-out design makes best use of prompt caching?"
+  options={[
+    {
+      text: 'Agents that differ only in their input, sharing model, effort, agent type, tools, schema and working directory',
+      correct: true,
+      explanation:
+        'They build the same prefix, so all but the first read the cache the first one wrote.',
+    },
+    {
+      text: 'Each agent on a different model, to spread load',
+      explanation: 'A different model means a different prefix and no shared cache.',
+    },
+    {
+      text: 'Each agent with its own tool list, scoped to its file',
+      explanation:
+        'Tool lists are part of the prefix; per-agent lists throw the shared cache away.',
+    },
+    {
+      text: 'Starting all agents at exactly the same moment',
+      explanation:
+        'Claude Code deliberately holds the rest until the first response begins, so they can read its cache.',
+    },
+  ]}
+/>
+
+**Next:** `m17-autonomy` picks up where orchestration stops — loops, routines and goals that run
+without you starting each one.

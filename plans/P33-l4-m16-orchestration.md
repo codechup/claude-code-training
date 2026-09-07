@@ -2,8 +2,8 @@
 id: P33
 title: "L4 Master module: Orchestration (m16-orchestration)"
 milestone: M2
-status: todo
-owner: null
+status: review
+owner: lead-fable
 branch: plan/33-l4-m16-orchestration
 model_hint: opus
 effort_hint: high
@@ -15,8 +15,11 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-06T00:00:00Z
-open_questions: []
+updated_at: 2026-09-07T23:33:43Z
+open_questions:
+  - "The docs do not state how a workflow run's agents are reflected in the headless JSON envelope's `subagent_stats` counters. This run observed `spawned: 0` while three workflow agents demonstrably ran (journal + run directory). 04-pipeline-lab reports this as an observation, explicitly not as documented behaviour."
+  - "The exact pre-2.1.203 error text for `--effort ultracode` is not on the live `workflows.md` or `model-config.md`; only the 2.1.203 version gate is. The lesson keeps the version gate and drops the quoted string."
+  - "The lab repo has one tag pair for this module (`lesson/m16-04-start`/`-solution`), not one per lesson (D007 reads as one tag per lesson). All five lessons point at the m16-04 tag; the four non-lab lessons only run small read-only probes against that checkout. P22 may want per-lesson tags, or D007 may want a note that a module-level tag is acceptable when the lessons share one repo state."
 ---
 
 ## Goal
@@ -46,20 +49,22 @@ Out: Turkish translation of these lessons (P25/P26/P40/P41 own `content/tr/l4-ma
 
 ## Deliverables
 
-- `content/en/l4-master/m16-orchestration/NN-<slug>.mdx` (3 files):
-01. **Workflows and ultracode** — `01-workflows-and-ultracode.mdx`
-02. **Agent teams and cross-session messaging** — `02-agent-teams-and-cross-session-messaging.mdx`
-03. **Designing a multi-agent pipeline** — `03-designing-a-multi-agent-pipeline.mdx` (hands-on lab: a small research → write → review pipeline of agents)
-- `content/tr/l4-master/m16-orchestration/NN-<slug>.mdx` (3 files) — `draft: true` stubs with EN frontmatter fields carried over and `title`/`description` left in English (translation is not this plan's job; the stub exists so routing/parity gates pass).
+- `content/en/l4-master/m16-orchestration/NN-<slug>.mdx` (5 files — corrected against `docs/CURRICULUM.md` §2, which is authoritative over this plan's original 3-lesson floor):
+01. **The Workflow tool** — `01-workflows.mdx`
+02. **ultracode** — `02-ultracode.mdx`
+03. **Agent teams and cross-session messaging** — `03-agent-teams-messaging.mdx`
+04. **Lab: a review → verify → fix pipeline** — `04-pipeline-lab.mdx` (hands-on lab)
+05. **Designing a multi-agent pipeline** — `05-designing-multi-agent.mdx`
+- `content/tr/l4-master/m16-orchestration/NN-<slug>.mdx` (5 files) — `draft: true` stubs with EN frontmatter fields carried over, `title`/`description`/`tags` translated and a one-paragraph Turkish summary body, per `docs/authoring/CONTENT-PLAN-BRIEF.md` §1.4 and the merged `m10-subagents` convention (translation itself is not this plan's job).
 - `content/_shared/transcripts/m16-orchestration/NN-<slug>.md` — one per lesson that has a hands-on lab, containing the raw terminal transcript.
 - Updated `content/_shared/sources.json` with this module's sources block entries.
 
 ## Acceptance criteria
 
 - `node scripts/content-gate.ts` passes for this module: every lesson's frontmatter validates against `content/schema.ts`, every code fence has a language tag, EN/TR path parity holds (the TR draft exists at the same slug), and `level`/`module` in frontmatter match the file path.
-- Every lesson has `verified_version: 2.1.263` and a non-empty `sources` array with at least one `type: "doc"` entry whose URL was fetched successfully by `/verify-sources` (D041, D043) — paste the WebFetch/lychee evidence in the PR.
+- Every lesson has `verified_version: 2.1.263` and a non-empty `sources` array with at least one `type: "official"` entry (the schema enum is `official|video|article|repo`; there is no `doc` value) whose URL was fetched successfully by `/verify-sources` (D041, D043) — paste the WebFetch/lychee evidence in the PR.
 - Every lesson with a hands-on lab has a transcript file under `content/_shared/transcripts/m16-orchestration/` whose content matches, verbatim, a real run of the commands shown in the lesson (D093, D099) — no lesson may show output that was not captured this way.
-- `npm run typecheck && npm run lint && npm test` pass; `npm run build` succeeds and `dist/en/l4-master/m16-orchestration/` contains 3 lesson pages plus the index.
+- `npm run typecheck && npm run lint && npm test` pass; `npm run build` succeeds and `dist/en/l4-master/m16-orchestration/` contains 5 lesson pages plus the index.
 - `npx playwright test e2e/lesson.spec.ts` passes against at least one lesson in this module (axe: 0 serious/critical violations at 390 px and 1280 px).
 - The `fact-checker` agent's report (pasted into the PR) shows no unresolved discrepancy against `research/feature-inventory.md`; the `reviewer` agent's report confirms the D006 template order and the evidence rule on every lesson.
 
@@ -96,5 +101,23 @@ A reviewer opens `npm run dev`, visits each of the 3 lessons at `/en/l4-master/m
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+**Session** `opus-p33-2026-09-07`, worktree `../cct-wt-33`, throwaway lab clone `../cct-lab-33`.
+
+**Drift from this plan (followed `docs/CURRICULUM.md`, per step 1).** The plan's Deliverables listed 3 lessons with different slugs; CURRICULUM §2 lists 5 (`01-workflows`, `02-ultracode`, `03-agent-teams-messaging`, `04-pipeline-lab`, `05-designing-multi-agent`) with durations 20/15/15/30/20 and difficulty core/core/core/core/advanced. Shipped the CURRICULUM set; the Deliverables and Acceptance-criteria sections above have been corrected to match. Two further stale lines in this plan were fixed: `type: "doc"` (no such enum value in `src/content/schema.ts`) and "3 lesson pages" in the build criterion.
+
+**Written.** 5 EN lessons, all `draft: false`, `verified_version: 2.1.263`, `updated: 2026-09-07`; 5 TR `draft: true` stubs (translated title/description/tags plus a one-paragraph `## Özet` and the `Çeviri bekleniyor` callout, matching the merged m10 convention). Both module `index.mdx` files got a one-phrase correction only: they described `ultracode` as an "effort level", which the live `model-config.md` explicitly denies — it is a Claude Code setting that sends `xhigh` and additionally orchestrates dynamic workflows.
+
+**Facts.** Every API name, keyword, flag, version gate and limit came from live fetches on 2026-09-07 of `workflows.md`, `model-config.md`, `agent-teams.md`, `cross-session-messaging.md`, `costs.md`, `agents.md` and `agent-sdk/typescript.md`. No drift found against `research/feature-inventory.md`, whose one-line Orchestration row is consistent with (and much thinner than) the live pages. Cost is taught as documented thresholds and caps only — the 25-agent / 1.5M-token `Large workflow` warning, the runtime caps (16 concurrent, 4,096 items, 1,000 agents), the size-guideline counts — never as an invented multiplier; the only published multiple quoted (~7×) is `costs.md`'s figure for agent teams in plan mode, and it is labelled as such.
+
+**Transcripts (8 files, all real, under `content/_shared/transcripts/m16-orchestration/`).** One real three-agent workflow run against the lab repo at `lesson/m16-04-start` with B1 (the `paginate()` off-by-one) reintroduced: `claude -p '<pipeline prompt>' --model sonnet --max-turns 12 --output-format json --allowedTools Workflow,Read,Grep,Glob --settings '{"workflowSizeGuideline":"small"}'`. It produced `subtype: success`, `$0.9410614`, `modelUsage` over `claude-sonnet-5` and `claude-fable-5-1`, one confirmed finding (`src/store.ts:63`, both verifiers agreeing, cross-checked against `BUGS.md` B1) and a run directory whose `journal.jsonl` shows three agent ids — one Find agent, then two Verify agents started back to back. The Workflow tool worked headlessly, so no refusal had to be taught around; the run's persisted script is committed verbatim as `01-workflows/01-generated-script.txt`. Also captured: the red `npm test` before the run; the `ultracode` keyword in a `-p` prompt (which correctly did **not** start a workflow — `spawned: 0`, one model, `$0.0307`); and a real `ListAgents` probe from a headless session (5 peers, `$0.0076`). Local paths, project dirs and session ids are placeholder-redacted. Two of the captured answers came back in Turkish because this machine's global preferences ask for it; both lessons point that out rather than hiding it, and no transcript text was edited.
+
+**Not captured, and why.** Spawning agent-team teammates requires an interactive session (`agent-teams.md`: `-p` and the Agent SDK never spawn one), so lesson 03's team half is taught with the exact commands and prose, with a `<Callout>` saying plainly that no recording exists for it — no invented team transcript (D070). Lesson 05 has no new capture: its lab is a design review of artefacts lesson 04 produced.
+
+**Lab tags.** Only `lesson/m16-04-start`/`-solution` exist for this module, and the `-solution` tag's `WORKFLOW.md` is the brief lesson 04 was built from. All five lessons carry `lab.repo_tag: 'lesson/m16-04-start'` because the four non-lab lessons run small read-only probes against that same checkout — recorded as an open question against D007's one-tag-per-lesson wording.
+
+**Review pipeline (D071).** `fact-checker`: 3 lessons PASS, 2 FAIL on the first pass — 1 internal inconsistency (04's design table claimed the fix phase runs `npm run typecheck`, while the extension section only granted `Bash(npm test)`) and 4 unverifiable claims; 0 contradictions against the live docs, 0 inventory drift. All 5 fixed: the fix-phase extension now runs and allows both checks; the ultracode transcript was re-captured with the `result` field so the Turkish-output remark is evidenced; the `subagent_stats` explanation is now labelled an observation, not documented behaviour; the `modelUsage` claim now quotes `agent-sdk/typescript.md` (added as a source to lesson 04 and to `sources.json`); the unevidenced "we ran it successfully in PowerShell 5.1" was reworded to a plain statement of the quoting rule. `reviewer`: 0 blockers, 2 majors, 4 minors. Both majors were procedural and are done (temporary `playwright.p33.config.ts` / `e2e/m16-p33.spec.ts` deleted; these Handoff notes written); minors 3 and 4 are the plan-file corrections above; minor 5 (transcript render order in 04) is fixed; minor 6 is the D007 open question. Template order, frontmatter, transcript honesty, sources, quiz counts, TR conventions and public hygiene all came back clean.
+
+**Sources.** `content/_shared/sources.json` appended-only: `m16-orchestration` added to the `modules[]` of `docs-agents`, `docs-model-config`, `docs-costs`, `docs-settings-reference`, `docs-sub-agents`, `docs-headless` and `docs-prompt-caching`; two new entries, `docs-agent-sdk-typescript` and `lab-m16-04-start`. `docs-workflows`, `docs-agent-teams` and `docs-cross-session-messaging` were already tagged for this module by P23.
+
+**Verification.** `npm run gate` (202 files), `npm run typecheck` (0 errors), `npm run lint`, `npm test` (184 tests), `npm run build` ending `check-no-inline-script (dist): OK`, `check-raw-colors`, `check-public-hygiene`, `node tools/plan/cli.ts check`, and Playwright/axe on port 4433 over all five EN lesson routes plus both module indexes at 390 px and 1280 px — 28 passed. Note for later plans: TR twins are `draft: true`, so their routes are not built; a per-module e2e spec must not assert on them.
 

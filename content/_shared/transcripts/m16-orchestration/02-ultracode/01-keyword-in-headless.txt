@@ -1,0 +1,12 @@
+# 2026-09-07 · Claude Code 2.1.263 · lab repo lesson/m16-04-start
+# $ claude -p 'ultracode: list the names of the functions exported from src/store.ts' --model haiku --max-turns 6 --output-format json --allowedTools Read,Grep,Glob | jq '{subtype, num_turns, total_cost_usd, models: (.modelUsage|keys), spawned: .subagent_stats.spawned, result}'
+{
+  "subtype": "success",
+  "num_turns": 2,
+  "total_cost_usd": 0.0306979,
+  "models": [
+    "claude-haiku-4-5-20251001"
+  ],
+  "spawned": 0,
+  "result": "`src/store.ts` dosyasından dışa aktarılan işlevler (function) şunlardır:\n\n1. **resetTasks** — test amaçlı olarak bellek içi deposu temizler\n2. **replaceAllTasks** — bellek içi depoda tüm görevleri değiştirir\n3. **addTask** — yeni bir görev ekler\n4. **listTasks** — görevleri durum filtresine göre listeler\n5. **paginate** — öğeleri sayfalara böler\n6. **getTask** — ID ile bir görev getirir\n7. **markDone** — bir görevi tamamlandı olarak işaretler\n8. **removeTask** — bir görevi siler\n9. **isOverdue** — bir görevin süresi geçip geçmediğini kontrol eder\n10. **saveToDisk** — görevleri diske kaydeder\n11. **loadFromDisk** — görevleri diskten yükler\n\nAyrıca, türler (`InvalidTaskError`, `Task`, `AddTaskInput`, `StatusFilter`, `Persister`) ve `nodeFsPersister` nesnesi de dışa aktarılmaktadır."
+}

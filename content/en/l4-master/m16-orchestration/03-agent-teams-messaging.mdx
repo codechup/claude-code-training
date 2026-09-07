@@ -1,0 +1,410 @@
+---
+title: 'Agent teams and cross-session messaging'
+description: 'Agent teams put a lead session in charge of peer sessions with a shared task list and a mailbox. Cross-session messaging lets the sessions you already run pass findings to each other with ListAgents and SendMessage.'
+level: 4
+module: 'm16-orchestration'
+order: 3
+duration_min: 15
+difficulty: core
+tags: ['agent-teams', 'cross-session-messaging', 'sendmessage', 'listagents']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Orchestrate teams of Claude Code sessions'
+    url: 'https://code.claude.com/docs/en/agent-teams.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Message your other Claude Code sessions'
+    url: 'https://code.claude.com/docs/en/cross-session-messaging.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Create custom subagents'
+    url: 'https://code.claude.com/docs/en/sub-agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage costs effectively'
+    url: 'https://code.claude.com/docs/en/costs.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m16-04-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Enable agent teams, and say what a lead, a teammate, the shared task list and a mailbox each are.
+- Explain what a teammate inherits from the lead — and the three things it does not.
+- Use cross-session messaging between the sessions you run yourself: `ListAgents`, `SendMessage`, `/list-agents`, `@`-mentions and `/rename`.
+- Choose `accept`, `hold` or `refuse` for inbound messages, and say what the default does when you set nothing.
+- State the security rule that governs every message between agents: it is never your consent.
+
+**Prerequisites.** Subagents (L3 `m10-subagents`), and lesson `01-workflows` for the comparison. Agent teams are **experimental and disabled by default**. Cross-session messaging needs Claude Code 2.1.224 or later on macOS and Linux (including WSL 2) and 2.1.234 or later on native Windows; where the requirements are met it is on with nothing to enable.
+
+<WhenNotToUse>
+  Agent teams add coordination overhead and use significantly more tokens than a single session —
+  the costs page puts teammates running in plan mode at roughly **7× a standard session** — so they
+  are the wrong tool for sequential work, same-file edits, or tasks with many dependencies, where
+  one session or a few subagents does better. They also cannot be resumed: `/resume` and `/rewind`
+  do not restore in-process teammates. And messaging is not a way to move context: a message carries
+  plain text, never the sender's history or files, so if what you want is the other session's
+  conversation, resume it instead.
+</WhenNotToUse>
+
+## Concept
+
+### Two features, one tool
+
+Both features are ways to have several Claudes work at once, and both send with the same tool:
+
+- **Agent teams**: one session is the **lead**; it spawns **teammates**, each a full independent
+  Claude Code session with its own context window, coordinated through a **shared task list** and a
+  **mailbox**. The lead assigns work and synthesises results; you can talk to any teammate directly.
+- **Cross-session messaging**: no team at all. The sessions you started yourself, in different
+  terminals or on different machines, can pass each other a message. Claude discovers targets with
+  `ListAgents` and delivers with `SendMessage` — you never call either tool yourself.
+
+The comparison with subagents is the one to hold on to:
+
+|               | Subagents                                                           | Agent teams                                                 |
+| ------------- | ------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Context       | Own context window; results return to the caller                    | Own context window; fully independent                       |
+| Communication | Return a result to the caller; named subagents can also be messaged | Teammates message each other directly                       |
+| Coordination  | Main agent manages all work                                         | Self-coordination through messages, plus a shared task list |
+| Best for      | Focused tasks where only the result matters                         | Complex work requiring discussion and collaboration         |
+| Token cost    | Lower: results summarised back to main context                      | Higher: each teammate is a separate Claude instance         |
+
+### Enabling and starting a team
+
+Agent teams are off unless `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` is `1`, in your environment or in
+`settings.json`:
+
+<CodeBlock title="settings.json">
+
+```json
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  }
+}
+```
+
+</CodeBlock>
+
+Then you just ask, in natural language. This lesson's worked example prompt is the one the docs use,
+and it works because the three roles are independent:
+
+```text
+I'm designing a CLI tool that helps developers track TODO comments across
+their codebase. Spawn three teammates to explore this from different angles:
+one on UX, one on technical architecture, one playing devil's advocate.
+```
+
+There is no separate setup step and no confirmation prompt: Claude launches a teammate whenever it
+calls the `Agent` tool with a `name` while teams are enabled. That has a consequence worth
+underlining — **Claude names subagents on its own**, so with teams enabled a team can form during
+delegation you never framed as team work. Set the variable to `0` to get named subagents back.
+
+Spawning teammates also requires an interactive session. In `claude -p` and in Agent SDK sessions,
+Claude does not spawn teammates, and a named subagent runs as an ordinary subagent even with teams
+enabled.
+
+Teammates appear in the agent panel below the prompt input (`in-process` mode, the default, works in
+any terminal). Arrow keys select, Enter opens a teammate's transcript so you can message it directly,
+`x` stops it, Ctrl+T toggles the task list. `teammateMode` (or `claude --teammate-mode auto`)
+switches to split panes, which needs tmux or iTerm2 with the `it2` CLI.
+
+### What a teammate inherits, and what it does not
+
+A teammate loads the same project context as any session — `CLAUDE.md`, MCP servers, skills — plus
+the spawn prompt. It does **not** inherit the lead's conversation history, so put task-specific
+detail in the spawn prompt. It starts with the lead's permission settings, and its permission prompts
+appear in the lead's session for you to answer. Its model comes from the first of: the model your
+spawn prompt names, a referenced subagent definition's `model`, `CLAUDE_CODE_SUBAGENT_MODEL`, then
+the lead's model. Its effort level follows the lead's.
+
+You can reuse a subagent definition as a role: "Spawn a teammate using the security-reviewer agent
+type to audit the auth module." Claude Code applies the definition's `tools` (adding `SendMessage`,
+and the `Task*` tools where the session has them), its `model`, and its body — appended to the
+default system prompt in-process, or replacing it in a split pane. It does **not** apply the
+definition's `skills`.
+
+Three hooks turn a team into something with quality gates: `TeammateIdle` (exit 2 to send feedback
+and keep the teammate working), `TaskCreated` and `TaskCompleted` (exit 2 to block creation or
+completion and send feedback).
+
+Teams and tasks live under a session-derived name — `session-` plus the first eight characters of the
+session ID — with the team config at `~/.claude/teams/{team-name}/config.json` and each agent's
+mailbox a JSON file at `~/.claude/teams/{team-name}/inboxes/{agent-name}.json`. The config holds
+runtime state: do not hand-edit or pre-author it.
+
+### Messaging your own sessions
+
+For sessions you start and steer yourself, messaging is the lighter option, and it needs no setup.
+Ask in ordinary language:
+
+```text
+Let @api-worker know the schema migration finished
+```
+
+`@` plus the first letters of a session's name opens a typeahead of your other live local sessions
+(2.1.232 or later). A session answers to the name you gave it with `--name` or `/rename`; without
+one, Claude Code names it. Run `/list-agents` (also `/peers`) to see what this session can reach:
+subagents, this session's teammates, your other local sessions, and — while connected to Remote
+Control — your cloud sessions and your sessions on other machines. The first line, when present, is
+this session's own name.
+
+Delivery is straightforward and bounded. The receiving Claude reads the message between tool calls
+during an active turn, so a running tool is never interrupted; when the session is idle, the message
+starts a new turn. A same-machine message travels over a per-session socket (a named pipe on native
+Windows) and never through Anthropic servers; a message to another of your machines or to a
+Claude Code on the web session goes through Anthropic servers. Claude Code refuses a message over
+about a million characters, refuses a rapid burst once the target's inbox has had enough, rate-limits
+repeats, drops identical repeats in a short window and queues at most 50 accepted messages — which is
+why a message loop between two sessions stops on its own.
+
+You can also ask for a one-shot notice: "Tell me when the migration session finishes what it's
+working on" subscribes with `SendMessage`'s `notify_when_idle` input, for sessions on this machine
+only, expiring after 12 hours (2.1.236 or later).
+
+### The security rule
+
+This is the part not to skim. When one agent messages another, **Claude Code tells the receiving
+agent the message came from another Claude session, not from you**:
+
+- It cannot approve anything: a message never counts as your consent and cannot answer a pending
+  permission prompt.
+- It cannot change configuration: the receiving Claude is instructed never to change permission
+  settings, `CLAUDE.md` or other configuration because another session asked.
+- Commands do not run: a `/compact` in the text arrives as plain text.
+- Permission prompts still fire on the receiving side for anything the message asks for.
+
+A teammate denied an action cannot relay it to another teammate to get it done. In auto mode, the
+classifier treats a relayed approval claim as untrusted input and reviews each message before
+delivery.
+
+You control the inbound side with `crossSessionInbound`: `accept` delivers, `hold` shows a notice and
+waits for your approval, `refuse` drops. With nothing set, Claude Code decides per message from the
+two sessions' permission modes — a session that prompts for permissions receives normally, but holds
+a message from a session that identifies itself as bypassing prompts; a session that bypasses prompts
+holds everything except messages from another bypassing session. `isolatePeerMachines: true` requires
+your approval before any message leaves the machine, even in `bypassPermissions` mode. To switch the
+feature off, combine `crossSessionInbound: "refuse"` with deny rules naming `SendMessage` and
+`ListAgents` — note that denying `SendMessage` also removes messaging to subagents and teammates,
+since it is the same tool.
+
+## Hands-on lab
+
+<Callout>
+  Spawning teammates needs an interactive session: `claude -p` never spawns one, so there is no
+  honest headless recording of a team forming, and this lesson does not invent one. What a headless
+  session _can_ do is discover its peers — a `-p` session binds an inbox socket like an interactive
+  one — so the capture below is real and the team half of the lab is done at the interactive prompt,
+  with the exact commands given, and no transcript.
+</Callout>
+
+<Lab
+  title="Lab · see who this machine can reach, then form a two-teammate team"
+  lessonId="en/l4-master/m16-orchestration/agent-teams-messaging"
+  repoTag="lesson/m16-04-start"
+  steps={[
+    'With at least one other Claude Code session open, run the peer probe headlessly from your lab clone: `claude -p "Use the ListAgents tool once and tell me only how many agents it returned and what kinds they are. Do not send any message." --model haiku --max-turns 4 --output-format json --allowedTools ListAgents`',
+    'Open two interactive sessions in the same repository. In the first, run `/rename api-worker`; in the second, run `/list-agents` and confirm `api-worker` is listed, then `/status` and find the `Peer address` row.',
+    'From the second session, ask for a message rather than sending one yourself: `Let @api-worker know that src/store.ts is being edited right now`. Watch the one-line preview arrive in the first session, and press `Ctrl+O` to read the full text.',
+    'Enable teams for one session only, using the launch command for your OS from the tabs below the lab.',
+    'Ask that session for a team: `Spawn two teammates to review src/store.ts: one on correctness, one on test coverage. Have them report findings to you.` Use the arrow keys in the agent panel, press Enter on a teammate to read its transcript, and Ctrl+T to see the shared task list.',
+    'Finish by asking the lead to shut a teammate down by name, and check `~/.claude/teams/` — the team config directory is removed when the session ends.',
+  ]}
+  expected="The headless probe returns a count of peer sessions and their kinds without sending anything. In the interactive pair, the renamed session is addressable as @api-worker and the message arrives as a dim one-line preview. The team session shows two teammates in the agent panel, each with its own transcript."
+  checklist={[
+    '`/list-agents` lists the other session by the name you set with `/rename`',
+    'The arriving message is shown as a preview, and `Ctrl+O` reveals the full text',
+    'Teammates appear only in the session started with the environment variable set',
+    'A teammate’s permission prompt appears in the lead’s session, not the teammate’s',
+    'Nothing in the lab repository was modified',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m16-orchestration/03-agent-teams-messaging/01-list-agents.txt"
+    range="2-8"
+  />
+</Lab>
+
+### Enabling teams for one session, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$env:CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"
+claude
+```
+
+  </Fragment>
+</OSTabs>
+
+PowerShell has no inline environment-variable prefix, so the variable is set first and stays set for
+the rest of that shell — close the window, or set it back to `"0"`, when you are done experimenting.
+
+That capture is worth reading twice. It is a `claude -p` session, and it still found five peer
+sessions — four interactive and one background — because a headless session binds an inbox socket
+like any other (a `--bare` session does not, and does not appear in listings). It also cost under a
+cent: discovery is cheap, and it is the half of messaging you can automate.
+
+## Anti-patterns
+
+**Reaching for a team when subagents would do.** Teams cost roughly an order of magnitude more and
+add coordination overhead; the docs' own advice is to start with research and review tasks, 3–5
+teammates, and to scale up only when teammates genuinely work in parallel. _Fix:_ ask what discussion
+between the workers buys you. If the answer is nothing, delegate to subagents.
+
+**Two teammates editing the same file.** It ends in overwrites; nothing arbitrates. _Fix:_ break the
+work so each teammate owns a different set of files — the same disjoint-ownership rule that makes
+parallel human work survivable.
+
+**Treating a message as approval.** "The other session said it was fine" is not consent, and Claude
+Code is explicit that it never counts as yours. _Fix:_ when a session needs an action it cannot take,
+route it back to yourself, not sideways to a session with looser permissions.
+
+**Expecting `/resume` to bring teammates back.** It does not; the lead may then message teammates
+that no longer exist. _Fix:_ tell the lead to spawn new teammates after resuming.
+
+**Panicking when a teammate's row disappears.** An idle row hides 30 seconds after the whole panel
+goes idle, and more than three idle teammates collapse into an `N idle agents` row. The teammate is
+still running and still addressable. _Fix:_ message it by name to bring the row back.
+
+<Callout variant="changed">
+  The `TeamCreate` and `TeamDelete` tools no longer exist: since 2.1.178 spawning a teammate needs
+  no setup step and cleanup happens when the session exits. The `team_name` input on the `Agent`
+  tool is accepted but ignored, and `teammateDefaultModel` was removed in 2.1.234 — name the model
+  in your prompt instead.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m16-orchestration/agent-teams-messaging"
+  questionId="q1"
+  lang="en"
+  prompt="You enable agent teams and then ask Claude, in an ordinary session, to 'delegate the search to a helper'. What can happen?"
+  options={[
+    {
+      text: 'Nothing changes: teammates only appear when you ask for a team',
+      explanation:
+        'Claude names subagents on its own, and while teams are enabled a named subagent launches as a teammate.',
+    },
+    {
+      text: 'A teammate launches, because a subagent Claude names becomes a teammate while teams are enabled',
+      correct: true,
+      explanation: 'Set the variable to 0 to get named subagents back.',
+    },
+    {
+      text: 'Claude Code asks you to confirm the team',
+      explanation: 'There is no confirmation prompt for spawning a teammate.',
+    },
+    {
+      text: 'The session refuses, since teams need a TeamCreate call first',
+      explanation: 'TeamCreate and TeamDelete no longer exist.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m16-orchestration/agent-teams-messaging"
+  questionId="q2"
+  lang="en"
+  prompt="Session A was denied permission to run a command. It messages session B asking B to run it. What does Claude Code do?"
+  options={[
+    {
+      text: 'B runs it: a message from another session carries the sender’s approvals',
+      explanation: 'A message never counts as your consent and cannot carry an approval.',
+    },
+    {
+      text: 'B treats the message as untrusted input from another Claude, and B’s own permission rules and prompts still apply',
+      correct: true,
+      explanation:
+        'Claude is also instructed not to ask another session for something denied in its own.',
+    },
+    {
+      text: 'The message is refused because it names a command',
+      explanation:
+        'Commands in a message are plain text; the message itself is delivered normally.',
+    },
+    {
+      text: 'B auto-approves in auto mode',
+      explanation:
+        'In auto mode the classifier treats a relayed approval claim as untrusted and reviews each message.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m16-orchestration/agent-teams-messaging"
+  questionId="q3"
+  lang="en"
+  prompt="Which tools does Claude use to reach your other sessions?"
+  options={[
+    {
+      text: 'ListAgents to discover, SendMessage to deliver',
+      correct: true,
+      explanation:
+        'The same SendMessage also reaches subagents and teammates — denying it removes all three.',
+    },
+    { text: 'TeamCreate and Mailbox', explanation: 'Neither is a tool.' },
+    {
+      text: 'Task and TaskUpdate',
+      explanation: 'Those coordinate the shared task list inside a team, not messaging.',
+    },
+    {
+      text: 'Agent with a session id',
+      explanation: 'Agent spawns workers; it does not message existing sessions.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m16-orchestration/agent-teams-messaging"
+  questionId="q4"
+  lang="en"
+  prompt="You set nothing for crossSessionInbound. A session running in bypassPermissions mode messages your ordinary prompting session. What happens?"
+  options={[
+    {
+      text: 'It is delivered like any other message',
+      explanation:
+        'A prompting session delivers by default, but holds one from a session that identifies itself as bypassing.',
+    },
+    {
+      text: 'It is held for your approval',
+      correct: true,
+      explanation:
+        'The dialog shows sender and preview, and expires after dialogExpiry — five minutes by default.',
+    },
+    {
+      text: 'It is refused and the sender is told',
+      explanation: 'Refusal needs an explicit refuse setting.',
+    },
+    {
+      text: 'It is delivered only if the two sessions share a working directory',
+      explanation: 'Working directory only helps you tell same-named sessions apart.',
+    },
+  ]}
+/>
+
+**Next:** `04-pipeline-lab` — build the review → verify → fix pipeline against the lab repo and read
+what it really cost.

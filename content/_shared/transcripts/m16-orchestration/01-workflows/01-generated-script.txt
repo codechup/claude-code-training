@@ -1,0 +1,88 @@
+# 2026-09-07 · Claude Code 2.1.263 · lab repo lesson/m16-04-start
+# $ cat ~/.claude/projects/<project>/<session-id>/workflows/scripts/review-store-correctness-wf_c4ccec5c-db1.js
+export const meta = {
+  name: 'review-store-correctness',
+  description: 'Find and independently verify correctness bugs in src/store.ts',
+  phases: [{ title: 'Find' }, { title: 'Verify' }],
+}
+
+const FINDINGS_SCHEMA = {
+  type: 'object',
+  properties: {
+    findings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          file: { type: 'string' },
+          line: { type: 'number' },
+          summary: { type: 'string' },
+          details: { type: 'string' },
+        },
+        required: ['id', 'file', 'line', 'summary'],
+      },
+    },
+  },
+  required: ['findings'],
+}
+
+const VERDICT_SCHEMA = {
+  type: 'object',
+  properties: {
+    verdicts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          verdict: { type: 'string', enum: ['confirmed', 'rejected'] },
+          reason: { type: 'string' },
+        },
+        required: ['id', 'verdict', 'reason'],
+      },
+    },
+  },
+  required: ['verdicts'],
+}
+
+phase('Find')
+const found = await agent(
+  'Read src/store.ts in this repo carefully and list candidate CORRECTNESS bugs only (not style/lint issues). For each candidate, give a short stable id (e.g. "f1", "f2", ...), the file path, the 1-indexed line number where the bug is, a one-line summary, and a short explanation of why it looks wrong. This is a read-only review -- do not edit, write, or modify any files. Also open BUGS.md in the repo root for context on already-known bugs, but still report anything in src/store.ts that looks like a correctness bug, even if not yet listed in BUGS.md.',
+  { schema: FINDINGS_SCHEMA }
+)
+
+const candidates = found?.findings || []
+if (!candidates.length) {
+  log('No candidate findings produced by the finder agent.')
+}
+
+const candidateList = candidates
+  .map(c => `- id=${c.id} | ${c.file}:${c.line} | ${c.summary}\n  details: ${c.details || ''}`)
+  .join('\n')
+
+phase('Verify')
+const verifierPrompt = (label) => `You are ${label}, independently verifying a list of candidate correctness bugs in src/store.ts for the claude-code-lab repo.
+
+Candidates:
+${candidateList}
+
+For EACH candidate id, read the actual code at the given file:line in src/store.ts and cross-check against BUGS.md in the repo root. Mark it "confirmed" only if the code genuinely has the described correctness bug as of right now. Mark it "rejected" if the code is actually correct, the line/behavior doesn't match the claim, or it's not a real correctness issue. Give a one-sentence reason for each verdict. This is a read-only review -- do not edit, write, or modify any files. Return a verdict for every candidate id listed above.`
+
+const [verdictsA, verdictsB] = await parallel([
+  () => agent(verifierPrompt('Verifier A'), { phase: 'Verify', schema: VERDICT_SCHEMA }),
+  () => agent(verifierPrompt('Verifier B'), { phase: 'Verify', schema: VERDICT_SCHEMA }),
+])
+
+const mapA = new Map((verdictsA?.verdicts || []).map(v => [v.id, v]))
+const mapB = new Map((verdictsB?.verdicts || []).map(v => [v.id, v]))
+
+const confirmed = candidates
+  .filter(c => mapA.get(c.id)?.verdict === 'confirmed' && mapB.get(c.id)?.verdict === 'confirmed')
+  .map(c => ({
+    ...c,
+    reasonA: mapA.get(c.id)?.reason,
+    reasonB: mapB.get(c.id)?.reason,
+  }))
+
+return { candidates, verdictsA, verdictsB, confirmed }

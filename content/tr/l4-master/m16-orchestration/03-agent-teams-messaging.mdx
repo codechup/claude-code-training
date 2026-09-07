@@ -1,0 +1,41 @@
+---
+title: 'Agent team’ler ve oturumlar arası mesajlaşma'
+description: 'Agent team’ler, paylaşılan bir görev listesi ve bir mailbox ile eş oturumları yöneten bir lead oturum kurar. Oturumlar arası mesajlaşma ise hâlihazırda çalıştırdığınız oturumların ListAgents ve SendMessage ile birbirine bulgu aktarmasını sağlar.'
+level: 4
+module: 'm16-orchestration'
+order: 3
+duration_min: 15
+difficulty: core
+tags: ['agent-team', 'oturumlar-arası-mesajlaşma', 'sendmessage', 'listagents']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Orchestrate teams of Claude Code sessions'
+    url: 'https://code.claude.com/docs/en/agent-teams.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Message your other Claude Code sessions'
+    url: 'https://code.claude.com/docs/en/cross-session-messaging.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Create custom subagents'
+    url: 'https://code.claude.com/docs/en/sub-agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage costs effectively'
+    url: 'https://code.claude.com/docs/en/costs.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m16-04-start'
+---
+
+## Özet
+
+Bu ders aynı tool'u (`SendMessage`) paylaşan iki ayrı özelliği ayırır. Agent team'ler deneyseldir ve varsayılan olarak kapalıdır (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`): bir lead oturum, her biri kendi context window'una sahip tam bağımsız teammate'ler açar, iş paylaşılan bir görev listesi ve mailbox üzerinden yürür, teammate'ler lead'in permission ayarlarını devralır ama konuşma geçmişini devralmaz — ve teams açıkken Claude'un kendi adlandırdığı bir subagent da teammate olarak başlar. Oturumlar arası mesajlaşma ise kurulum istemez: Claude hedefi `ListAgents` ile bulur, `SendMessage` ile iletir; `/list-agents` (veya `/peers`) neye ulaşılabildiğini gösterir, `--name`/`/rename` isim verir, `@` ile hedef gösterilir. Dersin güvenlik kuralı atlanmamalıdır: başka bir oturumdan gelen mesaj asla sizin onayınız sayılmaz, konfigürasyonu değiştiremez ve içindeki komutlar çalışmaz; gelen mesajları `crossSessionInbound` (`accept`/`hold`/`refuse`) ile, makine dışına çıkanları `isolatePeerMachines` ile yönetirsiniz. Laboratuvarda headless bir oturumun kendi peer'lerini gerçekten listelediği kayıt vardır; teammate açmak yalnızca interaktif oturumda mümkün olduğu için o kısım uydurma bir kayıt yerine tam komutlarla anlatılır.
+
+<Callout label="Çeviri bekleniyor">
+  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
+  İngilizce mevcuttur.
+</Callout>
