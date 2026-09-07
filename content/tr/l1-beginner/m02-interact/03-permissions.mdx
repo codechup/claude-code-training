@@ -1,0 +1,32 @@
+---
+title: 'Permission mode’lar ve allow/deny kuralları'
+description: 'Altı permission mode temeli belirler; allow, ask ve deny kuralları üstüne biner. Mod’lar, kural söz dizimi, deny → ask → allow sırası ve deny’in her kapsamda kazanması.'
+level: 1
+module: 'm02-interact'
+order: 3
+duration_min: 20
+difficulty: core
+tags: ['permissions', 'security', 'lab']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Choose a permission mode'
+    url: 'https://code.claude.com/docs/en/permission-modes.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure permissions'
+    url: 'https://code.claude.com/docs/en/permissions.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Tools available to Claude'
+    url: 'https://code.claude.com/docs/en/tools-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m02-03-start'
+---
+
+Bu ders altı permission mode'u (izin modu) tanıtır: `default` (CLI'da **Manual** etiketiyle), `acceptEdits`, `plan`, `auto`, `dontAsk` ve yalnızca izole container/VM için `bypassPermissions`. Mod değiştirmenin üç yolu gösterilir: oturum içinde `Shift+Tab`, başlangıçta `--permission-mode`, ayar dosyasında `permissions.defaultMode`. Ardından `Tool(specifier)` kural söz dizimi, `Bash` kurallarında `*` işaretinin nereye konacağı ve en kritik kural işlenir: değerlendirme sırası **deny → ask → allow**'dur, kural özgüllüğü bu sırayı değiştirmez ve herhangi bir kapsamdaki bir deny, başka bir kapsamdaki allow'u geçersiz kılar. Lab reposunda üç gerçek [headless](/tr/playbook/glossary/#headless) çalıştırmayla kanıtlanır. Ayrıca `claude -p` oturumlarının her zaman `default` modunda başladığı ve proje ayar dosyasındaki `auto`/`bypassPermissions` değerlerinin artık yok sayıldığı belirtilir.
+
+> Bu sayfa henüz çevrilmemiş bir taslaktır; İngilizce kaynak ders tam metindir.

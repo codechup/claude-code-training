@@ -1,0 +1,26 @@
+# Captured 2026-09-07 against codechup/claude-code-lab @ lesson/m02-02-start, Claude Code 2.1.263. Verbatim. The --settings flag on the command line overrides this machine's Turkish language preference. The absolute plan-file path was redacted to ~/.claude/plans/
+› claude -p "make the store code faster" --model sonnet --output-format text --settings '{"language":"English"}' --max-turns 12 --permission-mode plan
+I've written the plan to `~/.claude/plans/make-the-store-code-wondrous-cascade.md`, but the `ExitPlanMode` tool is disabled in this session, so I can't trigger the normal plan-approval flow. Here's the plan:
+
+## Make `src/store.ts` faster
+
+**Problem:** `src/store.ts` backs both the CLI and API with a flat `Task[]` array with no index by `id`. `getTask` (hit by 3/6 API routes, 2/5 CLI commands), `markDone`, and `removeTask` are all O(n) linear scans/splices. `listTasks` also does a redundant array copy (`[...filtered]`) before sorting.
+
+**Change — replace the array with a `Map<string, Task>` keyed by id:**
+1. `const tasks: Task[] = []` → `const tasks = new Map<string, Task>();`
+2. `resetTasks`: `tasks.length = 0` → `tasks.clear();`
+3. `addTask`: `tasks.push(task)` → `tasks.set(task.id, task);`
+4. `listTasks`: iterate `tasks.values()` into a filtered array in one pass, then sort directly (drop the redundant `[...filtered]` copy). Keep the sort — tests use fake timers that can make `createdAt` non-monotonic relative to insertion order.
+5. `getTask`: `tasks.find(...)` → `tasks.get(id)` — O(1).
+6. `markDone`: unchanged, benefits automatically.
+7. `removeTask`: `findIndex` + `splice` → `return tasks.delete(id);` — O(1).
+
+`paginate`, `isOverdue`, `saveToDisk`, `Persister` stay untouched, as do `cli.ts`/`server.ts` (they only call exported functions).
+
+**Explicitly out of scope:**
+- The seeded B1 off-by-one bug in `paginate` — already fails two test assertions today (`test/store.test.ts`, `test/api.test.ts`). Not fixing it; same failures expected before and after.
+- `cli.ts`'s per-`add` full-list `saveToDisk` call — separate architectural concern, not part of `store.ts`.
+
+**Verification:** run tests before (baseline: only the two paginate assertions fail) and after (same two failures only, everything else green), plus a throwaway timing check seeding ~50k tasks to confirm `getTask`/`removeTask` are measurably faster.
+
+Since I can't call `ExitPlanMode`, please just confirm here — reply "go ahead" (or similar) and I'll implement it, or let me know if you want changes first.

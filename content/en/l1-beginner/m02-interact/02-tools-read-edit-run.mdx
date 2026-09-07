@@ -1,0 +1,331 @@
+---
+title: 'The built-in tools: Read, Edit, Glob, Grep, Bash'
+description: 'Claude Code acts through a fixed set of built-in tools. Learn what Read, Edit, Write, Glob, Grep, Bash, PowerShell and WebFetch each do, how Claude picks between them, and watch a real session find and fix an off-by-one with Grep, Read, Edit and npm test.'
+level: 1
+module: 'm02-interact'
+order: 2
+duration_min: 15
+difficulty: core
+tags: ['tools', 'basics', 'lab']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Tools available to Claude'
+    url: 'https://code.claude.com/docs/en/tools-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'How Claude Code works'
+    url: 'https://code.claude.com/docs/en/how-claude-code-works.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure permissions'
+    url: 'https://code.claude.com/docs/en/permissions.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m02-02-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Name the tools you will see scroll past in an ordinary session — `Read`, `Edit`, `Write`, `Glob`, `Grep`, `Bash` (or `PowerShell`), `WebFetch` — and say what each one is for.
+- Explain the read-before-edit rule, why `Edit` replaces an exact string rather than a pattern, and what `replace_all: true` is for.
+- Predict whether Claude will reach for `Glob`, `Grep` or `Read` for a given question.
+- Read a tool call in a transcript and know which permission rule shape (`Bash(npm test)`, `Read(./.env)`, `WebFetch(domain:example.com)`) would govern it.
+- Run a real session that finds a bug with search, fixes it with one edit, and proves the fix with the test runner.
+
+**Prerequisites.** Lesson `01-prompting-basics`, and a clone of the lab repository with Node 24 available.
+
+<WhenNotToUse>
+  You never call these tools yourself, and you should not try to. Claude picks them; your levers are
+  the prompt and the permission rules. Reaching for tool names in a prompt ("use Grep, then Read,
+  then Edit") is dictating the steps — the anti-pattern from the previous lesson — and it makes the
+  session worse on any task bigger than a demo. The one honest exception is teaching and debugging,
+  which is exactly what this lesson's lab does: naming the tools makes the recording legible. In
+  real work, name the goal.
+</WhenNotToUse>
+
+## Concept
+
+### Tools are what make it an agent
+
+Without tools a model can only reply with text. With them it can read your code, change it, run your test suite and fetch a page. Each tool call returns information that feeds back into the loop and informs the next decision — that is the whole mechanism.
+
+The docs group the built-ins into five categories:
+
+| Category              | What Claude can do                                                                             |
+| --------------------- | ---------------------------------------------------------------------------------------------- |
+| **File operations**   | Read files, edit code, create new files, rename and reorganise                                 |
+| **Search**            | Find files by pattern, search content with regex, explore codebases                            |
+| **Execution**         | Run shell commands, start servers, run tests, use git                                          |
+| **Web**               | Search the web, fetch documentation, look up error messages                                    |
+| **Code intelligence** | Type errors after edits, jump to definitions, find references (via a code-intelligence plugin) |
+
+### The ones you will actually see
+
+| Tool         | What it does                                               | Worth knowing                                                                                                             |
+| ------------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `Read`       | Returns file contents with line numbers                    | Also handles images, PDFs and Jupyter notebooks; a large file comes back as a `PARTIAL view`                              |
+| `Edit`       | Exact string replacement in one file                       | No regex, no fuzzy match. `old_string` must match once — or pass `replace_all: true`. See the read-before-edit note below |
+| `Write`      | Creates or overwrites a file                               | Overwrites. For a partial change, `Edit` is the right tool                                                                |
+| `Glob`       | Finds files by pattern (`**/*.ts`, `*.{json,yaml}`)        | Results capped at 100 files; does not respect `.gitignore` by default                                                     |
+| `Grep`       | Searches file contents, **ripgrep syntax**, not POSIX grep | Respects `.gitignore`; three output modes (`files_with_matches`, `content`, `count`)                                      |
+| `Bash`       | Runs shell commands                                        | 2-minute default timeout, 10-minute maximum; can run in the background                                                    |
+| `PowerShell` | Runs PowerShell natively on Windows                        | Opt-in elsewhere with `CLAUDE_CODE_USE_POWERSHELL_TOOL=1`                                                                 |
+| `WebFetch`   | Fetches a URL and extracts content with a small model      | Lossy by design; responses cached for 15 minutes                                                                          |
+| `WebSearch`  | Performs a web search                                      | No specifier — you allow or deny the whole tool                                                                           |
+
+One detail on `Edit` is worth stating precisely, because it changed with the models. The tools reference: "Claude reads the file in the current conversation before editing it, and a read cut short with a `PARTIAL view` notice doesn't count. Claude Opus 4.6, Claude Haiku 4.5, and older models always require the read. Newer models can edit an unread file when reading it wouldn't need a permission prompt and the Read tool is available." So read-before-edit is a hard requirement on older models and a near-always-observed habit on newer ones — do not build a workflow that depends on skipping it.
+
+Beyond these there is a longer list — `Agent` for spawning a subagent, `Skill`, `AskUserQuestion`, `EnterPlanMode`/`ExitPlanMode`, `Monitor`, the `Task*` checklist tools — and the tools reference is the authority for all of it.
+
+### How Claude picks
+
+It is not a lookup table; the model chooses based on your prompt and on what the previous call returned. The docs' own worked example, for "fix the failing tests":
+
+1. Run the test suite to see what is failing.
+2. Read the error output.
+3. Search for the relevant source files.
+4. Read those files.
+5. Edit them.
+6. Run the tests again to verify.
+
+The pattern that generalises: **narrow before you read**. `Glob` answers "which files exist that look like X". `Grep` answers "which files contain X, and on what line". `Read` is the expensive one — it puts the whole file in the context window — so a well-behaved session greps first and reads second. You can watch that happen in the lab's first recording.
+
+### Tool names are the unit of permission
+
+Every permission rule is written as `Tool` or `Tool(specifier)`, so knowing tool names is what lets you write rules at all:
+
+<CodeBlock title="permission rule shapes">
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(npm run *)", "Read(./docs/**)"],
+    "deny": ["Bash(git push *)", "WebFetch"]
+  }
+}
+```
+
+</CodeBlock>
+
+`Edit(/src/**)` covers writes to that path and also grants reads there. `WebFetch(domain:example.com)` matches by host. A bare tool name used as a **deny** rule removes the tool from Claude's context entirely — it never sees it. The next lesson is entirely about this.
+
+## Hands-on lab
+
+### Set up the checkout
+
+Every command in this lab runs from a clone of the lab repository. The commands themselves are
+identical on every platform; only the way you chain them differs.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-02-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-02-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git clone https://github.com/codechup/claude-code-lab.git; Set-Location claude-code-lab
+git checkout lesson/m02-02-start; npm ci
+npm test
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1 has no `&&` operator, so the tabs above chain with `;` instead. Every
+transcript in this module was captured on native Windows running Claude Code through Git Bash, which
+is why some tool output shows backslash path separators.
+
+One difference between the commands printed here and the recordings below: every captured run also passed `--settings '{"language":"English"}'`, because the machine that made the recordings has a user-level `language` setting of Turkish. The flag is on the transcript command lines so you can see it. Leave it out unless your own settings need the same override.
+
+Two real headless runs against `lesson/m02-02-start`, which carries seeded bug **B1**: `paginate()` in `src/store.ts` slices from `page * pageSize` instead of `(page - 1) * pageSize`, so page 1 returns page 2's items. Four tests fail.
+
+The first run is read-only and search-only — `--allowedTools "Glob,Grep,Read"` — to show what search alone can answer. The second gives Claude the edit and test tools and asks for the fix plus evidence.
+
+<Lab
+  title="Lab · find it with search, fix it with one edit, prove it with the tests"
+  lessonId="en/l1-beginner/m02-interact/tools-read-edit-run"
+  repoTag="lesson/m02-02-start"
+  steps={[
+    'Check out the start tag and install: `git checkout lesson/m02-02-start && npm ci`.',
+    'Reproduce the bug: `npm test`. Four tests fail across `test/store.test.ts` and `test/api.test.ts`.',
+    'Search only — run the read-only session and note that it answers with file:line pairs without reading any file end to end: `claude -p "Using only search, list every file in this repo that calls paginate(), with the line number of each call. Do not read whole files unless you have to, and do not edit anything." --model sonnet --output-format text --max-turns 10 --permission-mode dontAsk --allowedTools "Glob,Grep,Read"`',
+    'Now let it act. Run the fix session with an explicit, minimal tool allowlist: `claude -p "Two tests in test/store.test.ts are failing because paginate() in src/store.ts is off by one. Find it with Grep, read the function, fix it with a single Edit, then run npm test and show me the summary line." --model sonnet --output-format text --max-turns 20 --permission-mode acceptEdits --allowedTools "Read,Edit,Write,Glob,Grep,Bash(npm test)"',
+    'Inspect the change yourself: `git diff --stat` and `git diff -- src/store.ts`. It should be one line.',
+    'Confirm the end state matches the lesson’s solution tag: `git diff lesson/m02-02-solution -- src/store.ts` prints nothing.',
+  ]}
+  expected="The search-only run returns four call sites as file:line pairs. The fix run changes exactly one line — `const start = page * pageSize;` becomes `const start = (page - 1) * pageSize;` — and reports 4 test files passed, 15 tests passed. `git diff lesson/m02-02-solution -- src/store.ts` is empty."
+  checklist={[
+    '`npm test` failed 4 of 15 tests before the fix',
+    'The search-only session answered with call sites, not file contents',
+    '`git diff --stat` shows `1 file changed, 1 insertion(+), 1 deletion(-)`',
+    'The test summary reports 15 passing tests',
+    'The working tree now matches `lesson/m02-02-solution`',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/02-tools-read-edit-run/00-npm-test-before.txt"
+    range="2-13"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/02-tools-read-edit-run/01-search-tools.txt"
+    range="2-8"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/02-tools-read-edit-run/02-fix-with-tools.txt"
+    range="2-5"
+  />
+</Lab>
+
+Three details in those recordings repay a second look.
+
+The search run answered `test\store.test.ts:29`, `src\api\server.ts:75` and so on — **Windows path separators**, because that capture was made on native Windows. Tool output reflects the machine it ran on; that is what an unedited transcript looks like.
+
+The fix run's allowlist is `Bash(npm test)`, not `Bash`. That single rule is the difference between "Claude may run the test suite" and "Claude may run anything". It is also why the run could verify itself: without a `Bash` rule of some shape, the session can diagnose but cannot prove.
+
+And the fix was **one `Edit`**, not a rewrite. `Edit` replaces an exact string in a file that has already been read; that constraint is what keeps a one-line bug a one-line diff.
+
+## Anti-patterns
+
+**Asking for a rewrite when you want a fix.** "Rewrite `store.ts` properly" invites `Write`, which overwrites the file wholesale. _Fix:_ describe the defect; a targeted `Edit` follows from a targeted request.
+
+**Allowing `Bash` when you meant one command.** `--allowedTools "Bash"` in a script hands over the whole shell. _Fix:_ write the narrowest rule that still lets the session verify itself — `Bash(npm test)`, `Bash(npm run *)`.
+
+**Letting a session read whole directories.** "Read everything under `src/` and tell me what it does" fills the context window before the work starts. _Fix:_ ask a question search can answer first, or delegate the exploration to a subagent.
+
+**Expecting POSIX grep syntax.** The tools reference is explicit that `Grep` "uses **ripgrep syntax** (not POSIX grep)", so a pattern that works in a shell `grep` may not match here. _Fix:_ write ripgrep patterns — or describe what you are looking for and let Claude write the pattern.
+
+**Assuming `Glob` respects `.gitignore`.** It does not, by default — `Grep` does. A glob over a repository with `node_modules` present will happily return build artefacts. _Fix:_ pattern narrowly (`src/**/*.ts`), or search content with `Grep` instead.
+
+<Callout variant="changed">
+  `MultiEdit` no longer exists — it is not in the current tools reference. Use `Edit` with
+  `replace_all: true` for multi-occurrence replacements. Likewise `TodoWrite`, the old session
+  checklist tool, is disabled by default and superseded by the `Task*` tools (`TaskCreate`,
+  `TaskUpdate`, `TaskList`, …). Verified against `tools-reference.md` for Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/tools-read-edit-run"
+  questionId="q1"
+  lang="en"
+  prompt="You want to know which files call `paginate()` and on which lines, without filling the context window. Which tool fits?"
+  options={[
+    {
+      text: '`Grep` — it searches file contents with ripgrep syntax and can return matches with line numbers',
+      correct: true,
+      explanation:
+        'That is exactly what the lab’s first recording does: four call sites, no whole-file reads.',
+    },
+    {
+      text: '`Read` on every file in `src/`',
+      explanation: 'Accurate and expensive — every file read lands in the context window.',
+    },
+    {
+      text: '`Glob`',
+      explanation: '`Glob` finds files by *name* pattern. It cannot see inside them.',
+    },
+    {
+      text: '`WebFetch`',
+      explanation: 'That fetches a URL, not local files.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/tools-read-edit-run"
+  questionId="q2"
+  lang="en"
+  prompt="What does `replace_all: true` on the `Edit` tool do?"
+  options={[
+    {
+      text: 'Replaces every occurrence of `old_string` in the file instead of requiring a unique match',
+      correct: true,
+      explanation:
+        'It is the replacement for the removed `MultiEdit` tool for multi-occurrence edits.',
+    },
+    {
+      text: 'Replaces the whole file with new contents',
+      explanation: 'That is `Write`.',
+    },
+    {
+      text: 'Applies the same edit across every file in the repository',
+      explanation: '`Edit` acts on one file at a time.',
+    },
+    {
+      text: 'Enables regular expressions in `old_string`',
+      explanation: '`Edit` is exact string replacement — no regex, no fuzzy matching.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/tools-read-edit-run"
+  questionId="q3"
+  lang="en"
+  prompt="A headless run is allowed `Read,Edit,Glob,Grep` and nothing else. What can it not do?"
+  options={[
+    {
+      text: 'Verify its own fix by running the test suite',
+      correct: true,
+      explanation:
+        'Running tests needs a `Bash` (or `PowerShell`) rule. Without one the session can diagnose and edit, but not prove.',
+    },
+    {
+      text: 'Find the buggy function',
+      explanation: '`Grep` and `Read` cover that.',
+    },
+    {
+      text: 'Change the buggy line',
+      explanation: '`Edit` covers that.',
+    },
+    {
+      text: 'List the files in the repository',
+      explanation: '`Glob` covers that.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/tools-read-edit-run"
+  questionId="q4"
+  lang="en"
+  prompt="Which statement about `Glob` and `Grep` is correct as of Claude Code 2.1.263?"
+  options={[
+    {
+      text: '`Grep` respects `.gitignore`; `Glob` does not, by default',
+      correct: true,
+      explanation:
+        'Set `CLAUDE_CODE_GLOB_NO_IGNORE=false` to change `Glob`’s behaviour. `Glob` results are also capped at 100 files.',
+    },
+    { text: 'Both respect `.gitignore`', explanation: 'Only `Grep` does by default.' },
+    { text: 'Neither respects `.gitignore`', explanation: '`Grep` does.' },
+    {
+      text: '`Grep` uses POSIX grep syntax',
+      explanation:
+        'It uses ripgrep syntax, which differs — notably in escaping and character classes.',
+    },
+  ]}
+/>
+
+**Next:** `03-permissions` turns those tool names into rules, and explains why a `deny` entry beats every `allow` entry no matter which settings file it came from.

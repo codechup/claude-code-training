@@ -1,0 +1,323 @@
+---
+title: 'Prompting basics: goal, constraints, evidence'
+description: 'A prompt Claude Code can act on names the goal, the place to look and the proof you want back. Compare four real headless runs of the same bug — from "fix it" to a prompt that returns the exact line, the failing assertion and the fix.'
+level: 1
+module: 'm02-interact'
+order: 1
+duration_min: 15
+difficulty: core
+tags: ['prompting', 'basics', 'evidence']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Best practices for Claude Code'
+    url: 'https://code.claude.com/docs/en/best-practices.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'How Claude Code works'
+    url: 'https://code.claude.com/docs/en/how-claude-code-works.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Choose a permission mode'
+    url: 'https://code.claude.com/docs/en/permission-modes.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m02-02-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Name the three parts every workable prompt carries: the **goal**, the **constraints** (where to look, what not to touch) and the **evidence** you want back.
+- Rewrite a vague request into a specific one using the four patterns the official best-practices guide names: scope the task, point to sources, reference existing patterns, describe the symptom.
+- Predict what a prompt with no verifiable "done" will produce — and recognise it in a real transcript.
+- Say when a vague prompt is the right choice, and steer a running session with `Esc` or a typed correction instead of starting over.
+
+**Prerequisites.** Claude Code installed and authenticated (module `m01-start`), and a local clone of the course lab repository. This lesson's lab is read-only: nothing you run here edits a file.
+
+<WhenNotToUse>
+  Do not spend effort crafting a prompt when you are exploring. "What would you improve in this
+  file?" is a legitimate prompt — the official guide says so — and it surfaces things you would not
+  have known to ask about. Skip the ceremony too when the change is smaller than its description: if
+  you can type the fix faster than you can describe it, type the fix. And do not treat prompt
+  wording as the fix for a bad session. If you have corrected Claude twice on the same point, the
+  context is polluted with failed approaches; `/clear` and start again with a better first prompt.
+</WhenNotToUse>
+
+## Concept
+
+### Claude Code is not a chat box, and not a compiler either
+
+A chat model needs your words to contain the information. An agent does not: it can go and get the information itself. So a prompt's job is not to describe the code — Claude will read the code — but to **fix the target, the boundary and the proof**.
+
+The docs put it as _delegate, don't dictate_: "Give context and direction, then trust Claude to figure out the details." The worked example the official docs use is one sentence of symptom plus one directory:
+
+```text
+The checkout flow is broken for users with expired cards.
+The relevant code is in src/payments/. Can you investigate and fix it?
+```
+
+Notice what it does not say: which files to open, which commands to run, what the fix looks like. It does say what is broken, for whom, and where to start.
+
+### The three parts
+
+| Part            | The question it answers               | What it looks like in practice                                       |
+| --------------- | ------------------------------------- | -------------------------------------------------------------------- |
+| **Goal**        | What is different when this is done?  | "page 1 returns the first two tasks", not "fix pagination"           |
+| **Constraints** | Where to look, and what not to touch  | "the logic is in `src/store.ts`", "do not edit any files"            |
+| **Evidence**    | What proof comes back with the answer | "quote the failing assertion", "run `npm test` and show the summary" |
+
+The third one is the one people skip, and it is the one that changes the most. The best-practices guide is blunt about it: "Claude stops when the work looks done. Without a check it can run, 'looks done' is the only signal available, and you become the verification loop." Give it something that returns a pass or a fail and the loop closes without you.
+
+### Four rewrites, from the official guide
+
+The best-practices guide carries two before/after tables — one for giving Claude a way to verify its work, one for providing specific context. Four of their rows are the shortest useful summary of the craft:
+
+| Pattern                  | Before                                                | After                                                                                                                                                                          |
+| ------------------------ | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Scope the task**       | "add tests for foo.py"                                | "write a test for foo.py covering the edge case where the user is logged out. avoid mocks."                                                                                    |
+| **Point to sources**     | "why does ExecutionFactory have such a weird api?"    | "look through ExecutionFactory's git history and summarize how its api came to be"                                                                                             |
+| **Describe the symptom** | "fix the login bug"                                   | "users report that login fails after session timeout. check the auth flow in src/auth/, especially token refresh. write a failing test that reproduces the issue, then fix it" |
+| **Provide verification** | "implement a function that validates email addresses" | "write a validateEmail function. example test cases: user@example.com is true, invalid is false … run the tests after implementing"                                            |
+
+Two more levers worth knowing on day one. Reference a file with `@` instead of describing where it lives — Claude reads it before replying. And paste the actual error text, screenshot or log rather than paraphrasing it; the docs' "address root causes" row is literally "the build fails with this error: \[paste error]".
+
+### A prompt is the start of a conversation, not a contract
+
+You do not need a perfect prompt, because you are not committed to it. While Claude is working:
+
+- Press `Esc` to stop it immediately. The running tool call is cancelled and your context is kept.
+- Type a correction and press `Enter` to send it **without** stopping the running tool — Claude reads it as soon as the current action finishes and adjusts before choosing its next step.
+
+That is why "start specific, then iterate" beats "write the perfect prompt". The cost of a slightly-wrong first prompt is one `Esc`.
+
+## Hands-on lab
+
+### Set up the checkout
+
+Every command in this lab runs from a clone of the lab repository. The commands themselves are
+identical on every platform; only the way you chain them differs.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-02-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-02-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git clone https://github.com/codechup/claude-code-lab.git; Set-Location claude-code-lab
+git checkout lesson/m02-02-start; npm ci
+npm test
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1 has no `&&` operator, so the tabs above chain with `;` instead. Every
+transcript in this module was captured on native Windows running Claude Code through Git Bash, which
+is why some tool output shows backslash path separators.
+
+One difference between the commands printed here and the recordings below: every captured run also passed `--settings '{"language":"English"}'`, because the machine that made the recordings has a user-level `language` setting of Turkish. The flag is on the transcript command lines so you can see it. Leave it out unless your own settings need the same override.
+
+The lab repository at `lesson/m02-02-start` carries one real, seeded defect: `paginate()` in `src/store.ts` is 1-indexed by its own documentation but slices from `page * pageSize`, so page 1 silently returns page 2's items. Four prompts, same bug, same repository, same model — all four runs below were captured for real, headlessly, in **plan mode** so that nothing could be edited.
+
+<Lab
+  title="Lab · four prompts, one bug"
+  lessonId="en/l1-beginner/m02-interact/prompting-basics"
+  repoTag="lesson/m02-02-start"
+  steps={[
+    'Clone the lab repository and check out the start tag: `git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && git checkout lesson/m02-02-start && npm ci`.',
+    'Confirm the bug is real before you prompt anything: run `npm test` and read the four failures.',
+    'Run the no-context prompt: `claude -p "fix it" --model sonnet --output-format text --max-turns 12 --permission-mode plan`.',
+    'Run the target-but-no-goal prompt: replace the prompt with `review store.ts` and run it again.',
+    'Run the unverifiable prompt: replace the prompt with `make the store code faster` and run it again. Read what it proposes to change.',
+    'Run the specific prompt — symptom, location, boundary and the three pieces of evidence you want — and compare the answer with the previous three.',
+    'Run `git status`. Plan mode blocked every edit, so the working tree is still clean after all four runs.',
+  ]}
+  expected="All four runs answer, but only the fourth returns exactly what you asked for: the wrong line (src/store.ts:57), the assertion that catches it (test/store.test.ts:30), and the one-line fix — and it edits nothing. `git status` reports a clean tree throughout."
+  checklist={[
+    '`npm test` shows 4 failing tests before you start',
+    '"fix it" ended in a question — a plan you must approve, not the evidence you asked for',
+    '"make the store code faster" proposed rewriting a working data structure and explicitly declined to fix the real bug',
+    'The specific prompt returned the line, the assertion and the fix — and said "No files were edited"',
+    '`git status` is clean after all four runs',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/02-tools-read-edit-run/00-npm-test-before.txt"
+    range="2-13"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/01-prompting-basics/00-no-context.txt"
+    range="2-11"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/01-prompting-basics/01-vague-review.txt"
+    range="2-13"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/01-prompting-basics/02-vague-no-check.txt"
+    range="2-26"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/01-prompting-basics/03-good-symptom.txt"
+    range="2-22"
+  />
+</Lab>
+
+Read those four recordings honestly, because they do not say what a tidy lesson would like them to say.
+
+**"fix it" worked.** On a four-file repository whose git history contains a commit literally called `seed bug B1 - off-by-one in paginate`, Claude found the bug from two words. That is a fact about this lab, not about your codebase. Scale the repository up and "fix it" becomes "fix what?" — and you pay for the search in turns and context.
+
+**"review store.ts" also worked**, and returned a review. Note what came back at the end: _"Let me know if you'd like me to fix the off-by-one."_ A prompt with a target but no goal buys you a round trip.
+
+**"make the store code faster" is the interesting failure.** There was no evidence the store was slow, and no definition of "faster", so Claude invented both: it proposed replacing the array with a `Map`, rewriting six functions — and explicitly listed the _actual_ failing bug as out of scope. A prompt with no verifiable goal does not produce nothing. It produces confident work on the wrong problem.
+
+**The fourth prompt** named the symptom with numbers, named the two files, set a boundary ("Do not edit any files") and asked for three specific artefacts. It returned exactly three artefacts and a closing line: _"No files were edited, per your instruction."_
+
+## Anti-patterns
+
+**Describing the code instead of naming the symptom.** Pasting a function into the prompt and asking "is this right?" throws away the agent's biggest advantage — it can read the file, the tests and the git history. _Fix:_ describe what a user sees going wrong, and name the directory.
+
+**Asking for a change with no way to check it.** "Make it faster", "clean this up", "improve the error handling" have no pass/fail. _Fix:_ attach a check — a test to run, a command that must exit 0, a number that must change — in the same message.
+
+**Dictating the steps.** "Open `store.ts`, go to line 57, change `page` to `page - 1`" is a slow way to type an edit yourself. _Fix:_ state the goal and the constraint; let Claude find line 57.
+
+**Prompting into a polluted session.** The third and fourth correction on the same point rarely lands, because the context now holds three failed approaches. _Fix:_ `/clear`, then one better prompt that incorporates what you learned.
+
+**Waiting for the turn to finish before correcting.** Watching Claude head down the wrong path for two more minutes costs you time and context. _Fix:_ `Esc` to stop, or type the correction and press `Enter` to steer without stopping.
+
+**Treating a claim as evidence.** "The tests pass" is a sentence. The test runner's summary line is evidence. _Fix:_ ask for the command and its output, and read it.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/prompting-basics"
+  questionId="q1"
+  lang="en"
+  prompt="Which three parts does a prompt Claude Code can act on carry?"
+  options={[
+    {
+      text: 'Goal, constraints, evidence',
+      correct: true,
+      explanation:
+        'What is different when this is done, where to look and what not to touch, and the proof that comes back.',
+    },
+    {
+      text: 'File list, line numbers, replacement text',
+      explanation: 'That is dictating the diff — you could type it yourself faster.',
+    },
+    {
+      text: 'Role, tone, output length',
+      explanation: 'Chat-prompt hygiene. An agent needs a target and a check, not a persona.',
+    },
+    {
+      text: 'Model, effort level, permission mode',
+      explanation: 'Those are session settings, not the content of the request.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/prompting-basics"
+  questionId="q2"
+  lang="en"
+  prompt="In the lab, why did “make the store code faster” produce a plan to rewrite six functions while leaving the real bug in place?"
+  options={[
+    {
+      text: 'Plan mode prevents Claude from fixing bugs.',
+      explanation:
+        'Plan mode blocks edits, not diagnosis — the other three runs diagnosed the bug in the same mode.',
+    },
+    {
+      text: 'The prompt named no evidence of slowness and no definition of “faster”, so Claude supplied its own goal.',
+      correct: true,
+      explanation:
+        'A goal with no pass/fail gets invented. The transcript even lists the genuine failing bug as out of scope.',
+    },
+    {
+      text: 'Sonnet cannot read TypeScript.',
+      explanation: 'It read the file accurately; it optimised the wrong thing.',
+    },
+    {
+      text: '`--max-turns 12` was too low.',
+      explanation: 'The run finished well inside its turn budget and returned a complete plan.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/prompting-basics"
+  questionId="q3"
+  lang="en"
+  prompt="Claude is two minutes into an approach you can already see is wrong. What is the cheapest correction?"
+  options={[
+    {
+      text: 'Wait for the turn to finish, then explain what went wrong.',
+      explanation: 'You pay for the whole wrong turn in time and in context.',
+    },
+    {
+      text: 'Press `Esc` to stop it, or type a correction and press `Enter` to steer without stopping the running tool.',
+      correct: true,
+      explanation:
+        'Both keep your context. `Esc` cancels the running tool call; a typed correction is read as soon as the current action completes.',
+    },
+    {
+      text: 'Run `/clear` immediately.',
+      explanation:
+        '`/clear` is the right move after repeated failed corrections, not for the first course correction — it throws away context you still need.',
+    },
+    {
+      text: 'Close the terminal and start a new session.',
+      explanation:
+        'Sessions and checkpoints are saved to disk, so nothing is lost — but a new session starts with a fresh context window, and you have to re-explain everything.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/prompting-basics"
+  questionId="q4"
+  lang="en"
+  prompt="Which rewrite follows the docs' “describe the symptom” pattern?"
+  options={[
+    {
+      text: '“fix the login bug”',
+      explanation: 'That is the “before” column — no symptom, no location, no definition of fixed.',
+    },
+    {
+      text: '“users report that login fails after session timeout. check the auth flow in src/auth/, especially token refresh. write a failing test that reproduces the issue, then fix it”',
+      correct: true,
+      explanation:
+        'Symptom, likely location, and what “fixed” looks like — a failing test that then passes.',
+    },
+    {
+      text: '“open src/auth/session.ts and change line 88”',
+      explanation: 'Dictating a diff, not describing a symptom.',
+    },
+    {
+      text: '“is our authentication any good?”',
+      explanation: 'A legitimate exploratory prompt, but it names no symptom and no check.',
+    },
+  ]}
+/>
+
+**Next:** `02-tools-read-edit-run` shows what Claude actually does with a prompt like the fourth one — which tools it reaches for, and why `Grep` comes before `Read`.

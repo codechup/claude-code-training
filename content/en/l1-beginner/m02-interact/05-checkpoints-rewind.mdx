@@ -1,0 +1,318 @@
+---
+title: 'Checkpoints and /rewind'
+description: 'Every prompt you send creates a checkpoint of your files. Learn the rewind menu (Esc Esc or /rewind), its six options, and the four things checkpointing deliberately does not track — including anything a Bash command changed.'
+level: 1
+module: 'm02-interact'
+order: 5
+duration_min: 10
+difficulty: core
+tags: ['checkpoints', 'rewind', 'undo', 'lab']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Checkpointing'
+    url: 'https://code.claude.com/docs/en/checkpointing.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Best practices for Claude Code'
+    url: 'https://code.claude.com/docs/en/best-practices.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'How Claude Code works'
+    url: 'https://code.claude.com/docs/en/how-claude-code-works.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Interactive mode'
+    url: 'https://code.claude.com/docs/en/interactive-mode.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m02-05-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say when a checkpoint is created and how many a session keeps.
+- Open the rewind menu two ways — `/rewind`, or `Esc` twice with an empty prompt input — and choose the right one of its six options.
+- List the four categories of change checkpointing does **not** restore, and name the tool that covers each gap.
+- Use "Summarize from here" / "Summarize up to here" as a targeted `/compact`.
+- Undo a Claude edit without the TUI, from a headless or scripted run.
+
+**Prerequisites.** Lesson `02-tools-read-edit-run` (checkpoints track file-editing tools, so you need to know which those are), and a clone of the lab repository.
+
+<WhenNotToUse>
+  Checkpoints are session-level recovery, not version control — the docs say so in as many words.
+  They do not cover anything a Bash command touched, they do not cover edits made by most subagents,
+  and their file snapshots are deleted in the retention sweep roughly 30 days after the session last
+  saved one. If the change matters beyond this afternoon, commit it. If you are about to try
+  something genuinely risky in a repository with uncommitted work, commit or stash **first** and use
+  git as the safety net; use `/rewind` for the ordinary "that turn went wrong" case it was built
+  for.
+</WhenNotToUse>
+
+## Concept
+
+### What gets checkpointed, and when
+
+- **Every user prompt creates a new checkpoint.** Not every edit — every prompt.
+- Claude Code snapshots the files its editing tools are about to change, before the change.
+- A session keeps file snapshots for the **100 most recent** checkpoints.
+- Checkpoints are saved with the conversation, so `/rewind` still works after you resume a session.
+- Snapshots are removed in the retention sweep, by default about 30 days after the session last saved one. Rewinding to a checkpoint whose snapshots are gone can fail with `No files were restored`. Raise `cleanupPeriodDays` to keep them longer.
+
+### The rewind menu
+
+<CodeBlock title="opening the rewind menu">
+
+```text
+/rewind                 # run the command, from anywhere in the session
+Esc Esc                 # press Escape twice while the prompt input is EMPTY
+```
+
+</CodeBlock>
+
+If the prompt input contains text, a double `Esc` clears it instead of opening the menu — the cleared text goes to your input history, so press `Up` to get it back after you are done in the menu.
+
+The menu lists each prompt you sent this session. Pick a point, then pick an action:
+
+| Option                            | What it does                                                                 |
+| --------------------------------- | ---------------------------------------------------------------------------- |
+| **Restore code and conversation** | Revert both to that point                                                    |
+| **Restore conversation**          | Rewind the conversation, keep the current code                               |
+| **Restore code**                  | Revert file changes, keep the conversation                                   |
+| **Summarize from here**           | Compress the conversation from this point _forward_ into a summary           |
+| **Summarize up to here**          | Compress the conversation _before_ this point, keeping later messages intact |
+| **Never mind**                    | Return to the list without changing anything                                 |
+
+The two code-restore options appear **only** when the selected checkpoint has tracked file changes to revert. After restoring the conversation or choosing "Summarize from here", the original prompt from the selected message is put back into the input field so you can re-send or edit it.
+
+To guide a summary, highlight a **Summarize** option with the arrow keys and type instructions where the row reads _add context (optional)_, then press `Enter`. Selecting the option with its number key summarises immediately, with no instructions. Summarising does not change files on disk, and the original messages stay in the session transcript.
+
+If you ran `/clear` earlier in the same Claude Code process, the rewind menu gains an entry at the top of the list labelled `/resume <session-id> (previous session)` — select it to get back to the conversation that was active before `/clear`. That entry requires Claude Code v2.1.191 or later; on earlier versions run `/resume` and pick the previous session from the list.
+
+### The four gaps
+
+This is the part to memorise, because each gap has a different answer:
+
+| Not restored                        | Why                                                                                     | What covers it                                            |
+| ----------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Files changed by **Bash commands**  | Only direct edits through Claude's file-editing tools are tracked                       | git                                                       |
+| Edits by most **subagents**         | A background fork, a `/code-review --fix` run — those edits are not in your checkpoints | git. (A _foreground_ forked skill's edits are restored)   |
+| **External changes**                | Manual edits and other concurrent sessions are not captured                             | git                                                       |
+| **Symlinked and hard-linked paths** | A restore skips them and warns `Restored the code, but skipped N files`                 | Edit the file yourself, or ask Claude to reverse the edit |
+
+Anything that reaches a remote system — a database write, an API call, a deployment — cannot be checkpointed at all. That is what permission modes and permission rules are for.
+
+### Working without the menu
+
+Two undo paths need no TUI at all, and both are worth having in your fingers:
+
+- **Ask.** "Undo that" is a normal instruction; Claude reverses its own edit with the same tools it used to make it.
+- **git.** `git diff` to see what changed, `git checkout -- <path>` to throw it away. This is the only path that covers a change a Bash command made.
+
+## Hands-on lab
+
+### Set up the checkout
+
+Every command in this lab runs from a clone of the lab repository. The commands themselves are
+identical on every platform; only the way you chain them differs.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-05-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-05-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git clone https://github.com/codechup/claude-code-lab.git; Set-Location claude-code-lab
+git checkout lesson/m02-05-start; npm ci
+npm test
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1 has no `&&` operator, so the tabs above chain with `;` instead. Every
+transcript in this module was captured on native Windows running Claude Code through Git Bash, which
+is why some tool output shows backslash path separators.
+
+One difference between the commands printed here and the recordings below: every captured run also passed `--settings '{"language":"English"}'`, because the machine that made the recordings has a user-level `language` setting of Turkish. The flag is on the transcript command lines so you can see it. Leave it out unless your own settings need the same override.
+
+`lesson/m02-05-start` carries seeded bug **B2**: `isOverdue()` in `src/store.ts` compares `Date.parse(dueDate)` (milliseconds) against `now() / 1000` (seconds), so a task due yesterday is never reported overdue. Two tests fail.
+
+The lab makes a real edit, then takes it back — first the way a script can (asking, in a resumed session), then the way the TUI does it.
+
+<Lab
+  title="Lab · make an edit, then take it back three ways"
+  lessonId="en/l1-beginner/m02-interact/checkpoints-rewind"
+  repoTag="lesson/m02-05-start"
+  steps={[
+    'Check out the tag and install: `git checkout lesson/m02-05-start && npm ci`.',
+    'Reproduce: `npm test`. Two tests in `test/overdue.test.ts` fail.',
+    'Let Claude fix it for real: `claude -p "isOverdue() in src/store.ts compares milliseconds against seconds, so overdue tasks are never reported. Fix it with a single Edit and run npm test." --model sonnet --output-format text --max-turns 16 --permission-mode acceptEdits --allowedTools "Read,Edit,Glob,Grep,Bash(npm test)"`',
+    'Confirm the edit landed: `git diff -- src/store.ts` shows `now() / 1000` become `now()`.',
+    'Undo it by asking, in the same session: `claude -p --continue "Undo the edit you just made to src/store.ts, then run git diff and show me the output." --model sonnet --output-format text --max-turns 10 --permission-mode acceptEdits --allowedTools "Read,Edit,Bash(git diff:*)"`',
+    'Confirm: `git status` is clean and the bug is back.',
+    'Now do it interactively. Run `claude`, ask for the same fix, wait for the edit, then press `Esc` twice on an empty prompt (or run `/rewind`), select the prompt you sent, and choose **Restore code**. Check `git diff` again.',
+    'Finally, prove the Bash gap: run `claude` and ask it to make the same change with `sed` rather than `Edit`. Then open `/rewind` — the code-restore options are absent for that checkpoint, because nothing was tracked.',
+  ]}
+  expected="The fix run changes one line and reports 15 passing tests. The `--continue` undo reverses it and `git diff` prints nothing. In the interactive run, **Restore code** returns `src/store.ts` to its committed state; after the `sed` variant, the rewind menu offers no code-restore option for that checkpoint."
+  checklist={[
+    '`npm test` failed 2 of 15 tests before the fix',
+    'The fix changed exactly one line and turned the suite green',
+    '“Undo the edit you just made” reverted it, confirmed by an empty `git diff`',
+    '`Esc Esc` opened the rewind menu only when the prompt input was empty',
+    'After the `sed` variant, the menu offered no **Restore code** option for that checkpoint',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/05-checkpoints-rewind/00-npm-test-before.txt"
+    range="2-9"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/05-checkpoints-rewind/01-edit-then-undo.txt"
+    range="2-3"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/05-checkpoints-rewind/02-undo-that.txt"
+    range="2-3"
+  />
+</Lab>
+
+The two recordings above are headless captures, so they show the _ask_ path, not the menu: `claude -p --continue` resumes the same session, and "undo the edit you just made" reverses it. The rewind menu itself is a terminal-UI feature — a list you arrow through and select from — so this lesson describes it with the exact keys and options rather than inventing a screenshot of it. Steps 7 and 8 are where you see the menu for yourself.
+
+Step 8 is the one to actually do. Watching the code-restore options _disappear_ for a `sed`-made change is a faster way to learn the Bash gap than reading about it.
+
+## Anti-patterns
+
+**Treating `/rewind` as version control.** Checkpoints are session-scoped, capped at 100, and swept after ~30 days. _Fix:_ commit anything you would be upset to lose; use `/rewind` for the current session's mistakes.
+
+**Assuming a Bash-made change is recoverable.** `mv`, `rm`, `sed -i` and a script that rewrites files are all invisible to checkpointing. _Fix:_ commit before letting a session run file-mutating shell commands.
+
+**Double-`Esc` with text in the input.** It clears the input instead of opening the menu, which reads like a bug the first time. _Fix:_ clear the input first, or just run `/rewind`; your cleared text is in the input history under `Up`.
+
+**Rewinding code and forgetting the conversation.** "Restore code" leaves the conversation believing the edit exists, so the next turn builds on a file state that is gone. _Fix:_ pick "Restore code and conversation" unless you specifically want the history.
+
+**Expecting a subagent's edits back.** A background fork or a `/code-review --fix` run edits your tree, and rewinding does not restore those. _Fix:_ use git; only a _foreground_ forked skill's edits are covered.
+
+<Callout variant="changed">
+  Rewinding past a `/clear` is now possible: if you ran `/clear` earlier in the same Claude Code
+  process, the rewind menu shows a `/resume <session-id> (previous session)` entry at the top.
+  Requires Claude Code v2.1.191 or later; on earlier versions you had to run `/resume` and pick the
+  previous session by hand.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/checkpoints-rewind"
+  questionId="q1"
+  lang="en"
+  prompt="When does Claude Code create a checkpoint?"
+  options={[
+    {
+      text: 'On every user prompt',
+      correct: true,
+      explanation:
+        'Each prompt captures the state of your code; a session keeps snapshots for the 100 most recent checkpoints.',
+    },
+    { text: 'On every file edit', explanation: 'Snapshots are taken per prompt, not per edit.' },
+    { text: 'Only when you run `/rewind`', explanation: 'By then it would be too late.' },
+    { text: 'On every git commit', explanation: 'Checkpointing is independent of git.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/checkpoints-rewind"
+  questionId="q2"
+  lang="en"
+  prompt="Claude renamed a file by running `mv old.ts new.ts` through the Bash tool. Can `/rewind` undo it?"
+  options={[
+    {
+      text: 'No — checkpointing tracks only edits made through Claude’s file-editing tools',
+      correct: true,
+      explanation: 'For anything a Bash command changed, git is the recovery path.',
+    },
+    {
+      text: 'Yes, if you pick “Restore code and conversation”',
+      explanation: 'The rename was never snapshotted, so there is nothing to restore.',
+    },
+    {
+      text: 'Yes, within the 100 most recent checkpoints',
+      explanation: 'The cap is about how many checkpoints are kept, not about what is tracked.',
+    },
+    {
+      text: 'Only if the file is under 5,000 tokens',
+      explanation: 'That threshold belongs to compaction, not to checkpointing.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/checkpoints-rewind"
+  questionId="q3"
+  lang="en"
+  prompt="You press `Esc` twice and the prompt input just clears. Why?"
+  options={[
+    {
+      text: 'The input was not empty — double `Esc` opens the rewind menu only from an empty input',
+      correct: true,
+      explanation:
+        'The cleared text is saved to your input history, so press `Up` to recall it after you finish in the menu.',
+    },
+    { text: 'The session has no checkpoints yet', explanation: 'Every prompt creates one.' },
+    {
+      text: 'Rewind is disabled in `acceptEdits` mode',
+      explanation: 'Rewind is not tied to a permission mode.',
+    },
+    {
+      text: 'You must run `/rewind` first to enable the shortcut',
+      explanation: 'They are two entrances to the same menu.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/checkpoints-rewind"
+  questionId="q4"
+  lang="en"
+  prompt="A long debugging session has filled your context, but the instructions you gave at the start still matter. Which rewind option fits?"
+  options={[
+    {
+      text: '**Summarize from here** at the message where the debugging started',
+      correct: true,
+      explanation:
+        'It compresses the conversation from that point forward, leaving your earlier instructions intact.',
+    },
+    {
+      text: '**Summarize up to here** at the same message',
+      explanation:
+        'That compresses everything *before* the point — the opposite of what you want here.',
+    },
+    {
+      text: '**Restore conversation** to the first message',
+      explanation: 'That throws the debugging away rather than compressing it.',
+    },
+    { text: '**Restore code**', explanation: 'That reverts files and does nothing for context.' },
+  ]}
+/>
+
+**Next:** `06-context-basics` is the other half of the same problem — seeing how full the context window is before it forces the decision for you.

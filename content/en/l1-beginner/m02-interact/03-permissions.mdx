@@ -1,0 +1,397 @@
+---
+title: 'Permission modes and allow/deny rules'
+description: 'Six permission modes set the baseline; allow, ask and deny rules layer on top. Learn the modes, the rule syntax, the deny → ask → allow order and why a deny in any scope wins — proved with three real headless runs against the lab repo.'
+level: 1
+module: 'm02-interact'
+order: 3
+duration_min: 20
+difficulty: core
+tags: ['permissions', 'security', 'lab']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Choose a permission mode'
+    url: 'https://code.claude.com/docs/en/permission-modes.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure permissions'
+    url: 'https://code.claude.com/docs/en/permissions.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Tools available to Claude'
+    url: 'https://code.claude.com/docs/en/tools-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m02-03-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Name all six permission modes — `default` (labelled **Manual**), `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions` — and say what runs without asking in each.
+- Switch modes three ways: `Shift+Tab` in a session, `--permission-mode` at startup, `permissions.defaultMode` in a settings file.
+- Write allow, ask and deny rules with the correct `Tool(specifier)` syntax, including where the `*` belongs in a `Bash` rule.
+- State the evaluation order — **deny, then ask, then allow** — and explain why a deny rule cannot carry exceptions.
+- Predict which settings file wins when two disagree, and know which values a project settings file is not allowed to set.
+
+**Prerequisites.** Lesson `02-tools-read-edit-run` (permission rules are written in tool names), and a clone of the lab repository.
+
+<WhenNotToUse>
+  Permission rules are not a security boundary against a hostile repository or a hostile web page.
+  They constrain what Claude Code will run, not what a command does once it runs, and they are
+  enforced by Claude Code rather than by the model — instructions in a prompt or in `CLAUDE.md`
+  shape what Claude *tries*, never what is *allowed*. For untrusted code you want isolation as well:
+  the Bash sandbox, a container or a VM (level 3's security module). And do not reach for
+  `bypassPermissions` to make prompts stop: the docs restrict it to isolated containers and VMs
+  without internet access, and the modes below solve the prompt-fatigue problem properly.
+</WhenNotToUse>
+
+## Concept
+
+### Modes set the baseline
+
+A permission mode decides which actions run **without asking you first**. Rules then layer on top.
+
+| Mode                | What runs without asking                                                                               | Best for                                        |
+| ------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
+| `default`           | Reads only                                                                                             | Reviewing every action yourself, sensitive work |
+| `acceptEdits`       | Reads, file edits, and common filesystem commands (`mkdir`, `touch`, `mv`, `cp`, `rm`, `rmdir`, `sed`) | Iterating on code you are reviewing             |
+| `plan`              | Reads, plus classifier-approved commands when auto mode is available                                   | Exploring a codebase before changing it         |
+| `auto`              | Everything, with background safety checks by a classifier model                                        | Long tasks, reducing prompt fatigue             |
+| `dontAsk`           | Only pre-approved tools                                                                                | Locked-down CI and scripts                      |
+| `bypassPermissions` | Everything                                                                                             | Isolated containers and VMs only                |
+
+Two naming points that trip people up. The mode whose config value is `default` is shown as **Manual** in the CLI, in `claude --help`, in the IDE extensions and in the desktop app; the CLI also accepts `manual` as an alias wherever you type the value (Claude Code v2.1.200 or later). And `auto` is not "no checks" — a second model, the classifier, reviews actions in the background and blocks the risky ones instead of asking you.
+
+Which mode a **new** session starts in depends on how you launched it. On Pro, Max and Team plans an interactive terminal or VS Code session starts in `auto`; a `claude -p` run, an Agent SDK session, an Enterprise plan or a Console API key starts in `default`. That last one matters for every headless example on this site: **`-p` starts in Manual mode unless you say otherwise.**
+
+### Switching modes
+
+<CodeBlock title="three ways to set the mode">
+
+```bash
+# 1. During a session: press Shift+Tab to cycle
+#    auto -> default -> acceptEdits -> plan -> back to default
+#    The status bar shows the active mode:
+#      "⏸ manual mode on"   "⏵⏵ accept edits on"   "⏸ plan mode on"
+#      "⏵⏵ auto mode on"    "⏵⏵ don't ask on"      "⏵⏵ bypass permissions on"
+
+# 2. At startup, for one session:
+claude --permission-mode plan
+
+# 3. As a default, in a settings file:
+#    {"permissions": {"defaultMode": "default"}}
+```
+
+</CodeBlock>
+
+`dontAsk` never appears in the `Shift+Tab` cycle — set it with the flag. `bypassPermissions` appears in the cycle only if the session was started in a way that enables it. The same `--permission-mode` flag works with `-p`.
+
+### Rules: allow, ask, deny
+
+Rules are written `Tool` or `Tool(specifier)`:
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(npm run *)", "Bash(git commit *)", "Read(./docs/**)"],
+    "ask": ["Bash(git push *)"],
+    "deny": ["Read(./.env)", "WebFetch"]
+  }
+}
+```
+
+</CodeBlock>
+
+Three things to internalise about `Bash` wildcards, because getting them wrong is the most common permissions mistake:
+
+- **Put the `*` after the subcommand.** Everything before the first `*` is matched literally. `Bash(git log *)` allows only `git log`; `Bash(git * main)` allows `git push origin main` — and `git -c core.fsmonitor=<script> diff main`, which runs a program you named.
+- **A trailing `* ` with a space before it also matches the bare command.** `Bash(ls *)` matches `ls` and `ls -la`, but not `lsof`. `Bash(ls*)` — no space — matches `lsof` too.
+- **`:*` is the same as a trailing ` *`.** `Bash(ls:*)` ≡ `Bash(ls *)`. The permission dialog writes the space form when you pick "Yes, and don't ask again".
+
+You can also match a top-level input parameter with `Tool(param:value)` in a **deny or ask** rule — `Agent(model:opus)`, `Bash(run_in_background:true)` — but not a tool's primary content field (`command`, `file_path`, `url`), because a compound command could slip past it.
+
+### The one prompt this lesson turns on
+
+Every rule above exists to answer one question about one prompt. Keep this one in mind while you read
+the lab:
+
+```text
+Run the test suite and tell me what fails.
+```
+
+In `default` mode that prompt stops for approval before the test runner starts. In `acceptEdits` it
+still stops, because `npm test` is not a filesystem command. With `allow: ["Bash(npm test)"]` it runs
+straight through. With `deny: ["Bash(npm test)"]` it is refused no matter which mode you are in — and
+that last case is the one the lab records.
+
+### The order that decides everything
+
+> Rules are evaluated in order: **deny, then ask, then allow.** The first match in that order determines the outcome, and rule specificity doesn't change the order.
+
+Two consequences worth memorising:
+
+1. **A deny rule cannot carry exceptions.** `deny: ["Bash(aws *)"]` blocks `aws s3 ls` even if `allow` also lists `Bash(aws s3 ls)`.
+2. **A deny in any scope beats an allow in any other scope.** User settings allow, project settings deny → denied. Project allows, user denies → denied. Managed settings sit highest of all: no other level, command-line arguments included, overrides a managed permission rule.
+
+A **bare** tool name as a deny rule (`"deny": ["Bash"]`) removes the tool from Claude's context entirely — it never sees the tool exists. A scoped rule (`Bash(rm *)`) leaves the tool available and blocks matching calls.
+
+Use `/permissions` in a session to see every active rule and which `settings.json` each came from.
+
+## Hands-on lab
+
+### Set up the checkout
+
+Every command in this lab runs from a clone of the lab repository. The commands themselves are
+identical on every platform; only the way you chain them differs.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-03-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-03-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git clone https://github.com/codechup/claude-code-lab.git; Set-Location claude-code-lab
+git checkout lesson/m02-03-start; npm ci
+npm test
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1 has no `&&` operator, so the tabs above chain with `;` instead. Every
+transcript in this module was captured on native Windows running Claude Code through Git Bash, which
+is why some tool output shows backslash path separators.
+
+One difference between the commands printed here and the recordings below: every captured run also passed `--settings '{"language":"English"}'`, because the machine that made the recordings has a user-level `language` setting of Turkish. The flag is on the transcript command lines so you can see it. Leave it out unless your own settings need the same override.
+
+One command in this lab is genuinely shell-sensitive: the last step passes a JSON settings object to
+`--settings`. A POSIX shell keeps the inner double quotes inside single quotes; PowerShell does not
+pass them through to a native executable intact, so write the JSON to a file first and point
+`--settings` at the file.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+claude -p "Run npm test and report the summary line. If the tool call is refused, quote the refusal message exactly and stop." \
+  --model sonnet --output-format text --max-turns 8 --permission-mode acceptEdits \
+  --settings '{"permissions":{"deny":["Bash(npm test)"]}}'
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+claude -p "Run npm test and report the summary line. If the tool call is refused, quote the refusal message exactly and stop." \
+  --model sonnet --output-format text --max-turns 8 --permission-mode acceptEdits \
+  --settings '{"permissions":{"deny":["Bash(npm test)"]}}'
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+'{"permissions":{"deny":["Bash(npm test)"]}}' | Out-File -Encoding utf8 deny.json
+claude -p "Run npm test and report the summary line. If the tool call is refused, quote the refusal message exactly and stop." --model sonnet --output-format text --max-turns 8 --permission-mode acceptEdits --settings .\deny.json
+Remove-Item deny.json
+```
+
+  </Fragment>
+</OSTabs>
+
+Both forms were run against this tag while writing the lesson, and both produce the same kind of refusal (`Permission to use Bash with command npm test has been denied.`; the PowerShell run reported the command as `npm test 2>&1`).
+
+A project's `permissions.allow` rules grant capability, so Claude Code applies them only after you have accepted the **workspace trust** dialog for that folder — and that dialog appears in interactive sessions only. A `claude -p` run in an untrusted folder prints `this workspace has not been trusted` to stderr and proceeds without those rules. Step 2 of the lab below is therefore not optional.
+
+With the folder trusted, the lab repository's own project-level allow rules make it a good place to watch precedence for real — the first recording in the lab below is that block, read straight out of the checkout at the lab tag.
+
+Four recordings follow. The first is the repository's own allow rules. The second shows one of them working _alongside_ `--allowedTools`. The third shows what a refusal actually looks like. The fourth adds a deny rule for the very command the project allows.
+
+<Lab
+  title="Lab · watch dontAsk refuse, and watch deny beat allow"
+  lessonId="en/l1-beginner/m02-interact/permissions"
+  repoTag="lesson/m02-03-start"
+  steps={[
+    'Check out the tag and install: `git checkout lesson/m02-03-start && npm ci`. This is a process-only tag — the code is the clean baseline; the lesson is about Claude Code’s own behaviour.',
+    'Trust the folder before anything else: run `claude` once in the clone and accept the workspace-trust dialog, then exit. Until you do, the repository’s own `permissions.allow` rules are ignored — a `claude -p` run prints `this workspace has not been trusted` to stderr and never offers the dialog, because the trust prompt only appears in an interactive session.',
+    'Read the repo’s own rules: `cat .claude/settings.json`. Note the five allow entries.',
+    'Run a `dontAsk` session whose only `--allowedTools` entry is `Read`, and ask it to run the tests: `claude -p "Run npm test and tell me how many tests pass. If you cannot run it, say exactly which tool call was refused and why." --model sonnet --output-format text --max-turns 10 --permission-mode dontAsk --allowedTools "Read"`. It works — because the project settings file allows `Bash(npm test)`.',
+    'Now ask for something no rule covers: `claude -p "Run the shell command \'mkdir scratch-demo\' in the repo root. If the tool call is refused, quote the refusal message exactly and stop; do not try another tool." --model sonnet --output-format text --max-turns 8 --permission-mode dontAsk --allowedTools "Read"`. Read the refusal text in full.',
+    'Confirm nothing happened: `ls scratch-demo` reports that the directory does not exist.',
+    'Finally, layer a deny rule over the project’s allow rule and re-run the tests: `claude -p "Run npm test and report the summary line. If the tool call is refused, quote the refusal message exactly and stop." --model sonnet --output-format text --max-turns 8 --permission-mode acceptEdits --settings \'{"permissions":{"deny":["Bash(npm test)"]}}\'`',
+    'Open `/permissions` in an interactive session in the same folder to see every rule and the file it came from.',
+  ]}
+  expected="Run 1 succeeds (15 tests pass) because the project allow rule covers `Bash(npm test)`. Run 2 is refused with the “don't ask mode” message and creates nothing. Run 3 is refused — “Permission to use Bash with command npm test has been denied.” — even though the project settings file allows exactly that command, because deny is evaluated first."
+  checklist={[
+    'You accepted the workspace-trust dialog in an interactive session before the first `-p` run',
+    'The first run reported 15 passing tests without `Bash` in `--allowedTools`',
+    'The refusal message names the mode: “because Claude Code is running in don’t ask mode”',
+    '`ls scratch-demo` shows the directory was never created',
+    'The deny rule blocked the same command the project settings file allows',
+    '`/permissions` shows which settings file each rule came from',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/03-permissions/00-project-settings.txt"
+    range="2-13"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/03-permissions/01-dontask-allow-rule.txt"
+    range="2-3"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/03-permissions/02-dontask-refusal.txt"
+    range="2-5"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/03-permissions/03-deny-beats-allow.txt"
+    range="2-3"
+  />
+</Lab>
+
+The first recording is the one that surprises people: `--allowedTools "Read"` looks like a lockdown, and the session still ran the test suite. It did so because `--allowedTools` **adds** to the allow rules that settings files already contribute — and because `dontAsk` permits the built-in read-only Bash commands too. If you want a genuinely sealed run, deny what you do not want; do not merely omit it from the allowlist.
+
+The second recording quotes Claude Code's own refusal text, which is worth reading once in full: it tells the model it may look for a legitimate alternative tool, but must not work around the _intent_ of the denial, and must stop and explain if the capability is essential.
+
+The third is the precedence rule as a one-liner. The project's `.claude/settings.json` allows `Bash(npm test)`. A deny rule supplied at a higher-precedence scope blocks it anyway. Deny wins, every time, from any scope.
+
+## Anti-patterns
+
+**Using an allowlist as a denylist.** Leaving a tool out of `--allowedTools` does not seal it — settings files, read-only Bash commands and the mode itself can all still permit it. _Fix:_ write explicit `deny` rules for what must never run.
+
+**Writing `Bash(git * main)` and calling it narrow.** The `*` stands in for the subcommand, so that rule permits `git push origin main` and `git -c core.fsmonitor=<script> diff main`. _Fix:_ put the `*` after the subcommand — `Bash(git log *)`.
+
+**Expecting a specific allow to beat a broad deny.** `deny: ["Bash(aws *)"]` plus `allow: ["Bash(aws s3 ls)"]` denies the read-only command too. _Fix:_ deny narrowly, or use `ask` when you want a prompt rather than a block.
+
+**Reaching for `bypassPermissions` on your laptop.** It skips checks including writes to protected paths such as `.git` and `.claude`. The docs restrict it to isolated containers and VMs without internet access. _Fix:_ use `acceptEdits` for edit-heavy work, `auto` for long tasks, or a sandbox.
+
+**Telling Claude in `CLAUDE.md` what it may not do and calling that a control.** Permission rules are enforced by Claude Code, not by the model; prose shapes intent, not authority. _Fix:_ `/permissions`, a settings rule, a permission mode, or a `PreToolUse` hook.
+
+<Callout variant="changed">
+  `"defaultMode": "bypassPermissions"` and `"defaultMode": "auto"` in a project's
+  `.claude/settings.json` or `.claude/settings.local.json` no longer take effect — those two values
+  apply only from user or managed settings. Setting `bypassPermissions` there starts the session in
+  Manual mode instead. Verified against `permission-modes.md` for Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/permissions"
+  questionId="q1"
+  lang="en"
+  prompt="A user settings file allows `Bash(npm test)` and a project settings file denies it. What happens when Claude tries to run `npm test`?"
+  options={[
+    {
+      text: 'It is denied — deny rules are evaluated before allow rules, in every scope',
+      correct: true,
+      explanation:
+        'Order is deny → ask → allow, and a deny at any level cannot be overridden by an allow at another.',
+    },
+    {
+      text: 'It is allowed — user settings outrank project settings',
+      explanation: 'Precedence never lets an allow beat a deny.',
+    },
+    {
+      text: 'Claude asks you',
+      explanation: 'Only an explicit `ask` rule produces a prompt.',
+    },
+    {
+      text: 'It depends which rule is more specific',
+      explanation: 'The docs are explicit: rule specificity does not change the order.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/permissions"
+  questionId="q2"
+  lang="en"
+  prompt="Which rule allows `git log --oneline` but not `git push origin main`?"
+  options={[
+    {
+      text: '`Bash(git log *)`',
+      correct: true,
+      explanation:
+        'Everything before the first `*` is matched literally, so the subcommand `log` limits the rule.',
+    },
+    {
+      text: '`Bash(git * main)`',
+      explanation:
+        'The `*` stands in for the subcommand, so this matches `git push origin main` — and Claude Code warns at startup about an allow rule with a `*` before the subcommand.',
+    },
+    { text: '`Bash(git)`', explanation: 'That matches only the exact command `git`.' },
+    { text: '`Bash`', explanation: 'A bare tool name matches every Bash command.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/permissions"
+  questionId="q3"
+  lang="en"
+  prompt="You start a headless run with `claude -p` and no `--permission-mode` flag, on a Max plan. Which mode does the session start in?"
+  options={[
+    {
+      text: '`default` (Manual) — `claude -p` and the Agent SDK always start there',
+      correct: true,
+      explanation:
+        'The `auto` built-in default applies to interactive terminal and VS Code sessions on Pro, Max and Team plans, not to `-p`.',
+    },
+    {
+      text: '`auto`, because the plan is Max',
+      explanation: 'The `-p` row of the docs’ table overrides the plan row.',
+    },
+    { text: '`acceptEdits`', explanation: 'Never a built-in default.' },
+    { text: '`dontAsk`', explanation: 'Only ever set explicitly with the flag.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/permissions"
+  questionId="q4"
+  lang="en"
+  prompt="What is the difference between the deny rules `Bash` and `Bash(rm *)`?"
+  options={[
+    {
+      text: '`Bash` removes the tool from Claude’s context entirely; `Bash(rm *)` leaves the tool available and blocks matching calls',
+      correct: true,
+      explanation: 'A bare tool name as a deny rule means Claude never sees the tool exists.',
+    },
+    {
+      text: 'They are equivalent — `Bash` is shorthand for denying every specifier',
+      explanation: 'The effect on Claude’s context differs, which changes what it tries.',
+    },
+    {
+      text: '`Bash(rm *)` also denies `PowerShell`',
+      explanation: 'Rules match one canonical tool name; `PowerShell` needs its own rule.',
+    },
+    {
+      text: '`Bash` applies only in `dontAsk` mode',
+      explanation: 'Deny rules apply in every mode, including `bypassPermissions`.',
+    },
+  ]}
+/>
+
+**Next:** `04-plan-mode` takes the one mode that changes how you work rather than how much you are asked — plan first, approve, then execute.

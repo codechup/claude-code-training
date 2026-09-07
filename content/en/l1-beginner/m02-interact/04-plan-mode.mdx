@@ -1,0 +1,320 @@
+---
+title: 'Plan mode: explore, plan, approve, execute'
+description: 'Plan mode lets Claude read, run read-only commands and write a plan — but not touch your source. Learn the Shift+Tab cycle, the /plan prefix, the three approval options, Ctrl+G to edit a plan, and see plan mode block a direct edit in a real capture.'
+level: 1
+module: 'm02-interact'
+order: 4
+duration_min: 15
+difficulty: core
+tags: ['plan-mode', 'permissions', 'lab']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Choose a permission mode'
+    url: 'https://code.claude.com/docs/en/permission-modes.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Best practices for Claude Code'
+    url: 'https://code.claude.com/docs/en/best-practices.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Explore the context window'
+    url: 'https://code.claude.com/docs/en/context-window.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m02-04-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Enter and leave plan mode three ways: `Shift+Tab`, the `/plan` prefix on a single prompt, and `claude --permission-mode plan`.
+- Say precisely what plan mode blocks and what it still permits.
+- Read the three approval options Claude offers when a plan is ready, and pick the right one.
+- Edit a proposed plan before it runs with `Ctrl+G`, and make plan mode a project default.
+- Judge when planning pays for its overhead — and when it does not.
+
+**Prerequisites.** Lesson `03-permissions` (plan mode is a permission mode), and a clone of the lab repository.
+
+<WhenNotToUse>
+  Plan mode adds a round trip, and the docs say so plainly: for a task whose scope is clear and
+  whose fix is small — a typo, a log line, a rename — ask Claude to do it directly. The rule of
+  thumb the guide gives is the useful one: **if you could describe the diff in one sentence, skip
+  the plan.** Planning earns its cost when you are uncertain about the approach, when the change
+  touches several files, or when you do not know the code being modified. It is also the wrong tool
+  for containment: plan mode stops Claude editing your source, but in a session started with bypass
+  permissions available, Claude Code does not enforce those blocks at all.
+</WhenNotToUse>
+
+## Concept
+
+### What plan mode is
+
+> Plan mode tells Claude to research and propose changes without making them. Claude reads files, runs shell commands to explore, and writes a plan, but does not edit your source.
+
+Edits stay blocked until you approve the plan. The exception is a session started with bypass permissions available, where Claude is still _instructed_ to plan without editing but the blocks are not enforced.
+
+What still runs while planning depends on your setup. When auto mode is available and `useAutoModeDuringPlan` is on — it is on by default — the classifier reviews shell commands during planning instead of prompting you: approved commands run, rejected ones are blocked. Otherwise, commands outside the built-in read-only set prompt for approval.
+
+### Getting in and out
+
+<CodeBlock title="entering and leaving plan mode">
+
+```bash
+# Start a whole session in plan mode
+claude --permission-mode plan
+
+# Inside a session: press Shift+Tab until the status bar reads
+#   ⏸ plan mode on
+# Press Shift+Tab again to leave plan mode without approving anything.
+
+# Plan for one prompt only: prefix it with /plan
+#   /plan add rate limiting to the API and tell me what changes
+
+# Make plan mode the default for a project's terminal sessions,
+# in .claude/settings.json:
+#   {"permissions": {"defaultMode": "plan"}}
+```
+
+</CodeBlock>
+
+Conversations started by the VS Code extension do not read project settings for the starting permission mode — set `claudeCode.initialPermissionMode` to `plan` in your VS Code user settings instead.
+
+### Approving a plan
+
+When the plan is ready Claude presents it and asks how to proceed. The options:
+
+| Option                          | What it does                                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------- |
+| **Yes, and use auto mode**      | Approve and continue in auto mode. Reads **Yes, auto-accept edits** when auto mode is unavailable |
+| **Yes, manually approve edits** | Approve and review each edit individually                                                         |
+| **No, keep planning**           | Stay in plan mode and say what to change                                                          |
+
+Approving exits plan mode and switches the session into whichever mode the option describes, so Claude starts editing immediately. Two things worth knowing before you press a key:
+
+- **`Ctrl+G` opens the proposed plan in your default text editor** so you can change it before Claude proceeds. This is the highest-leverage key in this lesson: correcting a plan costs one edit; correcting an implementation costs a session.
+- Accepting a plan gives the session a **generated title** based on the plan, unless you have already named the session.
+
+To plan again afterwards, cycle back with `Shift+Tab` or prefix your next prompt with `/plan`.
+
+### The four-phase workflow
+
+The official guide's recommended shape, and the reason plan mode exists:
+
+1. **Explore.** `read /src/auth and understand how we handle sessions and login.` Claude reads and answers; nothing changes.
+2. **Plan.** `I want to add Google OAuth. What files need to change? What's the session flow? Create a plan.`
+3. **Implement.** Approve, or `Shift+Tab` out, then: `implement the OAuth flow from your plan. write tests for the callback handler, run the test suite and fix any failures.`
+4. **Commit.** `commit with a descriptive message and open a PR`
+
+One quiet benefit: a plan written in plan mode is **re-injected from disk after compaction**, unlike ordinary conversation history, which is summarised. On a long task the plan is one of the few things that survives intact.
+
+## Hands-on lab
+
+### Set up the checkout
+
+Every command in this lab runs from a clone of the lab repository. The commands themselves are
+identical on every platform; only the way you chain them differs.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-04-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab
+git checkout lesson/m02-04-start && npm ci
+npm test
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git clone https://github.com/codechup/claude-code-lab.git; Set-Location claude-code-lab
+git checkout lesson/m02-04-start; npm ci
+npm test
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1 has no `&&` operator, so the tabs above chain with `;` instead. Every
+transcript in this module was captured on native Windows running Claude Code through Git Bash, which
+is why some tool output shows backslash path separators.
+
+One difference between the commands printed here and the recordings below: every captured run also passed `--settings '{"language":"English"}'`, because the machine that made the recordings has a user-level `language` setting of Turkish. The flag is on the transcript command lines so you can see it. Leave it out unless your own settings need the same override.
+
+`lesson/m02-04-start` carries seeded bug **B5**: the "becomes overdue" test in `test/overdue.test.ts` asserts against real `setTimeout` sleeps instead of controlling the clock, so it fails. It is a good planning target because the _fix_ is a judgement call — change the test, change the function's signature, or both — which is exactly the situation the docs say planning is for.
+
+Both runs below were captured headlessly with `--permission-mode plan`.
+
+<Lab
+  title="Lab · plan a fix for a time-dependent test, and watch plan mode refuse an edit"
+  lessonId="en/l1-beginner/m02-interact/plan-mode"
+  repoTag="lesson/m02-04-start"
+  steps={[
+    'Check out the tag and install: `git checkout lesson/m02-04-start && npm ci`.',
+    'Reproduce: `npm test`. One test fails — “a task becomes overdue exactly when its due date passes”, asserting `true` and receiving `false` after ~40 ms of real sleeping.',
+    'Ask for a plan, not a fix: `claude -p "test/overdue.test.ts has one test that depends on real time passing, so it fails. Do not change any files. Produce a plan for making that test deterministic: which files change, what the change is, and how I verify it afterwards." --model sonnet --output-format text --max-turns 14 --permission-mode plan`',
+    'Run `git status`. The tree is clean: plan mode read the files and wrote a plan, and changed nothing in the repository.',
+    'Now try to force an edit while still in plan mode: `claude -p "Edit test/overdue.test.ts right now to use vi.useFakeTimers(). If the edit is blocked, quote the exact message you got and stop." --model sonnet --output-format text --max-turns 8 --permission-mode plan`. Read the message it quotes.',
+    'Run `git status` again — still clean.',
+    'Finally, do it interactively: run `claude`, press `Shift+Tab` until the status bar shows `⏸ plan mode on`, ask the same planning question, press `Ctrl+G` to open the plan in your editor, tighten it, then choose **Yes, manually approve edits**.',
+  ]}
+  expected="The planning run returns a root cause, a test-only fix (isOverdue already accepts an injectable clock), and a verification command — and leaves `git status` clean. The forced-edit run quotes Claude Code's plan-mode message verbatim and makes no change."
+  checklist={[
+    '`npm test` fails exactly one test before you start',
+    'The plan names the root cause, the file to change, and how to verify',
+    '`git status` is clean after both plan-mode runs',
+    'The blocked run quotes the plan-mode message rather than editing',
+    'In the interactive run, `Ctrl+G` opened the plan in your editor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/04-plan-mode/00-npm-test-before.txt"
+    range="2-8"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/04-plan-mode/01-plan-mode.txt"
+    range="2-14"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/04-plan-mode/02-plan-mode-blocks-edits.txt"
+    range="2-7"
+  />
+</Lab>
+
+Three honest notes about those recordings.
+
+**The plan is written to a file.** The first transcript ends by naming a plan file under `~/.claude/plans/` (the absolute path was redacted in the recording). That file is what gets re-injected after compaction, and it is what `Ctrl+G` opens in an interactive session.
+
+**The planning run found a better fix than the obvious one.** It noticed that `isOverdue(task, now)` already accepts an injectable clock, so no source change is needed at all — only the test. That is the value of separating the plan from the diff: you get to see the reasoning before it becomes code.
+
+**Headless plan mode is not interactive plan mode.** In one of this module's other captures Claude reported that "the `ExitPlanMode` tool is disabled in this session", because there is no one to show an approval dialog to. In `-p`, plan mode gives you the plan and stops; the approval step is a terminal-session feature. Use `-p --permission-mode plan` for read-only analysis in scripts and CI; use the interactive session when you want the approve/revise loop.
+
+## Anti-patterns
+
+**Planning a one-line change.** A plan for a typo costs a round trip and produces a document nobody reads. _Fix:_ if you can describe the diff in one sentence, just ask for the diff.
+
+**Approving a plan you skimmed.** Approving switches the session straight into an editing mode, so the plan is the last cheap moment to disagree. _Fix:_ read it; press `Ctrl+G` and edit it; or choose **No, keep planning**.
+
+**Treating plan mode as a sandbox.** It blocks edits to your source, but in a session with bypass permissions available those blocks are not enforced, and it was never an isolation boundary for untrusted code. _Fix:_ for containment use the sandbox, a container or a VM.
+
+**Planning forever.** Three rounds of "no, keep planning" usually means the task is under-specified, not that the plan is bad. _Fix:_ go back to lesson 01 — name the goal, the constraints and the evidence — and re-ask.
+
+**Expecting `-p --permission-mode plan` to hand you an approval dialog.** It will not; there is no interactive surface. _Fix:_ read the returned plan, then run the implementation as a separate command.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/plan-mode"
+  questionId="q1"
+  lang="en"
+  prompt="Which key sequence enters plan mode inside a running CLI session?"
+  options={[
+    {
+      text: '`Shift+Tab`, cycling until the status bar reads `⏸ plan mode on`',
+      correct: true,
+      explanation: 'The same key cycles you back out without approving anything.',
+    },
+    {
+      text: '`Esc` twice',
+      explanation: 'That opens the rewind menu — the next lesson.',
+    },
+    { text: '`Ctrl+G`', explanation: 'That opens a proposed plan in your text editor.' },
+    {
+      text: 'Asking Claude in chat to switch to plan mode',
+      explanation:
+        'The docs are explicit: asking Claude in chat to change the permission mode does not work.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/plan-mode"
+  questionId="q2"
+  lang="en"
+  prompt="In the lab, `git status` was clean after the plan-mode run. Why?"
+  options={[
+    {
+      text: 'Plan mode blocks edits to your source; Claude read files and wrote a plan instead',
+      correct: true,
+      explanation:
+        'The second capture shows the block directly, quoting Claude Code’s own plan-mode message.',
+    },
+    {
+      text: 'The prompt said “do not change any files”, and the model obeyed',
+      explanation:
+        'The wording helped, but the second run explicitly *ordered* an edit and it was still blocked — the mode, not the prompt, is what enforced it.',
+    },
+    {
+      text: '`--max-turns 14` ran out before it could edit',
+      explanation: 'The run completed and returned a full plan.',
+    },
+    {
+      text: 'Sonnet cannot use the Edit tool',
+      explanation: 'It uses `Edit` freely in this module’s other labs.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/plan-mode"
+  questionId="q3"
+  lang="en"
+  prompt="A plan is on screen and you disagree with one of its five steps. What is the cheapest correction?"
+  options={[
+    {
+      text: 'Press `Ctrl+G` to open the plan in your editor and change that step',
+      correct: true,
+      explanation:
+        'Editing the plan before approval costs one edit; correcting the implementation costs a session.',
+    },
+    {
+      text: 'Approve it and correct Claude once it reaches that step',
+      explanation:
+        'Approving switches the session into an editing mode immediately — you are now correcting code, not a document.',
+    },
+    { text: 'Press `Esc` twice', explanation: 'That opens the rewind menu, not the plan.' },
+    {
+      text: 'Run `/clear` and start over',
+      explanation: 'That throws away the exploration that produced the plan.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/plan-mode"
+  questionId="q4"
+  lang="en"
+  prompt="Which task is the best candidate for plan mode, per the official guidance?"
+  options={[
+    {
+      text: 'Adding OAuth to an app whose auth flow you have not read, touching several files',
+      correct: true,
+      explanation:
+        'Uncertain approach, multi-file change, unfamiliar code — all three of the docs’ criteria.',
+    },
+    {
+      text: 'Renaming a local variable',
+      explanation: 'You can describe the diff in one sentence. Skip the plan.',
+    },
+    { text: 'Adding a log line', explanation: 'Same — the plan costs more than the change.' },
+    {
+      text: 'Running the test suite',
+      explanation: 'Nothing to plan; that is a single command.',
+    },
+  ]}
+/>
+
+**Next:** `05-checkpoints-rewind` covers what happens after you approve a plan and the result is wrong — how to take the edits back.

@@ -1,0 +1,14 @@
+# Captured 2026-09-07 against codechup/claude-code-lab @ lesson/m02-04-start, Claude Code 2.1.263. Verbatim. The --settings flag on the command line overrides this machine's Turkish language preference. The absolute plan-file path was redacted to ~/.claude/plans/
+› claude -p "test/overdue.test.ts has one test that depends on real time passing, so it fails. Do not change any files. Produce a plan for making that test deterministic: which files change, what the change is, and how I verify it afterwards." --model sonnet --output-format text --settings '{"language":"English"}' --max-turns 14 --permission-mode plan
+The plan is written to `~/.claude/plans/test-overdue-test-ts-has-one-test-swirling-puppy.md`. Summary:
+
+**Root cause**: the failing test in `test/overdue.test.ts` (lines 38-48) waits on real `setTimeout` and compares against hard-coded elapsed-time margins — this is documented seeded bug B5 in the file's own comment.
+
+**Fix (test-only, no source changes needed)**: `isOverdue(task, now)` in `src/store.ts:84` already accepts an injectable `now` function. Rewrite the test to:
+- use a fixed `dueDate`,
+- call `isOverdue(task, () => <fixed timestamp>)` synchronously with a "before" and an "at/after" timestamp instead of sleeping,
+- drop `async`/`setTimeout` and the stale B5 comment.
+
+**Verify**: `npx vitest run test/overdue.test.ts`, then the full suite `npx vitest run`, and optionally rerun a few times to confirm it's no longer timing-sensitive.
+
+Let me know if you'd like me to implement this.

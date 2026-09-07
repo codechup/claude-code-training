@@ -1,0 +1,279 @@
+---
+title: 'Context basics: /context, /compact and /clear'
+description: 'The context window is the resource that limits every session. See what fills it before you type a word, read it with /context, shape it with /compact, reset it with /clear, and know what survives an automatic compaction.'
+level: 1
+module: 'm02-interact'
+order: 6
+duration_min: 15
+difficulty: core
+tags: ['context', 'compact', 'commands']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Explore the context window'
+    url: 'https://code.claude.com/docs/en/context-window.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'How Claude Code works'
+    url: 'https://code.claude.com/docs/en/how-claude-code-works.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Best practices for Claude Code'
+    url: 'https://code.claude.com/docs/en/best-practices.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Checkpointing'
+    url: 'https://code.claude.com/docs/en/checkpointing.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'main'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- List what loads into the context window before you type anything, and why a "fresh" session is never empty.
+- Read `/context` and act on it.
+- Choose correctly between `/compact`, `/compact <instructions>`, `/autocompact <tokens>`, `/clear` and a subagent.
+- Predict what survives an automatic compaction and what is summarised away.
+- Recognise the two failure patterns a full context window produces: the kitchen-sink session and repeated failed corrections.
+
+**Prerequisites.** Lesson `05-checkpoints-rewind` (the rewind menu's summarize options are part of this toolkit).
+
+<WhenNotToUse>
+  Do not compact reflexively. Compaction replaces messages with a summary, and detailed instructions
+  from early in the conversation can be lost in the process — sometimes the right move is to let
+  context accumulate because you are deep in one problem and the history *is* the work. Do not
+  `/clear` mid-task either: it resets the whole window, so anything not written down in `CLAUDE.md`,
+  a plan file or a commit is gone. And `/context` is a diagnostic, not a habit; run it when
+  something surprises you or before a long task, not after every turn.
+</WhenNotToUse>
+
+## Concept
+
+### A session is never empty
+
+Before your first keystroke, the window already holds the system prompt, your project's `CLAUDE.md`, auto memory (the first 200 lines or 25 KB of `MEMORY.md`, whichever comes first), environment info, MCP tool names and skill descriptions. Then the session fills further: every file read, every command's output, every path-scoped rule that loads alongside a matching file.
+
+That is why the best-practices guide puts one constraint above all others: **"Claude's context window fills up fast, and performance degrades as it fills."** As the window gets full, Claude starts losing earlier instructions and making more mistakes. Persistent rules belong in `CLAUDE.md`, not in conversation history — that is the practical consequence, and it is the subject of the next module.
+
+### The four commands
+
+<CodeBlock title="context commands">
+
+```text
+/context              # live breakdown by category, with optimisation suggestions
+/context all          # the fuller view
+
+/compact              # summarise the conversation now
+/compact focus on the auth bug fix     # summarise, keeping what you name
+
+/autocompact 500k     # set how full the window gets before auto-compaction runs
+
+/clear                # reset the context window entirely
+
+/memory               # open and edit the CLAUDE.md and memory files /context lists
+```
+
+</CodeBlock>
+
+`/context` also tells you which `CLAUDE.md` and auto-memory files actually loaded — the fastest way to answer "why is it behaving like that?" when a session surprises you.
+
+`/compact` with instructions is strictly better than `/compact` alone when you know what matters next: the summary keeps what you choose instead of what the automatic pass guesses. `/clear` is for switching to unrelated work; the guide's advice is to use it _frequently_ between tasks.
+
+There is a fifth lever from the previous lesson: `/rewind` → **Summarize from here** / **Summarize up to here** compresses only part of the conversation. Use it when the middle of the session is the noisy part.
+
+### What survives compaction
+
+Compaction is not uniform. It matters which mechanism loaded a piece of context:
+
+| Mechanism                                   | After compaction                                                      |
+| ------------------------------------------- | --------------------------------------------------------------------- |
+| System prompt and output style              | Unchanged — not part of message history                               |
+| Project-root `CLAUDE.md` and unscoped rules | Re-injected from disk                                                 |
+| Auto memory                                 | Re-injected from disk                                                 |
+| The plan Claude wrote in plan mode          | Re-injected from disk                                                 |
+| Rules with `paths:` frontmatter             | Reloaded as Claude reads files they match                             |
+| Nested `CLAUDE.md` in subdirectories        | Reloaded as Claude reads files in that subdirectory                   |
+| Files Claude read or edited                 | Claude Code re-reads up to five, most recently modified first         |
+| Invoked skill bodies                        | Re-injected, capped at 5,000 tokens per skill and 25,000 tokens total |
+| Context that hooks added earlier            | Summarised with the rest of the conversation                          |
+
+Read that table once and the reason for the standard advice becomes obvious. A rule in `CLAUDE.md` comes back after every compaction; the same rule typed into the chat does not. A file over 5,000 tokens comes back after compaction as a path reference rather than its contents, shown as `Referenced file` instead of `Read`.
+
+### When the window fills up
+
+Claude Code compacts automatically as you approach the limit, so a full window does not end your session. It clears older tool outputs first, then summarises the conversation if needed. Your requests and key code snippets are preserved; detailed instructions from early in the conversation may not be.
+
+Four ways to act before the automatic pass decides for you: compact with a focus, compact part of the conversation from the rewind menu, run `/autocompact <tokens>` to move the trigger point earlier, or delegate a large read to a subagent so the file contents land in _its_ context window instead of yours.
+
+If a single file or tool output is so large that context refills immediately after each summary, Claude Code stops auto-compacting after a few attempts and shows an error rather than looping.
+
+If you need a bigger window rather than a smaller conversation, Fable 5.1, Fable 5, Sonnet 5, Opus 4.6 and later, and Sonnet 4.6 support a 1 million token context window — that is level 2's topic.
+
+## Hands-on lab
+
+`/context` draws a live breakdown in the terminal, so it belongs to an interactive session. Sending it as a headless prompt — `claude -p "/context"` — was tried while writing this lesson and produced an ordinary conversational reply, not the breakdown; treat `/context` as something you run in a real session. This lab therefore runs interactively, and the one thing that _is_ capturable headlessly — the token and cost envelope `--output-format json` returns — is shown below as the honest proxy for "what did that turn cost me". That recorded run also passed `--settings '{"language":"English"}'` to override the capturing machine's Turkish language setting; leave the flag out unless you need the same override.
+
+<Lab
+  title="Lab · read your own context window"
+  lessonId="en/l1-beginner/m02-interact/context-basics"
+  repoTag="main"
+  steps={[
+    'In the lab repository on `main`, start an interactive session: `claude`.',
+    'Before doing anything else, run `/context`. Note the categories and which `CLAUDE.md` and memory files it says loaded — this is the floor every session starts from.',
+    'Ask for something that reads a lot: `read every file under src/ and test/ and summarise what this project does`.',
+    'Run `/context` again and compare. The file reads are now the largest category.',
+    'Run `/compact focus on how paginate() is used` and then `/context` a third time. The conversation category shrinks; the re-injected categories (CLAUDE.md, auto memory) do not.',
+    'Switch tasks properly: run `/clear`, then `/context` once more. You are back near the floor.',
+    'Now the headless proxy for cost: `claude -p "Read src/store.ts and name its exported functions." --model sonnet --output-format json --max-turns 6 --permission-mode plan | jq \'{num_turns, duration_ms, total_cost_usd, usage: .usage}\'`',
+    'Read the envelope: `cache_read_input_tokens` far exceeds `input_tokens`, because the startup context is cached rather than re-sent.',
+  ]}
+  expected="/context shows a non-empty window before your first prompt; it grows sharply after the bulk read; /compact with a focus shrinks the conversation while CLAUDE.md and auto memory stay; /clear returns it near the starting floor. The JSON envelope reports num_turns, duration_ms, total_cost_usd and a usage block whose cache_read_input_tokens dominate."
+  checklist={[
+    '`/context` was non-empty before the first prompt',
+    'The bulk read visibly increased the file-reads category',
+    '`/compact focus on …` shrank the conversation but not CLAUDE.md or auto memory',
+    '`/clear` returned the window near its starting floor',
+    'The JSON envelope shows cache_read_input_tokens much larger than input_tokens',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m02-interact/06-context-basics/01-json-usage.txt"
+    range="2-40"
+  />
+</Lab>
+
+That capture is a two-turn session that read one small file, and it still charged 68,175 cached input tokens and 9,318 newly cached ones. Almost none of that is your prompt: it is the system prompt, the memory files, the tool definitions and the project's own configuration. The window you are managing is mostly not the conversation.
+
+## Anti-patterns
+
+**The kitchen-sink session.** One task, then an unrelated question, then back to the first task — the window is now full of things neither task needs. _Fix:_ `/clear` between unrelated tasks.
+
+**Correcting over and over.** After two failed corrections the context holds two failed approaches, and the third correction competes with them. _Fix:_ `/clear` and write one better prompt that incorporates what you learned.
+
+**Putting standing rules in the chat.** Conversation history is summarised at compaction; `CLAUDE.md` is re-injected from disk. A rule you typed in message three may simply be gone by message ninety. _Fix:_ put persistent rules in `CLAUDE.md` (module `m03-memory`).
+
+**Unscoped investigation.** "Investigate the auth system" with no boundary reads hundreds of files into your window before any work starts. _Fix:_ scope it, or delegate it to a subagent whose reads stay in its own context.
+
+**`/clear` when you meant `/compact`.** `/clear` is a reset, not a compression; anything not on disk is gone. _Fix:_ `/compact <instructions>` mid-task; `/clear` only when switching tasks.
+
+This lesson carries no **Changed** callout: `research/deprecations.md` records no superseded
+behaviour for the context commands as of Claude Code 2.1.263.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/context-basics"
+  questionId="q1"
+  lang="en"
+  prompt="You run `/context` in a brand-new session before typing anything. What do you expect to see?"
+  options={[
+    {
+      text: 'A non-empty window: system prompt, CLAUDE.md, auto memory, environment info, MCP tool names and skill descriptions',
+      correct: true,
+      explanation:
+        'A session is never empty. `/context` also names which CLAUDE.md and memory files loaded.',
+    },
+    { text: 'Zero tokens used', explanation: 'Startup context loads before your first word.' },
+    {
+      text: 'Only the system prompt',
+      explanation: 'Memory files, tool names and skill descriptions load too.',
+    },
+    {
+      text: 'An error — `/context` only works after the first turn',
+      explanation: 'It works at any point, and before the first turn is the most useful moment.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/context-basics"
+  questionId="q2"
+  lang="en"
+  prompt="Which of these is re-injected from disk after a compaction rather than summarised away?"
+  options={[
+    {
+      text: 'The project-root `CLAUDE.md`',
+      correct: true,
+      explanation:
+        'So are auto memory and the plan Claude wrote in plan mode. Conversation history is summarised.',
+    },
+    {
+      text: 'A rule you typed into the chat in message three',
+      explanation: 'That is conversation history — it gets summarised with everything else.',
+    },
+    {
+      text: 'Context that a hook added earlier in the session',
+      explanation:
+        'Summarised with the rest, unless a SessionStart hook matching `compact` re-adds it.',
+    },
+    {
+      text: 'Every file Claude read this session',
+      explanation:
+        'Claude Code re-reads up to five, most recently modified first — not all of them.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/context-basics"
+  questionId="q3"
+  lang="en"
+  prompt="You are halfway through a task and the window is filling. You know the next step is all about the API layer. What is the best move?"
+  options={[
+    {
+      text: '`/compact focus on the API changes`',
+      correct: true,
+      explanation:
+        'Compacting with instructions keeps what you name instead of what the automatic pass guesses.',
+    },
+    {
+      text: '`/clear`',
+      explanation:
+        'A reset mid-task throws away everything not written to disk. Use it between unrelated tasks.',
+    },
+    {
+      text: 'Nothing — auto-compaction will handle it',
+      explanation:
+        'It will, but its summary is a guess about what mattered. Naming the focus is strictly better.',
+    },
+    {
+      text: 'Restart the terminal',
+      explanation:
+        'The session, its checkpoints and its plan are on disk and can be resumed — but restarting neither compacts nor focuses anything, so it solves nothing here.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m02-interact/context-basics"
+  questionId="q4"
+  lang="en"
+  prompt="Why does delegating a large investigation to a subagent help your context window?"
+  options={[
+    {
+      text: 'The subagent works in its own context window; its tool calls stay out of yours and only a summary comes back',
+      correct: true,
+      explanation:
+        'That is the whole point of the pattern — research cost is paid in a window you are not managing.',
+    },
+    {
+      text: 'Subagents do not consume tokens',
+      explanation: 'They do; the tokens just are not in your window.',
+    },
+    {
+      text: 'Subagent output is exempt from compaction',
+      explanation: 'The returned summary is ordinary conversation history.',
+    },
+    {
+      text: 'A subagent raises your context limit',
+      explanation: 'The limit is set by the model, not by delegation.',
+    },
+  ]}
+/>
+
+**Next:** module `m03-memory` — where the rules that survive every compaction actually live.

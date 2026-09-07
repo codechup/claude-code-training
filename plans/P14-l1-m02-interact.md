@@ -2,7 +2,7 @@
 id: P14
 title: "L1 Beginner module: Interact (m02-interact)"
 milestone: M1
-status: in_progress
+status: review
 owner: opus-p14-2026-09-07
 branch: plan/14-l1-m02-interact
 model_hint: opus
@@ -15,8 +15,11 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T07:57:33Z
-open_questions: []
+updated_at: 2026-09-07T09:08:45Z
+open_questions:
+  - 'Inline links inside lesson prose fail axe link-in-text-block (serious) - they are colour-only. P05/P07 must add a non-colour affordance before the TR wave links glossary terms in paragraphs.'
+  - 'content/tr/playbook/glossary.mdx lacks entries for permission mode, checkpoint and context window; outside this plan owned_paths.'
+  - 'research/feature-inventory.md settings-precedence row contradicts permissions.md (managed is highest); research/deprecations.md Bash-rule-text-after-paren row not found in the live docs.'
 ---
 
 ## Goal
@@ -99,5 +102,85 @@ A reviewer opens `npm run dev`, visits each of the 6 lessons at `/en/l1-beginner
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+**Shipped.** 6 EN lessons + 6 TR `draft: true` stubs under `l1-beginner/m02-interact/`, 18 raw
+transcripts under `content/_shared/transcripts/m02-interact/`, both module `index.mdx` files
+updated, `content/_shared/sources.json` tagged (2-line diff).
+
+**Authority conflicts resolved (all in favour of the more authoritative source):**
+
+- **Slugs.** Used `docs/CURRICULUM.md` §2 (`01-prompting-basics`, `02-tools-read-edit-run`,
+  `03-permissions`, `04-plan-mode`, `05-checkpoints-rewind`, `06-context-basics`), not this plan's
+  Deliverables list (`01-prompting-fundamentals`, …). CURRICULUM is authoritative per Steps §1.
+- **Lab tags.** The lab repo's real tags are `lesson/m02-NN-start`, not
+  `lesson/m02-interact-NN-start`. `repo_tag` carries the exact string.
+- **Lesson 01 has a lab.** CURRICULUM marks no Lab for `01`, but the D006 template requires a
+  Hands-on lab section, so `01` reuses `lesson/m02-02-start` (tag reuse across lessons is an
+  established lab-repo pattern) and runs four read-only prompts against the same bug.
+- **Lesson 06 uses `repo_tag: 'main'`,** not `'none'`: `labRepoTreeUrl()` has no `none` case and
+  would render a dead `…/tree/none` link, and the lab genuinely runs against `main`.
+- **Transcript layout.** Followed the brief and the m01 reference (`<module>/<NN-slug>/<kk>-name.txt`,
+  `# ` provenance header on line 1), not this plan's `<module>/NN-<slug>.md`.
+- **TR stubs.** Followed the brief (translated title + one Turkish summary paragraph), not this
+  plan's "leave title/description in English".
+
+**Evidence.** Every transcript is a real run made this session against a real tag; nothing is
+reconstructed. Line 2 of each file is the literal command executed. Every capture passed
+`--settings '{"language":"English"}'` because the capturing machine has a user-level
+`"language": "Turkish"` setting — the flag is visible on every command line and called out in each
+lesson's lab. Three plan-file paths under `~/.claude/plans/` were redacted from absolute Windows
+paths (noted in those files' headers). Captures were made on native Windows through Git Bash, which
+is why some tool output shows backslash path separators; the PowerShell variants shown in `<OSTabs>`
+(`;` chaining, and a settings **file** instead of inline JSON for `--settings`) were run for real
+before being written down.
+
+**Review pipeline (D071).** fact-checker: ~90 claims CONFIRMED across the six lessons; 1 contradicted
+claim fixed (two quiz explanations wrongly said a terminal restart loses the session and its
+checkpoints — sessions and checkpoints persist), 5 unverifiable claims resolved by capturing new
+evidence (`00-npm-test-before.txt` for tags `m02-02/04/05`, `00-project-settings.txt` for the lab
+repo's own allow rules) and 2 by rewording; 1 invented "Changed" callout removed (`/autocompact` is
+current behaviour, not a documented supersession). reviewer: 1 blocker + 2 major + 3 minor, all
+fixed — transcript command lines restored to their literal form, `repo_tag: 'none'` → `'main'`,
+TR module index i18n corrected, an example prompt added to lesson 03's Concept, lesson 06's
+transcript range widened to show complete JSON, and `interactive-mode.md` cited from lesson 05.
+
+**Drift found (not this plan's to fix):**
+
+1. `research/feature-inventory.md` states settings precedence as `--settings` > managed > … The live
+   docs (`permissions.md` §Settings precedence) put **managed highest**: "no other level, including
+   command line arguments, can override a managed permission rule". The lessons follow the docs.
+2. `research/feature-inventory.md` lists an `autoCompactAt` setting; the live `context-window.md`
+   documents the `/autocompact <tokens>` command instead. The lesson teaches the documented command.
+3. `research/deprecations.md` row "Bash permission rules with text after `)` → invalid" could not be
+   found anywhere in the live `permissions.md` fetched on 2026-09-07. Left out of lesson 03 rather
+   than asserted; needs re-verification by whoever owns `research/`.
+4. `content/_shared/sources.json` tags `docs-common-workflows` with `m02-interact`, but no lesson in
+   this module cites it. Left untouched (shared, append-only). `docs-interactive-mode` was resolved
+   by citing it from lesson 05.
+
+**Post-review corrections (second commit):**
+
+- Both module `index.mdx` files no longer carry a numbered lesson list — the module page renders that
+  list from the collection, so an MDX list duplicated every lesson (lead's instruction, 2026-09-07).
+- Lesson 03 now tells the reader to accept the **workspace trust** dialog in an interactive session
+  before any `-p` run. A project's `permissions.allow` rules are ignored until the folder is trusted,
+  and `claude -p` never shows the dialog — the lab's first run only succeeded here because this
+  session had trusted the clone by hand (`permissions.md`, "What runs before you trust a folder").
+- Lesson 02's read-before-edit claim now quotes the tools reference exactly, including the
+  model-dependent carve-out: Opus 4.6, Haiku 4.5 and older models always require the read; newer
+  models may edit an unread file when reading it would not need a permission prompt.
+
+**Open follow-ups:**
+
+- **a11y gap in inline prose links.** Adding glossary links inside a paragraph on the TR module index
+  produced a serious axe violation (`link-in-text-block` — links not distinguishable without colour).
+  The links were removed from that page to keep the build green, so the TR module index currently
+  breaks `.claude/rules/i18n.md`'s "link once per page to the glossary" rule. The six TR lesson stubs
+  still carry their glossary links (they are `draft: true`, so unbuilt) and will hit the same
+  violation when P25/P26/P40/P41 flip them. **P05/P07 need an underline (or equivalent non-colour
+  affordance) for inline links in lesson prose before the TR wave ships.**
+- **Missing TR glossary terms.** `permission mode`, `checkpoint`, `context window` and `Edit`/`Grep`
+  tool names have no entry in `content/tr/playbook/glossary.mdx`. Not added — `content/tr/playbook/**`
+  is outside this plan's `owned_paths`. The translation plan should add them.
+- The TR module index deliberately does **not** link its lesson list: those routes do not exist while
+  the TR lessons are `draft: true`. The EN index does link all six.
 
