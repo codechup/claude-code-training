@@ -58,6 +58,11 @@ const RULES = [
     re: /\bCLOUDFLARE_API_TOKEN\s*[=:]\s*["']?[A-Za-z0-9_-]{30,}/g,
     why: 'Cloudflare API token value',
   },
+  {
+    id: 'user-path',
+    re: /(?:[A-Za-z]:\\Users\\|\/(?:home|Users)\/)(?!<you>|<user>|<name>|you\b|user\b|username\b|USER\b|\$USER|\$\{USER\}|runner\b)[A-Za-z0-9._-]+[\\/]/g,
+    why: 'local user profile path (redact the account name as <you>)',
+  },
   { id: 'env-file', path: /(^|\/)\.env(\.[a-z]+)?$/i, why: '.env files are never committed' },
   { id: 'key-file', path: /\.(pem|key|p12|pfx)$/i, why: 'key/cert files are never committed' },
 ];

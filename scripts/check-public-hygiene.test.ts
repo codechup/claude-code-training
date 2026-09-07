@@ -64,6 +64,15 @@ describe('check-public-hygiene --stdin', () => {
     );
     expect(key.status).toBe(1);
   });
+  it('blocks local user profile paths but allows the <you> redaction', () => {
+    const win = run(String.raw`C:\Users\someone\AppData\x`, 'notes.md');
+    expect(win.status).toBe(1);
+    expect(win.stderr).toContain('[user-path]');
+    const nix = run('/home/someone/.claude/settings.json', 'notes.md');
+    expect(nix.status).toBe(1);
+    const ok = run(String.raw`C:\Users\<you>\AppData and /home/<you>/.claude`, 'notes.md');
+    expect(ok.status).toBe(0);
+  });
   it('exempts the files that describe the patterns', () => {
     const r = run(`${ip} ${optPath}`, '.claude/rules/public-hygiene.md');
     expect(r.status).toBe(0);
