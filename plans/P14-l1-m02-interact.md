@@ -2,7 +2,7 @@
 id: P14
 title: "L1 Beginner module: Interact (m02-interact)"
 milestone: M1
-status: review
+status: done
 owner: opus-p14-2026-09-07
 branch: plan/14-l1-m02-interact
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T09:08:45Z
+updated_at: 2026-09-07T10:22:17Z
 open_questions:
   - 'Inline links inside lesson prose fail axe link-in-text-block (serious) - they are colour-only. P05/P07 must add a non-colour affordance before the TR wave links glossary terms in paragraphs.'
   - 'content/tr/playbook/glossary.mdx lacks entries for permission mode, checkpoint and context window; outside this plan owned_paths.'

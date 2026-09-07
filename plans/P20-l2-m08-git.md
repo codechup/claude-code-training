@@ -2,7 +2,7 @@
 id: P20
 title: "L2 Intermediate module: Git flows (m08-git)"
 milestone: M1
-status: in_progress
+status: done
 owner: opus-p20-2026-09-07
 branch: plan/20-l2-m08-git
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T08:56:14Z
+updated_at: 2026-09-07T10:22:19Z
 open_questions: []
 ---
 

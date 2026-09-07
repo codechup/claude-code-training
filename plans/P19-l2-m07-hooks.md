@@ -2,7 +2,7 @@
 id: P19
 title: "L2 Intermediate module: Hooks (m07-hooks)"
 milestone: M1
-status: in_progress
+status: done
 owner: opus-p19-2026-09-07
 branch: plan/19-l2-m07-hooks
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T08:56:13Z
+updated_at: 2026-09-07T10:22:18Z
 open_questions: []
 ---
 

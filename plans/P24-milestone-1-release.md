@@ -2,8 +2,8 @@
 id: P24
 title: Milestone M1 release
 milestone: M1
-status: todo
-owner: null
+status: in_progress
+owner: sonnet-p24-2026-09-07
 branch: plan/24-milestone-1-release
 model_hint: sonnet
 effort_hint: medium
@@ -12,7 +12,7 @@ owned_paths:
   - docs/release/M1-release.md
 shared_paths: []
 estimate: S
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-07T10:22:19Z
 open_questions: []
 ---
 

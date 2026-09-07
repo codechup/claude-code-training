@@ -2,7 +2,7 @@
 id: P15
 title: "L1 Beginner module: Memory (m03-memory)"
 milestone: M1
-status: review
+status: done
 owner: opus-p15-2026-09-07
 branch: plan/15-l1-m03-memory
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T08:45:14Z
+updated_at: 2026-09-07T10:22:17Z
 open_questions:
   - 'Lab tag convention drift (P03/P22): docs/CURRICULUM.md §2 says `lesson/<module>-<NN>-start` (`lesson/m03-memory-01-start`), but the tags that exist in codechup/claude-code-lab are `lesson/m03-01-start` and `lesson/m03-03-start`. Lessons cite the real tags. One of the two should change.'
   - 'research/deprecations.md (P03) has no entry for the `#` quick-memory shortcut, removed in Claude Code 2.0.70 (15 December 2025, official changelog). Lesson 05 carries the Changed callout; the deprecations table and the playbook changelog page (playbook/06-changed-since-2025, P42) still need the row — neither is in this plan''s owned_paths.'

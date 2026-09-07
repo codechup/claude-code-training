@@ -2,7 +2,7 @@
 id: P16
 title: "L1 Beginner module: Commands (m04-commands)"
 milestone: M1
-status: review
+status: done
 owner: opus-p16-2026-09-07
 branch: plan/16-l1-m04-commands
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T08:46:11Z
+updated_at: 2026-09-07T10:22:18Z
 open_questions:
   - "docs/CURRICULUM.md §2 m04-commands names `/fullscreen` (lesson 04) and `claude config` (lesson 05); neither exists in Claude Code 2.1.263. The real forms are `/tui fullscreen` and `/config key=value`. P03 owns CURRICULUM; the module index.mdx copy in both languages repeats the same two errors and needs the same fix."
   - "research/deprecations.md says `/btw` history moved to `Shift+←/→`. The live interactive-mode.md says `Left`/`Right` (v2.1.187+). That row is wrong and needs correcting by its owner."
