@@ -46,9 +46,9 @@
 | Artifacts | published HTML/MD pages at claude.ai/code/artifact; private/org/public; MCP connectors for live data; comments; capabilities (db, users, assets) | artifacts |
 | Chrome | browser extension: click, form-fill, screenshot, console/network, GIF | chrome |
 | Claude Tag (Slack) | Team/Enterprise; @Claude in channels; admin pairing; connections; org-pool billing | claude-tag |
-| Settings precedence | `--settings` > managed > local (`.claude/settings.local.json`) > project (`.claude/settings.json`) > user (`~/.claude/settings.json`); global state `~/.claude.json` | settings-reference |
+| Settings precedence | managed (policy) is highest and cannot be overridden; then command-line `--settings`, local (`.claude/settings.local.json`), project (`.claude/settings.json`), user (`~/.claude/settings.json`) — corrected by P14 against the live `settings.md`; global state `~/.claude.json` | settings-reference (re-checked 2026-09-07) |
 | Sessions | `/resume <id>`, `/branch`, `/fork`, `--teleport`; `/rewind` checkpoints | sessions, checkpointing |
-| Context & cost | `/context [all]`, `/compact [instructions]`, `autoCompactAt`; `/cost`, `/usage` incl. per-model + cache hit ratio; `total_cost_usd` in JSON output | context-window, costs |
+| Context & cost | `/context [all]`, `/compact [instructions]`, `/autocompact` (the documented command; the setting name behind it must be quoted from the live `settings.md`, not assumed — P14); `/cost`, `/usage` incl. per-model + cache hit ratio; `total_cost_usd` in JSON output | context-window, costs |
 | Desktop / web | Desktop (macOS/Windows/Linux): scheduled tasks, iOS simulator pane, Remote Control handoff; web: cloud sessions, routines | desktop-quickstart, claude-code-on-the-web |
 | IDE | VS Code and JetBrains extensions: inline chat, diff view, selection context | vs-code, jetbrains |
 | Keybindings / statusline | `~/.claude/keybindings.json`; Shift+Tab mode toggle; `/statusline` | keybindings, statusline |

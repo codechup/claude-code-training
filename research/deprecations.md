@@ -8,7 +8,7 @@ Lesson rule (D044): a removed or changed behaviour appears only as a short **Cha
 | `keybindingFlavor` setting | Ignored; word keys are always Bash-style (Ctrl+W, Alt+F/D) | Keybindings lesson |
 | `defaultMode: bypassPermissions` / `auto` in project `.claude/settings.json` | Silently ignored; only user or managed scope | Permissions lesson, security lesson |
 | `/btw` side-question history navigation | The live `commands.md` (2026-09-07, P16) documents `Left`/`Right` for `/btw` history — the earlier note claiming `Shift+←/→` was wrong; teach what the live page says | Commands reference |
-| Bash permission rules with text after `)` | Invalid (used to be silently ignored) | Permissions lesson |
+| Bash permission rules with text after `)` | **Not confirmed** on the live `permissions.md` (P14, 2026-09-07) — do not teach until re-verified from the changelog | Permissions lesson (hold) |
 | GitHub Action `anthropics/claude-code-action@beta`, inputs `mode`, `direct_prompt`, `max_turns` | `@v1`; use `prompt` + `claude_args` | Headless/CI lesson |
 | MCP SSE transport | Deprecated; use HTTP, stdio or WebSocket | MCP lesson |
 | `disableArtifact` | Inverted to `enableArtifact` | Artifacts lesson |
