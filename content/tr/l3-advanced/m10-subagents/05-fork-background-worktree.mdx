@@ -1,0 +1,41 @@
+---
+title: 'Fork, background ve worktree izolasyonu'
+description: "Bir ajanı yerleştirmenin üç yolu: /subtask ile konuşmanızdan fork'lamak, siz çalışmaya devam ederken arka planda koşturmak ya da isolation: worktree ile kendi git worktree'sine kapatmak — gerçek bir çalıştırma ve bunu kanıtlayan git worktree list çıktısıyla."
+level: 3
+module: 'm10-subagents'
+order: 5
+duration_min: 20
+difficulty: advanced
+tags: ['subagent', 'fork', 'background', 'worktree', 'izolasyon', 'monitor']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Create custom subagents'
+    url: 'https://code.claude.com/docs/en/sub-agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run parallel sessions with worktrees'
+    url: 'https://code.claude.com/docs/en/worktrees.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run agents in parallel'
+    url: 'https://code.claude.com/docs/en/agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Message your other Claude Code sessions'
+    url: 'https://code.claude.com/docs/en/cross-session-messaging.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m10-05-start'
+---
+
+## Özet
+
+Fork'lanmış bir subagent bütün konuşma geçmişini, system prompt'u, tool'ları ve modeli devralır; tool çağrılarını ve nihai sonucu ise izole eder. `/subtask` (v2.1.212+) onu başlatır ve fork mode etkileşimli oturumlarda varsayılan olarak açıktır. Foreground mu background mu sorusunu dört adımlı bir kural yanıtlar — varsayılan background'dır. Tool kümesi iki filtreden geçer: birincisi kısa bir listeyi her subagent'tan kaldırır, ikincisi ise yalnızca background'da çalışır ve bir allowlist'tir; background'daki bir subagent her MCP tool'unu korur ama yerleşik tool'lardan yalnızca belgelenmiş kısa listeyi tutar. `isolation: worktree` ise ajana geçici bir git worktree verir ve izolasyonu dört ayrı kontrolle harness zorlar. Laboratuvarda izole bir ajan bir dosya oluşturur ve `git worktree list` ile ana checkout'un hiç dokunulmadığı gösterilir.
+
+<Callout label="Çeviri bekleniyor">
+  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
+  İngilizce mevcuttur.
+</Callout>

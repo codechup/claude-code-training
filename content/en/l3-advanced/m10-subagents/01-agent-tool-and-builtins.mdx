@@ -1,0 +1,308 @@
+---
+title: 'The Agent tool and the built-in subagents'
+description: 'A subagent is a delegated worker with its own context window. Meet the Agent tool, the six built-in agents (Explore, Plan, general-purpose, claude, statusline-setup, claude-code-guide) and the one question that decides whether to delegate at all.'
+level: 3
+module: 'm10-subagents'
+order: 1
+duration_min: 15
+difficulty: core
+tags: ['subagents', 'agent-tool', 'context', 'delegation']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Create custom subagents'
+    url: 'https://code.claude.com/docs/en/sub-agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run agents in parallel'
+    url: 'https://code.claude.com/docs/en/agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Tools available to Claude'
+    url: 'https://code.claude.com/docs/en/tools-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage agents with agent view'
+    url: 'https://code.claude.com/docs/en/agent-view.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say what a subagent is in one sentence, and name the single thing it buys you that a longer prompt cannot.
+- Describe what the `Agent` tool does with its inputs — `subagent_type`, `prompt`, `description`, `name`, `run_in_background`, `model`, `isolation` — and what comes back.
+- Name the six built-in subagents and say what each is for: `Explore`, `Plan`, `general-purpose`, `claude`, `statusline-setup`, `claude-code-guide`.
+- Explain why `Explore` and `Plan` are read-only, why they skip your `CLAUDE.md` and git status, and why neither can be resumed.
+- Prove a delegation actually happened, from the headless JSON envelope, instead of taking Claude's word for it.
+
+**Prerequisites.** A working Claude Code install (L1 `m01-start`), comfort with the built-in tools (L1 `m02-interact`), and a repository you can run a read-only session in. No configuration is needed: the built-in agents ship with Claude Code.
+
+<WhenNotToUse>
+  Delegation costs a round trip and a fresh context window, and the subagent hands back only a text
+  summary — the parent never sees the intermediate tool calls. So do not delegate a single-fact
+  lookup when you already know the file, symbol or line: reading it yourself is cheaper and the
+  answer is exact. Do not delegate work whose intermediate state you need to keep steering (a
+  refactor you want to correct halfway through), because you cannot reach inside a running one-shot
+  agent to redirect it. And do not delegate to make a slow task fast: several agents at once
+  multiply token usage rather than dividing the work for free.
+</WhenNotToUse>
+
+## Concept
+
+### What a subagent actually is
+
+A subagent is a **delegated worker with its own context window** that does a side task and returns a single text result to the conversation that spawned it. The official comparison of the parallel-work approaches puts it plainly: reach for a subagent when "a side task would flood your main conversation with search results, logs, or file contents you won't reference again."
+
+That is the whole economics of it. A codebase sweep that reads forty files to answer one question costs forty files' worth of your context if you do it inline, and one paragraph if a subagent does it. The tool calls happen inside the subagent's window; only the conclusion crosses back.
+
+Two consequences follow, and both surprise people:
+
+- **You do not see the work.** The parent gets the result, not the transcript. If you need to audit how an answer was reached, open the subagent's transcript from `/tasks` — do not expect it in your own scrollback.
+- **The subagent does not see your conversation.** A non-fork subagent starts with its own system prompt, Claude's delegation message, your `CLAUDE.md` hierarchy, a git-status snapshot, any preloaded skills, and a roster of its named siblings. It does **not** get your conversation history, your output-style preference, or your auto-memory. Everything it needs has to be in the prompt or in the files.
+
+### The Agent tool
+
+Delegation happens through one tool, `Agent`. Its inputs are:
+
+| Input               | What it does                                                                 |
+| ------------------- | ---------------------------------------------------------------------------- |
+| `subagent_type`     | Which agent to spawn — a built-in name or one of your own                    |
+| `prompt`            | The instructions the subagent starts from                                    |
+| `description`       | A short human-readable label for the task                                    |
+| `name`              | An optional name; with agent teams enabled, a named call launches a teammate |
+| `run_in_background` | Asks for concurrent execution; the placement rules in lesson 05 decide       |
+| `model`             | A per-invocation model override                                              |
+| `isolation`         | Isolation mode, e.g. `worktree`                                              |
+| `team_name`         | Accepted for agent teams, and ignored as of v2.1.178                         |
+
+The `Agent` tool itself needs no permission (the tools reference lists it as `Permission required: No`) — the subagent's own tools are still permission-checked inside it. You almost never write an `Agent` call yourself; you ask in plain language and Claude picks the agent:
+
+```text
+Use the Explore subagent to find where the CLI persists tasks to disk.
+Report the file and function only.
+```
+
+You can also be explicit with an @-mention — `@agent-code-reviewer`, or picking `@"code-reviewer (agent)"` from the typeahead — or start a whole session as one agent with `claude --agent code-reviewer`.
+
+Nesting is allowed: a subagent can spawn its own subagents, three layers deep by default (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`, default `3`; at the limit, subagents lose the `Agent` tool). Up to 20 subagents run at once by default (`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`).
+
+### The six built-ins
+
+Claude Code ships six subagents you never have to define.
+
+| Agent               | Model                                                             | Tools                                     | What it is for                                        |
+| ------------------- | ----------------------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------- |
+| `Explore`           | Inherits from the main conversation, capped at Opus on Claude API | Read-only — `Write` and `Edit` are denied | Fast codebase exploration and search                  |
+| `Plan`              | Inherits from the main conversation                               | Read-only                                 | Research during plan mode, before a plan is presented |
+| `general-purpose`   | `CLAUDE_CODE_SUBAGENT_MODEL` if set, else the main model          | All tools available to subagents          | Complex multi-step tasks that explore _and_ act       |
+| `claude`            | Follows the model resolution order                                | —                                         | Catch-all for tasks that fit no specialised agent     |
+| `statusline-setup`  | Sonnet                                                            | —                                         | Configuring `/statusline`                             |
+| `claude-code-guide` | Haiku                                                             | —                                         | Questions about Claude Code's own features            |
+
+Three properties of `Explore` and `Plan` are worth memorising, because they explain most of the confusion about them:
+
+1. **They are read-only.** They cannot edit, write or change anything. That is what makes them safe to fan out.
+2. **They skip your `CLAUDE.md` files and the git status snapshot.** Every other subagent loads both. `Explore` and `Plan` deliberately do not — they start cheap.
+3. **They cannot be resumed.** They are one-shot. If you need to continue a conversation with an agent, use `general-purpose` or one of your own.
+
+`Explore` also takes a thoroughness level — quick, medium, or very thorough — so "search these three directories" and "sweep the whole repo for every naming convention" are the same tool at different settings.
+
+### Turning them off
+
+Built-ins are subject to the same permission machinery as everything else. Deny one agent, or all delegation:
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "permissions": {
+    "deny": ["Agent(Explore)", "Agent(my-custom-agent)"]
+  }
+}
+```
+
+</CodeBlock>
+
+From the CLI, `claude --disallowedTools "Agent(Explore)"` blocks one agent and `claude --disallowedTools "Agent"` blocks every subagent. `CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1` removes the two read-only built-ins specifically.
+
+### Where subagents sit among the parallel options
+
+Subagents are one of four ways to run work in parallel, and the official comparison is worth internalising before you reach for the heaviest one:
+
+- **Subagents** — delegated workers inside one session; results return to the caller.
+- **Agent view** (`claude agents`, research preview) — background sessions you dispatch and check on later, each moved into its own worktree under `.claude/worktrees/` before it edits anything.
+- **Agent teams** — coordinated sessions with a shared task list and direct messaging; experimental and disabled by default.
+- **Dynamic workflows** — a script that runs many subagents and cross-checks their results.
+
+This module is about the first one. The rest of the level meets the others.
+
+## Hands-on lab
+
+<Callout>
+  This lab needs no lab-repo tag: the built-in agents exist in every session. We ran it in the lab
+  repository on `main`, but any repository with a few source files works.
+</Callout>
+
+<Lab
+  title="Lab · delegate to a built-in agent and prove it happened"
+  lessonId="en/l3-advanced/m10-subagents/agent-tool-and-builtins"
+  repoTag="none"
+  steps={[
+    'Open a terminal in a repository you can read (we used `git clone https://github.com/codechup/claude-code-lab` on `main`).',
+    'Ask for a delegated search, headlessly: `claude -p "Use the Explore subagent to find where the CLI persists tasks to disk. Report the file and function only." --model sonnet --max-turns 6 --output-format json`',
+    'In the JSON envelope, find `subagent_stats`. Read `by_type` — it names every agent that ran, and how many times.',
+    'Read `requested` and `started_in_background` in the same block: they record whether the agent was asked for in the foreground or the background, and where it actually ran.',
+    'Compare `num_turns` against the size of the answer. The search itself cost the main conversation nothing but one delegation and one result.',
+  ]}
+  expected="The envelope reports subtype: success with subagent_stats.by_type of {'Explore': 1}, and a one-line result naming the file and function. Explore ran in the foreground (started_in_background: 0)."
+  checklist={[
+    '`subagent_stats.by_type` names `Explore`',
+    'The `result` string answers the question in one line, without a wall of file contents',
+    '`num_turns` is small — the file reads happened inside the subagent, not in the main turn',
+    'Nothing in the repository was modified (`git status` is unchanged)',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/01-agent-tool-and-builtins/01-explore-json.txt"
+    range="2-22"
+  />
+</Lab>
+
+`subagent_stats` is the honest answer to "did it really delegate?". Claude's prose may say "I asked the Explore agent…" whether or not it did; `by_type` is emitted by the harness, not written by the model. Get in the habit of checking it whenever a delegation matters — every lab in this module leans on it.
+
+Note also the `requested` block in that capture: `foreground: 1`, `started_in_background: 0`. `Explore` ran in the foreground here. Lesson 05 shows the same field flipping to `1` for a background agent, and explains what decides it.
+
+## Anti-patterns
+
+**Delegating a lookup you could do in one `Read`.** A subagent costs a spawn, a fresh context and a summarisation step. For "what does `saveToDisk` do", opening the file wins on both speed and precision. _Fix:_ delegate breadth (many files, unknown location), not depth (one known file).
+
+**Expecting the subagent to know what you just discussed.** A non-fork subagent gets no conversation history — only its prompt, your memory files and the repo. The classic failure is a prompt like "fix the bug we talked about". _Fix:_ restate the task in full, or use a fork (lesson 05) when the context genuinely matters.
+
+**Trusting the narration instead of the envelope.** "I've delegated this to a subagent" is model prose. _Fix:_ check `subagent_stats.by_type` in `--output-format json`, or `/tasks` in an interactive session.
+
+**Using `Explore` for work that has to change something.** It is read-only by construction, so it will report rather than fix, and you will read the report as a failure. _Fix:_ use `general-purpose` or a custom agent with write tools when the task ends in an edit.
+
+**Asking to resume `Explore` or `Plan`.** They are one-shot and cannot be resumed. _Fix:_ pick `general-purpose` or a custom agent from the start when you expect a follow-up round.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/agent-tool-and-builtins"
+  questionId="q1"
+  lang="en"
+  prompt="What does the parent conversation receive when a subagent finishes?"
+  options={[
+    {
+      text: 'The subagent’s full transcript, including every tool call',
+      explanation:
+        'The parent does not see intermediate tool calls — that isolation is the point of delegating.',
+    },
+    {
+      text: 'A single text result',
+      correct: true,
+      explanation:
+        'Exactly. The work happens in the subagent’s own context window; only the conclusion crosses back.',
+    },
+    {
+      text: 'A diff of every file the subagent touched',
+      explanation:
+        'Nothing about the result format is a diff; a read-only agent changes nothing at all.',
+    },
+    {
+      text: 'Nothing — you have to open /tasks to get anything back',
+      explanation:
+        '/tasks lets you inspect a run, but the result is returned to the conversation automatically.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/agent-tool-and-builtins"
+  questionId="q2"
+  lang="en"
+  prompt="Which statement about the built-in Explore agent is correct?"
+  options={[
+    {
+      text: 'It loads your CLAUDE.md files like every other subagent.',
+      explanation:
+        'Explore and Plan are the two built-ins that deliberately skip CLAUDE.md files and the git status snapshot.',
+    },
+    {
+      text: 'It is read-only, skips CLAUDE.md and git status, and cannot be resumed.',
+      correct: true,
+      explanation:
+        'All three — which is what makes it cheap to fan out and unsuitable for follow-up rounds.',
+    },
+    {
+      text: 'It always runs on Haiku to keep costs down.',
+      explanation:
+        'Explore inherits the main conversation’s model, capped at Opus on the Claude API. claude-code-guide is the Haiku one.',
+    },
+    {
+      text: 'It can apply the fix it finds if you ask nicely.',
+      explanation: 'Its tools are read-only; there is no edit path to ask for.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/agent-tool-and-builtins"
+  questionId="q3"
+  lang="en"
+  prompt="You ran a headless session and want to know whether a subagent really ran. Where do you look?"
+  options={[
+    {
+      text: 'The `result` string, for a sentence saying it delegated',
+      explanation: 'That is model prose. It is not evidence.',
+    },
+    {
+      text: '`subagent_stats.by_type` in the JSON envelope',
+      correct: true,
+      explanation: 'The harness emits it: it names each agent type that ran and how many times.',
+    },
+    {
+      text: '`num_turns`, which counts one turn per subagent',
+      explanation: 'num_turns counts main-conversation turns, not subagents.',
+    },
+    {
+      text: '`total_cost_usd`, which is zero when nothing was delegated',
+      explanation: 'Cost is charged for the main turn regardless of delegation.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/agent-tool-and-builtins"
+  questionId="q4"
+  lang="en"
+  prompt="How do you stop Claude delegating to subagents at all for one session?"
+  options={[
+    {
+      text: 'claude --disallowedTools "Agent"',
+      correct: true,
+      explanation:
+        'Denying the bare Agent tool removes every delegation path; naming a type, as in Agent(Explore), blocks just that one.',
+    },
+    {
+      text: 'claude --no-subagents',
+      explanation: 'There is no such flag.',
+    },
+    {
+      text: 'Delete ~/.claude/agents/',
+      explanation: 'That removes your own agents; the built-ins are not files on disk.',
+    },
+    {
+      text: 'Set CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS=0',
+      explanation:
+        'That variable caps how many run at once (default 20); it is not the off switch.',
+    },
+  ]}
+/>
+
+**Next:** `02-custom-agents` opens up `.claude/agents/*.md` — every frontmatter field, where the files live, and which scope wins when two of them share a name.

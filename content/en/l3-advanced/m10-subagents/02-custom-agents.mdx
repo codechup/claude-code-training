@@ -1,0 +1,349 @@
+---
+title: 'Custom agents in .claude/agents/'
+description: 'Every frontmatter field a subagent file accepts — tools, disallowedTools, model, permissionMode, maxTurns, skills, mcpServers, hooks, memory, effort, isolation, color and the rest — plus where the files live and which scope wins.'
+level: 3
+module: 'm10-subagents'
+order: 2
+duration_min: 20
+difficulty: core
+tags: ['subagents', 'frontmatter', 'configuration', 'agents-directory']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Create custom subagents'
+    url: 'https://code.claude.com/docs/en/sub-agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Tools available to Claude'
+    url: 'https://code.claude.com/docs/en/tools-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run parallel sessions with worktrees'
+    url: 'https://code.claude.com/docs/en/worktrees.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m10-03-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Write a `.claude/agents/<name>.md` file from memory: the two required fields, the body, and the fact that the body becomes the agent's system prompt.
+- Name every optional frontmatter field and the values it accepts.
+- Choose between the allowlist (`tools`) and the denylist (`disallowedTools`), including the MCP wildcard and `Agent(...)` forms.
+- Say which of the five scopes wins when the same agent `name` exists in more than one, and why a nested `.claude/agents/` closest to the working directory takes precedence.
+- Explain the five silent-skip rules that make a file in `agents/` disappear without an error.
+
+**Prerequisites.** Lesson 01 of this module, and a repository you can add files to. If you have done L2 `m06-skills`, the frontmatter-plus-body shape will look familiar — a subagent file is the same idea for a different unit of work.
+
+<WhenNotToUse>
+  A custom agent is a reusable role, not a one-off instruction. If you will run the task once, say
+  it in your prompt instead — a file you write, forget and never delete becomes stale context that
+  Claude keeps reading. Do not define an agent whose only difference from `general-purpose` is a
+  longer prompt with no tool, model or permission change: that is a skill (L2 `m06-skills`), and
+  skills compose with everything else. And do not use an agent to enforce a security boundary you
+  care about: `tools` and `permissionMode` shape one delegated worker, while the permission rules in
+  your settings apply to the whole session.
+</WhenNotToUse>
+
+## Concept
+
+### The file
+
+A subagent is a Markdown file with YAML frontmatter. The frontmatter is the configuration; the body is the agent's system prompt.
+
+<CodeBlock title=".claude/agents/code-reviewer.md">
+
+```markdown
+---
+name: code-reviewer
+description: Reviews code for quality and best practices
+tools: Read, Glob, Grep
+model: sonnet
+---
+
+You are a code reviewer. When invoked, analyze the code and provide
+specific, actionable feedback on quality, security, and best practices.
+```
+
+</CodeBlock>
+
+Only `name` and `description` are required. `name` is lowercase letters and hyphens, must be unique, cannot start with `-` and cannot contain `:` — and it is the value your hooks receive as `agent_type`. `description` is what Claude reads when deciding whether to delegate here, so write it as a trigger ("Use after making a change, before it is committed"), not as a job title.
+
+### Every field
+
+| Field             | Required | Values                                                                                     |
+| ----------------- | -------- | ------------------------------------------------------------------------------------------ |
+| `name`            | yes      | lowercase letters, hyphens                                                                 |
+| `description`     | yes      | string — when Claude should delegate here                                                  |
+| `tools`           | no       | tool names, `Agent(type)`, `mcp__<server>` patterns — allowlist; inherits all if omitted   |
+| `disallowedTools` | no       | tool names, `mcp__<server>` patterns — denylist applied to the inherited or specified list |
+| `model`           | no       | `sonnet`, `opus`, `haiku`, `fable`, a full ID such as `claude-opus-5`, or `inherit`        |
+| `permissionMode`  | no       | `default`, `acceptEdits`, `auto`, `dontAsk`, `bypassPermissions`, `plan`, `manual`         |
+| `maxTurns`        | no       | positive integer — cap before the agent returns partial output                             |
+| `skills`          | no       | list of skill names preloaded into context at startup                                      |
+| `mcpServers`      | no       | server names, or inline definitions                                                        |
+| `hooks`           | no       | hook definitions scoped to this subagent                                                   |
+| `memory`          | no       | `user`, `project`, `local` — persistent memory for cross-session learning                  |
+| `background`      | no       | `true` — keep the agent in the background even when Claude asks for the foreground         |
+| `effort`          | no       | `low`, `medium`, `high`, `xhigh`, `max`                                                    |
+| `isolation`       | no       | `worktree` — run in a temporary git worktree with its own copy of the repository           |
+| `color`           | no       | `red`, `blue`, `green`, `yellow`, `purple`, `orange`, `pink`, `cyan` — display colour      |
+| `initialPrompt`   | no       | string auto-submitted as the first turn when the agent runs as the main session agent      |
+| `experimental`    | no       | `{cacheTtl: "5m" \| "1h"}`                                                                 |
+
+That is the complete list as of Claude Code 2.1.263. Four of these get their own lesson later in this module: `model` (lesson 04), `background` and `isolation` (lesson 05), and `effort` interacts with the model choice.
+
+### Tools: allowlist or denylist
+
+Omit `tools` and the agent inherits everything a subagent can use. Two ways to narrow it:
+
+```yaml
+tools: Read, Grep, Glob, Bash # allowlist — nothing else exists for this agent
+```
+
+```yaml
+disallowedTools: Write, Edit # denylist — everything else stays
+```
+
+MCP servers take patterns: `disallowedTools: mcp__github` removes every tool from that server, and `mcp__*` removes all MCP tools. You can also restrict which subagents this agent may spawn:
+
+```yaml
+tools: Agent(worker, researcher), Read, Bash
+```
+
+The allowlist is the honest default for a reviewer or a researcher: an agent with no `Edit`, `Write` or `Bash` cannot quietly "fix" the thing it was asked to describe. The denylist is better when you want a mostly-capable worker minus one hazard.
+
+`permissionMode` sets the mode inside the agent, defaulting to the main conversation's. `plan` makes it read-only; `bypassPermissions` skips every check and should be treated the way you treat that flag anywhere else.
+
+### Where the files live, and who wins
+
+| Location             | Scope             | Priority    |
+| -------------------- | ----------------- | ----------- |
+| Managed settings     | Organisation-wide | 1 (highest) |
+| `--agents` CLI flag  | Current session   | 2           |
+| `.claude/agents/`    | Current project   | 3           |
+| `~/.claude/agents/`  | All projects      | 4           |
+| A plugin's `agents/` | Where enabled     | 5 (lowest)  |
+
+When the same `name` exists in more than one scope, the higher priority wins. For nested `.claude/agents/` directories inside a project, the definition **closest to the working directory** wins — the same rule path-scoped rules follow.
+
+The session-scoped form takes JSON on the command line, which is how CI defines an agent without committing a file:
+
+```bash
+claude --agents '{"code-reviewer":{"description":"Expert code reviewer","prompt":"You are a senior code reviewer...","tools":["Read","Grep","Glob","Bash"],"model":"sonnet"}}'
+```
+
+### Why your file is being ignored
+
+Claude Code skips a file in an `agents/` directory **without reporting it** when any of these hold:
+
+1. There is no `name` field in the frontmatter.
+2. The opening `---` is not on the first line.
+3. The `name` starts with `-` or contains `:`.
+4. There is a `name` but no `description`.
+5. The YAML does not parse.
+
+Plugin subagents are the one exception: they load under their filename even without a `name`. If an agent you wrote never gets picked, walk that list before anything else — a blank line above the frontmatter is the most common cause, and it produces no error at all.
+
+### What the agent starts with
+
+A non-fork subagent begins with its own system prompt plus environment details, Claude's delegation message, your full `CLAUDE.md` hierarchy, a git-status snapshot, the full text of anything listed in `skills`, and a roster of its named siblings it can reach with `SendMessage`. It does **not** get the conversation history, your output-style preference, auto-memory (unless `memory` is set), or previous skill invocations.
+
+`memory` is the exception that makes an agent learn across sessions. `memory: project` stores under `.claude/agent-memory/<name>/` (shareable in git), `user` under `~/.claude/agent-memory/<name>/`, and `local` under `.claude/agent-memory-local/<name>/`. The agent receives instructions to read and write it, plus the first 200 lines or 25 KB of its `MEMORY.md`.
+
+Here is this lesson's worked prompt — the one you type after writing the file, to check the harness sees it:
+
+```text
+Use the scout subagent to answer: which functions does src/store.ts export?
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · write one agent from scratch and watch Claude route to it"
+  lessonId="en/l3-advanced/m10-subagents/custom-agents"
+  repoTag="lesson/m10-03-start"
+  steps={[
+    'Clone the lab repository if you have not already, then `git checkout lesson/m10-03-start` and `npm ci`.',
+    'Create `.claude/agents/scout.md` with the frontmatter and body shown below the lab — two required fields, a read-only tool allowlist, and deliberately no `model`.',
+    'Delegate to it headlessly: `claude -p "Use the scout subagent to answer: which functions does src/store.ts export?" --model sonnet --max-turns 4 --output-format json`',
+    'Check `subagent_stats.by_type` in the envelope: it should read `{"scout": 1}`, proving the file was found and routed to by name.',
+    'Now break it on purpose: insert a blank line above the opening `---` of `scout.md` and re-run the same command. The agent is skipped silently and Claude answers by itself — no error, no warning.',
+    'Undo the blank line and confirm `by_type` names `scout` again.',
+  ]}
+  expected="With a well-formed file, subagent_stats.by_type is {'scout': 1} and the result is a short list of exported functions. With the blank line above the frontmatter, scout is gone from by_type — in our capture Claude fell back to the built-in Explore agent — and no warning is printed anywhere."
+  checklist={[
+    '`.claude/agents/scout.md` exists and its first line is `---`',
+    '`subagent_stats.by_type` names `scout`',
+    'The result stays inside scout’s brief (an answer plus file:line evidence, no review)',
+    'The deliberately-broken version produces no error message anywhere, and `by_type` no longer names `scout`',
+    'The working version is restored',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/02-custom-agents/01-scout-json.txt"
+    range="2-20"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/02-custom-agents/02-scout-skipped-json.txt"
+    range="2-14"
+  />
+</Lab>
+
+The second capture is the interesting one. A single blank line above the frontmatter made the file invisible: `by_type` reads `{"Explore": 1}` instead of `{"scout": 1}`, the run still reports `subtype: success`, and nothing on stdout or stderr mentions a skipped file. Claude quietly fell back to a built-in agent and answered anyway — which is why a missing agent is so easy to miss.
+
+The agent file used in that capture:
+
+<CodeBlock title=".claude/agents/scout.md">
+
+```markdown
+---
+name: scout
+description: Answers a one-line factual question about this repository. Read-only, no model pinned.
+tools: Read, Grep, Glob
+---
+
+You answer one narrow question about the `labtrack` repository and stop.
+Reply with at most three lines: the answer first, then the `file:line` evidence.
+Do not review, refactor or suggest improvements.
+```
+
+</CodeBlock>
+
+Two details from the capture are worth naming. `modelUsage` lists only `claude-sonnet-5`, because `scout` pins no `model` and therefore inherited the main conversation's — lesson 04 takes that apart properly. And the result respects the body's instruction to answer rather than review, which is the whole reason to spend a file on a role you use repeatedly.
+
+## Anti-patterns
+
+**A `description` that describes the agent instead of the trigger.** "A code reviewer" tells Claude nothing about when to delegate. _Fix:_ write the condition — "Use after making a change, before it is committed."
+
+**A blank line before the frontmatter.** The opening `---` must be on line 1 or the file is skipped with no message. _Fix:_ check line 1 first whenever an agent seems not to exist.
+
+**Inheriting every tool for a read-only role.** Omitting `tools` gives a "reviewer" `Edit`, `Write` and `Bash`, and sooner or later it will use them. _Fix:_ allowlist `Read, Grep, Glob` and let the body say plainly that it cannot fix anything.
+
+**Putting the task in the body.** The body is a standing system prompt for every invocation; the specific file or diff belongs in the delegation prompt. _Fix:_ body = role and method, prompt = this task.
+
+**Assuming the agent can see the conversation.** It gets your `CLAUDE.md`, not your chat. _Fix:_ state the task fully, or use a fork (lesson 05).
+
+**Duplicating an agent at user and project scope and wondering which ran.** Project (`.claude/agents/`) beats user (`~/.claude/agents/`), and a nested directory closer to the working directory beats both. _Fix:_ keep one definition, or make the names distinct.
+
+<Callout variant="changed">
+  As of v2.1.198, `/agents` no longer opens a panel: it prints a notice pointing at the subagent
+  file locations. Create and edit agents by asking Claude or by editing the files in
+  `.claude/agents/` directly. `/agents` is also a different thing from `claude agents`, which opens
+  agent view.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/custom-agents"
+  questionId="q1"
+  lang="en"
+  prompt="Which two frontmatter fields are required in a .claude/agents/*.md file?"
+  options={[
+    {
+      text: '`name` and `description`',
+      correct: true,
+      explanation: 'Everything else is optional; the body becomes the system prompt.',
+    },
+    {
+      text: '`name` and `tools`',
+      explanation:
+        'Omitting `tools` is legal — the agent then inherits every tool available to subagents.',
+    },
+    {
+      text: '`description` and `model`',
+      explanation: '`model` is optional; without it the resolution order decides.',
+    },
+    {
+      text: '`name`, `description` and `permissionMode`',
+      explanation: '`permissionMode` defaults to the main conversation’s mode.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/custom-agents"
+  questionId="q2"
+  lang="en"
+  prompt="The same agent name is defined in .claude/agents/ and in ~/.claude/agents/. Which one runs?"
+  options={[
+    {
+      text: 'The project one, in `.claude/agents/`',
+      correct: true,
+      explanation: 'Project scope (priority 3) beats user scope (priority 4).',
+    },
+    {
+      text: 'The user one, because personal settings are more specific',
+      explanation: 'Priority runs managed → --agents → project → user → plugin.',
+    },
+    {
+      text: 'Both, and Claude picks per task',
+      explanation: 'When names collide, the higher-priority scope wins outright.',
+    },
+    {
+      text: 'Neither — Claude Code reports a name collision and skips both',
+      explanation: 'No error is raised; the higher priority simply wins.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/custom-agents"
+  questionId="q3"
+  lang="en"
+  prompt="You want an agent that can do everything except write files. What is the smallest correct frontmatter change?"
+  options={[
+    {
+      text: '`disallowedTools: Write, Edit`',
+      correct: true,
+      explanation: 'The denylist removes those tools from the inherited set and leaves the rest.',
+    },
+    {
+      text: '`tools: Write, Edit`',
+      explanation: 'That is an allowlist — it would give the agent only those two tools.',
+    },
+    {
+      text: '`permissionMode: plan`',
+      explanation:
+        'Plan mode makes the agent read-only altogether, not "everything except writing".',
+    },
+    {
+      text: '`disallowedTools: mcp__*`',
+      explanation: 'That removes MCP tools, which has nothing to do with writing files.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/custom-agents"
+  questionId="q4"
+  lang="en"
+  prompt="Your new agent never gets used and Claude Code reports no error. Which cause fits that symptom?"
+  options={[
+    {
+      text: 'The opening `---` is not on the first line of the file',
+      correct: true,
+      explanation:
+        'One of five conditions under which Claude Code skips a file in agents/ without reporting it.',
+    },
+    {
+      text: 'The `model` field names a model you do not have access to',
+      explanation: 'That is a model-resolution problem, not a silent skip of the file.',
+    },
+    {
+      text: 'The body is longer than 200 lines',
+      explanation: 'There is no length rule on the body.',
+    },
+    {
+      text: 'The file is in `.claude/agents/` rather than `~/.claude/agents/`',
+      explanation: 'Project scope is valid — and it outranks user scope.',
+    },
+  ]}
+/>
+
+**Next:** `03-agent-lab` builds the four agents this course uses throughout — code-reviewer, test-writer, docs-writer and researcher — and proves each delegation against the lab repo.

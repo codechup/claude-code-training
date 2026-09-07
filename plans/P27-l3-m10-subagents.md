@@ -2,7 +2,7 @@
 id: P27
 title: "L3 Advanced module: Subagents (m10-subagents)"
 milestone: M2
-status: in_progress
+status: review
 owner: opus-p27-2026-09-07
 branch: plan/27-l3-m10-subagents
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T10:55:12Z
+updated_at: 2026-09-07T19:02:03Z
 open_questions: []
 ---
 
@@ -99,5 +99,98 @@ A reviewer opens `npm run dev`, visits each of the 6 lessons at `/en/l3-advanced
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+**Delivered.** 6 EN lessons under `content/en/l3-advanced/m10-subagents/`, 6 TR `draft: true` stubs
+(translated `title`/`description`/`tags` plus a one-paragraph Turkish summary, per
+`docs/authoring/CONTENT-PLAN-BRIEF.md` §1.4 — the plan text said to leave them in English; the brief
+wins, noted here as the delta), 12 real transcripts under
+`content/_shared/transcripts/m10-subagents/`, and 7 appended/extended entries in
+`content/_shared/sources.json` (`lab-m10-03-start`, `lab-m10-03-solution`, `lab-m10-05-start` added;
+`m10-subagents` appended to `docs-tools-reference`, `docs-cross-session-messaging`,
+`docs-agent-teams`, `repo-claude-code-lab`). Module `index.mdx` files needed no change — neither
+carried a lesson list.
+
+**Slug delta (CURRICULUM wins, per Steps §1).** The Deliverables list in this plan names
+`03-model-and-tools-per-agent`, `04-fork-and-background-agents`, `05-worktree-isolation`.
+`docs/CURRICULUM.md` §2 names `03-agent-lab`, `04-model-per-agent`, `05-fork-background-worktree`.
+The curriculum slugs were used.
+
+**Lab-tag delta.** The plan's Steps §3 expects `lesson/m10-subagents-NN-start`; the real tags P22
+shipped are `lesson/m10-03-start`, `lesson/m10-03-solution`, `lesson/m10-05-start`,
+`lesson/m10-05-solution`. The last three point at **identical trees** (`76c0c1d5…`), so lesson 05's
+lab needs no repo change of its own. Only lessons 03 and 05 have a `-start` tag, so:
+`01` and `06` → `repo_tag: 'none'`; `02` reuses `lesson/m10-03-start`; `03` → `lesson/m10-03-start`;
+`04` → `lesson/m10-03-solution` (a real tag, not a `-start` one — the four agents must already exist
+for the model-resolution runs); `05` → `lesson/m10-05-start`.
+
+**Capture conditions (D093).** Every command in every lab was run this session against a private
+clone of `codechup/claude-code-lab` at Claude Code 2.1.263, Node 24.18.0. Two environment notes that
+are in the transcript provenance headers but are not part of the commands readers run:
+this machine's user settings carry `"language": "Turkish"`, so the lab clone got a
+`.claude/settings.local.json` with `{"language": "English"}` to keep the recordings readable (the
+lab commands themselves are unmodified); and lesson 05's run additionally set
+`worktree.baseRef: "head"` — the lesson's own step 4 tells the reader to do the same and says why.
+Absolute paths in the captures were redacted to `~/claude-code-lab`.
+
+**Review pipeline (D071).** `fact-checker` (read-only, plan mode, live re-fetch of all seven cited
+doc pages) returned FAIL on the first pass: 3 WRONG, 2 UNVERIFIABLE, and (its own estimate) roughly 71 CONFIRMED. All five were
+fixed and re-verified against a targeted re-fetch of `sub-agents.md` and `tools-reference.md`:
+
+1. `01` — `run_in_background` "default `true`" (from the tools-reference summary) is not a documented
+   default; the row now says the placement rules decide.
+2. `01` — `Explore`'s tools were enumerated as "Read, Grep, Glob, Bash for reading"; the live page
+   only says read-only with `Write`/`Edit` denied. Enumeration removed.
+3. `01` — "the Agent tool needs no permission" now cites the tools-reference `Permission required: No`
+   column explicitly.
+4. `05` — the foreground/background order was wrong: case 4 is "fork mode off → background by
+   default, foreground when Claude needs the result", and `background: true` only pins it there.
+   Rewritten, and the lesson now explains the lesson-01-vs-lesson-03 `started_in_background`
+   difference with that rule.
+5. `05` — the tool list attributed to background agents is actually the *first* filter that applies
+   to every subagent. The lesson now describes both filters, including the background allowlist.
+
+Advisor-suggested edits also applied: a stray PowerShell note removed from lesson 04's `steps` array,
+a duplicated `/subtask` version note trimmed in lesson 05, and lesson 06's advisor-pairing bullets
+rewritten so they teach the rule instead of naming Opus 4.6/4.7 and Sonnet 4.6 (model versions this
+curriculum does not otherwise teach). Lesson 02's "break the file on purpose" step was captured for
+real rather than asserted — the extra transcript shows `by_type` falling back to `{"Explore": 1}`
+with no warning printed.
+
+The `reviewer` agent (read-only, plan mode) returned **CHANGES REQUESTED — 1 blocker, 0 majors**;
+all seven findings were applied:
+
+1. *Blocker* — the `<Callout variant="changed">` in lessons 02, 04 and 05 sat inside the lab section,
+   before `## Anti-patterns`. D006's order is Anti-patterns → Changed → Quiz. All three moved.
+2. The TR stub for lesson 05 still summarised the pre-correction background tool list; refreshed to
+   the two-filter explanation.
+3. Lesson 06 had no worked prompt in Concept (D027); one added, taken from the lab's real command.
+4. `docs-agent-view` in `sources.json` was tagged `m10-subagents` with no lesson citing it;
+   `agent-view.md` was fetched and is now cited by lesson 01, whose Concept discusses agent view.
+5. The two scratch files (`.factcheck.txt`, `.review.txt`) were deleted rather than committed.
+6. Two `<Transcript range>` end values overran the file length (harmless, `sliceRange` clamps);
+   tightened to the real lengths.
+7. Lesson 06's lab `expected` had single-quoted the captured error; restored to the capture's exact
+   double quotes.
+
+Everything the reviewer listed under **Passes** — template order, schema validity, EN/TR frontmatter
+parity, one `type: official` source per lesson, all `<Transcript>` paths resolving, numbers matching
+the raw captures, no hygiene violations, Turkish diacritics — held on the first pass.
+
+**Inventory drift for P03 (not fixed here — outside `owned_paths`).**
+
+- `research/feature-inventory.md` line 30's permission-mode list omits `manual` (an alias for
+  `default`, v2.1.200+), which the live `sub-agents.md` frontmatter table lists.
+- Line 42's headless row lists `--allowedTools` but not `--disallowedTools`, which `cli-reference.md`
+  documents.
+- The subagents row (line 36) does not mention `experimental: {cacheTtl}` or `initialPrompt`, both of
+  which are in the live frontmatter table.
+- `research/deprecations.md`'s hooks row still writes `permissionDecision: allow|deny|block`; the
+  live pages list `allow|deny|ask|defer`. Already flagged by P19; repeated here for the record.
+
+**Not done / open.** No video sources were opened, so none were added (D041 allows official-doc-only
+source blocks). `/subtask`, `/fork`, `/tasks` and the interactive `Advising` / `Ctrl+O` advisor
+states are interactive-only and are described in prose with `<CodeBlock>`s, never as a fake
+transcript. The TR twins stay `draft: true` for P25/P26/P40/P41; the Turkish summaries use several
+terms (`subagent`, `worktree`, `fork`, `background`, `context window`, `frontmatter`, `advisor`,
+`headless`) that the translation plan should link to `/tr/playbook/glossary/#…` on first use —
+`advisor` and `frontmatter` may need new glossary entries.
 

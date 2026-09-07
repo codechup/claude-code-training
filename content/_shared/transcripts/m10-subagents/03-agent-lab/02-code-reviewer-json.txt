@@ -1,0 +1,19 @@
+# Captured 2026-09-07, Claude Code 2.1.263, on tag lesson/m10-03-start with the four agent files written: claude -p "Use the code-reviewer subagent to review src/store.ts." --model sonnet --max-turns 8 --output-format json - verbatim stdout, fields other than those shown deleted and the result string cut after its first finding.
+{
+ "type": "result",
+ "subtype": "success",
+ "is_error": false,
+ "num_turns": 1,
+ "total_cost_usd": 0.17315779999999997,
+ "permission_denials": [],
+ "subagent_stats": {
+  "spawned": 1,
+  "started_in_background": 1,
+  "completed": 1,
+  "failed": 0,
+  "by_type": {
+   "code-reviewer": 1
+  }
+ },
+ "result": "The review is complete. `src/store.ts` looks clean with respect to the catalogued bugs — B1, B2, and B4 are all fixed and still guarded by their tests. Here's what the reviewer found beyond that:\n\n**Data-integrity issues**\n1. **`addTask` accepts `NaN` priority** (`store.ts:34-37`) — `priority ?? 0` doesn't catch `NaN` (only `null`/`undefined`), and `NaN < 0` is `false`, so it slips past validation. Reachable via CLI (`--priority notanumber`). Worse: `JSON.stringify` turns `NaN` into `null` on save, silently corrupting the task. Fix: `if (!Number.isFinite(priority) || priority < 0) throw ...`.\n\n[...]"
+}

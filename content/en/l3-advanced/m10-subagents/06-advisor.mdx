@@ -1,0 +1,299 @@
+---
+title: 'The advisor pattern'
+description: 'Pair a fast main model with a stronger advisor Claude consults at decision points: how to enable it, which pairings are accepted, what it costs, and how it differs from a subagent or opusplan.'
+level: 3
+module: 'm10-subagents'
+order: 6
+duration_min: 10
+difficulty: advanced
+tags: ['advisor', 'models', 'cost', 'escalation']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Escalate hard decisions with the advisor tool'
+    url: 'https://code.claude.com/docs/en/advisor.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Create custom subagents'
+    url: 'https://code.claude.com/docs/en/sub-agents.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Explain what the advisor tool is, where it runs, and what it receives.
+- Enable it three ways — `/advisor`, the `advisorModel` setting, the `--advisor` flag — and turn it off again.
+- State the pairing rule and predict whether a given main-model/advisor combination is accepted.
+- Say what advisor usage costs and why it is usually cheaper than switching the main model.
+- Choose between the advisor, `opusplan`, a subagent with `model` set, and simply switching models.
+
+**Prerequisites.** L2 `m05-models-effort` for the model family, and lesson 04 of this module for per-agent model choice. The advisor requires the Anthropic API — it is not available on Amazon Bedrock, Claude Platform on AWS, Google Cloud's Agent Platform, or Microsoft Foundry.
+
+<WhenNotToUse>
+  The advisor is built for long, multi-step tasks where most turns are routine but plan quality
+  decides the outcome. It adds little on short tasks with nothing to plan — and on work where every
+  turn needs the strongest model, switching the main model is both simpler and cheaper than paying a
+  second model to read the whole transcript repeatedly. It is also the wrong tool when you want
+  control over *when* the second opinion happens: Claude decides that, and there is no setting to
+  cap or force advisor calls. If you need a second model on a specific, bounded question, delegate
+  to a subagent with `model` set instead.
+</WhenNotToUse>
+
+## Concept
+
+### What it is
+
+The advisor tool lets Claude consult a second, typically stronger model at key moments during a task: before committing to an approach, when an error keeps recurring, and before declaring a task complete. The advisor **receives the full conversation, including every tool call and result**, and returns guidance that Claude applies before continuing.
+
+It runs server-side on Anthropic's infrastructure as a server tool, available to both subscription and API-billed accounts. You choose which model acts as the advisor; Claude decides when to call it.
+
+The shape is worth naming, because it inverts everything else in this module. A subagent is delegation _downwards_: a narrow task, a fresh context, a summary back. The advisor is escalation _upwards_: the whole context, no task, judgement back.
+
+<Callout>
+  The advisor tool is experimental and requires the Anthropic API. Behaviour, pricing and
+  availability may change. It also depends on a feature flag Claude Code fetches from Anthropic, so
+  in a session where flag fetching is off — for example with `DISABLE_TELEMETRY` set — the advisor
+  stays off.
+</Callout>
+
+### Turning it on
+
+Three ways, in increasing scope:
+
+<CodeBlock title="advisor: three ways to set it">
+
+```bash
+# 1. Mid-session, saved as your default:
+/advisor opus
+
+# 2. One session only, at launch (not listed in claude --help):
+claude --advisor opus
+
+# 3. Persistently, in your settings file:
+#    { "advisorModel": "opus" }
+```
+
+</CodeBlock>
+
+`/advisor` with no arguments opens a picker. The command confirms with `Advisor set to` and the model name, and saves it to `advisorModel` in your user settings. Once a session starts with an advisor, Claude Code shows an `Advisor Tool (experimental) is on and may use more tokens · /advisor` notification.
+
+To stop: `/advisor off`, or **No advisor** in the picker, clears the saved `advisorModel`. To remove the feature entirely, set `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` — the `/advisor` command becomes unavailable, a configured `advisorModel` is ignored, and `--advisor` is accepted but has no effect.
+
+### The pairing rule
+
+**The advisor must be at least as capable as the main model.** Everything else follows from that one sentence:
+
+- Haiku can _call_ the advisor but cannot _act_ as one.
+- Sonnet 5 accepts Fable, Opus, or Sonnet 5 as its advisor — an older Sonnet is rejected.
+- Opus models of the same generation are ranked equally capable, so one Opus accepts another; an Opus main with an older Opus or a Sonnet advisor is rejected.
+- A Fable main model accepts only Fable — an Opus or Sonnet advisor is rejected, and so is a Fable 5 advisor for a Fable 5.1 main.
+
+Set the advisor as `fable`, `opus` or `sonnet` — aliases that resolve to Claude Code's built-in default version for that family and advance with new releases — or pass a full model ID such as `claude-opus-5`. **Subagents inherit the configured advisor** and apply the same pairing check against their own model.
+
+When the pairing fails, the failure is loud rather than silent. With `--advisor`, Claude Code exits at launch with an error; in a background session it starts without the advisor instead of exiting. Here is the real message for the simplest rejection — Haiku, which cannot advise anyone:
+
+<Transcript
+  src="content/_shared/transcripts/m10-subagents/06-advisor/02-advisor-haiku-rejected.txt"
+  range="2-2"
+/>
+
+If the advisor is merely less capable than the main model rather than ineligible, it is not attached to the main model's requests, and both the `/advisor` output and a notification say so — though subagents whose own model satisfies the pairing may still use it.
+
+Claude decides when to call the advisor; there is no setting that caps or forces a consultation. You can still ask for one in your prompt, the same way you would request any tool — this lesson's worked prompt does exactly that:
+
+```text
+Consult the advisor before answering. Question: should paginate() in
+src/store.ts throw on a page number of 0 or below, or clamp it to page 1?
+Answer in one paragraph.
+```
+
+If you want Claude to consult more or less often during a task, say so in your instructions.
+
+### What you see, and what it costs
+
+When Claude calls the advisor, the transcript shows an `Advising` line with the advisor model name while the call is in progress. When it returns, the line reports either **Reviewed** — press `Ctrl+O` to read the guidance — or `Advisor declined to advise on this request`.
+
+Claude generally follows the guidance, but adapts when its own evidence contradicts a specific claim: if a recommended step fails when tried, or the file contents contradict the advice, it surfaces the conflict rather than following unconditionally.
+
+Each call consumes tokens at the advisor model's rates **in addition to** your main model's usage, because the advisor reads the whole conversation each time. Its read is not cached: every call processes the full transcript anew. Advisor usage counts toward the session totals shown by `/usage`, and on subscription plans toward your plan's limits — except that a Fable advisor bills to usage credits on plans where Fable usage does.
+
+The saving argument is about frequency, not price: Claude calls the advisor at decision points rather than on every turn, so a faster main model with a stronger advisor typically costs less than running the stronger model throughout. Enabling or disabling the advisor mid-session does not invalidate the main model's prompt cache.
+
+### Choosing between four ways to get a second opinion
+
+| Approach                    | When the stronger model runs                            | How it starts                                |
+| --------------------------- | ------------------------------------------------------- | -------------------------------------------- |
+| Advisor tool                | At decision points mid-task                             | Claude calls it when it needs guidance       |
+| `opusplan`                  | During plan mode, then switches to Sonnet for execution | You enter plan mode                          |
+| A subagent with `model` set | For the entire delegated subtask                        | Claude delegates, or you invoke the subagent |
+| `/model`                    | From the next request onward                            | You switch models                            |
+
+The distinguishing question is _who decides when_. Only the advisor puts that in Claude's hands mid-task.
+
+## Hands-on lab
+
+<Callout>
+  This lab needs no lab-repo tag — any repository with a real design question in it works. It does
+  need an Anthropic API–billed or subscription account on a supported main model; on Bedrock, AWS,
+  Google Cloud’s Agent Platform or Microsoft Foundry the advisor is unavailable and step 3 will say
+  so.
+</Callout>
+
+<Lab
+  title="Lab · watch a real escalation, and a real rejection"
+  lessonId="en/l3-advanced/m10-subagents/advisor"
+  repoTag="none"
+  steps={[
+    'Check the rejection path first, because it is instant and free: `claude -p "hello" --model sonnet --advisor haiku --output-format json`. Read the error.',
+    'Now ask for a real consultation on a question with a genuine trade-off in it. In the lab repository: `claude -p "Consult the advisor before answering. Question: should paginate() in src/store.ts throw on a page number of 0 or below, or clamp it to page 1? Answer in one paragraph. Do not read more than two files and do not edit anything." --model sonnet --advisor fable --max-turns 12 --output-format json`',
+    'Read `modelUsage` in the envelope. Two models appear: your main model, and the advisor.',
+    'Compare their token counts. The advisor’s input token count is large because it reads the whole conversation; the main model’s is small.',
+    'Read the `result` and ask whether the reasoning is better than a single-model answer would have been — the honest verdict is sometimes "no", and that is a real data point about whether the advisor earns its cost on your work.',
+    'Interactively, run `/advisor` to open the picker, then `/advisor off` to clear it again.',
+  ]}
+  expected='The Haiku run exits 1 with `Error: The model "haiku" cannot be used as an advisor.` and prints no JSON envelope. The Fable run succeeds and its modelUsage lists both claude-sonnet-5 and claude-fable-5-1, the advisor carrying the large input-token count.'
+  checklist={[
+    'The Haiku attempt failed at launch with a message naming the reason',
+    '`modelUsage` in the successful run lists two distinct models',
+    'The advisor’s inputTokens dwarf the main model’s — it read the whole conversation',
+    '`total_cost_usd` is higher than the same task without an advisor',
+    '`/advisor off` clears the saved advisorModel',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/06-advisor/01-advisor-fable-json.txt"
+    range="2-20"
+  />
+</Lab>
+
+The numbers in that capture make the cost model concrete. The main Sonnet model spent 10 input tokens and about 1,057 output tokens; the Fable advisor spent 40,885 input tokens and 2,352 output — and 0.53 of the run's 0.61 USD. That asymmetry is the whole design: the advisor reads everything, every time, and is therefore something you want called at a handful of decision points rather than on every turn.
+
+The `Advising` line, the `Reviewed`/`Declined` states and `Ctrl+O` to read the guidance are interactive-only — headless mode shows you the token accounting instead, which is why this lab reads `modelUsage` rather than a transcript line.
+
+## Anti-patterns
+
+**Turning the advisor on for everything.** On short tasks there is nothing to advise about, and you pay a full transcript read for it. _Fix:_ enable it per session with `--advisor` on the long jobs, rather than leaving `advisorModel` set globally.
+
+**Picking an advisor weaker than the main model.** It is simply not attached; you get a notification and no advice. _Fix:_ remember the rule — the advisor must be at least as capable as the main model — and read the `/advisor` output.
+
+**Expecting the advisor to be a reviewer you can schedule.** There is no setting to cap or force calls; Claude decides. _Fix:_ ask in the prompt ("consult the advisor before you continue"), or use a subagent with `model` set when you need a second opinion on a specific, bounded question.
+
+**Treating advisor guidance as unconditional.** Claude adapts when its own evidence contradicts a specific claim, and so should you. _Fix:_ when the advice and the file disagree, believe the file and say so.
+
+**Assuming it works everywhere.** It is an Anthropic-API-only server tool, and it needs feature-flag fetching. _Fix:_ check the requirements before writing it into a team runbook.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/advisor"
+  questionId="q1"
+  lang="en"
+  prompt="What does the advisor receive when Claude consults it?"
+  options={[
+    {
+      text: 'The current prompt only',
+      explanation: 'That would make it a cheap second opinion — but it is not what happens.',
+    },
+    {
+      text: 'The full conversation, including every tool call and result',
+      correct: true,
+      explanation: 'Which is exactly why its input token count dominates a run’s cost.',
+    },
+    {
+      text: 'A summary Claude writes for it',
+      explanation: 'No summarisation step sits in between.',
+    },
+    {
+      text: 'The repository, but not the conversation',
+      explanation: 'The advisor reads the conversation, not the repo directly.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/advisor"
+  questionId="q2"
+  lang="en"
+  prompt="Which pairing is rejected?"
+  options={[
+    {
+      text: 'Haiku 4.5 main with an Opus advisor',
+      explanation: 'Accepted — Haiku can call the advisor, it just cannot act as one.',
+    },
+    {
+      text: 'Sonnet 5 main with a Fable advisor',
+      explanation: 'Accepted — the advisor is at least as capable.',
+    },
+    {
+      text: 'Fable 5.1 main with an Opus advisor',
+      correct: true,
+      explanation: 'A Fable main model accepts only Fable; an Opus or Sonnet advisor is rejected.',
+    },
+    {
+      text: 'Opus main with an Opus advisor',
+      explanation: 'Accepted — a second Opus reviewing the first is a documented pairing.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/advisor"
+  questionId="q3"
+  lang="en"
+  prompt="Why is a fast main model plus a strong advisor usually cheaper than running the strong model throughout?"
+  options={[
+    {
+      text: 'Advisor tokens are billed at a discount',
+      explanation: 'They are billed at the advisor model’s own rates.',
+    },
+    {
+      text: 'Claude calls the advisor at decision points rather than on every turn',
+      correct: true,
+      explanation: 'Frequency, not price, is what makes the pairing cheaper.',
+    },
+    {
+      text: 'The advisor’s read of the conversation is cached between calls',
+      explanation: 'It is explicitly not cached — each call processes the full transcript anew.',
+    },
+    {
+      text: 'Advisor usage does not count toward subscription limits',
+      explanation: 'It does count toward your plan’s usage limits.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/advisor"
+  questionId="q4"
+  lang="en"
+  prompt="You want a stronger model on one specific, bounded question, at a moment you choose. Which tool fits?"
+  options={[
+    {
+      text: 'The advisor, with a prompt asking it to consult',
+      explanation:
+        'Closer, but Claude still decides when, and the advisor reads everything rather than one question.',
+    },
+    {
+      text: 'A subagent with `model` set',
+      correct: true,
+      explanation:
+        'The stronger model runs for the entire delegated subtask, and you decide when to delegate.',
+    },
+    {
+      text: 'opusplan',
+      explanation: 'That runs the stronger model during plan mode, not on a question you pick.',
+    },
+    {
+      text: '`isolation: worktree`',
+      explanation: 'That is about file isolation, not model choice.',
+    },
+  ]}
+/>
+
+**Next:** `m11-mcp` leaves delegation behind and connects Claude Code to external systems through the Model Context Protocol.

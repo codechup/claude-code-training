@@ -1,0 +1,245 @@
+---
+title: 'Lab: four agents that earn their keep'
+description: 'Build code-reviewer, test-writer, docs-writer and researcher in the lab repository, then prove each delegation from the headless JSON envelope rather than from Claude’s narration.'
+level: 3
+module: 'm10-subagents'
+order: 3
+duration_min: 30
+difficulty: core
+tags: ['subagents', 'lab', 'code-review', 'tests', 'documentation']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Create custom subagents'
+    url: 'https://code.claude.com/docs/en/sub-agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Tools available to Claude'
+    url: 'https://code.claude.com/docs/en/tools-reference.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'codechup/claude-code-lab'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m10-03-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Write four working agents — `code-reviewer`, `test-writer`, `docs-writer`, `researcher` — with tool sets that match their jobs.
+- Explain why the reviewer's _lack_ of tools is the feature, and how a scoped `Bash(npm test:*)` differs from full shell access.
+- Delegate to a named agent headlessly and confirm from `subagent_stats` that the right one ran.
+- Read `permission_denials` in the envelope and connect a denial back to the agent's `tools` list.
+- Recognise when a role deserves a file and when it should stay a prompt.
+
+**Prerequisites.** Lessons 01 and 02 of this module. A local clone of the lab repository and Node 24 (`npm ci` must succeed). This lab writes files into `.claude/agents/`, so run it in the lab clone, not in a repository you care about.
+
+<WhenNotToUse>
+  Four agents is a lot of standing configuration for a small project. If your repository has one
+  test command, one style rule and one reviewer, a single `general-purpose` delegation with a good
+  prompt will do the same work with nothing to maintain. Build this set when the roles genuinely
+  differ in the tools they need — a reviewer that must not edit, a test writer that must run `npm
+  test`, a docs writer that must not touch `src/` — because that difference is the only thing a file
+  expresses that a prompt cannot.
+</WhenNotToUse>
+
+## Concept
+
+### One role, one tool set
+
+The four agents in this lab differ in exactly one interesting way: what they are allowed to do.
+
+| Agent           | `tools`                                           | Why                                                               |
+| --------------- | ------------------------------------------------- | ----------------------------------------------------------------- |
+| `code-reviewer` | `Read, Grep, Glob`                                | It must report, never fix. No `Edit`, no `Write`, no `Bash`.      |
+| `test-writer`   | `Read, Write, Edit, Grep, Glob, Bash(npm test:*)` | It writes tests and must run them — but only the test command.    |
+| `docs-writer`   | `Read, Write, Edit, Grep, Glob`                   | It edits Markdown. It has no shell, so it cannot build or commit. |
+| `researcher`    | `Read, Grep, Glob, WebFetch`                      | Read-only, plus the web for external dependency questions.        |
+
+`Bash(npm test:*)` is the pattern worth stopping on. It is a scoped Bash permission, not full shell access: the test writer can run the project's tests and nothing else. That is a much stronger guarantee than a body paragraph asking it politely to stick to `npm test`, because it is enforced by the harness rather than by the model's cooperation.
+
+The reviewer's empty tool belt is the same idea inverted. Its body says so out loud:
+
+> You have no `Edit`, `Write` or `Bash` access: you cannot change anything, run tests, or apply a fix yourself — your job is to report findings precisely enough that whoever asked for the review can act on them.
+
+Saying it in the body matters even though the allowlist already enforces it: an agent that knows it cannot run `git diff` will ask you to name the files instead of burning turns on a tool it does not have.
+
+### Bodies that carry project knowledge
+
+The four bodies in this lab are short, and almost every line is a fact about _this_ repository rather than generic advice: core logic belongs in `src/store.ts` and must not be duplicated into `src/cli.ts` or `src/api/server.ts`; every bug fix keeps its test; time-based tests use an injected fake clock because a real-clock assertion was one of the seeded bugs; `BUGS.md` entries follow a Where/Bug/Reproduce/Fix/Used-by shape.
+
+That is what makes them worth a file. Generic reviewer prose — "look for correctness, security and style issues" — is already in the model. The project's own conventions are not.
+
+This lesson's worked prompt is deliberately plain, because the agent's body is doing the specification:
+
+```text
+Use the code-reviewer subagent to review src/store.ts.
+```
+
+### Delegating, and checking
+
+You invoke by name in plain language, or explicitly with `@agent-code-reviewer`. Either way the proof is the same: `subagent_stats.by_type` in `--output-format json`. Two more envelope fields matter in this lab:
+
+- `permission_denials` — an empty array means nothing was blocked. If your reviewer tries `Bash` and it is not in its allowlist, this is where the attempt shows up.
+- `started_in_background` — whether the agent ran alongside the main turn. Lesson 05 explains what decides it.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · build four agents and prove the reviewer ran"
+  lessonId="en/l3-advanced/m10-subagents/agent-lab"
+  repoTag="lesson/m10-03-start"
+  steps={[
+    'In your clone of the lab repository: `git checkout lesson/m10-03-start`, then `npm ci` and `npm test` to confirm a green baseline.',
+    'Create `.claude/agents/` and write the four files: `code-reviewer.md`, `test-writer.md`, `docs-writer.md`, `researcher.md`. Give each the `tools` list from the table above, `model: sonnet`, and a body that states the project’s own conventions.',
+    'Confirm the directory: `ls -1 .claude/agents/` should list exactly four files, and `head -6 .claude/agents/code-reviewer.md` should show `---` on line 1.',
+    'Delegate a real review: `claude -p "Use the code-reviewer subagent to review src/store.ts." --model sonnet --max-turns 8 --output-format json`',
+    'In the envelope, check `subagent_stats.by_type` reads `{"code-reviewer": 1}`, `failed` is `0`, and `permission_denials` is `[]`.',
+    'Read the `result`. Check every finding against the file — a reviewer that invents an issue is worse than no reviewer.',
+    'Repeat for one of the others, e.g. `claude -p "Use the researcher subagent to explain how paginate() is used by the CLI." --model sonnet --max-turns 6 --output-format json`, and confirm `by_type` names `researcher`.',
+    'Compare your four files against `git checkout lesson/m10-03-solution`, which ships the reference versions.',
+  ]}
+  expected="ls -1 .claude/agents/ lists the four files; the delegated review returns subtype: success with by_type of {'code-reviewer': 1}, failed: 0 and permission_denials: [], and a prioritised findings list with file:line pointers."
+  checklist={[
+    'Four agent files exist and each starts with `---` on line 1',
+    'code-reviewer’s `tools` contains no Edit, Write or Bash',
+    'test-writer’s Bash permission is scoped to `Bash(npm test:*)`',
+    '`subagent_stats.by_type` names the agent you asked for, each time',
+    '`permission_denials` is empty — no agent reached for a tool it does not have',
+    'Every finding in the review is checkable against the source file',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/03-agent-lab/01-agents-dir.txt"
+    range="2-12"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/03-agent-lab/02-code-reviewer-json.txt"
+    range="2-20"
+  />
+</Lab>
+
+The review in that capture found a real defect that the repository's test suite does not cover: `addTask` accepts a `NaN` priority, because `priority ?? 0` catches only `null` and `undefined`, and `NaN < 0` is `false`. It is exactly the kind of finding a read-only reviewer is good for — it costs nothing, it is checkable in ten seconds, and it did not arrive as a silent edit you would have to review anyway.
+
+Note also `"started_in_background": 1` in that envelope, against `0` for the `Explore` run in lesson 01. Same command shape, different placement — lesson 05 explains the rule.
+
+## Anti-patterns
+
+**Giving the reviewer edit access "just in case".** An agent with `Edit` will fix things, and you will end up reviewing the fix instead of reading the review. _Fix:_ allowlist `Read, Grep, Glob` and let the caller decide what to act on.
+
+**Unscoped `Bash` on the test writer.** `tools: Bash` grants the whole shell — `git push`, `rm`, anything. _Fix:_ `Bash(npm test:*)`, and add a second scoped entry if a build step is genuinely needed.
+
+**A body full of generic review advice.** "Check for security issues" is already in the model; it costs tokens and adds nothing. _Fix:_ spend the body on this project's conventions, the files that are exempt, and the shape the report should take.
+
+**Accepting findings without checking them.** A confident list of `file:line` claims is still model output. _Fix:_ open two of them before acting on any of them — the lab's checklist makes this a step, not an afterthought.
+
+**Four agents that all inherit every tool.** Then the files differ only in prose, and Claude will pick between them unreliably because nothing distinguishes them mechanically. _Fix:_ if two agents have the same tools and the same permissions, merge them.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/agent-lab"
+  questionId="q1"
+  lang="en"
+  prompt="Why does the code-reviewer agent get only Read, Grep and Glob?"
+  options={[
+    {
+      text: 'To make it cheaper to run',
+      explanation: 'Cost follows the model and the turns, not the size of the tool list.',
+    },
+    {
+      text: 'So it reports findings instead of silently applying fixes you would then have to review',
+      correct: true,
+      explanation: 'The allowlist enforces the boundary that the body only describes.',
+    },
+    {
+      text: 'Because read-only agents skip CLAUDE.md and start faster',
+      explanation: 'Only the built-in Explore and Plan agents skip CLAUDE.md and git status.',
+    },
+    {
+      text: 'Because agents with Edit access cannot be delegated to headlessly',
+      explanation: 'They can; the lab’s test-writer does exactly that.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/agent-lab"
+  questionId="q2"
+  lang="en"
+  prompt="What does `Bash(npm test:*)` in an agent’s tools list mean?"
+  options={[
+    {
+      text: 'The agent may run any Bash command, but only after npm test passes',
+      explanation: 'It is a permission pattern, not an ordering rule.',
+    },
+    {
+      text: 'The agent’s Bash access is scoped to the npm test command and its variants',
+      correct: true,
+      explanation:
+        'A scoped Bash permission — enforced by the harness rather than by the agent’s cooperation.',
+    },
+    {
+      text: 'The agent runs npm test automatically at startup',
+      explanation: 'Nothing runs automatically; the tools list only says what is permitted.',
+    },
+    {
+      text: 'It is a denylist entry removing npm test',
+      explanation: 'Denylist entries go in `disallowedTools`.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/agent-lab"
+  questionId="q3"
+  lang="en"
+  prompt="Which envelope field tells you an agent tried to use a tool it was not allowed?"
+  options={[
+    {
+      text: '`permission_denials`',
+      correct: true,
+      explanation: 'Empty means nothing was blocked; entries name the blocked attempts.',
+    },
+    {
+      text: '`subagent_stats.failed`',
+      explanation: 'That counts subagents that failed outright, not blocked tool calls.',
+    },
+    { text: '`is_error`', explanation: 'That reports whether the whole run errored.' },
+    { text: '`stop_reason`', explanation: 'That says why the turn ended, not what was denied.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/agent-lab"
+  questionId="q4"
+  lang="en"
+  prompt="What belongs in a custom agent’s body rather than in the delegation prompt?"
+  options={[
+    {
+      text: 'The specific file to review this time',
+      explanation: 'That changes per invocation — it belongs in the prompt.',
+    },
+    {
+      text: 'The project’s standing conventions and the shape the report should take',
+      correct: true,
+      explanation:
+        'The body is a system prompt for every invocation; per-task detail goes in the prompt.',
+    },
+    {
+      text: 'The model to use',
+      explanation: 'That is the `model` frontmatter field, not the body.',
+    },
+    {
+      text: 'The list of tools the agent may use',
+      explanation: 'That is the `tools` frontmatter field; a body cannot grant a tool.',
+    },
+  ]}
+/>
+
+**Next:** `04-model-per-agent` puts a number on the cost of all this — the four-step model resolution order, `CLAUDE_CODE_SUBAGENT_MODEL`, and which agents deserve a bigger model.

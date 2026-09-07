@@ -1,0 +1,300 @@
+---
+title: 'Fork, background and worktree isolation'
+description: 'Three ways to place an agent: forked from your conversation with /subtask, running in the background while you keep working, or isolated in its own git worktree with isolation: worktree — with a real run and the git worktree list that proves it.'
+level: 3
+module: 'm10-subagents'
+order: 5
+duration_min: 20
+difficulty: advanced
+tags: ['subagents', 'fork', 'background', 'worktrees', 'isolation', 'monitor']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Create custom subagents'
+    url: 'https://code.claude.com/docs/en/sub-agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run parallel sessions with worktrees'
+    url: 'https://code.claude.com/docs/en/worktrees.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run agents in parallel'
+    url: 'https://code.claude.com/docs/en/agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Message your other Claude Code sessions'
+    url: 'https://code.claude.com/docs/en/cross-session-messaging.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m10-05-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say what a forked subagent inherits and what it isolates, and start one with `/subtask`.
+- Name the four-step rule that decides whether a subagent runs in the foreground or the background, and read the answer out of the JSON envelope.
+- List the tools a background agent loses, and explain why.
+- Add `isolation: worktree` to an agent and show, with `git worktree list`, that its edits never reached the main checkout.
+- Say what the periodic sweep removes and what it deliberately leaves behind.
+
+**Prerequisites.** Lessons 01–04 of this module, and L2 `m08-git` lesson 02 for git worktrees themselves. The lab creates a real worktree, so run it in the lab clone.
+
+<WhenNotToUse>
+  Isolation is not free. A worktree is a fresh checkout: your dependencies are not installed there,
+  your `.env` is not there unless a `.worktreeinclude` copies it, and the agent's work lands on a
+  branch nobody has looked at. For a change confined to one or two files that you are about to
+  review anyway, an ordinary subagent editing in place is simpler and finishes sooner. Forks are the
+  wrong tool when the side task genuinely does not need your history — a fork carries the whole
+  conversation into the subagent, which is exactly the context cost delegation was meant to avoid.
+  And background is wrong when you need to answer a question mid-task: a background agent has no
+  interactive tools.
+</WhenNotToUse>
+
+## Concept
+
+### Fork: inherit the conversation
+
+A forked subagent starts from your conversation instead of from nothing. It inherits the entire conversation history, the system prompt, the tools, the model and the message history. It isolates the tool calls — they never reach your main context — and the final result, which comes back as a message.
+
+Start one yourself with `/subtask`:
+
+```text
+/subtask draft unit tests for the parser changes so far
+```
+
+Fork mode is **on by default in interactive sessions**, which means Claude also spawns forks itself, and runs Claude-spawned subagents in the background automatically. Turn it off with `CLAUDE_CODE_DISABLE_FORK_MODE=1` in your settings `env`.
+
+Do not confuse the two similar commands: `/subtask` forks the conversation into a subagent, while `/fork` copies the whole session into a new background session running alongside it. With agent view turned off, the forked-subagent command is `/fork` and `/subtask` is not available.
+
+### Background: keep working while it runs
+
+**Subagents run in the background by default.** For each one Claude spawns, Claude Code takes the first of these cases that applies:
+
+1. An in-process agent-team teammate spawned it — foreground.
+2. `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` is set — foreground, in every kind of session and whether or not fork mode is on.
+3. Fork mode is on (the default in an interactive session) — background, forks and non-forks alike, and Claude cannot ask for the foreground.
+4. Fork mode is off (as it is in `-p` and in the Agent SDK unless you turn it on) — background by default, and foreground when Claude needs the result before continuing. Setting the agent's `background: true` keeps it in the background even then.
+
+A foreground agent blocks the main conversation until it finishes, and its permission prompts pass straight through to you. A background agent runs concurrently and surfaces its prompts in your main session, naming the agent that is asking — approve, or press `Esc` to deny that one tool call without stopping the agent.
+
+Background also **narrows the tool set**, and it does so through two filters. The first removes a short list from _every_ subagent, foreground or background: `AskUserQuestion`, `EndConversation`, `EnterPlanMode`, `ScheduleWakeup`, `TaskOutput`, `WaitForMcpServers` and `Workflow`, plus `Agent` at the spawn-depth limit and `ExitPlanMode` unless the agent's `permissionMode` is `plan`. The second applies only in the background, and it is an allowlist rather than a denylist: a background subagent keeps every MCP tool but only these built-ins — `Read`, `Grep`, `Glob`, `Bash`, `PowerShell`, `Edit`, `Write`, `NotebookEdit`, `WebFetch`, `WebSearch`, `TodoWrite`, `Skill`, `ToolSearch`, `EnterWorktree`, `ExitWorktree`, `Monitor`, `TaskStop`, `SendMessage` and `Artifact`. Everything else is removed, inherited or listed in `tools` alike, with no error — so the same definition can resolve to different tools in the foreground and in the background. Forks skip both filters and get the main conversation's exact tool pool.
+
+You can see the placement rule in the envelopes you have already captured. Both runs were `claude -p`, where fork mode is off, so case 4 applied to both: the `Explore` run in lesson 01 reported `"started_in_background": 0` because Claude needed its answer before it could reply, while the `code-reviewer` run in lesson 03 reported `1`. Same command shape, different need for the result.
+
+`/tasks` lists everything running in the background of the current session, including finished subagents, and lets you attach to or stop one. Named background subagents also appear in the `@`-mention typeahead with their status.
+
+### Resuming a named agent
+
+Claude can give a subagent a name when it spawns it, and a named agent stays addressable. Continuing a review is just a sentence:
+
+```text
+Continue that code review and now analyze the authorization logic
+```
+
+Under the hood that is the `SendMessage` tool, addressed by agent id or name. A resumed subagent keeps its full conversation history, and output that was cut short by `maxTurns` is marked as partial so Claude knows it can pick up where it stopped. The built-in `Explore` and `Plan` agents cannot be resumed — use `general-purpose` or one of your own when a follow-up round is likely.
+
+### Worktree isolation
+
+`isolation: worktree` gives an agent a temporary git worktree: a separate working directory with its own files and branch, sharing the repository's history and remote.
+
+<CodeBlock title=".claude/agents/refactorer.md">
+
+```markdown
+---
+name: refactorer
+description: Applies a mechanical, repo-wide change in an isolated worktree so the main checkout is never touched.
+tools: Read, Write, Edit, Glob, Grep, Bash
+isolation: worktree
+model: sonnet
+---
+
+You work in a temporary git worktree: an isolated copy of this repository.
+Apply the requested change there, then report the worktree path (`pwd`) and
+the output of `git status --short`, so the caller can see exactly what changed.
+Never try to edit the main checkout.
+```
+
+</CodeBlock>
+
+The isolation is enforced by the harness, not by the agent's good behaviour. Claude Code applies four checks and blocks the tool call outright when one fails: an `Edit`, `Write` or `NotebookEdit` targeting a path in the main checkout; a `Bash`, `PowerShell` or `Monitor` command whose working directory resolves to the main checkout; a command that redirects git back into the main checkout (through `git -C`, `--git-dir`, `GIT_DIR`, `GIT_WORK_TREE`, or a `cd`); and a command whose shape Claude Code cannot verify stays inside the worktree. The last check cannot be turned off.
+
+Subagent worktrees branch from the same base as `--worktree`: your repository's default branch, unless `worktree.baseRef` is set to `"head"`, which branches from your current local `HEAD` instead. Use `"head"` when the isolated agent needs to operate on in-progress work — otherwise it will start from `main` and wonder where your changes went.
+
+Cleanup has a rule worth memorising: a worktree whose agent finished **without changes** is removed automatically. One **with** changes stays on disk until a periodic sweep can remove it without losing work, governed by `cleanupPeriodDays`. The sweep also leaves alone any worktree that still holds changed or untracked files or unpushed commits, and any worktree you created yourself with `git worktree add` — Claude Code writes a marker into the git metadata of every worktree it creates, and the sweep keeps anything without one. To remove one by hand: `git worktree remove`, adding `--force` for uncommitted changes, and `git worktree unlock` first if git refuses because it is locked.
+
+This lesson's worked prompt is the one that exercises all of it:
+
+```text
+Use the refactorer subagent to create a file NOTES.md at the repository root
+containing one line: 'Reviewed by the refactorer agent.'
+Report the worktree path it worked in.
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · isolate an agent in a worktree and prove the main checkout is clean"
+  lessonId="en/l3-advanced/m10-subagents/fork-background-worktree"
+  repoTag="lesson/m10-05-start"
+  steps={[
+    'In the lab clone: `git checkout lesson/m10-05-start`. The four agents from lesson 03 are already present.',
+    'Add `.claude/worktrees/` to `.gitignore` so the worktree’s contents do not show up as untracked files in the main checkout.',
+    'Write `.claude/agents/refactorer.md` exactly as shown above — the `isolation: worktree` line is the whole point.',
+    'Optional but recommended here: put `{"worktree": {"baseRef": "head"}}` in `.claude/settings.local.json` so the worktree branches from the commit you have checked out rather than from the default branch.',
+    'Run it: `claude -p "Use the refactorer subagent to create a file NOTES.md at the repository root containing one line: \'Reviewed by the refactorer agent.\' Report the worktree path it worked in." --model sonnet --max-turns 10 --permission-mode acceptEdits --output-format json`',
+    'Read `subagent_stats.by_type` (it should name `refactorer`) and the `result`, which reports the worktree path and branch.',
+    'Now check the two checkouts: `git worktree list`, then `git status --short`, then `ls NOTES.md`, then `cat .claude/worktrees/*/NOTES.md`.',
+    'Clean up when you are done: `git worktree remove .claude/worktrees/<name> --force`.',
+  ]}
+  expected="git worktree list shows two entries — the main checkout and a temporary worktree under .claude/worktrees/ on its own worktree-agent branch. NOTES.md does not exist in the main checkout (`ls` reports No such file or directory) but does exist inside the worktree with the requested line. The worktree survives the run because it holds a change."
+  checklist={[
+    '`subagent_stats.by_type` names `refactorer`',
+    '`git worktree list` shows a second checkout under `.claude/worktrees/`',
+    '`ls NOTES.md` in the main checkout fails',
+    '`cat .claude/worktrees/*/NOTES.md` prints the requested line',
+    '`git status --short` in the main checkout shows only the files you added yourself',
+    'The worktree was still there after the agent finished — because it had changes in it',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/05-fork-background-worktree/01-isolated-agent-json.txt"
+    range="2-16"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/05-fork-background-worktree/02-worktree-list.txt"
+    range="2-14"
+  />
+</Lab>
+
+Two details in that capture are the lesson. The worktree is still listed after the run finished — because the agent left a change in it, and only a clean worktree is removed automatically. And `ls NOTES.md` in the main checkout fails while `cat .claude/worktrees/*/NOTES.md` succeeds: the file the agent created exists on a branch, in a directory, that your working tree never saw.
+
+`/subtask` and `/fork` are interactive commands with no headless equivalent, so there is no transcript for them here — run them yourself in an interactive session and watch `/tasks`.
+
+## Anti-patterns
+
+**Reaching for a fork when a plain subagent would do.** A fork carries your whole conversation into the subagent, which is precisely the context cost you delegate to avoid. _Fix:_ fork only when the side task depends on what was just discussed.
+
+**Expecting a background agent to ask you something.** It has no `AskUserQuestion` and no plan-mode tools, and its built-in set is an allowlist that leaves most other tools out. A prompt that ends "ask me if you're unsure" will simply not do that. _Fix:_ give background work an unambiguous brief, or run it in the foreground.
+
+**Assuming an empty `git worktree list` means isolation failed.** A worktree whose agent finished without changes is removed automatically — nothing to see is the documented success path for a read-only run. _Fix:_ have the agent write something, or check the result rather than the listing.
+
+**Letting an isolated agent branch from `main` when you meant "from here".** With the default `"fresh"` base the worktree starts from the repository's default branch, so your in-progress work is not in it. _Fix:_ set `worktree.baseRef` to `"head"`.
+
+**Running an isolated agent and expecting your dependencies.** A worktree is a fresh checkout: no `node_modules`, no `.env`. _Fix:_ have the agent install what it needs, or list the gitignored files in `.worktreeinclude`.
+
+**Forgetting the worktrees.** They accumulate under `.claude/worktrees/` and the sweep only removes ones it created that no longer hold work. _Fix:_ `git worktree remove` when you are done, and add `.claude/worktrees/` to `.gitignore`.
+
+<Callout variant="changed">
+  The one-hour limit on background subagent commands has been removed — a background agent is no
+  longer cut off after an hour. Separately, `/subtask` (v2.1.212+) is the command that forks the
+  current conversation into a subagent; on earlier versions, and in sessions with agent view turned
+  off, that command is `/fork`.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/fork-background-worktree"
+  questionId="q1"
+  lang="en"
+  prompt="What does a forked subagent inherit from the conversation that started it?"
+  options={[
+    {
+      text: 'Only the prompt you typed after /subtask',
+      explanation: 'That is an ordinary subagent — a fork is defined by inheriting more.',
+    },
+    {
+      text: 'The entire conversation history, system prompt, tools, model and message history',
+      correct: true,
+      explanation:
+        'And it isolates the tool calls and the final result, which returns as a message.',
+    },
+    {
+      text: 'The file list, but not the conversation',
+      explanation: 'Every subagent gets repository context; the fork is about the conversation.',
+    },
+    {
+      text: 'Nothing — forks start clean, which is why they are cheap',
+      explanation: 'That describes a non-fork subagent.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/fork-background-worktree"
+  questionId="q2"
+  lang="en"
+  prompt="Which tool is NOT available to a subagent running in the background?"
+  options={[
+    { text: 'Read', explanation: 'Reading is unaffected by placement.' },
+    {
+      text: 'AskUserQuestion',
+      correct: true,
+      explanation:
+        'The first filter removes it from every subagent, and a background subagent’s built-in allowlist does not include it either.',
+    },
+    { text: 'Grep', explanation: 'Search tools work in the background.' },
+    { text: 'Edit', explanation: 'Editing is allowed if the agent’s tools list permits it.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/fork-background-worktree"
+  questionId="q3"
+  lang="en"
+  prompt="An agent with isolation: worktree finishes and leaves no changes. What happens to its worktree?"
+  options={[
+    {
+      text: 'Claude Code removes it automatically',
+      correct: true,
+      explanation:
+        'A worktree with changes instead stays until the periodic sweep can remove it without losing work.',
+    },
+    {
+      text: 'It stays until you run git worktree remove',
+      explanation: 'That is the case for a worktree that still holds work.',
+    },
+    {
+      text: 'It is merged into the main checkout',
+      explanation: 'Nothing is merged automatically; the branch is yours to use or drop.',
+    },
+    {
+      text: 'It is converted into a background session',
+      explanation: 'Worktrees and sessions are separate things.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m10-subagents/fork-background-worktree"
+  questionId="q4"
+  lang="en"
+  prompt="Your isolated agent needs to work on the feature branch you have checked out, not on main. What do you change?"
+  options={[
+    {
+      text: 'Set `worktree.baseRef` to `"head"` in settings',
+      correct: true,
+      explanation:
+        '"fresh" (the default) branches from the repository’s default branch; "head" branches from your current local HEAD.',
+    },
+    {
+      text: 'Set `worktree.baseRef` to your branch name',
+      explanation:
+        'The setting takes only "fresh" or "head" — for a specific branch, create the worktree with git directly.',
+    },
+    {
+      text: 'Add `isolation: head` to the agent frontmatter',
+      explanation: '`isolation` accepts `worktree`; there is no `head` value.',
+    },
+    {
+      text: 'Nothing — subagent worktrees always branch from the current checkout',
+      explanation: 'They use the same base as --worktree, which defaults to the default branch.',
+    },
+  ]}
+/>
+
+**Next:** `06-advisor` closes the module with the opposite move — instead of delegating work downwards, escalating a decision upwards to a stronger model.
