@@ -22,6 +22,9 @@ Lesson rule (D044): a removed or changed behaviour appears only as a short **Cha
 | Model alias resolution (`opus`, `sonnet`, `best` …) | Alias→model mapping moved in 2.1.219 and 2.1.255 (version notes on the live `model-config.md`, P17) — teach aliases as "latest of that family", never a pinned id | Models lesson (m05-01) |
 | `--effort ultracode` | Requires Claude Code ≥ 2.1.203 (P17) | Effort lesson (m05-03) |
 | Fast mode on Opus 4.7 | Removed 2026-07-24; fast mode now targets the current Opus (P17, `fast-mode.md`) | Fast mode lesson (m05-05) |
+| Custom slash commands (`.claude/commands/*.md`) as a separate mechanism | Merged into skills in 2.1.3 — a command file is now just a skill; teach `.claude/skills/<name>/SKILL.md` only (P18, live `skills.md`) | Skills lesson (m06-01) |
+| `includeCoAuthoredBy` setting | Replaced by the `attribution` setting (P20, live docs; the version of the rename is not documented — say "replaced", not "since vX") | Git lesson (m08-01) |
+| `/simplify` and `/review` as long-standing commands | `/simplify` arrived in 2.1.147 and `/review` in 2.1.223 (version notes on the live pages, P20) — older tutorials predate them; there is no `/refactor` alias | Git lesson (m08-04) |
 | `TodoWrite` tool as the session checklist | Disabled by default; superseded by the `Task*` tools (`TaskCreate`, `TaskUpdate`, `TaskList`, …) — verified against `tools-reference.md` 2026-09-07 | Tools lesson (L1 m02), m01 lesson 1 |
 
 Recent additions worth a "New" badge (last ~6 months): Fable 5.1 (1M context), `/diff` panel, per-session cache analytics in `/cost`, `/design` canvas, `/skill-doctor`, spend limits in `/usage`, artifact MCP connectors, cross-session messaging on Bedrock/Vertex/Foundry, keyless sign-in, `modelPicker`, `--permission-prompts none`, `claude plugin eval`.
