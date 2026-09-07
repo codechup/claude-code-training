@@ -1,0 +1,309 @@
+---
+title: 'Plan files: frontmatter, ten sections, milestones'
+description: "A plan file is a self-contained work order a fresh session can execute from repo state alone. Learn its YAML frontmatter, its ten fixed body sections, and how milestones order the work — using this site's own plans/ directory as the worked example."
+level: 4
+module: 'm18-multi-session'
+order: 1
+duration_min: 20
+difficulty: core
+tags: ['multi-session', 'plans', 'coordination', 'this-repo']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Best practices for Claude Code'
+    url: 'https://code.claude.com/docs/en/best-practices.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run agents in parallel'
+    url: 'https://code.claude.com/docs/en/agents.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'plans/README.md — the plan system contract (this repository)'
+    url: 'https://github.com/codechup/claude-code-training/blob/main/plans/README.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Explain why a written plan file, rather than a conversation, is what lets several independent sessions work one project.
+- Name every required key in a plan file's YAML frontmatter and say what each one is for.
+- List the ten fixed body sections in order, and say which question each one answers for a session that has never seen the project before.
+- Use milestones and `depends_on` to express the order work must happen in, without hand-scheduling anybody.
+- Read a real plan file with `node tools/plan/cli.ts show PNN` and tell, from its frontmatter alone, whether you are allowed to claim it.
+
+**Prerequisites.** Level 3, and comfort with git and YAML. This module is taught on this website's own repository — every command below was run against a throwaway clone of `codechup/claude-code-training`, which is public, so you can clone it and follow along.
+
+<WhenNotToUse>
+  A plan system is overhead, and overhead only pays when several sessions execute work nobody is
+  watching turn by turn. Skip it when one person drives one session at a time: a conversation, plan
+  mode and a checklist are lighter and lose nothing. Skip it for work whose shape you do not know
+  yet — exploration cannot be written as a work order, so explore first and write the plan
+  afterwards. And skip it when the work is small enough to describe in a sentence: a plan file that
+  takes longer to write than the change it orders is a tax, not a tool. The threshold to watch for
+  is not project size but the number of contexts: the moment a second session has to pick up work
+  the first one started, everything the first session knew and did not write down is gone.
+</WhenNotToUse>
+
+## Concept
+
+### Why the plan is a file
+
+Claude Code's own guidance is to separate planning from implementation, and to make the artefact a written one: "have Claude interview you first … then write a complete spec to `SPEC.md`", after which "start a fresh session to execute it. The new session has clean context focused entirely on implementation, and you have a written spec to reference." The docs describe the most useful specs as **self-contained**: "they name the files and interfaces involved, state what is out of scope, and end with an end-to-end verification step that proves the feature works."
+
+Scale that idea from one spec to a whole project and you get a plan system. This repository has 48 of those specs under `plans/`, one per unit of work, and the rule that makes them work is the rule the docs already imply: a session resumes **from repository state alone**. Nothing that matters lives in a chat log, in someone's memory, or in a message between two people.
+
+That rule is what makes the plans parallel-safe. The official comparison of parallel approaches puts it plainly — worktrees give each session a separate checkout, cross-session messaging lets sessions pass findings, and agent teams need you to "partition the work so each teammate owns a different set of files". A plan file is where that partition is written down.
+
+Here is the prompt this lesson is built around. Notice that it never explains the project: everything the session needs is already on disk.
+
+```text
+Read STATE.md and plans/P33-l4-m16-orchestration.md. If you were the session
+claiming P33, what would you do first, and which files may you not touch?
+```
+
+### The frontmatter
+
+Every plan file is `plans/PNN-slug.md` and opens with YAML frontmatter. These keys are required:
+
+| Key              | What it carries                                                |
+| ---------------- | -------------------------------------------------------------- |
+| `id`             | `PNN` — must equal the file's prefix                           |
+| `title`          | One line, reused as the PR title `[PNN] <title>`               |
+| `milestone`      | `M0`–`M4` — which wave of the project this belongs to          |
+| `status`         | `todo`, `in_progress`, `blocked`, `review` or `done`           |
+| `owner`          | `null`, or the free-form name of the session holding the claim |
+| `branch`         | `plan/NN-slug` — the branch this plan's work happens on        |
+| `model_hint`     | `haiku`, `sonnet`, `opus` or `fable` — advice, not a gate      |
+| `effort_hint`    | `low`, `medium`, `high`, `xhigh` or `max`                      |
+| `depends_on`     | Plan ids that must be `done` before this one may be claimed    |
+| `owned_paths`    | The globs this plan may create or modify — and nothing else    |
+| `shared_paths`   | Files it may touch append-only, with care                      |
+| `estimate`       | `S` (≤ half a day), `M` (≤ a day), `L` (≤ two days)            |
+| `updated_at`     | RFC3339 UTC, bumped by every status change                     |
+| `open_questions` | Doc conflicts and product questions for the owner              |
+
+Two of those keys do the real coordination work. `depends_on` must form a directed acyclic graph, so "what can start now" is computable rather than negotiated. `owned_paths` is never empty, and the tool refuses to let two active plans own overlapping paths — which is the subject of lesson 03.
+
+`updated_at` is set by the tool, not by hand. So is `status`. A plan file you edit by hand in those fields is a plan file that lies to the generator.
+
+### The ten sections
+
+The body is fixed, in this order, and no section is dropped:
+
+1. **Goal** — one paragraph: what exists when this is done, and why that matters.
+2. **Context** — what to read _before_ working: doc paths, section names, the decisions this plan leans on, and what already exists in the repo.
+3. **Scope** — an `In:` list and an `Out:` list. The `Out:` list is the one that prevents scope creep.
+4. **Deliverables** — the exact files and directories to create or change.
+5. **Acceptance criteria** — testable bullets, each naming the command to run and the expected result.
+6. **Steps** — ordered and concrete.
+7. **Tests required** — the named suites that must exist and pass.
+8. **Non-goals / pitfalls** — what a low-effort session must not do.
+9. **Verification** — how a reviewer checks the result in under ten minutes.
+10. **Handoff notes** — filled in by the executing session at the end. Lesson 05 is entirely about this one.
+
+Read that list as a set of questions a stranger would otherwise have to ask you: _What am I building? What should I read first? What is out of scope? How will I know it worked? What must I not touch? What did the last session learn?_ Every question you leave unanswered is a question that becomes a message, and every message needs somebody awake to answer it.
+
+The sections are also mechanically checkable, which is why the CLI can print them:
+
+<CodeBlock title="Read a plan's frontmatter and section headings">
+
+```bash
+node tools/plan/cli.ts show P13
+```
+
+</CodeBlock>
+
+### Milestones and dependencies
+
+`milestone` groups plans into waves — in this repository, `M0` is infrastructure and design, `M1` the first English levels, `M2` the parallel Turkish and Advanced/Master wave, `M3` the rest, `M4` launch hardening. Milestones are for humans reading progress; `depends_on` is for the tool deciding what is claimable.
+
+Keep them honest and they answer two different questions. The milestone table tells you how far along the project is. The dependency graph tells you what a session may start right now. Neither is a schedule, and neither names a person.
+
+<Callout>
+  A plan file is not a ticket. A ticket says what someone wants; a plan file says what a session
+  should read, build, prove and avoid, in enough detail that nobody has to be online to answer a
+  follow-up question. If your plan file would leave a competent stranger with a question, that
+  question is the missing section.
+</Callout>
+
+## Hands-on lab
+
+This module's labs run against the repository this site is built from, which is public. Clone it somewhere throwaway — never work inside a checkout you care about — and read its plan set with the tool that owns it.
+
+<Lab
+  title="Lab · read a real plan file end to end"
+  lessonId="en/l4-master/m18-multi-session/plan-files"
+  repoTag="none"
+  steps={[
+    "Clone this site's repository into a scratch directory: `git clone https://github.com/codechup/claude-code-training cct-plan-lab && cd cct-plan-lab && npm ci`.",
+    'Read the contract first: open `plans/README.md` and skim §2 (file format) and §3 (lifecycle).',
+    "Print one plan's frontmatter and section headings: `node tools/plan/cli.ts show P13`. Check the ten sections are all there, in order.",
+    'Open `plans/P13-l1-m01-start.md` in an editor and read its `Scope` `Out:` list and its `Non-goals / pitfalls`. Ask yourself what you would have got wrong without them.',
+    'Validate the whole set: `node tools/plan/cli.ts check`. It checks frontmatter, the dependency DAG, `owned_paths` overlap and whether `STATE.md` is stale.',
+    'Ask Claude to read the repository the way a fresh session would: `claude -p "Read STATE.md and plans/P33-l4-m16-orchestration.md. If you were the session claiming P33, what would you do first, and which files may you not touch? At most five lines. Do not edit anything." --model sonnet --max-turns 6 --output-format text --allowedTools Read,Glob,Grep`',
+  ]}
+  expected="`show P13` prints the frontmatter block and exactly ten `##` headings; `check` exits 0 with an `ok:` line reporting the plan count, valid frontmatter, an acyclic DAG, no owned_paths overlap and a fresh STATE.md; the headless session names the claim command, the branch, the worktree and the plan's owned_paths without you explaining any of it."
+  checklist={[
+    'The clone is outside any repository you care about',
+    '`show PNN` printed all ten section headings in the documented order',
+    '`check` exited 0',
+    'You can name, from frontmatter alone, which files P13 may modify',
+    'The headless session answered from repo state, with no context from you',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/01-plan-files/01-show-p13.txt"
+    range="2-32"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/01-plan-files/02-check.txt"
+    range="2-3"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/01-plan-files/03-resume-from-repo-state.txt"
+    range="2-6"
+  />
+</Lab>
+
+The third recording is the whole point of the lesson. Nobody told that session what the project was, which branch to use, where its worktree goes, or which files were off limits. It read two files and answered correctly — including the subtlety that `content/_shared/sources.json` is a _shared_ path with append-only rules, not an owned one. That is what "self-contained" buys you.
+
+The first line of those captures is a real warning from the tool: the throwaway clone has not been trusted, so Claude Code ignored the project's `permissions.allow` entries. It is worth leaving in — a fresh clone always starts untrusted, and pre-approved permissions do not follow a repository around.
+
+## Anti-patterns
+
+**A plan that describes the outcome but not the reading list.** Without `Context`, every session rediscovers the same five documents, differently. _Fix:_ name the exact files and section headings, and say why each one matters.
+
+**No `Out:` list.** Scope stated only as `In:` invites a session to "just also" fix the adjacent thing, which puts it in another plan's files. _Fix:_ write the `Out:` list first; it is usually easier and it is what a reviewer checks.
+
+**Acceptance criteria that cannot fail.** "The lesson is good" is not testable. _Fix:_ name the command and the expected output — the docs' own rule is to give the agent a check it can run, because "without a check it can run, 'looks done' is the only signal available."
+
+**Hand-editing `status`, `owner` or `updated_at`.** The generator derives project state from those fields; edit them by hand and the derived view is wrong for everyone else. _Fix:_ go through `node tools/plan/cli.ts claim` / `status`.
+
+**Guessing a product decision because the plan was vague.** A plan that forces a guess is a broken plan, and the guess becomes an unrecorded decision the next session cannot see. _Fix:_ write the question into `open_questions` and take the most conservative reading.
+
+**Empty `owned_paths`.** A plan that owns nothing owns everything, which is how two sessions end up editing one file. _Fix:_ the tool rejects it — keep it that way.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/plan-files"
+  questionId="q1"
+  lang="en"
+  prompt="What is the defining property of a plan file, as opposed to a ticket or a chat message?"
+  options={[
+    {
+      text: 'It is self-contained: a session that has never seen the project can execute it from repository state alone.',
+      correct: true,
+      explanation:
+        'That is the whole rule. Anything a session needs that is not in the repo is a coordination cost you pay later.',
+    },
+    {
+      text: 'It is assigned to a named person.',
+      explanation:
+        'Plans are claimed by whichever session is free; `owner` is a session name, not a person, and it is set by the tool.',
+    },
+    {
+      text: 'It is shorter than a ticket.',
+      explanation: 'It is usually much longer. Length is not the point; completeness is.',
+    },
+    {
+      text: 'It lives outside version control so it can change freely.',
+      explanation:
+        'The opposite: it is committed, because repository state is the only thing every session shares.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/plan-files"
+  questionId="q2"
+  lang="en"
+  prompt="Which frontmatter key decides whether a plan may be started right now?"
+  options={[
+    {
+      text: '`milestone`',
+      explanation: 'Milestones group work into waves for reporting. They do not gate a claim.',
+    },
+    {
+      text: '`depends_on` — every id listed must be `done` first',
+      correct: true,
+      explanation:
+        'Together with `status` and `owned_paths` overlap, `depends_on` is what makes claimability computable instead of negotiated.',
+    },
+    {
+      text: '`estimate`',
+      explanation: 'A size hint for planning; it has no effect on ordering.',
+    },
+    {
+      text: '`model_hint`',
+      explanation:
+        'Advice to the claiming session about which model suits the work — explicitly not a gate.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/plan-files"
+  questionId="q3"
+  lang="en"
+  prompt="A plan's `Steps` are clear but it never says what is out of scope. What is the concrete risk?"
+  options={[
+    {
+      text: 'The session works slower because it has less to read.',
+      explanation: 'Missing scope does not slow a session down; it lets it wander.',
+    },
+    {
+      text: 'The session fixes an adjacent problem in a file another plan owns, and two branches now conflict.',
+      correct: true,
+      explanation:
+        'This is the common failure. The `Out:` list and `owned_paths` exist to make the boundary explicit before the edit happens, not after the merge conflict.',
+    },
+    {
+      text: 'The dependency graph becomes cyclic.',
+      explanation: 'Cycles come from `depends_on`, not from prose.',
+    },
+    {
+      text: 'The plan cannot be claimed.',
+      explanation:
+        'Claimability is computed from `status`, `depends_on` and path overlap — not from how complete the prose is. That is exactly why the prose has to be disciplined by convention.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/plan-files"
+  questionId="q4"
+  lang="en"
+  prompt="You are executing a plan and it turns out a product decision was never made. What do you do?"
+  options={[
+    {
+      text: 'Pick whichever option seems best and note it in the commit message.',
+      explanation:
+        'A decision recorded only in a commit message is invisible to the next session reading the plan.',
+    },
+    {
+      text: 'Stop and wait for someone to answer.',
+      explanation:
+        'Blocking on a human defeats the point of a system designed so sessions resume from repo state.',
+    },
+    {
+      text: 'Write the question into `open_questions` and the Handoff notes, take the most conservative reading, and continue.',
+      correct: true,
+      explanation:
+        'The question becomes visible to everyone in the generated state file, and the work continues in the way that is cheapest to reverse.',
+    },
+    {
+      text: 'Edit the decisions register yourself so the plan is no longer ambiguous.',
+      explanation:
+        'Decisions belong to the owner. A plan may propose a change; it never makes one.',
+    },
+  ]}
+/>
+
+**Next:** `02-state-md-and-claims` turns this set of files into a live view of the project — a generated `STATE.md`, the claim protocol that stops two sessions taking the same plan, and what happens to a claim that goes stale.

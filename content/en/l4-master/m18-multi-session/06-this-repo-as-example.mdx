@@ -1,0 +1,324 @@
+---
+title: 'This repository as the worked example'
+description: "A full walk through this site's own plans/ directory and generated STATE.md: dozens of plans across five milestones, what the numbers mean, what the open-questions list reveals, and which parts of the system are worth copying."
+level: 4
+module: 'm18-multi-session'
+order: 6
+duration_min: 15
+difficulty: advanced
+tags: ['multi-session', 'plans', 'case-study', 'this-repo']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Run agents in parallel'
+    url: 'https://code.claude.com/docs/en/agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Best practices for Claude Code'
+    url: 'https://code.claude.com/docs/en/best-practices.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run parallel sessions with worktrees'
+    url: 'https://code.claude.com/docs/en/worktrees.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: "codechup/claude-code-training — this website's repository"
+    url: 'https://github.com/codechup/claude-code-training'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Navigate a real, running plan system: 48 plan files, a generated status file, and a CLI that owns both.
+- Read every section of a generated `STATE.md` and say what decision each one supports.
+- Interpret the open-questions list as the system's most valuable output rather than a backlog of failures.
+- Decide which parts of this pattern are worth copying into a project of your own, and which are overhead you do not need.
+
+**Prerequisites.** The rest of this module. This lesson is a reading exercise against a public repository, so clone it and follow along.
+
+<WhenNotToUse>
+  Copying a case study wholesale is the failure this lesson most wants to prevent. This system was
+  built for a specific shape of work: a large body of independent, file-partitionable units, worked
+  by sessions that come and go, with no one person holding the whole picture. Most projects are not
+  that. If your work is a single evolving codebase with three people who talk to each other daily,
+  the plan files will be filed and ignored while the real coordination happens in conversation, and
+  you will have added a document set that drifts. Take the pieces that map onto a problem you
+  actually have — most often disjoint ownership and written hand-offs — and leave the rest.
+</WhenNotToUse>
+
+## Concept
+
+### What is on disk
+
+This website is built from a public repository whose entire working method is committed alongside its content:
+
+<CodeBlock title="The coordination surface">
+
+```text
+plans/README.md          the contract: file format, lifecycle, claim rules, shared-file rules
+plans/PNN-slug.md        48 work orders, one per unit of work
+STATE.md                 generated; never hand-edited
+tools/plan/cli.ts        state | next | claim | status | check | show
+DECISIONS.md             100 owner decisions, cited as (Dnnn), never re-litigated in a plan
+docs/CURRICULUM.md       the authoritative map every content plan reads and none of them edits
+research/                the only source for "what the tool does today"
+```
+
+</CodeBlock>
+
+Three things about that list are worth more than the list itself.
+
+**The contract is a file, not a habit.** `plans/README.md` states the rules a session must follow, and the CLI enforces the mechanical ones. Rules that live only in someone's head cannot be followed by a session that starts tomorrow.
+
+**Decisions are separated from plans.** A plan may cite a decision and may propose a change to one, but never edits the register. That separation is what stops fifty sessions from each re-deciding the same question slightly differently.
+
+**Facts have a single owner.** Every claim in a lesson traces to a research file or to a URL fetched while writing. "Never write from memory" is enforceable only because there is one place the memory is supposed to live.
+
+### Reading the generated state
+
+`node tools/plan/cli.ts state` rewrites `STATE.md` from frontmatter. It reports "up to date" when nothing changed, which is what makes CI's freshness check meaningful:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/06-this-repo-as-example/01-state.txt"
+  range="2-24"
+/>
+
+Nine sections, each answering a different question:
+
+| Section            | The question it answers                                    |
+| ------------------ | ---------------------------------------------------------- |
+| TL;DR              | How far along is the project, and what can be started now? |
+| Milestone progress | Which wave is moving and which has not begun?              |
+| Claimable now      | What should I take?                                        |
+| In progress        | Who holds what, since when, and is any of it stale?        |
+| Blocked            | What is stuck, and on what?                                |
+| In review          | What is waiting for a merge?                               |
+| Done               | What is finished, by milestone?                            |
+| Recent changes     | What moved most recently?                                  |
+| Open questions     | What did executing sessions find that nobody has settled?  |
+
+The in-progress table is the one to read before you claim anything, because it is where the staleness marker appears:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/06-this-repo-as-example/02-state-sections.txt"
+  range="2-11"
+/>
+
+### The open-questions list is the interesting part
+
+At the point these captures were taken, the plan set carried 58 open questions. That number looks like a problem and is the opposite of one.
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/06-this-repo-as-example/02-state-sections.txt"
+  range="12-21"
+/>
+
+Every entry is a moment where a session hit something the plan did not answer and **wrote it down instead of guessing**. Read a few of them in the real file and a pattern appears: they are overwhelmingly about ownership. A plan needed a file that belonged to a different plan; a document said one thing and the live documentation said another; a script the rules assumed exists did not. Each one is a small piece of the system telling the truth about itself.
+
+A plan system with no open questions is not a system where everything was clear. It is a system where sessions guessed.
+
+### The thing that makes it work
+
+The property everything else serves is the one from lesson 01: **a session resumes from repository state alone.** You can test any coordination system against it. Point a session with no context at the repository, and see whether it can work out what to do:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/06-this-repo-as-example/03-resume-from-repo-state.txt"
+  range="4-6"
+/>
+
+Two files read, and it produced the claim command, the branch name, the worktree convention, the install step, the reading order, the dependency check, and the full list of what it may not touch — including the distinction between an owned path and a shared, append-only one. Nothing in that answer came from a human.
+
+Here is the worked example prompt to run against your own project once you have built something similar:
+
+```text
+Read this repository's coordination files. If you were a new session with no
+context, what would you work on next, and what are you not allowed to touch?
+```
+
+If the answer is vague, the gap it exposes is real.
+
+### The pattern was not invented here
+
+This shape — written work orders, disjoint ownership, generated status, hand-offs — was proven on a prior project before it was applied to this one. That is worth saying because it sets expectations: it is a pattern that emerged from running work this way, not a design someone drew first.
+
+It also means the interesting question is not "is this the right system" but "which parts of it does my project actually need". Three tiers, cheapest first:
+
+1. **Disjoint ownership, written down.** The highest value for the least ceremony. Even a comment at the top of a file saying which workstream owns it prevents most collisions.
+2. **Hand-off notes on anything spanning more than one session.** Also cheap, and it is what stops the second session from re-deriving the first one's dead ends.
+3. **A generated status file and a claim protocol.** Only worth it when the number of plans exceeds what you can hold in your head and the number of sessions exceeds one. Below that, it is a second copy of information you already have — the lab repository for this module keeps its two-plan status file by hand and says so.
+
+Claude Code's own parallelism features slot into the same three tiers. Worktrees give each session a separate checkout; cross-session messaging carries the volatile facts between them; subagents, agent view and agent teams cover the cases where Claude coordinates the workers rather than you. The plan set is the layer underneath all of them: it is what tells a worker what "its files" are in the first place.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · read a running plan system end to end"
+  lessonId="en/l4-master/m18-multi-session/this-repo-as-example"
+  repoTag="none"
+  steps={[
+    "Clone this site's repository into a scratch directory and install: `git clone https://github.com/codechup/claude-code-training cct-plan-lab && cd cct-plan-lab && npm ci`.",
+    'Regenerate the status file and confirm it does not change: `node tools/plan/cli.ts state`. It should report that STATE.md is up to date — determinism is the property CI depends on.',
+    'Read STATE.md top to bottom. For each of its nine sections, name the decision it supports.',
+    'Count the open questions: `grep -c "^- \\*\\*P" STATE.md`. Read five of them and classify each as an ownership problem, a documentation conflict, or a missing tool.',
+    'Pick one plan listed as `done` and read its Handoff notes. Then read the pull request it shipped in, and ask what the notes told you that the diff did not.',
+    'Run the fresh-session test: `claude -p "Read STATE.md and plans/P33-l4-m16-orchestration.md. If you were the session claiming P33, what would you do first, and which files may you not touch? At most five lines. Do not edit anything." --model sonnet --max-turns 6 --output-format text --allowedTools Read,Glob,Grep`',
+    'Finally, apply it: write down which of the three tiers your own project needs, and why the tiers above it would be overhead.',
+  ]}
+  expected="`state` reports that STATE.md is up to date and names how many plans it read; the file shows the first milestones complete and a later one in flight, with a claimable wave of Master-level modules; `grep -c` returns an open-question count in the dozens; and the headless session derives the claim command, the branch, the worktree path and the full not-allowed list from two files."
+  checklist={[
+    'The regenerated STATE.md was byte-identical to the committed one',
+    'You can name the decision each of the nine sections supports',
+    'You classified five open questions and found ownership to be the commonest cause',
+    'You found something in a Handoff note that the diff did not tell you',
+    'You decided which tier your own project needs — and wrote down why not the next one up',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/06-this-repo-as-example/01-state.txt"
+    range="2-9"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/06-this-repo-as-example/02-state-sections.txt"
+    range="11-21"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/06-this-repo-as-example/03-resume-from-repo-state.txt"
+    range="4-6"
+  />
+</Lab>
+
+## Anti-patterns
+
+**Copying the whole system into a project that does not need it.** Ceremony that nobody reads still costs everybody time, and worse, it looks like coordination while providing none. _Fix:_ start at tier one and only add a tier when its absence has actually hurt you.
+
+**A plan set nobody generates from.** Plan files whose status is edited by hand, with no generated view, are a directory of stale documents. _Fix:_ either generate the view and check its freshness in CI, or drop the status fields and keep the plans as specs.
+
+**Open questions that nobody triages.** A list that only grows becomes wallpaper, and sessions stop adding to it — at which point they go back to guessing. _Fix:_ triage them on a fixed cadence; each one closes as a decision, a follow-up plan, or a documentation fix.
+
+**Treating the case study as the lesson.** The transferable parts are disjoint ownership, written hand-offs and derived status. The specific file names, the CLI and the milestone letters are this project's implementation. _Fix:_ copy the properties, not the filenames.
+
+**Naming people in plan files.** The moment a plan is "Sam's", the system's ability to route work to whoever is free is gone. _Fix:_ `owner` is a session name, and it is set by the tool.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/this-repo-as-example"
+  questionId="q1"
+  lang="en"
+  prompt="A plan set carries dozens of open questions. What does that most likely indicate?"
+  options={[
+    {
+      text: 'The plans were written badly.',
+      explanation:
+        'Some of them do point at thin plans — but the entry existing is the system working, not failing.',
+    },
+    {
+      text: 'Sessions hit ambiguities and recorded them instead of guessing, which is exactly what the field is for.',
+      correct: true,
+      explanation:
+        'An empty open-questions list on a large project is the suspicious one: it usually means sessions guessed and nobody found out.',
+    },
+    {
+      text: 'The project is blocked.',
+      explanation:
+        'Blocking is its own status with its own table; an open question is a thing to settle, not a stop.',
+    },
+    {
+      text: 'The dependency graph is cyclic.',
+      explanation: 'Cycles are a `check` failure, unrelated to open questions.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/this-repo-as-example"
+  questionId="q2"
+  lang="en"
+  prompt="Running the state generator on an unchanged plan set prints that the file is already up to date. Why does that matter?"
+  options={[
+    {
+      text: 'It saves a write to disk.',
+      explanation: 'True and irrelevant.',
+    },
+    {
+      text: 'Determinism is what lets CI fail a pull request whose status file is stale, which is what makes the file trustworthy.',
+      correct: true,
+      explanation:
+        'Same inputs, byte-identical output. Without that, staleness is undetectable and the file becomes advisory.',
+    },
+    {
+      text: 'It proves no plan is blocked.',
+      explanation: 'Blocked plans are reported in the file; regenerating says nothing about them.',
+    },
+    {
+      text: 'It confirms every dependency is satisfied.',
+      explanation: "That is `check`'s job, not `state`'s.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/this-repo-as-example"
+  questionId="q3"
+  lang="en"
+  prompt="Which single piece of this system would you adopt first on a small project?"
+  options={[
+    {
+      text: 'A generated status file with milestone tables.',
+      explanation:
+        'Highest ceremony, lowest early payoff. It earns its keep once you can no longer hold the plan set in your head.',
+    },
+    {
+      text: 'Disjoint ownership of files, written down somewhere both workstreams can read.',
+      correct: true,
+      explanation:
+        'It prevents the commonest and most expensive failure — two sessions editing one file — for almost no cost.',
+    },
+    {
+      text: 'A claim protocol with stale-claim reclamation.',
+      explanation: 'Only meaningful once several sessions compete for the same pool of work.',
+    },
+    {
+      text: 'A decisions register with a hundred numbered entries.',
+      explanation:
+        'Valuable at scale, but a small project rarely has a hundred decisions worth freezing.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/this-repo-as-example"
+  questionId="q4"
+  lang="en"
+  prompt="How would you test whether your own coordination setup actually works?"
+  options={[
+    {
+      text: 'Point a session with no context at the repository and see whether it can say what to work on and what it may not touch.',
+      correct: true,
+      explanation:
+        'The one property everything else serves: a session resumes from repository state alone. If the answer is vague, the gap is real.',
+    },
+    {
+      text: 'Count the plan files.',
+      explanation: 'Volume says nothing about whether any of them is executable.',
+    },
+    {
+      text: 'Check that CI is green.',
+      explanation:
+        'Green CI proves the code works, not that a stranger could pick up the next piece of work.',
+    },
+    {
+      text: 'Ask the person who wrote the plans whether they are clear.',
+      explanation:
+        'They are the one reader who cannot tell — they already have the context the plan is supposed to supply.',
+    },
+  ]}
+/>
+
+That closes the module. You have a plan file format, a generated view of project state, a claim protocol that needs no server, file-level isolation that both the plan set and Claude Code enforce, hints that carry judgement forward, and hand-off notes that survive the session that wrote them. The next module moves from coordinating sessions to what they produce: artifacts, design canvases and the browser.

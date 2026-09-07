@@ -1,0 +1,299 @@
+---
+title: 'Handoff notes another session can resume from'
+description: 'The last section of a plan file is the one that decides whether the next session starts or restarts. Learn what a handoff note must record, how a blocked reason becomes one automatically, and where open questions go.'
+level: 4
+module: 'm18-multi-session'
+order: 5
+duration_min: 15
+difficulty: core
+tags: ['multi-session', 'plans', 'handoff', 'blocked', 'this-repo']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Best practices for Claude Code'
+    url: 'https://code.claude.com/docs/en/best-practices.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Message your other Claude Code sessions'
+    url: 'https://code.claude.com/docs/en/cross-session-messaging.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'plans/README.md §8 — when you are blocked (this repository)'
+    url: 'https://github.com/codechup/claude-code-training/blob/main/plans/README.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m18-05-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- List what a handoff note must record for a different session to resume a plan without asking a question.
+- Write a note that reports evidence rather than assertions, and that names the decisions taken where the plan was ambiguous.
+- Use `status PNN blocked --reason` so the blocker lands in the plan file and the generated state view at the same time.
+- Tell the difference between a handoff note, an open question and a follow-up plan, and put each in the right place.
+- Recognise the notes that fail: the empty placeholder, the summary of the diff, and the optimistic "should pass".
+
+**Prerequisites.** Lessons 01–04 of this module. The lab uses the lab repository's `lesson/m18-05-start` and `lesson/m18-05-solution` tags.
+
+<WhenNotToUse>
+  A handoff note is for work that outlives one session. It is not a changelog — the commits already
+  say what changed, line by line, and repeating them wastes the one place where the *non-obvious*
+  belongs. It is not a code comment either: reasoning that belongs next to the code should live next
+  to the code, where the next reader of that function will find it. And skip the ceremony entirely
+  for a change you are about to merge yourself in the next five minutes with nobody else in flight —
+  in that case the pull request body is the handoff, and duplicating it into the plan file is
+  filing, not communication.
+</WhenNotToUse>
+
+## Concept
+
+### The question the note answers
+
+Every plan file ends with `## Handoff notes`, and a fresh plan carries only a placeholder:
+
+<CodeBlock title="The unfilled section">
+
+```markdown
+## Handoff notes
+
+- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+```
+
+</CodeBlock>
+
+The section answers one question: **what does the next session need that it cannot get from the diff?** The diff already says what changed. It does not say what you tried that failed, which of two readings of an ambiguous requirement you took, what you verified and how, what you deliberately did not fix, or what surprised you.
+
+This matters more here than in a team of people, because the next session may have no memory of this one at all. Claude Code's own best-practice guidance points the same way: a spec is useful because "the new session has clean context focused entirely on implementation", and it asks you to "have Claude show evidence rather than asserting success: the test output, the command it ran and what it returned … Reviewing evidence is faster than re-running the verification yourself, and it works for sessions you weren't watching."
+
+Ask a session what its notes must contain and it derives roughly the right list from the plan's own sections:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/05-handoff-notes/01-claude-drafts-handoff.txt"
+  range="4-10"
+/>
+
+### What a real one looks like
+
+The lab repository's `lesson/m18-05-solution` tag contains two filled-in notes. This is the more instructive of them:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/05-handoff-notes/03-a-real-handoff-note.txt"
+  range="3-25"
+/>
+
+Read what that note is doing:
+
+- **What shipped**, in terms of the thing produced, not the files touched.
+- **A real inconsistency found and deliberately not fixed**, with the reason: fixing it means editing a file that belongs to a different plan. The finding is preserved instead of being lost or silently acted on.
+- **Verified for real**, naming the command and its result — `npm test` (still 20/20) — and what was checked by hand.
+- **Follow-ups**, concrete enough to become a plan: the fix, its single `owned_paths` entry, and the observation that it is disjoint from both existing plans.
+- **Status**, and what the next reader is expected to do.
+
+The other plan's note in that tag adds one more category worth copying: a decision, with its reason ("used commander's own `.version()` rather than a bespoke handler — it also gives `-V` for free"), and a failure worth recording ("learned by first writing the test against it and watching it fail"). A wrong turn documented once is a wrong turn nobody repeats.
+
+Here is this lesson's worked example prompt, the one to run before you close a plan:
+
+```text
+Read this plan file and the diff on this branch. What would a different
+session need to know that neither of them says? Write it as the plan's
+Handoff notes.
+```
+
+### Blocked is a status, not a note
+
+When you cannot continue, the status change and the note are one action. `status PNN blocked --reason "…"` refuses to run without a reason, appends it under `## Handoff notes` as a dated line, and regenerates the state file so the blocker is visible to everyone:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/05-handoff-notes/02-status-blocked.txt"
+  range="2-16"
+/>
+
+Two things travel together there. The plan file gains a permanent `- Blocked (2026-09-07): …` line, and the generated `Blocked` table in `STATE.md` picks up the newest such line automatically. Nobody has to remember to tell anyone.
+
+The contract asks a blocked reason to say three things: what blocks you, what you tried, and what you need. The third is the one people leave out, and it is the only one that is actionable by somebody else.
+
+### Handoff note, open question, or follow-up plan?
+
+Three places, three lifetimes. Getting this wrong is how findings disappear.
+
+| It is…                                                     | Put it in                            | Because                                                                |
+| ---------------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------- |
+| Something the next session working _this plan_ needs       | `## Handoff notes`                   | It is scoped to this plan and read when the plan is picked up          |
+| A doc conflict or product question the _owner_ must settle | `open_questions` frontmatter         | The generator surfaces it project-wide, next to its plan id            |
+| Work that should happen but not here                       | Handoff notes, phrased as a proposal | Plans are curated; a session does not create new plan files on its own |
+
+The escalation ladder for a blocker is worth memorising. A **missing dependency**: name the plan id that should provide it, or add an `open_questions` line saying no plan owns it. A **doc conflict**: prefer the curriculum document for scope questions and the decisions register for anything already decided; if neither covers it, record the question and continue with the most conservative reading — never change a recorded decision yourself. An **owner action** such as a secret or an approval: write the exact action needed and pick a different plan.
+
+### And when a message is better
+
+A handoff note is durable and asynchronous by design. When the other session is running _right now_ and the fact has a half-life of minutes — "I've just pushed the schema change, rebase before you continue" — cross-session messaging is the right channel: Claude uses `ListAgents` and `SendMessage` to deliver text to one of your other sessions by name, and the docs call out the parallel-worktree case directly. Note the boundary the docs draw: the receiving Claude is told the message came from another session and not from you, and it "can't approve anything" and is instructed never to change permission settings or configuration because another session asked.
+
+So: durable facts in files, volatile ones in messages. A decision recorded only in a message is a decision the next session will never see.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · write and read a handoff note"
+  lessonId="en/l4-master/m18-multi-session/handoff-notes"
+  repoTag="lesson/m18-05-start"
+  steps={[
+    'In your clone of the lab repository, `git checkout lesson/m18-05-start`. Read both plan files: their Handoff notes are still the unfilled placeholder.',
+    'Derive the checklist before you see the answer: `claude -p "Read plans/P01-cli-usability.md and plans/P02-api-error-docs.md. Both are about to move from in_progress to review. List the five things their Handoff notes must record so a different session could take either plan over without asking a question. At most six lines. Do not edit anything." --model sonnet --max-turns 6 --output-format text --allowedTools Read,Glob,Grep`',
+    'Write your own note for `P02` in the working tree — what shipped, what you verified with which command, one decision and its reason, and any follow-up.',
+    'Compare against the real thing: `git show lesson/m18-05-solution:plans/P02-api-error-docs.md | sed -n "/^## Handoff notes/,$p"`. What did it record that you did not?',
+    'Now practise the blocked path in a throwaway clone of this site\'s repository. Pick any plan id `node tools/plan/cli.ts next` offers — the recording below uses `P38` — and run `node tools/plan/cli.ts status <PNN> blocked --reason "what blocks you, what you tried, what you need"`, then `tail -3` the plan file and read the `## Blocked` table in `STATE.md`.',
+    'Revert both: `git checkout -- plans STATE.md` in each clone.',
+  ]}
+  expected="At `-start` both notes are placeholders. The solution's P02 note records a real 404-vs-400 inconsistency it deliberately did not fix because the file belongs to another plan, and proposes a follow-up with a concrete owned_paths entry. `status blocked` prints the plan's new status and that it rewrote STATE.md, appends a dated `- Blocked (YYYY-MM-DD): …` line under the plan's Handoff notes, and the reason appears in STATE.md's Blocked table with the owner beside it."
+  checklist={[
+    'You wrote a note before reading the reference one',
+    'Your note names a command you actually ran and its result, not "should pass"',
+    'You identified at least one thing the reference note recorded that yours did not',
+    '`status blocked` refused to run without `--reason`, and appended a dated line to the plan file',
+    'The blocker appears in the generated Blocked table without anyone editing it',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/05-handoff-notes/01-claude-drafts-handoff.txt"
+    range="4-10"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/05-handoff-notes/02-status-blocked.txt"
+    range="2-16"
+  />
+</Lab>
+
+## Anti-patterns
+
+**The placeholder left in place.** A merged plan whose notes still say "_Filled by the executing session_" has thrown away everything that session learned. _Fix:_ treat filling it as part of moving to `review`, not as paperwork afterwards.
+
+**Summarising the diff.** "Added three files and updated the tests" is already in `git log`. _Fix:_ write what is _not_ in the diff — the decisions, the dead ends, the things you chose not to do.
+
+**"Tests should pass."** Either you ran them or you did not, and the difference is everything. _Fix:_ name the command and the result, as the docs ask: show evidence rather than asserting success.
+
+**Fixing something outside your paths because you found it.** The finding is valuable; the silent edit is not. _Fix:_ record it in the notes, propose the follow-up with its own `owned_paths`, and leave the file alone.
+
+**A blocker recorded only in a message or a commit.** Nobody reading `STATE.md` will ever see it, which means it blocks the project quietly. _Fix:_ `status blocked --reason`, so the plan file and the generated view move together.
+
+**A blocked reason with no ask.** "Waiting on the API docs" tells nobody what would unblock you. _Fix:_ say what blocks you, what you tried, and what you need — the third part is the actionable one.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/handoff-notes"
+  questionId="q1"
+  lang="en"
+  prompt="Which of these belongs in a handoff note?"
+  options={[
+    {
+      text: 'A list of the files the branch changed.',
+      explanation: 'The diff already carries that, in more detail and always accurately.',
+    },
+    {
+      text: "An inconsistency you found in another plan's file, why you did not fix it, and what a follow-up plan would own.",
+      correct: true,
+      explanation:
+        'Exactly the kind of finding that is lost if it is not written down: valuable, out of scope, and actionable by someone else.',
+    },
+    {
+      text: "A restatement of the plan's Goal.",
+      explanation: 'It is three sections above, unchanged.',
+    },
+    {
+      text: 'The full test output.',
+      explanation:
+        'Name the command and the result; the full log belongs in the pull request evidence, not in the plan file.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/handoff-notes"
+  questionId="q2"
+  lang="en"
+  prompt="What does `status PNN blocked --reason` do beyond changing the status?"
+  options={[
+    {
+      text: 'It opens a draft pull request.',
+      explanation: 'A draft PR is welcome, but you open it yourself.',
+    },
+    {
+      text: "It appends a dated `- Blocked (…):` line under the plan's Handoff notes and regenerates STATE.md, so the blocker appears in the Blocked table.",
+      correct: true,
+      explanation:
+        'The status change and the written reason are one action, which is why the command refuses to run without `--reason`.',
+    },
+    {
+      text: 'It messages the other running sessions.',
+      explanation:
+        'Messaging is a separate mechanism for volatile facts. A blocker is durable and belongs in the file.',
+    },
+    {
+      text: 'It releases the plan back to `todo`.',
+      explanation: '`blocked` keeps the owner; `todo` is the status that clears it.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/handoff-notes"
+  questionId="q3"
+  lang="en"
+  prompt="You hit a question the curriculum document does not answer and no decision covers. What is correct?"
+  options={[
+    {
+      text: 'Decide it yourself and record the decision in the decisions register.',
+      explanation: 'Decisions belong to the owner. A plan may propose one; it never writes one.',
+    },
+    {
+      text: 'Write the question into `open_questions` and the Handoff notes, take the most conservative reading, and continue.',
+      correct: true,
+      explanation:
+        'The question becomes visible project-wide beside its plan id, and the work proceeds in the way that is cheapest to reverse.',
+    },
+    {
+      text: 'Mark the plan blocked and stop.',
+      explanation:
+        'Reserve `blocked` for things that genuinely prevent progress. An open question usually has a conservative answer you can proceed with.',
+    },
+    {
+      text: 'Message another session and use whatever it says.',
+      explanation:
+        'Another session has no more authority than you do, and its answer would not be recorded anywhere durable.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/handoff-notes"
+  questionId="q4"
+  lang="en"
+  prompt="Why do handoff notes matter more between sessions than between people on a team?"
+  options={[
+    {
+      text: 'Sessions write faster, so there is more to record.',
+      explanation: 'Volume is not the issue; recoverability is.',
+    },
+    {
+      text: 'A colleague can be asked later; the session that did the work may no longer exist, and everything it did not write down is gone.',
+      correct: true,
+      explanation:
+        'That asymmetry is the whole reason the section is mandatory rather than encouraged.',
+    },
+    {
+      text: 'Sessions cannot read git history.',
+      explanation: 'They can, and do — which is exactly why the note should not repeat it.',
+    },
+    {
+      text: 'Because CI requires the section to be non-empty.',
+      explanation:
+        'The section is part of the fixed body structure; the discipline of filling it usefully is a convention, not a check.',
+    },
+  ]}
+/>
+
+**Next:** `06-this-repo-as-example` walks this website's own `plans/` directory and `STATE.md` end to end — several dozen plans across five milestones, and what the system looks like once it has been running for a while.

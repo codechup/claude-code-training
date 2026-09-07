@@ -1,0 +1,358 @@
+---
+title: 'Disjoint owned_paths, a worktree per plan, and shared files'
+description: "Two sessions never edit the same file — because the plan set says so before either of them starts. Learn disjoint owned_paths, one git worktree per plan, Claude Code's own --worktree isolation, and the append-only rules for files everybody has to touch."
+level: 4
+module: 'm18-multi-session'
+order: 3
+duration_min: 20
+difficulty: core
+tags: ['multi-session', 'worktrees', 'owned-paths', 'isolation', 'this-repo']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Run parallel sessions with worktrees'
+    url: 'https://code.claude.com/docs/en/worktrees.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run agents in parallel'
+    url: 'https://code.claude.com/docs/en/agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Subagents'
+    url: 'https://code.claude.com/docs/en/sub-agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'CLI reference'
+    url: 'https://code.claude.com/docs/en/cli-reference.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'plans/README.md §4 and §5 — worktree workflow, owned and shared paths (this repository)'
+    url: 'https://github.com/codechup/claude-code-training/blob/main/plans/README.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m18-03-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Partition a project into disjoint `owned_paths` and explain why prefix overlap, not exact equality, is the test that matters.
+- Predict what the plan tool does when two plans claim the same path — at claim time and at check time — and read both refusals.
+- Create one git worktree per plan and run several Claude Code sessions in them without their edits colliding.
+- Choose between a worktree you create with git, Claude Code's `--worktree` flag, and a subagent with `isolation: worktree`.
+- Apply the append-only rules to files no single plan can own, and know when a needed file means the plan is wrong rather than the rule.
+
+**Prerequisites.** Lessons 01 and 02 of this module, and working knowledge of `git worktree`.
+
+<WhenNotToUse>
+  Isolation costs disk, setup and attention: every worktree is a fresh checkout that needs its own
+  dependency install, and a session in one cannot see the work in another until it lands on a
+  branch. Do not reach for it when the sessions are reading rather than writing — several read-only
+  sessions in one checkout collide with nothing. Do not use it to paper over a partition you have
+  not actually made: two sessions editing the same file in two worktrees produce a merge conflict
+  instead of a lost edit, which is better but still a failure of planning. And do not isolate work
+  that must see each other's changes as they happen; that is one session, or a pipeline, not two.
+</WhenNotToUse>
+
+## Concept
+
+### Partition first, isolate second
+
+The docs are direct about the ordering. Under "Do the tasks touch the same files?" the parallel-agents page says to isolate the work with worktrees — but for agent teams, which do not isolate teammates, it says to "partition the work so each teammate owns a different set of files."
+
+Partitioning is the real move. A worktree stops one session's edit from overwriting another's; it does not stop two sessions from independently deciding to rewrite the same function in two branches, which you discover at merge time. `owned_paths` is where the partition is written down, before either session starts.
+
+In this repository, one content plan owns three globs and nothing else:
+
+<CodeBlock title="plans/P35-l4-m18-multi-session.md (excerpt)">
+
+```yaml
+owned_paths:
+  - content/en/l4-master/m18-multi-session/**
+  - content/tr/l4-master/m18-multi-session/**
+  - content/_shared/transcripts/m18-multi-session/**
+shared_paths:
+  - content/_shared/sources.json
+```
+
+</CodeBlock>
+
+The lab repository shows the same shape in miniature — two plans, one owning the CLI and its test, the other owning a single documentation file:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/03-owned-paths-worktrees/01-disjoint-owned-paths.txt"
+  range="2-13"
+/>
+
+Their own plan text says why: "This plan's `owned_paths` never overlaps `P02`'s — that's what makes running both in parallel worktrees safe."
+
+Here is this lesson's worked example prompt — a question you can ask of any two plans before you start either:
+
+```text
+Read plans/P01-cli-usability.md and plans/P02-api-error-docs.md. Do their
+owned_paths overlap? Say why that answer decides whether the two plans can
+be worked at the same time in separate git worktrees.
+```
+
+### Overlap is computed on prefixes
+
+Two globs overlap when the static part of one — everything before the first wildcard — is a prefix of the other's. So `content/en/l1-beginner/**` overlaps `content/en/l1-beginner/m01-start/runtime.test.ts`, while `content/en/l1-beginner/**` and `content/en/l2-intermediate/**` do not.
+
+That definition is conservative on purpose: it flags a parent-and-child pair as a conflict even though a careful human might argue they could coexist. In a system where nobody is watching, "might be fine" is not a property you want to depend on.
+
+The rule is enforced twice. First at claim time, before any work happens:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/03-owned-paths-worktrees/02-overlap-refused.txt"
+  range="2-12"
+/>
+
+And again by `check`, which CI runs on every pull request, catching an overlap introduced by editing a plan file after it was claimed:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/03-owned-paths-worktrees/03-overlap-check.txt"
+  range="2-7"
+/>
+
+Both refusals name the two plans and the exact path. That is deliberate: the fix is a conversation about who should own that directory, and the message tells you who to have it with.
+
+### One worktree per plan
+
+A git worktree is a separate working directory with its own files and branch that shares the repository's history and remote with your main checkout. This project's convention is one worktree per plan, in a sibling directory named after the plan number:
+
+<CodeBlock title="Create a worktree for a claimed plan">
+
+```bash
+git worktree add ../cct-wt-35 plan/35-l4-m18-multi-session
+cd ../cct-wt-35
+npm ci
+```
+
+</CodeBlock>
+
+Each worktree has its own `node_modules` — a worktree is a fresh checkout, so its development environment has to be initialised there. When the plan's pull request is merged, the worktree goes away:
+
+<CodeBlock title="Clean up after the merge">
+
+```bash
+git worktree list
+git worktree remove ../cct-wt-35
+```
+
+</CodeBlock>
+
+The important social rule has no technical enforcement: **never `cd` into another plan's worktree to borrow a file.** If you need something from it, your plan's `depends_on` is missing that plan — and that belongs in your Handoff notes, not in a copied file.
+
+### Three kinds of isolation
+
+Git worktrees are one of three ways to get an isolated checkout, and they are not interchangeable.
+
+| Mechanism                                         | What it isolates                            | Reach for it when                                                                        |
+| ------------------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `git worktree add <dir> <branch>`                 | A checkout you create and manage yourself   | You want a long-lived, named workspace per plan, on a branch you push and open a PR from |
+| `claude --worktree <name>` (`-w`)                 | A session Claude Code creates and cleans up | You want one isolated session now and do not care where the directory lives              |
+| `isolation: worktree` in a subagent's frontmatter | A temporary checkout for one subagent       | A delegated agent will edit many files and must not touch the parent session's tree      |
+
+`claude --worktree feature-auth` creates the worktree under `.claude/worktrees/<name>/` at the repository root, on a new branch named `worktree-<name>`, and starts Claude in it; omit the name and Claude Code generates one. The docs suggest adding `.claude/worktrees/` to `.gitignore`. New worktrees branch from the repository's default branch unless you set `worktree.baseRef` to `"head"`, and a `.worktreeinclude` file (using `.gitignore` syntax) copies gitignored files such as `.env` into each new worktree.
+
+You can also ask Claude to work in a worktree mid-session, and it creates one with the `EnterWorktree` tool; `ExitWorktree` leaves it. Entering a path outside the repository's `.claude/worktrees/` directory always asks for your approval first, "because the move takes the session's working directory, write access, and project configuration such as `CLAUDE.md` and settings to that location" — and the docs are explicit that a permission rule or "don't ask again" does not suppress that prompt; only `bypassPermissions` mode skips it.
+
+While a session is isolated, Claude Code enforces the boundary rather than trusting it. It blocks an `Edit`, `Write` or `NotebookEdit` targeting the main checkout; blocks a Bash, PowerShell or Monitor command whose working directory resolves to the main checkout; blocks git redirected back into the main checkout through `git -C`, `--git-dir`, `GIT_DIR`, `GIT_WORK_TREE` or a `cd`; and blocks a command whose shape it cannot verify, telling Claude how to rewrite it.
+
+For a subagent, `isolation: worktree` in the agent's frontmatter gives it "a temporary git worktree … branched by default from your default branch rather than the parent session's `HEAD`", cleaned up automatically when the subagent makes no changes.
+
+<Callout>
+  A worktree is not a sandbox. It isolates *files in this repository*; it does not restrict the
+  network, other directories, or anything outside the checkout. If you need those limits too, that
+  is sandboxing and permissions, which Level 3 covers.
+</Callout>
+
+### The files nobody can own
+
+Some files are touched by many plans: a shared source registry, a lockfile, a translations map. They are listed under `shared_paths` and they follow different rules — **append-only, minimal diff**:
+
+- Never reformat or reorder existing content; add your entry and leave everything else byte-identical.
+- One logical hunk per shared file, per plan.
+- Mention each shared-file change in the pull request body, so a reviewer looks at it deliberately.
+- Resolve conflicts by rebasing on `main` and re-running the generator where one exists, not by taking one side wholesale.
+
+And the rule that matters most: **if a plan needs a file that is in neither list, stop.** Either the file belongs in `shared_paths` — ask, in the Handoff notes, for a small follow-up that adds it — or the dependency graph is wrong. Do not "just touch it". This repository's own history is full of open questions that begin exactly there, and each one is a file that did not silently change under another session.
+
+### Reading outside your paths
+
+Ownership constrains writing, never reading. Reading anything in the repository is fine and expected — you cannot write a lesson about a plan system without reading `plans/README.md`.
+
+When the thing you need to read is outside the repository altogether, `--add-dir` adds working directories for Claude to read and edit; the docs note it "grants file access" but that Claude Code "doesn't discover most `.claude/` configuration from these directories", and that `permissions.additionalDirectories` in settings makes the addition persist across sessions. Use it to point a session at a sibling checkout it must read; do not use it to reach into another plan's worktree and edit.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · partition two plans, then run them in parallel worktrees"
+  lessonId="en/l4-master/m18-multi-session/owned-paths-worktrees"
+  repoTag="lesson/m18-03-start"
+  steps={[
+    'In your clone of the lab repository, `git checkout lesson/m18-03-start`. Read the `owned_paths` of both plans: `grep -A4 "^owned_paths" plans/P01-cli-usability.md plans/P02-api-error-docs.md`.',
+    'Have Claude check the partition for you: `claude -p "Read plans/P01-cli-usability.md and plans/P02-api-error-docs.md. Do their owned_paths overlap? Say why that answer decides whether the two plans can be worked at the same time in separate git worktrees. At most four lines. Do not edit anything." --model sonnet --max-turns 6 --output-format text --allowedTools Read,Glob,Grep`',
+    'Create one worktree per plan: `git worktree add ../claude-code-lab-p01 -b plan/01-cli-usability` and `git worktree add ../claude-code-lab-p02 -b plan/02-api-error-docs`, then `git worktree list`.',
+    'Run `npm ci` in each worktree — each one needs its own `node_modules`.',
+    "Now break the partition deliberately, in a throwaway clone of this site's repository: claim two plans, then edit one plan's `owned_paths` to list a path the other already owns, and run `node tools/plan/cli.ts check`. Read the failure.",
+    'Undo that edit (`git checkout plans/`), and remove the lab worktrees when you are done: `git worktree remove ../claude-code-lab-p01` and the same for p02.',
+  ]}
+  expected="The two plans' owned_paths are disjoint (`src/cli.ts` + `test/cli-usability.test.ts` versus `docs/API.md`); `git worktree list` shows three entries — the main checkout plus one per plan; and `plan check` fails with an owned_paths overlap naming P36, P38 and the shared glob, exiting 1."
+  checklist={[
+    "You can state each plan's owned_paths from memory after reading them once",
+    'Three worktrees are listed, each on its own branch',
+    'Each worktree has its own node_modules',
+    '`plan check` exited non-zero and named both plans and the exact path',
+    'The deliberate overlap was reverted and the worktrees removed',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/03-owned-paths-worktrees/05-claude-checks-overlap.txt"
+    range="4-6"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/03-owned-paths-worktrees/04-worktree-add.txt"
+    range="2-11"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/03-owned-paths-worktrees/03-overlap-check.txt"
+    range="2-7"
+  />
+</Lab>
+
+The worktree listing is the picture worth keeping: three directories, three branches, one `.git`. Each session opens one of them and cannot see the others' uncommitted work — which is exactly what you want, because the only channel between them should be a reviewed, merged commit.
+
+## Anti-patterns
+
+**Isolating without partitioning.** Two worktrees, two sessions, same file: you traded a lost edit for a merge conflict. _Fix:_ make `owned_paths` disjoint before you create either worktree — the docs' own advice for agent teams is to partition so each worker owns a different set of files.
+
+**Borrowing a file from another plan's worktree.** It works, right up until that plan's branch changes and your copy is silently stale. _Fix:_ treat the need as a missing `depends_on` and write it into Handoff notes.
+
+**Rewriting a shared file to "clean it up".** A reformat of a shared registry conflicts with every other open branch at once. _Fix:_ append-only, one hunk, no reordering, and call it out in the PR body.
+
+**Reusing one checkout for several sessions "just for a minute".** Two agents editing one tree is the exact failure worktrees exist to prevent, and the second edit usually wins silently. _Fix:_ one checkout per session, always.
+
+**Forgetting that a fresh worktree is a fresh environment.** A worktree has no `node_modules`, no `.env`, no build cache, and a session that assumes otherwise fails confusingly. _Fix:_ run the install, and use `.worktreeinclude` for the gitignored files a session genuinely needs.
+
+**Leaving worktrees behind after the merge.** Stale worktrees accumulate, and a lock left by a killed session can make `git worktree remove` refuse. _Fix:_ `git worktree remove` after the squash merge; `git worktree unlock` first if git refuses because the worktree is locked.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/owned-paths-worktrees"
+  questionId="q1"
+  lang="en"
+  prompt="Plan A owns `content/en/l1-beginner/**` and plan B owns `content/en/l1-beginner/m01-start/index.mdx`. Are these disjoint?"
+  options={[
+    {
+      text: 'Yes — they are different strings.',
+      explanation: 'Overlap is not string equality. It compares the static prefix of each glob.',
+    },
+    {
+      text: "No — A's static prefix is a prefix of B's path, so the tool treats them as overlapping and refuses the second claim.",
+      correct: true,
+      explanation:
+        'Deliberately conservative: a parent-and-child pair is flagged even though a careful human might make it work.',
+    },
+    {
+      text: 'Only if both plans are in the same milestone.',
+      explanation: 'Milestones play no part in the overlap computation.',
+    },
+    {
+      text: 'Only if both plans are `todo`.',
+      explanation:
+        'The opposite — overlap is checked against plans that are *active* (`in_progress` or `review`).',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/owned-paths-worktrees"
+  questionId="q2"
+  lang="en"
+  prompt="You want a delegated agent to apply a mechanical refactor across many files without touching your working tree. What is the documented way?"
+  options={[
+    {
+      text: 'Run it in the main session with `acceptEdits`.',
+      explanation: 'That edits your working tree — the one thing you asked to protect.',
+    },
+    {
+      text: "Add `isolation: worktree` to the subagent's frontmatter so it runs in a temporary worktree, cleaned up automatically when it makes no changes.",
+      correct: true,
+      explanation:
+        "The subagent gets an isolated copy branched by default from your default branch rather than the parent session's HEAD.",
+    },
+    {
+      text: 'Give the subagent `--add-dir` pointing at a copy of the repository.',
+      explanation:
+        '`--add-dir` grants read and edit access to another directory; it does not create or manage an isolated checkout.',
+    },
+    {
+      text: 'Deny the `Edit` tool and ask it to describe the change instead.',
+      explanation: 'That is a review, not a refactor.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/owned-paths-worktrees"
+  questionId="q3"
+  lang="en"
+  prompt="Your plan needs to change a file that is in neither its `owned_paths` nor its `shared_paths`. What is correct?"
+  options={[
+    {
+      text: 'Edit it and note it in the PR description.',
+      explanation:
+        "A file outside your paths may be another plan's in-flight work; a note after the fact does not prevent the collision.",
+    },
+    {
+      text: 'Add the file to your own `owned_paths` so the check passes.',
+      explanation:
+        'That silently claims territory another plan may hold, and the overlap check will bite the other session, not you.',
+    },
+    {
+      text: 'Stop: either it belongs in `shared_paths` (ask for that in Handoff notes) or the dependency graph is wrong. Do not touch it.',
+      correct: true,
+      explanation:
+        'Both outcomes are cheap; a silent edit outside your paths is the expensive one.',
+    },
+    {
+      text: 'Copy the file into your worktree and edit the copy.',
+      explanation: 'Now there are two versions and neither is authoritative.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/owned-paths-worktrees"
+  questionId="q4"
+  lang="en"
+  prompt="While a session is isolated in a worktree, which of these does Claude Code block?"
+  options={[
+    {
+      text: 'A Bash command that redirects git into the main checkout with `git -C` or a `cd`.',
+      correct: true,
+      explanation:
+        'One of four documented checks, alongside blocking edits into the main checkout, commands whose working directory resolves there, and commands whose shape cannot be verified.',
+    },
+    {
+      text: 'Reading any file outside the worktree.',
+      explanation: 'The checks are about writes and working directories, not reads.',
+    },
+    {
+      text: 'All network access.',
+      explanation: 'That is sandboxing. A worktree isolates files, not the network.',
+    },
+    {
+      text: 'Running the test suite.',
+      explanation:
+        'Tests run normally inside the worktree — git commands even write to the shared `.git` directory.',
+    },
+  ]}
+/>
+
+**Next:** `04-model-effort-hints` covers the two frontmatter fields that are advice rather than rules — which model and how much reasoning a plan's work is worth.

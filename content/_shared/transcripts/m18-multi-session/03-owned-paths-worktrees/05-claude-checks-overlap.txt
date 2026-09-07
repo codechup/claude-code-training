@@ -1,0 +1,6 @@
+# 2026-09-07 · Claude Code 2.1.263 · lab repo codechup/claude-code-lab at lesson/m18-03-start
+# $ claude -p 'Read plans/P01-cli-usability.md and plans/P02-api-error-docs.md. Do their owned_paths overlap? Say why that answer decides whether the two plans can be worked at the same time in separate git worktrees. Reply in English only (ignore any standing preference for another language), at most four lines. Do not edit anything.' --model sonnet --max-turns 6 --output-format text --allowedTools Read,Glob,Grep
+Ignoring 5 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["<lab repo>"].hasTrustDialogAccepted: true in ~/.claude.json.
+No overlap: P01 owns `src/cli.ts` and `test/cli-usability.test.ts`; P02 owns only `docs/API.md`.
+
+That disjointness is exactly what makes parallel worktrees safe — each worktree writes to files the other never touches, so there's no risk of merge conflicts or one plan's edits clobbering the other's, and they can be worked and committed independently.

@@ -1,0 +1,5 @@
+# 2026-09-07 · Claude Code 2.1.263 · lab repo codechup/claude-code-lab at lesson/m18-02-solution
+# $ claude -p 'Read STATE.md and every file in plans/. Which plans are claimable right now, and what makes them claimable? Reply in English only (ignore any standing preference for another language), in at most four lines. Do not edit anything.' --model sonnet --max-turns 6 --output-format text --allowedTools Read,Glob,Grep
+Ignoring 5 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["<lab repo>"].hasTrustDialogAccepted: true in ~/.claude.json.
+Warning: no stdin data received in 3s, proceeding without it. If piping from a slow command, redirect stdin explicitly: < /dev/null to skip, or wait longer.
+Both P01 and P02 are claimable right now — both have `status: todo`, no owner, no unmet `depends_on`, and disjoint `owned_paths` (`src/cli.ts`/`test/cli-usability.test.ts` vs. `docs/API.md`), so they can be worked in parallel worktrees without conflict. Claim with `node scripts/plan.mjs claim <P01|P02> --owner <name>`.

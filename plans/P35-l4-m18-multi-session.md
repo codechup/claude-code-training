@@ -2,7 +2,7 @@
 id: P35
 title: "L4 Master module: Multi-session (m18-multi-session)"
 milestone: M2
-status: in_progress
+status: review
 owner: lead-fable
 branch: plan/35-l4-m18-multi-session
 model_hint: opus
@@ -15,8 +15,15 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T19:26:13Z
-open_questions: []
+updated_at: 2026-09-07T23:33:55Z
+open_questions:
+  - "Plan-vs-CURRICULUM drift (P03 owns CURRICULUM). This plan's Deliverables list 4 lessons with working titles; docs/CURRICULUM.md section 2 m18-multi-session lists 6 (01-plan-files ... 06-this-repo-as-example). Followed the doc, per this plan's own Step 1. The plan file's Scope/Deliverables text should be reconciled with CURRICULUM by whoever next edits it."
+  - "This plan's Acceptance criteria require a source entry of type 'doc', but src/content/schema.ts's sourceSchema enum only accepts official | video | article | repo. The lessons ship type: official. The plan text should be corrected so a future reader is not misled."
+  - "Contract-vs-implementation drift in tools/plan (no plan currently owns tools/plan/**). plans/README.md section 3 and .claude/rules/plans.md both define staleness clock-free (updated_at older than 24h relative to the newest updated_at in the set), and tools/plan/state.ts and tools/plan/check.ts implement exactly that via newest(s). But tools/plan/cli.ts's next and claim commands pass the wall clock (envClock()) instead, so the two commands a session actually uses to take work do NOT have the clock-free guarantee the contract states. Independently found by this session and by the fact-checker agent. Lesson 02 teaches both reference points and names the discrepancy rather than repeating the contract as settled fact; the code or the contract should be reconciled by whoever owns tools/plan/**."
+  - "Lab repo (P22 owns it). STATE.md at lesson/m18-02-solution and lesson/m18-03-start tells the reader to run 'node scripts/plan.mjs claim P01 --owner <name>', but scripts/plan.mjs does not exist until lesson/m18-05-solution, and even there it only lists claimable plans - it implements no claim subcommand. A real captured session followed the instruction and repeated the non-existent command. Lesson 02 turns this into a teaching point about hand-maintained status files, but the tag's STATE.md text should probably be fixed."
+  - "Lab tag naming (P03/P22; already raised by P15). docs/CURRICULUM.md section 2 documents the convention lesson/<module>-<NN>-start (i.e. lesson/m18-multi-session-02-start), but the tags that exist are lesson/m18-02-start. These lessons cite the tags that really exist."
+  - "research/feature-inventory.md (P03 owns it) records worktrees only as the subagent field 'isolation: worktree'. The live worktrees.md documents the --worktree/-w flag, the EnterWorktree/ExitWorktree tools, .worktreeinclude and worktree.baseRef, and 'claude --help' on 2.1.263 lists '-w, --worktree [name]'. The inventory row should be expanded. Separately, cli-reference.md as fetched on 2026-09-07 did not surface a --worktree row although the flag exists, so lesson 03 sources that flag to worktrees.md and the verified local --help output."
+  - "research/deprecations.md (P03 owns it) has no m18 rows. Three version-gated behaviours the fact-checker flagged are taught as current (correct at 2.1.263) but have no Changed entry anywhere: EnterWorktree's always-ask approval outside .claude/worktrees/ began at v2.1.206; the periodic sweep's release of a killed session's worktree lock began at v2.1.210; and the subagent model-resolution order inverted before v2.1.251 (the env var used to win). Worth rows for the playbook changelog page (P42)."
 ---
 
 ## Goal
@@ -97,5 +104,101 @@ A reviewer opens `npm run dev`, visits each of the 4 lessons at `/en/l4-master/m
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+**Session:** `opus-p35-2026-09-07`, worktree `../cct-wt-35`, branch `plan/35-l4-m18-multi-session`.
+
+**Lesson-count drift (4 to 6), followed the doc.** This plan's Deliverables named 4 lessons with
+working titles; `docs/CURRICULUM.md` §2 m18-multi-session is authoritative and lists 6. Per this
+plan's own Step 1, the curriculum won. Shipped slugs, durations and difficulty are exactly
+CURRICULUM's: `01-plan-files` (20, core), `02-state-md-and-claims` (20, core, Lab),
+`03-owned-paths-worktrees` (20, core, Lab), `04-model-effort-hints` (10, core), `05-handoff-notes`
+(15, core, Lab), `06-this-repo-as-example` (15, advanced). Logged in `open_questions` so the plan
+text can be reconciled.
+
+**What shipped.** 6 EN lessons under `content/en/l4-master/m18-multi-session/`, 6 `draft: true` TR
+stubs at the mirrored paths (titles and descriptions translated, every other frontmatter field
+byte-identical to its EN twin — translation belongs to P25/P26/P40/P41), 22 real transcripts under
+`content/_shared/transcripts/m18-multi-session/`, and 6 module-tag additions plus 1 new entry
+(`repo-plans-readme`) in `content/_shared/sources.json` (append-only; no existing entry reordered or
+rewritten — the only `-` lines in that diff are `modules` arrays being extended in place).
+
+**Evidence (D093, D099).** Every command shown was run. The plan-CLI captures (`show`, `check`,
+`next`, `claim`, the refused second claim, the refused overlapping claim, `check` failing on an
+overlap, `status ... blocked`, `state`) come from a throwaway clone of this public repo, never from
+this worktree or `main`. The lab captures come from a private clone of `codechup/claude-code-lab` at
+tags `lesson/m18-02-start`, `m18-02-solution`, `m18-03-start` and `m18-05-start`; all three `m18-*`
+tag pairs the module needs exist, so no lesson falls back to `repo_tag: "none"` for a missing tag
+(lessons 01, 04 and 06 carry `repo_tag: "none"` because their labs are reading exercises against
+this repository's own plan set, and CURRICULUM does not mark those three as lab lessons). Four
+headless captures used `claude -p ... --model sonnet --max-turns 6 --output-format text
+--allowedTools Read,Glob,Grep`. Local paths and usernames were redacted to `<clone>`, `<lab repo>`,
+`~/work/...` and `~/.claude.json`; nothing else in any recording was altered. The first captures
+came back in Turkish because the capture machine carries a standing language preference — they were
+re-run with an explicit English-only instruction rather than translated, since translating a
+recording would fabricate it.
+
+**Docs fetched live (2026-09-07); the doc wins over the inventory.** `worktrees.md`,
+`cross-session-messaging.md`, `agents.md`, `best-practices.md`, `model-config.md`, `sub-agents.md`,
+`cli-reference.md`. Two notes. `research/feature-inventory.md` mentions worktrees only as
+`isolation: worktree` and does not record the `--worktree`/`-w` flag, `EnterWorktree`/`ExitWorktree`,
+`.worktreeinclude` or `worktree.baseRef`; all four are on the live `worktrees.md`, and `-w,
+--worktree [name]` is present in `claude --help` on 2.1.263, so the lessons teach them. The
+`cli-reference.md` fetch did not surface a `--worktree` row, so that flag is sourced to
+`worktrees.md` and the verified local `--help` output instead. Nothing the inventory marks
+UNVERIFIED was used.
+
+**Review pipeline (D071).** Both agents ran; the first two `fact-checker` attempts died on the API
+session limit and the third completed after the session reset.
+
+`fact-checker` — verdict FAIL on the draft, 4 contradicted claims, ~92 confirmed across the six
+lessons, plus unverifiable items. All four contradictions fixed:
+
+1. Three related claims in lesson 02 (the claimability condition, the stale-claims paragraph and
+   quiz q3) asserted that staleness is measured clock-free. That is what `plans/README.md` §3 says
+   and what `state.ts`/`check.ts` do, but `cli.ts` passes the wall clock to `next` and `claim` — the
+   two commands a session actually uses. The lesson now teaches both reference points, names which
+   code path uses which, and says the contract's guarantee does not hold for `next`/`claim`. Raised
+   in `open_questions` against whoever owns `tools/plan/**`. I had found the same drift by reading
+   `plan.ts` before the report arrived; the agent's independent confirmation is why it is now taught
+   explicitly rather than hedged.
+2. Lesson 04 presented a re-ordered splice of `model-config.md`'s `max` row inside quotation marks.
+   Replaced with the doc's real sentence: "can improve performance on demanding tasks but may show
+   diminishing returns and is prone to overthinking. Test before adopting broadly."
+
+Its unverifiable items were environmental, not defects: the agent's session had no `github.com`
+WebFetch permission (so the `type: repo` source URLs could not be fetched from inside it) and no
+access to `codechup/claude-code-lab` (so it could not confirm the lab-tag facts). Both were verified
+directly by this session — the lab clone is where the transcripts were captured, and the repo URLs
+are this repository and its own `plans/README.md`. CI's `lychee` link check covers the URLs.
+
+`reviewer` — 0 blockers, 3 majors, 2 minors, all five addressed. (1) all six lessons used
+`## Objectives and prerequisites`; renamed to the canonical `## Objectives & prerequisites` that
+every other lesson uses. (2) lesson 02's Concept carried no worked-example prompt (D027); added.
+(3) these Handoff notes were unfilled; written. (4) the reviewer asked to drop `m18-multi-session`
+from the `docs-sessions` entry in `sources.json` as an orphan tag — **not done**: that tag predates
+this branch, and removing it would be a non-additive edit to a shared file (D048). Flagged here
+instead. (5) the plan's `type: "doc"` acceptance criterion is not a valid schema value; recorded in
+`open_questions`.
+
+**Self-review fixes beyond the reviewer's list.** Lesson 02 originally asserted that the lab's
+`scripts/plan.mjs` "does not implement claim"; checking the tags showed the file does not exist at
+that tag at all and only appears at `lesson/m18-05-solution` — corrected in the lesson and raised as
+an open question against the lab repo. Snapshot-specific numbers and plan ids (`48 plans`, `P36`,
+`P38`, exact `claimed ...` and `not claimable ...` strings) were removed from lab `steps` and
+`expected` text so the labs do not rot as the plan set moves; the transcripts still show the real
+strings. Transcript provenance headers that read `claude -p '...'` were rewritten to carry the exact
+prompt that was run.
+
+**Verified locally (real output pasted in the PR).** `npm run gate` (204 files),
+`npm run typecheck` (0 errors), `npm run lint`, `npm test` (22 files / 184 tests), `npm run build`
+ending `check-no-inline-script (dist): OK`, `node scripts/check-raw-colors.mjs`,
+`node scripts/check-public-hygiene.mjs`, `node tools/plan/cli.ts check`, and Playwright on a
+temporary `playwright.p35.config.ts` (port 4435) with a temporary spec covering all six EN lesson
+routes at 390 px and 1280 px plus `e2e/a11y.spec.ts` — 26 passed, 0 axe serious/critical. Both
+temporary files were deleted afterwards. Note for the next content plan: the TR twins are
+`draft: true` and therefore deliberately unrouted, so a spec asserting 200 on `/tr/**` for this
+module fails; the temporary spec covered EN only.
+
+**Not done / for others.** TR translation (P25/P26/P40/P41). No `Changed` callout appears in this
+module: `research/deprecations.md` has no m18 row and nothing this module teaches was superseded. No
+new MDX component was needed.
 

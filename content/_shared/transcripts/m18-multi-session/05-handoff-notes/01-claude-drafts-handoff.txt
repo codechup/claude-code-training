@@ -1,0 +1,10 @@
+# 2026-09-07 · Claude Code 2.1.263 · lab repo codechup/claude-code-lab at lesson/m18-05-start
+# $ claude -p 'Read plans/P01-cli-usability.md and plans/P02-api-error-docs.md. Both are about to move from in_progress to review. List, in English only (ignore any standing preference for another language), the five things their "## Handoff notes" sections must record so a different session could take either plan over without asking a question. At most six lines. Do not edit anything.' --model sonnet --max-turns 6 --output-format text --allowedTools Read,Glob,Grep
+Ignoring 5 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["<lab repo>"].hasTrustDialogAccepted: true in ~/.claude.json.
+Both plans have empty "Handoff notes" placeholders. Based on their Steps/Acceptance criteria/Verification sections, a takeover session would need these five things recorded:
+
+1. **Exact state reached** — which acceptance-criteria items are done vs. still open (e.g., P01: descriptions added? `--version` wired? test file written?; P02: which routes/status-codes are documented so far).
+2. **Verification output actually run** — the real `npm test` / `npm run typecheck` results (and for P01 the `--help`/`--version` output; for P02 the line-by-line diff against `server.ts`), not just "should pass."
+3. **Decisions made where the plan was ambiguous** — e.g., P01's exact wording/format for descriptions and examples; P02's structure/level of detail per route section.
+4. **Remaining work and next concrete step** — what's left to reach "review," including any files still to touch within `owned_paths`.
+5. **Blockers or deviations from the plan** — anything that forced a departure from the Steps as written (e.g., commander API quirks in P01, ambiguous error shapes in P02), plus worktree/branch state (is it committed, pushed, still in the worktree).

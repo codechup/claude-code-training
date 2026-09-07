@@ -1,0 +1,257 @@
+---
+title: 'Assigning model and effort hints by work type'
+description: 'A plan can carry advice about which model and how much reasoning its work deserves. Learn what model_hint and effort_hint mean, how to assign them by work type, and why a hint that is a gate stops being useful.'
+level: 4
+module: 'm18-multi-session'
+order: 4
+duration_min: 10
+difficulty: core
+tags: ['multi-session', 'plans', 'models', 'effort', 'this-repo']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Model configuration'
+    url: 'https://code.claude.com/docs/en/model-config.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Subagents'
+    url: 'https://code.claude.com/docs/en/sub-agents.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'plans/README.md §9 — model and effort hints (this repository)'
+    url: 'https://github.com/codechup/claude-code-training/blob/main/plans/README.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Explain what `model_hint` and `effort_hint` are for, and why they are advice to the claiming session rather than a gate on it.
+- Map a piece of work to a hint pair using the kind of judgement it needs, not its size.
+- Recognise the moment a hint is wrong — you are inventing a decision — and escalate instead of guessing.
+- Connect a plan's hint to the mechanisms that actually set a model or effort level: `--model`, `/effort`, `modelSettings`, and a subagent's `model` and `effort` frontmatter.
+
+**Prerequisites.** Lessons 01–03 of this module, and Level 2's models-and-effort module, which covers the model family and the effort levels themselves.
+
+<WhenNotToUse>
+  Do not put hints on a plan set where every plan is the same kind of work — six identical
+  translation plans do not need six copies of the same advice, and a field that always reads the
+  same trains people to ignore it. Do not use hints as a budget control: they are per-plan advice,
+  while spend is governed by usage limits and the choices a session actually makes. And do not
+  enforce them. The moment a hint becomes a rule, a session that needs to escalate has to break the
+  rule to do the right thing, which is a worse failure than a plan being worked on a stronger model
+  than someone predicted.
+</WhenNotToUse>
+
+## Concept
+
+### Two fields, one purpose
+
+`model_hint` and `effort_hint` sit in a plan's frontmatter alongside `estimate`. They exist because the session that _writes_ a plan usually knows more about the shape of the work than the session that _claims_ it, and that knowledge would otherwise be lost:
+
+<CodeBlock title="Hint fields in a plan's frontmatter">
+
+```yaml
+model_hint: opus # haiku | sonnet | opus | fable
+effort_hint: high # low | medium | high | xhigh | max
+estimate: L # S (≤0.5 day) | M (≤1 day) | L (≤2 days)
+```
+
+</CodeBlock>
+
+They are printed next to every claimable plan, so choosing what to work on and choosing what to work on it _with_ is one decision rather than two:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/04-model-effort-hints/01-next-hints.txt"
+  range="2-9"
+/>
+
+### Assign by the judgement required
+
+The useful axis is not how long the work takes but how much judgement it needs — specifically, how likely the session is to face a decision the plan does not already make for it.
+
+| Hint                     | Meaning                                                                 | Typical work                                                           |
+| ------------------------ | ----------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `haiku` / `low`          | Mechanical and fully specified: the answer is already written somewhere | Sources sweeps, fixtures, glue code, docs kept in sync                 |
+| `sonnet` / `medium`      | Normal feature work with tests                                          | Infrastructure, CI wiring, deploy scripts, translation, UI components  |
+| `opus` / `high`          | Judgement-heavy content and interface work                              | Lesson authoring, MDX components, interaction design                   |
+| `fable` / `xhigh`, `max` | Architecture and system-level design judgement                          | A design canvas, a curriculum map, cross-cutting composition decisions |
+
+The official effort guidance lines up with the right-hand column: `low` is for "short, scoped, latency-sensitive tasks that are not intelligence-sensitive"; `medium` for "cost-sensitive work that can trade off some intelligence"; `high` "balances token usage and intelligence" and is the default on most models; `xhigh` buys "deeper reasoning at higher token spend"; and of `max` the docs say it "can improve performance on demanding tasks but may show diminishing returns and is prone to overthinking. Test before adopting broadly."
+
+That last warning is the one people ignore. `max` on mechanical work is not merely wasteful — it is worse, because a model given room to reason about a task with nothing to reason about will find something.
+
+A healthy plan set therefore has a lopsided distribution, weighted towards the middle:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/04-model-effort-hints/02-hint-distribution.txt"
+  range="2-9"
+/>
+
+Twenty-four `opus` and nineteen `sonnet` plans across the set, with `fable` reserved for three and `haiku` for two. If your distribution is flat, the hints are decorative.
+
+Here is the worked example prompt for this lesson — a question worth asking about your own plan set:
+
+```text
+Read every plan file's frontmatter and group the plans by model_hint and
+effort_hint. Which plans carry a hint that does not match the kind of work
+their Goal describes?
+```
+
+### A hint is not a gate
+
+Nothing checks that the claiming session honours the hint, and that is the design. From the plan contract: "The hint is advice to the claiming session, not a gate: if you find yourself inventing a decision, escalate."
+
+That sentence names the trigger precisely. Not "if the work feels hard" — **if you find yourself inventing a decision**. A plan that forces a guess about product, curriculum or architecture is a plan whose hint was too low, or whose Context was too thin. The response is to write the question into `open_questions` and the Handoff notes, take the most conservative reading, and if the whole plan is mis-hinted, say so, so the next session does not repeat the discovery.
+
+### Where the hint actually lands
+
+The plan file records intent; something else has to act on it. In practice:
+
+- **Starting the session.** `claude --model opus` picks the model; the alias resolves to the latest model of that family. Effort comes from `--effort`, from `/effort` in the session (with no argument it opens a slider), from the slider inside `/model`, or from `CLAUDE_CODE_EFFORT_LEVEL`.
+- **Per model, persistently.** `modelSettings` in your settings file sets an `effortLevel` per model, so each model keeps its own level.
+- **Per subagent.** A subagent's frontmatter takes `model` (`sonnet`, `opus`, `haiku`, `fable`, a full model id, or `inherit`) and `effort` (`low` … `max`, overriding the session level). `CLAUDE_CODE_SUBAGENT_MODEL` sets a default for subagents that are not assigned a model another way; per-invocation models and the definition's own `model` field take precedence over it.
+
+So a plan hinted `opus`/`high` typically becomes one session started on Opus at high effort, which may still delegate its mechanical sub-tasks to a `haiku` subagent. The hint describes the plan's hardest decision, not every action taken while executing it.
+
+<Callout>
+  Hints age. When a plan sits in `todo` for a month while the project's conventions solidify around
+  it, work that once needed judgement may have become mechanical — the earlier plans wrote down the
+  answers. Re-read the hint against the plan's Context before you trust it.
+</Callout>
+
+## Hands-on lab
+
+This lesson has no lab-repository tag: the material is a plan set, and the one to read is this site's own.
+
+<Lab
+  title="Lab · audit a plan set's hints"
+  lessonId="en/l4-master/m18-multi-session/model-effort-hints"
+  repoTag="none"
+  steps={[
+    "In a throwaway clone of this site's repository, list the claimable plans with their hints: `node tools/plan/cli.ts next`.",
+    'Count the distribution across the whole set: `grep -h "^model_hint:\\|^effort_hint:" plans/P*.md | sort | uniq -c | sort -rn`.',
+    "Pick the one plan hinted `fable` and one hinted `haiku`, and read each one's `Goal` and `Non-goals / pitfalls`. Ask what kind of decision the first has to make that the second does not.",
+    'Pick any plan hinted `opus`/`high` and read its `Context` section. Would a `sonnet`/`medium` session have enough to work from, or would it have to invent something?',
+    "Write one sentence for each of the four hint pairs describing the kind of judgement it stands for, in your own words. If you cannot, the plan set's hints are not carrying information.",
+  ]}
+  expected="`next` prints each claimable plan with its model hint, effort hint and estimate; the distribution across the whole plan set is weighted towards opus/high and sonnet/medium, with fable and haiku used only a handful of times each."
+  checklist={[
+    'You can read a hint pair off the `next` output without opening a plan file',
+    'The distribution is lopsided, not flat',
+    'You found a concrete decision the `fable` plan has to make and the `haiku` plan does not',
+    'You can state the escalation trigger in one sentence: you are inventing a decision',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/04-model-effort-hints/01-next-hints.txt"
+    range="2-9"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/04-model-effort-hints/02-hint-distribution.txt"
+    range="2-9"
+  />
+</Lab>
+
+## Anti-patterns
+
+**Hinting by size.** A two-day plan of mechanical edits does not need a stronger model than a one-hour architectural decision. _Fix:_ hint on judgement; `estimate` already carries size.
+
+**`max` everywhere.** The docs warn it is "prone to overthinking", and it is the most expensive way to get a worse answer on a simple task. _Fix:_ reserve the top of the scale for work you have tested it on.
+
+**Treating the hint as permission.** A session that refuses to escalate because "the plan says sonnet" will guess instead — and an invented decision is far more expensive than a stronger model. _Fix:_ escalate the moment you are inventing a decision, and record why in Handoff notes.
+
+**Silent escalation.** Quietly working an `opus` plan on `fable` and saying nothing leaves the next session with a hint that mis-describes the work. _Fix:_ note the mismatch in the Handoff notes so the hint can be corrected.
+
+**A flat distribution.** If every plan says `sonnet`/`medium`, nobody consulted the field when writing it. _Fix:_ either assign it deliberately or drop it; a field nobody reads is worse than no field.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/model-effort-hints"
+  questionId="q1"
+  lang="en"
+  prompt="What is the documented trigger for escalating above a plan's model_hint?"
+  options={[
+    {
+      text: 'The plan is estimated at `L`.',
+      explanation: "Size is `estimate`'s job and says nothing about the judgement required.",
+    },
+    {
+      text: 'You find yourself inventing a decision the plan does not make for you.',
+      correct: true,
+      explanation:
+        "That is the exact wording of the rule, and it is also the signal that the plan's Context or hint was too thin.",
+    },
+    {
+      text: 'The work involves more than three files.',
+      explanation: 'File count is not a proxy for difficulty.',
+    },
+    {
+      text: 'The previous session escalated.',
+      explanation:
+        'A previous escalation is worth reading about in the Handoff notes, but it is not itself the trigger.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/model-effort-hints"
+  questionId="q2"
+  lang="en"
+  prompt="Which plan best fits a `haiku` / `low` hint?"
+  options={[
+    {
+      text: "Designing the project's visual language and deriving design tokens from it.",
+      explanation: 'System-level design judgement — the top of the scale, not the bottom.',
+    },
+    {
+      text: 'Re-fetching every cited URL and refreshing its verification date in a registry file.',
+      correct: true,
+      explanation:
+        'Mechanical and fully specified: "short, scoped, latency-sensitive tasks that are not intelligence-sensitive".',
+    },
+    {
+      text: 'Writing a lesson that has to decide what to teach and what to leave out.',
+      explanation: 'Judgement-heavy authoring work — `opus` / `high` territory.',
+    },
+    {
+      text: 'Deciding how two modules should divide a topic between them.',
+      explanation: 'A curriculum decision: the strongest hint on the scale.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m18-multi-session/model-effort-hints"
+  questionId="q3"
+  lang="en"
+  prompt="Which mechanism actually sets the model for a subagent when its definition names one?"
+  options={[
+    {
+      text: "The plan file's `model_hint`.",
+      explanation: 'That is advice recorded in a repository file. Nothing reads it at runtime.',
+    },
+    {
+      text: "The subagent's `model` frontmatter field — after any per-invocation `model` parameter, and ahead of `CLAUDE_CODE_SUBAGENT_MODEL` and the main conversation's model.",
+      correct: true,
+      explanation: "That is the documented resolution order for a subagent's model.",
+    },
+    {
+      text: '`modelSettings` in the settings file.',
+      explanation:
+        '`modelSettings` configures effort level per model; it does not choose which model a subagent runs on.',
+    },
+    {
+      text: 'The `estimate` field.',
+      explanation: 'A size hint, with no runtime effect at all.',
+    },
+  ]}
+/>
+
+**Next:** `05-handoff-notes` covers the tenth section of the plan file — the one a session writes for whoever comes after it.

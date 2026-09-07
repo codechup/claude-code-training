@@ -1,0 +1,22 @@
+# 2026-09-07 · Claude Code 2.1.263 · lab repo codechup/claude-code-lab
+# $ git checkout lesson/m18-02-start && ls plans STATE.md
+ls: cannot access 'plans': No such file or directory
+ls: cannot access 'STATE.md': No such file or directory
+# $ git checkout lesson/m18-02-solution && ls plans STATE.md
+STATE.md
+
+plans:
+P01-cli-usability.md
+P02-api-error-docs.md
+# $ sed -n "/^## Claimable now/,/^## In progress/p" STATE.md
+## Claimable now
+
+| Plan  | Title                                     | Owned paths                                |
+| ----- | ----------------------------------------- | ------------------------------------------ |
+| `P01` | CLI usability - help text and --version   | `src/cli.ts`, `test/cli-usability.test.ts` |
+| `P02` | API docs - pagination and error responses | `docs/API.md`                              |
+
+`P01` and `P02` have disjoint `owned_paths` — both are safe to claim and work in parallel
+worktrees at once (see m18-03-owned-paths-worktrees).
+
+## In progress
