@@ -16,7 +16,11 @@ shared_paths:
   - content/_shared/sources.json
 estimate: L
 updated_at: 2026-09-07T10:22:19Z
-open_questions: []
+open_questions:
+  - "research/deprecations.md (owned by P03) has no row for `includeCoAuthoredBy` -> `attribution`, for `/simplify` becoming a cleanup-only review at v2.1.147, or for `/review` becoming a true alias of `/code-review` at v2.1.223. All three are live in the official docs and are used in m08-git lessons 01 and 04; the inventory owner should add them."
+  - "The settings reference marks `includeCoAuthoredBy` deprecated but does not name the release that deprecated it, so lesson 01's Changed callout states the deprecation without a version."
+  - "https://code.claude.com/docs/en/simplify.md returns 404 although commands.md links /docs/en/simplify, and the page is absent from llms.txt. /simplify is therefore sourced from commands.md and code-review.md only."
+  - "The lab repo (P22) has no lesson/m08-05-* tag pair; CURRICULUM does not mark lesson 05 as a Lab, so it ships with repo_tag: none and a Lab block the reader runs against a repository they own."
 ---
 
 ## Goal
@@ -97,5 +101,56 @@ A reviewer opens `npm run dev`, visits each of the 4 lessons at `/en/l2-intermed
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+**Scope delta from this plan (Step 1).** `docs/CURRICULUM.md` section 2 is authoritative and lists **five**
+lessons for `m08-git`, not the four in this plan's Deliverables, and with different slugs. The
+shipped set follows the curriculum: `01-commits-and-conventions`, `02-worktrees-branches`,
+`03-pull-requests`, `04-code-review-commands`, `05-github-app`. The plan's slugs
+(`01-git-workflows-with-claude`, `02-worktrees-and-branch`, `03-gh-prs-and-conventional-commits`)
+were not used.
 
+**What was written.** Five EN lessons under `content/en/l2-intermediate/m08-git/`, five `draft: true`
+TR stubs at the mirrored paths (EN frontmatter carried over, Turkish title/description plus a
+one-paragraph `## Özet`), and ten transcripts under `content/_shared/transcripts/m08-git/`.
+`content/_shared/sources.json` gained one new entry (`repo-claude-code-training`) and `"m08-git"`
+appended to seven existing entries' `modules` arrays — append-only, no reordering. Both module
+`index.mdx` files had their numbered lesson lists removed per the lead's mid-plan correction (the
+module page renders that list from the collection, so keeping one in the MDX duplicated it).
+
+**Labs (D099).** Every lab was run in a throwaway clone of `codechup/claude-code-lab`; nothing was
+pushed to it. Lesson 01 captures Claude writing a Conventional Commits message for a real staged
+diff and then committing it, showing the real
+`Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` trailer. Lesson 02 captures
+`git worktree list` before and after a Claude-driven `git worktree add`. Lesson 03 captures Claude
+drafting a `gh pr create` command (no PR opened on the lab repo) plus a real
+`gh pr create --dry-run` and `gh pr create --help` from this repository. Lesson 04 captures
+`/code-review low` (no findings) and `/code-review high` (two findings) on the identical one-line
+diff, plus `/security-review`, plus the `npm test` runs behind every test count a lesson quotes.
+Lesson 05 has no recording: `/install-github-app` is an interactive TUI flow against a real GitHub
+repository, so it is prose plus exact commands inside a `<Lab repoTag="none">` block.
+
+**Recording language.** The capture machine's global Claude Code preferences ask for Turkish
+answers, so several captures reply in Turkish. The transcripts are verbatim and the lessons say why
+— the same standing-preferences effect the m01 reference lesson documents.
+`--append-system-prompt "Always write your final answer in English."` did not override it.
+
+**Drift found against the docs.** See `open_questions`: three missing `research/deprecations.md`
+rows, an undocumented deprecation version for `includeCoAuthoredBy`, and a 404 on
+`/docs/en/simplify.md`.
+
+**Review pipeline (D071).** `fact-checker` and `reviewer` both ran read-only over the five EN
+lessons, the TR twins and the transcripts. fact-checker: 2 contradicted claims, both fixed — the
+claimed `/refactor` alias for `/simplify` (removed from prose and from a quiz answer) and lesson
+02's isolation table omitting the docs' PowerShell carve-out (added). Four "unverifiable" items were
+`npm test` counts with no recording; all four are now backed by real captures. The rest were
+external-source fetch failures inside the agent's own session (`cli.github.com`, two `github.com`
+URLs) — the `gh` claims are now backed by a captured `gh pr create --help`. reviewer: 0 blockers, 5
+majors, 6 minors; every major fixed — a labelled example prompt added to lessons 02, 04 and 05
+(D027), lesson 03's lab moved onto its own `lesson/m08-03-start` tag, lesson 05's lab wrapped in
+`<Lab>` with steps/expected/checklist, these Handoff notes filled, and lesson 01's Changed callout
+reworded to stop implying a version the docs do not give. Minors fixed: full commands recorded in
+two transcript headers, a note on the `git log` format shown in lesson 01's recording, the
+`gh --help` attribution now backed by a capture, and the over-broad quiz explanation about
+`--allowedTools`.
+
+**Not done here.** The TR translation (P25/P26/P40/P41 own those files), and the
+`research/deprecations.md` rows listed in `open_questions` (P03 owns that file).

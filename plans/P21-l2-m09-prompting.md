@@ -16,7 +16,9 @@ shared_paths:
   - content/_shared/sources.json
 estimate: L
 updated_at: 2026-09-07T10:22:19Z
-open_questions: []
+open_questions:
+  - "m09-prompting has no lab-repo tags in codechup/claude-code-lab; these five labs run against main. A follow-up plan should add lesson/m09-01-start..05 (and -solution) and update the lessons repo_tag."
+  - "research/feature-inventory.md does not record --fork-session (cli-reference.md documents it) and has no prompt-library composition row; both are outside this plan owned_paths."
 ---
 
 ## Goal
@@ -98,5 +100,37 @@ A reviewer opens `npm run dev`, visits each of the 5 lessons at `/en/l2-intermed
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+**Written.** 5 EN lessons under `content/en/l2-intermediate/m09-prompting/` and their 5 `draft: true` TR stubs (TR title/description translated, one-paragraph Turkish summary, frontmatter mirrored). The module `index.mdx` (EN + TR) had its numbered lesson list removed per the lead's mid-plan instruction: the module page renders that list from the collection, so a list in the MDX duplicates it.
 
+**Slug drift (CURRICULUM wins).** This plan's Deliverables named `02-evidence-and-constraints` and `04-prompt-library-patterns`; `docs/CURRICULUM.md` section 2 names `02-constraints-and-evidence` and `04-prompt-library`. The curriculum slugs were used everywhere (EN, TR, transcript folders, lessonIds).
+
+**Transcript path drift.** This plan said `transcripts/m09-prompting/NN-<slug>.md`; the content brief, `.claude/rules/content.md` section 5 and the m01 reference lesson all use `transcripts/<module>/<NN-slug>/<kk>-<name>.txt`. The brief's shape was followed.
+
+**Labs (D093, D099).** `git tag -l 'lesson/m09*'` in `codechup/claude-code-lab` returns nothing: P22 tagged m01-m08 only. Every lesson therefore carries `lab.repo_tag: 'none'` and every lab was run in a throwaway clone of `main` (`npm ci`, `npm test` green at 15 passed) rather than at a tag. 12 transcripts captured, all real `claude -p --model sonnet --output-format json` runs on 2026-09-07 against Claude Code 2.1.263. Each file's header records the exact command; line 4 is the `-p` argument verbatim; the rest is the raw stdout JSON pretty-printed with `jq .` (no field added, removed or reworded). Lessons render line ranges of those files.
+
+**Controlled comparison.** Each lesson's lab is a weak/strong prompt pair with everything else held constant (same model, `--max-turns`, output format, tool allowlist, permission mode, and a working tree reset between runs). Lesson 03's two follow-ups are `--resume <id> --fork-session` forks of one first pass, each run against a tree reset to a snapshot commit of that first pass.
+
+**Environment override, disclosed in every transcript header.** The capture machine has `"language": "Turkish"` in its user settings, which made the very first capture answer in Turkish. Every published capture was re-run with `--settings` pointing at a file containing only `{"language": "English"}`; nothing else was overridden, and each transcript header states this.
+
+**Observed but not documented.** The `-p` JSON envelope reports `"subtype": "error_max_turns"`, `"is_error": true`, an `errors` array and no `result` key when `--max-turns` is exhausted. `headless.md` documents the output formats and exit codes but does not name that subtype; the lessons present it as observed from the captured envelopes, not as documented behaviour. Also observed: `num_turns` can exceed the `--max-turns` value by one.
+
+**Anti-patterns sourcing (D080).** Lesson 05 lists ten: nine traced to `best-practices.md` (kitchen sink, repeated correction, over-specified CLAUDE.md, trust-then-verify, infinite exploration, no verification criteria, symptom-not-root-cause, chasing every reviewer finding) and `how-claude-code-works.md` (dictate vs delegate); the tenth ("the unanswerable question") is explicitly labelled as this site's own observation, evidenced by lessons 01 and 03's captures.
+
+**Sources registry.** No new entries were needed. `docs-best-practices` and `docs-prompt-library` already listed `m09-prompting`; `m09-prompting` was appended to the `modules` array of `docs-how-claude-code-works`, `docs-common-workflows`, `docs-permission-modes` and `docs-headless` (a 4-line diff, no reordering or reformatting).
+
+**No Changed callout.** `research/deprecations.md` has no prompting-related item, so no `variant="changed"` callout was added (D044).
+
+**Verification.** typecheck 0 errors; lint clean; gate OK (86 files); vitest 22 files / 183 tests passed; build ends with `check-no-inline-script (dist): OK (77 files scanned)` and `dist/en/l2-intermediate/m09-prompting/` holds the 5 lesson pages plus `index.html`; `check-raw-colors` and `check-public-hygiene` OK; `tools/plan/cli.ts check` OK. Playwright ran on a temporary `playwright.p21.config.ts` (port 4421) with a temporary spec covering both module indexes and all five EN lesson routes at 390 px and 1280 px, alongside `e2e/a11y.spec.ts`: 28 passed, 0 axe serious/critical. Both temporary files were deleted afterwards. The TR lesson twins are `draft: true`, so they are not built and are deliberately not visited by the spec.
+
+**Redaction of two transcripts (disclosed).** After capture, `01-task-decomposition/01-weak.txt` and `05-anti-patterns/01-weak.txt` were found to contain the absolute scratch path `C:\Users\<name>\AppData\Local\Temp\...\lab` inside `permission_denials[].tool_input.command`. Per `.claude/rules/content.md` section 5 those two substrings were replaced with `<redacted-scratch-dir>` (4 occurrences across the two files) and a sentence disclosing the redaction was appended to each file's header comment. Nothing else in either file was altered and line counts are unchanged. `scripts/check-public-hygiene.mjs` has no pattern for Windows user paths, so it did not catch this: worth adding `C:\Users\<name>\` / `AppData\Local\Temp` to the hygiene patterns in a follow-up (that file is outside this plan's owned paths).
+
+**Transcript anomaly, left unedited.** `03-iterative-refinement/02-weak-refinement.txt` records a `claude-fable-5-1` entry in `modelUsage` alongside the `claude-sonnet-5` one, and an `advisor_message` iteration in `usage.iterations`, which is why that run's `total_cost_usd` is ~9x its siblings'. The run was made with `--model sonnet` like every other capture; the extra model is this machine's advisor tool, which is available to `-p` sessions here. The envelope is left exactly as captured (D070, D093); no lesson quotes those fields.
+
+**Review pipeline (D071).** fact-checker: 64 CONFIRMED, 1 WRONG, 1 UNVERIFIABLE. The WRONG item (`04-prompt-library.mdx`, the ranking of the library's source pages) was fixed with the real counts (workflows 23, teams article 13, best-practices 10). The UNVERIFIABLE item (the "15 tests before" baseline in lesson 02 was asserted, not captured) was resolved by removing the specific number from the lesson and telling the reader to run `npm test` first and compare. reviewer: 1 blocker, 0 major, 3 minor. The blocker was the unredacted path above (the redaction had been made in the working tree but not yet staged when the reviewer ran; it is staged now). Minor items fixed: the "six turns"/"seven turns" wording in lesson 05 now explains that `num_turns` runs one ahead of the `--max-turns` ceiling, and this plan's frontmatter `open_questions` now mirrors the prose list. The reviewer's remaining minor point — that "52 prompts", `Ctrl+G`, the `Esc Esc` rewind menu and the "8 consecutive blocks" figure are finer-grained than `research/feature-inventory.md` records — was passed to the fact-checker, which confirmed all four against their cited pages.
+
+**Inventory drift for P03.** `research/feature-inventory.md`'s Headless and Sessions rows do not list the `--fork-session` flag, which is documented in `cli-reference.md` and which lesson 03 relies on; and the inventory has no row describing the prompt library's composition. Both are outside this plan's owned paths; recorded here for the inventory's owner.
+
+**Open questions**
+
+- `m09-prompting` has no lab-repo tags. A follow-up plan should add `lesson/m09-01-start` through `lesson/m09-05-start` (and the `-solution` twins) to `codechup/claude-code-lab` so these labs can pin a state instead of relying on `main`; the lessons' `repo_tag` and the callout explaining the absence would then be updated. This plan does not own the lab repo.
+- Lesson 03's `02-weak-refinement.txt` mentions a `tmp first pass` commit authored `lab@example.com`. That is this session's snapshot commit, made so both forks start from identical state. It is left in the recording unedited (D070, D093) and explained in the lesson prose.
