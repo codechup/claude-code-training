@@ -64,7 +64,7 @@ gh variable set DEPLOY_ENABLED --body true      # 2026-09-07, after PR #16's CI 
 gh variable list → DEPLOY_ENABLED  true
 ```
 
-Static-host gate (vhost live, on-box `/healthz` → 200): **not met at release time** — the host-side vhost change is prepared and green in its own private repository but cannot be merged until the owner (a) creates the origin certificate for `cc.codechup.com` and stores it as that repository's secrets, (b) enables that repository's deploy switch, and (c) adds the DNS record for `cc`. Until then `deploy.yml`'s rsync step succeeds and the edge smoke step fails by design.
+Static-host gate (vhost live, on-box `/healthz` → 200): **met on 2026-09-07 ~00:20 UTC.** The owner had already added the proxied DNS record for `cc`; the lead session created the origin certificate for `cc.codechup.com` (CSR generated locally, private key never entered in a browser; certificate issued in the Cloudflare dashboard via Claude in Chrome), stored the pair as the host-side repository's secrets, and merged the host-side vhost change, whose deploy ran green. SSL mode Full (strict) was already in effect for the host (the earlier 526 proved strict validation).
 
 ```
 deploy.yml run 34064306489 (push of the P12 squash-merge to main, 2026-09-06 22:34 UTC)
@@ -88,6 +88,34 @@ D071 pipeline run on 2026-09-07 via `claude -p` delegating to the repo's own age
 - `reviewer` on EN+TR+transcripts: template order, evidence rule, schema, hygiene all clean; findings applied — TR first-use glossary links + glossary seeded (12 terms), P12 owned_paths corrected to the real file names, Anthropic Academy course added to the sources of both lessons, heading wording aligned with CURRICULUM §3. The per-language transcript choice (TR embeds the Turkish-language capture of the same step) is documented in the transcripts README and kept.
 ```
 
+## 7b. Live verification (2026-09-07)
+
+Origin, through the low-privilege deploy path (`curl --resolve`): `/healthz` → 200; `/` → `302 Location: https://cc.codechup.com/en/` with `Cache-Control: private, no-store` and `Vary: Accept-Language, Cookie`.
+
+Edge, through Cloudflare (`bash scripts/smoke/edge.sh https://cc.codechup.com`):
+
+```
+PASS: English home (/en/ -> 200) · Turkish home (/tr/ -> 200) · Design system page (/design/ -> 200)
+PASS: Sitemap index · English RSS feed · Pagefind entry · Unknown path (/nope/ -> 404)
+PASS: Default language redirect (/ -> 302 /en/) · Accept-Language redirect (-> /tr/) · Cookie overrides Accept-Language (-> /en/)
+PASS: CSP (giscus.app + wasm-unsafe-eval) · HSTS · X-Content-Type-Options: nosniff
+PASS: Cache-Control on /_astro/*.css contains immutable
+== summary: 14 passed, 0 failed, 0 skipped ==
+```
+
+Lesson routes live in both languages: `/en/l1-beginner/m01-start/what-claude-code-is/` and `/tr/…` → 200. `deploy.yml` run 34070728909 (`workflow_dispatch`) recorded below.
+
+```
+deploy.yml run 34070728909 (workflow_dispatch, 2026-09-07) → success
+  gate: success
+  ci / quality: success
+  ci / links: skipped
+  ci / lighthouse: success
+  ci / e2e: success
+  deploy: success
+  deploy steps: Phase 1 rsync ✓ · Phase 2 rsync ✓ · Edge smoke test ✓ (14 passed, 0 failed)
+```
+
 ## 8. Status
 
-P12 → `blocked` with reason: "static host vhost not live (owner gate: origin cert secrets, host deploy switch, DNS record)". Everything else in the acceptance criteria is met and recorded above. When the gate is met: re-run `deploy.yml` (push or `workflow_dispatch`), run `bash scripts/smoke/edge.sh https://cc.codechup.com`, paste both here, set P12 `done`.
+P12 → `done` on 2026-09-07: every acceptance criterion is met and recorded above; **https://cc.codechup.com is live** in both languages with the M0 sample lesson.

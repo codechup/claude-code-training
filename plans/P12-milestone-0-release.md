@@ -2,7 +2,7 @@
 id: P12
 title: Milestone M0 release
 milestone: M0
-status: blocked
+status: done
 owner: fable-lead-2026-09-07
 branch: plan/12-milestone-0-release
 model_hint: sonnet
@@ -18,7 +18,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: M
-updated_at: 2026-09-06T22:35:46Z
+updated_at: 2026-09-07T00:45:14Z
 open_questions:
   - "P13: the M0 sample lesson's hands-on lab is a self-contained exercise (claude --version, claude doctor, a headless first session on a two-line file) with `repoTag: none` because codechup/claude-code-lab (P22) does not exist yet — reconcile with the real lab repo and tags when P22 lands."
   - "P42: the lesson's Changed callout (MultiEdit → Edit) needs its playbook/06-changed-since-2025 entry once that page exists."
@@ -82,6 +82,8 @@ The real `01-what-is-claude-code-and-how-it-works.mdx` in both languages, its tr
 A reviewer opens the live (or, if the owner gate is not yet met, the CI-built preview of the) sample lesson in both languages, reads the pasted axe/LHCI evidence, confirms `DEPLOY_ENABLED` is set via `gh variable list`, and — if the owner gate is met — visits `https://cc.codechup.com/en/` directly.
 
 ## Handoff notes
+
+- **2026-09-07 — gate met, site live.** DNS record was already present (owner); origin certificate created via Claude in Chrome with a locally generated CSR; host-side vhost change merged and deployed green; origin + edge smoke all pass (docs/release/M0-release.md §7b). P12 done.
 
 - **2026-09-07 (lead session, with an Opus authoring sub-session):** real bilingual lesson `01-what-claude-code-is` (slug per CURRICULUM, superseding the plan text's longer name) replaces the placeholder pair; 5 real transcripts under `content/_shared/transcripts/m01-start/01-what-claude-code-is/` (captured on 2026-09-06/07, Claude Code 2.1.263); `content/_shared/sources.json` seeded; TR glossary seeded with 12 terms and linked from the TR lesson.
 - **Integration wiring done here (release scope):** lesson page uses `<Sources>`, `<Helpful>`, `<Giscus>` and passes a components map to `<Content>`; Header mounts `<Search>`; Base emits og:image/twitter meta; `/design/` shows P07's gallery and P08's five components; `src/env.d.ts`; vitest collects `.claude/**/*.test.mjs`; remaining e2e fixmes un-skipped (OSTabs, full curriculum); `Lab` gained a `repoTag="none"` mode (no lab repo yet — see open_questions).
