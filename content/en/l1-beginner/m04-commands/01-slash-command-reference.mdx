@@ -1,0 +1,428 @@
+---
+title: 'The built-in slash command reference'
+description: 'Every slash command Claude Code ships with, grouped by the moment in a session you reach for it, plus the full alphabetical table with a one-line meaning for each — and how the / menu decides what to show you.'
+level: 1
+module: 'm04-commands'
+order: 1
+duration_min: 20
+difficulty: core
+tags: ['commands', 'reference', 'slash-commands']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Commands'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Interactive mode'
+    url: 'https://code.claude.com/docs/en/interactive-mode.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Output styles'
+    url: 'https://code.claude.com/docs/en/output-styles.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say what a slash command is, where it is recognised in a message, and what happens to the text after the command name.
+- Reach for the right command at the right moment: first session in a repo, mid-task, running work in parallel, before you ship, between sessions, and when something is wrong.
+- Read the full built-in command table and find a command by what you want to do rather than by its name.
+- Tell a **built-in** command from a bundled **Skill** and a bundled **Workflow**, and say why the distinction matters.
+- Explain why a command you read about might not appear in your own `/` menu, and how to find the hidden ones.
+
+**Prerequisites.** A working Claude Code install you can start a session with (`m01-start`), and enough of `m02-interact` to know what a permission mode and a context window are. Nothing in this lesson edits code.
+
+<WhenNotToUse>
+  Slash commands are for controlling Claude Code, not for doing your work. Do not reach for one when
+  a plain sentence would do — asking "review the changes in src/payments and tell me what looks
+  wrong" is usually better than hunting for a command that almost fits. Do not memorise this table:
+  it is a reference you come back to, and `/help` plus typing `/` and a few letters finds a command
+  faster than recall does. And do not treat it as a stable API — commands are added, renamed and
+  removed between versions, so a script that depends on one is more fragile than the equivalent CLI
+  flag, which the next lesson covers.
+</WhenNotToUse>
+
+## Concept
+
+### What a slash command is
+
+A command controls Claude Code from inside a session: switch models, manage permissions, clear context, run a workflow. Type `/` to see the commands available to you, or type `/` followed by letters to filter the list.
+
+Two rules about where a command may appear:
+
+- **A command is only recognised at the start of your message.** Text that follows the command name becomes its arguments.
+- **Skills are the exception.** As of v2.1.199, a skill invocation followed by more skills — `/skill-a /skill-b do XYZ` — loads every skill named at the start and passes the trailing text to each as arguments. Up to six skills can be chained.
+
+If you send a command while Claude is responding, Claude Code queues it and runs it after the current turn finishes. Some commands run immediately without interrupting the response — `/status`, `/tasks` and `/usage` among them. In fullscreen rendering, dialog commands such as `/theme` and `/help` also open immediately; before v2.1.234 those dialogs waited for the turn to end.
+
+### Three kinds of entry in the table
+
+Most entries are **built-in** commands whose behaviour is coded into the CLI. Two kinds are marked differently, and the difference is real:
+
+| Kind         | What it is                                                                             | Consequence                                                                    |
+| ------------ | -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Built-in     | Behaviour coded into the CLI                                                           | Deterministic; does the same thing every time                                  |
+| **Skill**    | A bundled skill — a prompt handed to Claude, exactly like the skills you write         | Claude interprets it; you can write your own the same way                      |
+| **Workflow** | A bundled dynamic workflow that fans work out across many subagents, in the background | Long-running; you watch it with `/workflows` rather than waiting at the prompt |
+
+Two of them are invoke-only: `/verify` runs only when you invoke it (before v2.1.215 Claude could also run it on its own), and `/deep-research` likewise (before v2.1.218 Claude could start it on its own).
+
+### The commands you actually reach for, by moment
+
+The full table below is a lookup. This is the part worth reading once, because it maps a moment in your day to a command.
+
+**First session in a repo.** Run `/init` to generate a starter `CLAUDE.md`, then `/memory` to refine it. Use `/mcp` to set up any servers the project needs, ask Claude to create any subagents you want, and run `/permissions` to set your approval rules.
+
+**During a task.** `/plan` switches into plan mode before a large change. `/model` and `/effort` adjust which model you are using and how much reasoning it applies. When the conversation gets long, `/context` shows what is filling the window and `/compact` summarises it to free space. Use `/btw` for a side question that should not add to the conversation history.
+
+**Run work in parallel.** `/tasks` lists the current session's background work, including subagents that have finished. `/background` detaches the whole session to keep running as a background agent and frees your terminal. For a large change that spans the codebase, `/batch` decomposes it into independent units and runs each in its own worktree.
+
+**Before you ship.** `/diff` shows what changed. `/code-review` checks the current diff for correctness bugs and cleanups and can apply the findings with `--fix`; pass a PR number, such as `/code-review high 1234`, to review a pull request instead. `/review` is an alias. `/code-review ultra` runs a multi-agent review in the cloud. `/security-review` checks the diff for security vulnerabilities.
+
+**Between sessions.** `/clear` starts fresh on a new task while keeping project memory. `/resume` returns to an earlier conversation, `/branch` branches the current one to try a different direction, and `/fork` copies it into a new background session. `/teleport` pulls a web session into this terminal, and `/remote-control` lets you continue this local session from another device.
+
+**When something is wrong.** `/rewind` rolls code and conversation back to a checkpoint, or summarises part of the conversation. `/doctor` runs a setup checkup that diagnoses installation and configuration issues and can fix them, `/debug` diagnoses runtime issues, and `/feedback` reports a bug with session context attached.
+
+Here is this lesson's example prompt — the shape that makes the difference between reaching for a command and just asking:
+
+```text
+Before I open this PR: show me what changed, then check the diff for
+correctness bugs. Do not fix anything yet — list what you find.
+```
+
+That is `/diff` followed by `/code-review`, and saying it in one sentence is often faster than typing both.
+
+### The full built-in command table
+
+Every command Claude Code ships with, in the order the official reference lists them. `<arg>` is a required argument, `[arg]` an optional one. Meanings are condensed to one line from the reference — open the source link for the full behaviour, version requirements and platform caveats.
+
+| Command                                 | What it does                                                                                                            |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `/add-dir <path>`                       | Add a working directory for file access during the current session                                                      |
+| `/advisor [model\|off]`                 | Enable or disable the advisor tool, which consults a second model at key moments                                        |
+| `/agents`                               | Prints a reminder to ask Claude to create or manage subagents, or to edit the agent directories directly                |
+| `/artifacts`                            | List artifacts you own or that are shared with you, then attach, open or copy a link to one                             |
+| `/auto-mode-setup`                      | Draft `autoMode.environment` entries from your project and recent sessions, then save them to user settings             |
+| `/autocompact [auto\|<tokens>]`         | Set how full the context window gets before Claude Code compacts automatically                                          |
+| `/autofix-pr [prompt]`                  | Spawn a web session that watches the current branch's PR and pushes fixes when CI fails or reviewers comment            |
+| `/background [prompt]`                  | Detach the session to run as a background agent and free this terminal. Alias: `/bg`                                    |
+| `/batch <instruction>`                  | **Skill.** Decompose a large change into 5–30 independent units and run each in its own worktree                        |
+| `/branch [name]`                        | Branch the conversation at this point and switch into the branch, preserving the original                               |
+| `/btw [question]`                       | Ask a side question about the session without adding to the conversation history                                        |
+| `/bug [report]`                         | Report a bug or share your conversation, with a consent screen. Alias: `/share`                                         |
+| `/cd <path>`                            | Move this session to a new working directory, keeping the conversation                                                  |
+| `/chrome`                               | Configure Claude in Chrome settings                                                                                     |
+| `/claude-api [subcommand]`              | **Skill.** Load Claude API and Managed Agents reference material for your project's language                            |
+| `/clear [name]`                         | Start a new conversation with empty context. Aliases: `/reset`, `/new`                                                  |
+| `/code-review [level] [flags] [target]` | **Skill.** Review the current diff, a PR, a branch or a path for bugs and cleanups. Alias: `/review`                    |
+| `/color [color\|default]`               | Set the prompt bar colour for the current session                                                                       |
+| `/compact [instructions]`               | Free up context by summarising the conversation so far                                                                  |
+| `/config [key=value ...]`               | Open the Settings interface, or set a setting directly. Alias: `/settings`                                              |
+| `/context [all]`                        | Visualise current context usage as a coloured grid, with optimisation suggestions                                       |
+| `/copy [N]`                             | Copy the last assistant response — or the Nth-latest — to the clipboard                                                 |
+| `/cost`                                 | Alias for `/usage`                                                                                                      |
+| `/dataviz [request]`                    | **Skill.** Design guidance for charts, graphs and dashboards                                                            |
+| `/debug [description]`                  | **Skill.** Enable debug logging for this session and troubleshoot from the debug log                                    |
+| `/deep-research <question>`             | **Workflow.** Fan out web searches, cross-check sources and synthesise a cited report                                   |
+| `/design [brief]`                       | **Skill.** Draft UI mockups, screen flows, landing pages or posters as artboards on one canvas                          |
+| `/design-login`                         | Authorise design-system access for `/design-sync` with your claude.ai account                                           |
+| `/design-sync [hint]`                   | **Skill.** Convert your repo's React design system and upload it to Claude Design                                       |
+| `/desktop`                              | Continue the current session in the Claude Code Desktop app. Alias: `/app`                                              |
+| `/diff`                                 | Review the changes in your working tree, including the edits Claude has made                                            |
+| `/doctor`                               | **Skill.** Run a setup checkup that diagnoses installation and configuration issues and can fix them. Alias: `/checkup` |
+| `/effort [level\|auto\|status]`         | Set the effort level — `low` to `xhigh`, `max`, `ultracode`, or `auto`; `status` prints it                              |
+| `/exit`                                 | Exit the CLI. Alias: `/quit`                                                                                            |
+| `/export [filename]`                    | Export the current conversation as plain text                                                                           |
+| `/fast [on\|off]`                       | Toggle fast mode on or off                                                                                              |
+| `/feedback [report]`                    | Send product feedback about Claude Code                                                                                 |
+| `/fewer-permission-prompts`             | **Skill.** Scan transcripts for common read-only calls and add a prioritised allowlist to project settings              |
+| `/focus`                                | Toggle the focus view: last prompt, a one-line tool summary, and the final response. Fullscreen only                    |
+| `/fork [prompt]`                        | Copy the conversation into a new background session and keep working here                                               |
+| `/goal [condition\|clear]`              | Set a goal Claude keeps working toward across turns until the condition is met                                          |
+| `/heapdump`                             | Write a heap snapshot and memory breakdown for diagnosing high memory use. Hidden from the menu                         |
+| `/help`                                 | Show help and available commands                                                                                        |
+| `/hooks`                                | View hook configurations for tool events                                                                                |
+| `/ide`                                  | Manage IDE integrations and show status                                                                                 |
+| `/import [codex\|gemini]`               | Bring configuration from OpenAI Codex or Google Gemini CLI into Claude Code                                             |
+| `/init`                                 | Initialise the project with a `CLAUDE.md` guide                                                                         |
+| `/insights`                             | Generate an HTML report analysing your recent sessions on this machine                                                  |
+| `/install-github-app`                   | Install the Claude GitHub App for a repository, optionally with GitHub Actions workflows                                |
+| `/install-slack-app`                    | Install the Claude Slack app                                                                                            |
+| `/keybindings`                          | Open your keyboard shortcuts file                                                                                       |
+| `/list-agents`                          | List the subagents, teammates and other sessions Claude can message. Also `/peers`                                      |
+| `/login`                                | Sign in to your Anthropic account                                                                                       |
+| `/logout`                               | Sign out from your Anthropic account                                                                                    |
+| `/loop [interval] [prompt]`             | **Skill.** Run a prompt repeatedly while the session stays open. Alias: `/proactive`                                    |
+| `/mcp [subcommand]`                     | Manage MCP server connections and OAuth authentication                                                                  |
+| `/memory`                               | Edit `CLAUDE.md` files, enable or disable auto memory, and view auto memory entries                                     |
+| `/mobile`                               | Show a QR code to download the Claude mobile app. Aliases: `/ios`, `/android`                                           |
+| `/model [model]`                        | Switch the model and save it as your default for new sessions                                                           |
+| `/passes`                               | Share a free week of Claude Code with friends, if your account is eligible                                              |
+| `/permissions`                          | Manage allow, ask and deny rules for tool permissions. Alias: `/allowed-tools`                                          |
+| `/plan [description]`                   | Enter plan mode directly from the prompt, optionally with a task to start on                                            |
+| `/plugin [subcommand]`                  | Manage plugins — open the menu, or pass `list`, `install`, `enable` or `disable`                                        |
+| `/powerup`                              | Discover Claude Code features through quick interactive lessons with animated demos                                     |
+| `/privacy-settings`                     | View and update your privacy settings. Pro and Max subscribers only                                                     |
+| `/radio`                                | Open Claude FM lo-fi radio in your browser                                                                              |
+| `/rate-limit-options`                   | Show ways to keep working when a usage limit blocks a request. Hidden from the menu                                     |
+| `/recap`                                | Generate a one-line summary of the current session on demand                                                            |
+| `/release-notes`                        | View the changelog in an interactive version picker                                                                     |
+| `/reload-plugins [--force]`             | Reload all active plugins to apply pending changes without restarting                                                   |
+| `/reload-skills`                        | Re-scan skill and command directories so changes on disk become available without restarting                            |
+| `/remote-control`                       | Make this session available for Remote Control from claude.ai. Alias: `/rc`                                             |
+| `/remote-env`                           | Choose the default environment for cloud agents                                                                         |
+| `/rename [name]`                        | Rename the current session and show the name on the prompt bar                                                          |
+| `/resume [session]`                     | Resume a conversation by ID or name, or open the session picker. Alias: `/continue`                                     |
+| `/review [level] [flags] [target]`      | Alias of `/code-review`, taking the same effort levels and flags                                                        |
+| `/rewind`                               | Rewind conversation and/or code to a previous point. Aliases: `/checkpoint`, `/undo`                                    |
+| `/run`                                  | **Skill.** Launch and drive your project's app to see a change working, not only passing tests                          |
+| `/run-skill-generator`                  | **Skill.** Write a per-project skill that teaches `/run` and `/verify` how to build and drive your app                  |
+| `/sandbox`                              | Toggle sandbox mode, on supported platforms                                                                             |
+| `/schedule [description]`               | Create, update, list or run routines, which execute in the cloud. Alias: `/routines`                                    |
+| `/scroll-speed`                         | Adjust mouse wheel scroll speed interactively. Fullscreen only                                                          |
+| `/security-review`                      | Analyse the changes on your current branch for security vulnerabilities                                                 |
+| `/setup-bedrock`                        | Configure Amazon Bedrock authentication, region and model pins. Hidden until `CLAUDE_CODE_USE_BEDROCK=1`                |
+| `/setup-vertex`                         | Configure Google Cloud's Agent Platform authentication and pins. Hidden until `CLAUDE_CODE_USE_VERTEX=1`                |
+| `/simplify [target]`                    | **Skill.** Review changed code for reuse, simplification and efficiency, and apply the fixes. Not a bug hunt            |
+| `/skill-doctor`                         | Show what each skill costs in context and how often it is used                                                          |
+| `/skills`                               | List available skills, filter them, and cycle a skill's visibility                                                      |
+| `/stats`                                | Alias for `/usage`, opening on the Stats tab                                                                            |
+| `/status`                               | Open Settings on the Status tab: version, model, account and connectivity                                               |
+| `/statusline`                           | Configure the status line — describe what you want, or run it bare to auto-configure from your shell prompt             |
+| `/stickers`                             | Order Claude Code stickers                                                                                              |
+| `/stop`                                 | Stop the current background session. Only available while attached to one                                               |
+| `/subtask <task>`                       | Spawn a forked subagent that inherits the conversation and reports back into it                                         |
+| `/tasks`                                | View and manage background work in the current session. Also `/bashes`                                                  |
+| `/team-onboarding`                      | Generate a team onboarding guide from your Claude Code usage history                                                    |
+| `/teleport`                             | Pull a Claude Code on the web session into this terminal. Also `/tp`                                                    |
+| `/terminal-setup`                       | Install a Shift+Enter keybinding for newlines, or the equivalent fix for your terminal                                  |
+| `/theme`                                | Change the colour theme, including auto, daltonized, ANSI and custom themes                                             |
+| `/tui [default\|fullscreen]`            | Set the terminal UI renderer and relaunch into it with your conversation intact                                         |
+| `/ultrareview [PR or branch]`           | Run a deep, multi-agent code review in a cloud sandbox. `/code-review ultra` is now preferred                           |
+| `/upgrade`                              | Open the upgrade page in your browser to switch to a higher plan tier                                                   |
+| `/usage`                                | Show session cost, plan usage limits and activity stats. `/cost` and `/stats` are aliases                               |
+| `/usage-credits`                        | Configure usage credits, or request them from your admin, when you hit a limit                                          |
+| `/verify`                               | **Skill.** Confirm a change does what it should by building and running the app and observing the result                |
+| `/voice [hold\|tap\|off]`               | Toggle voice dictation, or enable it in a specific mode                                                                 |
+| `/web-setup`                            | Connect your GitHub account to Claude Code on the web using your local `gh` credentials                                 |
+| `/workflow-authoring`                   | **Skill.** Load the reference for writing dynamic workflow scripts                                                      |
+| `/workflows`                            | Open the workflow progress view to watch, pause, resume or save workflows                                               |
+
+### Why your `/` menu is shorter than this table
+
+Not every command appears for every user. Availability depends on your platform, plan and environment: `/desktop` only shows on macOS and x64 Windows when signed in with a Claude subscription, and `/upgrade` does not show on Enterprise plans. Four behaviours are worth knowing:
+
+- **Highlighting.** Claude Code highlights the top suggestion only when the letters after the `/` match a command's name or alias, from the start of the name or from a word within it, ignoring `:`, `_` and `-`. Typing `/adddir` highlights `/add-dir`; typing `/new` highlights `/clear` through its alias. `Enter` runs the highlighted suggestion.
+- **After a typo.** Nothing is highlighted. Close matches stay listed and you can pick one with `Tab` or the arrow keys, but `Enter` submits your text as typed and reports `Unknown command`.
+- **Commands not available to you.** They are left out of the menu entirely. When nothing matches, you get `No commands match "/name"`.
+- **Hidden commands.** A few available commands — `/heapdump`, `/rate-limit-options`, `/setup-bedrock`, `/setup-vertex` — are kept out of the menu by design. A partial name never brings one into the menu; type the full name and it runs.
+
+MCP servers can also expose prompts that appear as commands, so a project with servers configured will show entries this table does not list.
+
+## Hands-on lab
+
+This lesson has no lab-repo exercise: every command here acts on a live interactive session, and a session's `/` menu is a TUI surface that cannot be captured headlessly without inventing output. Do the following in your own terminal instead, in any directory you do not mind Claude reading.
+
+<Lab
+  title="Lab · read your own command menu"
+  lessonId="en/l1-beginner/m04-commands/slash-command-reference"
+  repoTag="none"
+  steps={[
+    'Start a session with `claude`, then type a single `/` and read the menu. Note roughly how many entries you see and which of the ones in the table above are missing — those are the commands your plan, platform or environment does not offer.',
+    'Type `/adddir` (no hyphen) and confirm `/add-dir` is highlighted. Press `Esc` rather than `Enter`.',
+    'Type `/new` and confirm it highlights `/clear` — the alias match. Press `Esc`.',
+    'Type `/heapdum` and confirm nothing matches. Then type the full `/heapdump` and confirm it appears — that is the hidden-command rule, not a bug — and press `Esc`. Do not press `Enter`: submitting it writes a heap snapshot containing your full conversation and credentials to your Desktop.',
+    'Run `/help` and compare its list with the table above. Then run `/status` and note that it opens immediately, even mid-turn.',
+    'Run `/context` to see what is filling the window, then `/usage` to see what the session has cost so far.',
+  ]}
+  expected="Your / menu is a subset of the table above; /adddir highlights /add-dir and /new highlights /clear; /heapdum matches nothing while /heapdump does; /help, /status, /context and /usage all open without erroring."
+  checklist={[
+    'The `/` menu opened and filtered as you typed',
+    'A hyphen-less prefix still highlighted the hyphenated command',
+    'An alias (`/new`) highlighted its real command (`/clear`)',
+    'A hidden command appeared only at its full name',
+    'You can name at least three commands in the table your install does not offer',
+  ]}
+/>
+
+Every step above is an interactive dialog. There is deliberately no transcript here: the honest way to show a TUI menu is to have you open it, not to paste a recording of one that Claude Code never printed in this form.
+
+## Anti-patterns
+
+**Typing a command mid-sentence.** `please /compact this` does nothing — a command is only recognised at the start of a message. _Fix:_ send the command on its own, then the sentence.
+
+**Assuming a queued command ran immediately.** Send `/model opus` while Claude is mid-answer and, for most commands, it waits for the turn to finish. _Fix:_ if the change matters for the current turn, stop the turn with `Esc` first; check `/status` to confirm what is actually in effect.
+
+**Scripting around a slash command.** Commands live inside an interactive session and change between versions. _Fix:_ for anything scripted, use the CLI flags in the next lesson — `claude -p`, `--model`, `--permission-mode` — which are the stable surface.
+
+**Reading a bundled Skill as a built-in.** `/code-review`, `/simplify` and `/doctor` are prompts handed to Claude, not fixed procedures. Their output varies with the model and the diff. _Fix:_ treat their findings as a review to read, not a verdict to trust; and remember you can write your own skills the same way.
+
+**Guessing at a command's arguments.** Most commands do something sensible with no argument — `/model` opens a picker, `/resume` opens the session picker, `/statusline` auto-configures. _Fix:_ run it bare first and read what it offers.
+
+**Confusing `/fork`, `/branch` and `/subtask`.** They all copy a conversation, and they differ in where you end up. _Fix:_ `/branch` switches you into the copy; `/fork` runs the copy as a separate background session while you stay here; `/subtask` hands work to a subagent whose result comes back into this conversation. Lesson 03 covers the first two properly.
+
+<Callout variant="changed">
+  Four commands 2025-era tutorials still show are gone. `/pr-comments` was removed in v2.1.91 — ask
+  Claude to view pull request comments instead. `/vim` was removed in v2.1.92 — toggle editing modes
+  from `/config` → Editor mode. `/ultraplan` was removed — use plan mode. And the standalone
+  `/output-style` command was deprecated in v2.1.73 and removed in v2.1.91 — pick a style in
+  `/config` or set the `outputStyle` setting directly.
+</Callout>
+
+<Callout variant="changed">
+  `/btw` no longer needs a question. Run it bare and the overlay reopens on your most recent side
+  question; press `Left` to step back through earlier answers and `Right` to return toward the
+  current one, and `x` to clear the list. Before v2.1.212 a bare `/btw` printed a usage message
+  instead, and the `Left`/`Right` navigation requires v2.1.187 or later.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/slash-command-reference"
+  questionId="q1"
+  lang="en"
+  prompt="Where in a message is a slash command recognised?"
+  options={[
+    {
+      text: 'Only at the start of the message; anything after the name becomes its arguments.',
+      correct: true,
+      explanation:
+        'Right. Bundled skills are the one exception: several chained at the start each receive the trailing text.',
+    },
+    {
+      text: 'Anywhere in the message, as long as it is on its own line.',
+      explanation: 'A command mid-message is just text — nothing runs.',
+    },
+    {
+      text: 'Only in the first message of a session.',
+      explanation: 'Commands work at any point in a conversation.',
+    },
+    {
+      text: 'Anywhere, but only when Claude is idle.',
+      explanation:
+        'Position matters, not idleness — a command sent mid-turn is usually queued and then runs.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/slash-command-reference"
+  questionId="q2"
+  lang="en"
+  prompt="You read about a command in the reference, but typing it in your session reports Unknown command. What is the most likely explanation?"
+  options={[
+    {
+      text: 'Your install is corrupt and needs `claude doctor`.',
+      explanation:
+        'Possible but unlikely — availability differs by platform, plan and environment by design.',
+    },
+    {
+      text: 'The command is not available to you on your platform, plan or environment, so it is left out of the menu.',
+      correct: true,
+      explanation:
+        'Exactly — `/desktop` needs macOS or x64 Windows with a subscription, `/upgrade` is hidden on Enterprise, and so on.',
+    },
+    {
+      text: 'Commands only work in fullscreen rendering.',
+      explanation: 'Fullscreen changes when some dialogs open, not which commands exist.',
+    },
+    {
+      text: 'You need to run `/reload-skills` first.',
+      explanation: 'That re-scans your own skill directories, not the built-in command set.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/slash-command-reference"
+  questionId="q3"
+  lang="en"
+  prompt="What is the difference between a command marked Skill and a plain built-in command?"
+  options={[
+    {
+      text: 'A Skill runs in the cloud; a built-in runs locally.',
+      explanation: 'That describes a Workflow or `/code-review ultra`, and only partly.',
+    },
+    {
+      text: 'A Skill is a prompt handed to Claude — the same mechanism you use for your own skills; a built-in is behaviour coded into the CLI.',
+      correct: true,
+      explanation:
+        'Right, and that is why a Skill’s output varies with the model and the input while a built-in does not.',
+    },
+    {
+      text: 'A Skill cannot take arguments.',
+      explanation: 'Skills take arguments, and several chained at the start each receive them.',
+    },
+    {
+      text: 'Skills are deprecated and will be removed.',
+      explanation: 'Skills are the supported way to add your own commands.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/slash-command-reference"
+  questionId="q4"
+  lang="en"
+  prompt="You want to try a different approach without losing the conversation you are on, and you want to keep working in the new direction yourself. Which command?"
+  options={[
+    {
+      text: '`/fork`',
+      explanation:
+        'That copies the conversation into a separate background session and leaves you where you are.',
+    },
+    {
+      text: '`/branch`',
+      correct: true,
+      explanation:
+        'Branch copies the conversation at this point and switches you into the copy, preserving the original.',
+    },
+    {
+      text: '`/subtask`',
+      explanation:
+        'That hands a side task to a subagent whose result returns into this conversation.',
+    },
+    {
+      text: '`/clear`',
+      explanation: 'That starts an empty conversation — the history is not carried over.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/slash-command-reference"
+  questionId="q5"
+  lang="en"
+  prompt="Typing `/heapdum` shows no matches. What does that tell you?"
+  options={[
+    {
+      text: 'The command does not exist on your install.',
+      explanation: 'It does exist — it is simply kept out of the menu.',
+    },
+    {
+      text: 'Nothing: a partial name never brings a hidden command into the menu, and `/heapdump` typed in full still runs.',
+      correct: true,
+      explanation:
+        'Right. `/heapdump`, `/rate-limit-options`, `/setup-bedrock` and `/setup-vertex` are hidden by design.',
+    },
+    {
+      text: 'You made a typo, so Enter would report Unknown command.',
+      explanation:
+        'That is the typo rule, which applies to visible commands; here the command is hidden, not mistyped.',
+    },
+    {
+      text: 'You need to enable it in `/config` first.',
+      explanation: 'Hidden commands need no enabling — only the full name.',
+    },
+  ]}
+/>
+
+**Next:** `02-cli-flags` moves outside the session — the flags that decide how `claude` starts, and the headless `-p` mode you can script against.

@@ -1,0 +1,36 @@
+---
+title: 'Oturumlar: resume, continue, branch ve fork'
+description: 'Oturum (session), bir proje dizinine bağlı kaydedilmiş bir konuşmadır. Oturumları adlandırın, seçicide bulun, ID veya adla sürdürün; ikinci bir yönü denemek isteyince ilkini kaybetmeden branch veya fork edin.'
+level: 1
+module: 'm04-commands'
+order: 3
+duration_min: 15
+difficulty: core
+tags: ['commands', 'sessions', 'resume', 'branch']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Manage sessions'
+    url: 'https://code.claude.com/docs/en/sessions.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'CLI reference'
+    url: 'https://code.claude.com/docs/en/cli-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Commands'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'claude-code-lab (lesson tag `lesson/m04-03-start`)'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m04-03-start'
+---
+
+> **Not:** Bu sayfanın tam Türkçe çevirisi henüz yapılmadı. `draft: true` kaldığı sürece sayfa gezinmede görünmez. Çeviri, `.claude/rules/i18n.md` kurallarına göre `content/en/l1-beginner/m04-commands/03-sessions.mdx` dosyasından üretilecek (D016, D018). Aşağıda dersin Türkçe özeti var.
+
+Bu ders oturum (session) yönetimini anlatır: bir proje dizinine bağlı, `~/.claude/projects/<proje>/<oturum-id>.jsonl` altında JSONL olarak saklanan ve varsayılan olarak 30 gün tutulan kaydedilmiş konuşma. Bir konuşmaya geri dönmenin dört yolunu (`claude --continue`, `claude --resume <id>`, `claude --resume <ad>`, oturum içinden `/resume`) ve her birinin neyi atladığını gösterir — özellikle `-p` ile oluşturulan oturumların seçicide ve `--continue` içinde görünmemesi, ama `claude -p --continue` içinde görünmesi. Sürdürülen bir oturumun neyi geri getirdiğini (konuşma geçmişi, model, agent, hedef) ve neyi getirmediğini (`--mcp-config`, `--settings`, `--add-dir` gibi başlatma yapılandırması) ayırır; izin modunun (permission mode) `bypassPermissions` durumundan asla geri yüklenmediğini vurgular. Oturum adlandırma, oturum seçicisinin klavye kısayolları ve son olarak `/branch`, `/fork` ile `--fork-session` arasındaki fark — hepsi laboratuvar deposunda gerçekten çalıştırılmış kayıtlarla: `--fork-session` yeni bir `session_id` üretir ama geçmişi korur.

@@ -1,0 +1,44 @@
+---
+title: 'Alt komutlar ve ortam değişkenleri'
+description: '`claude` komutu küçük bir ağaçtır: `mcp`, `plugin`, `auth`, `doctor`, `agents`, `project` ve daha fazlası. Ayrıca bilinmesi gereken ortam değişkenleri, nerede ayarlanacakları ve hangisinin kazandığı.'
+level: 1
+module: 'm04-commands'
+order: 5
+duration_min: 15
+difficulty: core
+tags: ['commands', 'cli', 'mcp', 'plugins', 'env-vars']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'CLI reference'
+    url: 'https://code.claude.com/docs/en/cli-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Environment variables'
+    url: 'https://code.claude.com/docs/en/env-vars.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Commands'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage sessions'
+    url: 'https://code.claude.com/docs/en/sessions.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Connect Claude Code to tools via MCP'
+    url: 'https://code.claude.com/docs/en/mcp.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Plugins reference'
+    url: 'https://code.claude.com/docs/en/plugins-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+> **Not:** Bu sayfanın tam Türkçe çevirisi henüz yapılmadı. `draft: true` kaldığı sürece sayfa gezinmede görünmez. Çeviri, `.claude/rules/i18n.md` kurallarına göre `content/en/l1-beginner/m04-commands/05-subcommands.mdx` dosyasından üretilecek (D016, D018). Aşağıda dersin Türkçe özeti var.
+
+Bu ders oturumu hiç başlatmadan çalışan `claude` alt komutlarını ele alır: kurulum ve sağlık (`install`, `update`, `doctor`), oturum açma (`auth login/logout/status`, `setup-token`), araç yapılandırma (`mcp`, `plugin`), arka plan oturumları (`agents`, `attach`, `logs`, `respawn`, `stop`, `rm`) ve yerel durum (`project purge`, `auto-mode`). `claude mcp` ile `claude plugin` alt komutlarının bu makinede gerçekten alınmış `--help` çıktıları gösterilir; `claude plugin details` ile bir plugin'in bağlam (context) maliyetini kurmadan önce görebileceğiniz vurgulanır. Önemli bir düzeltme: **`claude config` diye bir alt komut yoktur** — bunun yerine oturum içinde `/config key=value`, başlatmada `--settings` veya doğrudan ayar dosyası kullanılır. Ortam değişkenleri bölümü değişkenlerin nerede ayarlanacağını (shell, ayar dosyasının `env` bloğu) ve öncelik kurallarını anlatır: ayar dosyası shell'i yener, `--model` `ANTHROPIC_MODEL`'i geçersiz kılar ama `CLAUDE_CODE_EFFORT_LEVEL` `--effort`'u geçersiz kılar. Ayrıca yalnızca varlığa bakan (`0` bile açar) değişkenler ve feature-flag getirmeyi kapatarak Remote Control, `/import`, `/skill-doctor` ve advisor'ı da kapatan dört değişken listelenir.

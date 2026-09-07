@@ -1,0 +1,379 @@
+---
+title: 'CLI flags: how a session starts'
+description: 'The flags that decide how `claude` starts — `-p` for headless runs, `--output-format`, `--max-turns`, `--model`, `--effort`, `--permission-mode`, `--settings` and `--add-dir` — with real captured output from each.'
+level: 1
+module: 'm04-commands'
+order: 2
+duration_min: 15
+difficulty: core
+tags: ['commands', 'cli', 'flags', 'headless']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'CLI reference'
+    url: 'https://code.claude.com/docs/en/cli-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Commands'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Permission modes'
+    url: 'https://code.claude.com/docs/en/permission-modes.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'claude-code-lab (lesson tag `lesson/m04-02-start`)'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m04-02-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Start a session five different ways from the shell — bare, with a prompt, headless, continuing, resuming — and say which one a script should use.
+- Read the `claude -p --output-format json` envelope and pull the fields that matter: `session_id`, `num_turns`, `duration_ms`, `total_cost_usd`, `subtype`, `is_error`.
+- Bound a headless run with `--max-turns` and recognise the exact result when it hits the ceiling.
+- Choose a model and effort level at launch with `--model` and `--effort`, and know what each one overrides.
+- Start in a specific permission mode with `--permission-mode`, and give a run extra directories with `--add-dir` and per-session settings with `--settings`.
+
+**Prerequisites.** Lesson 01 of this module, and `m02-interact` lesson 03 for what a permission mode is. You need the lab repository cloned and checked out at `lesson/m04-02-start`.
+
+<WhenNotToUse>
+  Flags configure a launch, not a workflow. Do not use them to hold state you actually want kept:
+  `--model` and `--effort` do not persist, `--settings` applies to one session, and directories
+  added with `--add-dir` are not restored when you resume. Anything you want on every run belongs in
+  a settings file instead. And do not reach for `-p` when you want a conversation — headless mode
+  gives you one answer and exits, so a task where you would steer, correct or approve halfway
+  through is worse off without the interactive prompt.
+</WhenNotToUse>
+
+## Concept
+
+### The five ways to start
+
+| Command                         | What it does                                                   |
+| ------------------------------- | -------------------------------------------------------------- |
+| `claude`                        | Start an interactive session                                   |
+| `claude "query"`                | Start an interactive session with an initial prompt            |
+| `claude -p "query"`             | Query headlessly, print the answer, exit                       |
+| `claude -c`                     | Continue the most recent conversation in the current directory |
+| `claude -r "<session>" "query"` | Resume a session by ID or name                                 |
+
+`-p` is short for `--print`, `-c` for `--continue` and `-r` for `--resume`. You can also pipe into headless mode: `cat logs.txt | claude -p "explain"`.
+
+One thing worth knowing before you go looking: **`claude --help` does not list every flag**, so a flag's absence from `--help` does not mean it is unavailable. The CLI reference is the complete list.
+
+### Headless mode and its envelope
+
+`claude -p` is the entry point everything scripted goes through. On its own it prints prose. With `--output-format`, it prints something a program can read:
+
+| Value         | What you get                                                |
+| ------------- | ----------------------------------------------------------- |
+| `text`        | Just the answer (the default)                               |
+| `json`        | One JSON object with the answer plus metadata about the run |
+| `stream-json` | A stream of JSON events as the run proceeds                 |
+
+Here is a real run in the lab repo, asking a question that requires reading a file:
+
+<CodeBlock title="text output">
+
+```bash
+claude -p "In one sentence, what does the paginate() function in src/store.ts do?" \
+  --model sonnet --max-turns 3 --output-format text \
+  --allowedTools "Read" "Grep" "Glob"
+```
+
+</CodeBlock>
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/02-cli-flags/01-output-format-text.txt"
+  range="2-2"
+/>
+
+That recording answers in Turkish, and it is not a mistake in the recording. The machine that produced it has global Claude Code preferences asking for Turkish answers, and headless runs load your standing preferences and memory files exactly like interactive ones do. It is the same lesson `m01-start` opened with: a `-p` run is not a blank slate.
+
+Now the same question with `--output-format json`, piped through `jq` to pick the interesting fields. This run uses `--model haiku`, so the recording below comes from a different model than the one above:
+
+<CodeBlock title="json output">
+
+```bash
+claude -p "In one sentence, what does the paginate() function in src/store.ts do?"   --model haiku --max-turns 3 --output-format json   --allowedTools "Read" "Grep" "Glob"   | jq '{type, subtype, is_error, num_turns, duration_ms, duration_api_ms, total_cost_usd, session_id, stop_reason, result}'
+```
+
+</CodeBlock>
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/02-cli-flags/02-output-format-json.txt"
+  range="2-13"
+/>
+
+Seven fields to know:
+
+- **`session_id`** — the handle you pass to `--resume` to continue this conversation. Lesson 03 uses it.
+- **`num_turns`** — how many agentic turns the run took.
+- **`duration_ms`** and **`duration_api_ms`** — wall clock, and how much of it was spent waiting on the API.
+- **`total_cost_usd`** — what the run cost.
+- **`subtype`** and **`is_error`** — whether it finished, and how. `"success"` and `false` here.
+
+### Bounding a run with `--max-turns`
+
+`--max-turns` limits the number of agentic turns and is print-mode only. There is no limit by default, and the run **exits with an error** when the limit is reached — it does not quietly return a partial answer. Here is the same lab repo asked for something that genuinely needs several turns, capped at one:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/02-cli-flags/03-max-turns.txt"
+  range="2-8"
+/>
+
+`subtype` is `error_max_turns`, `is_error` is `true`, and `result` is `null`. A script that reads only `.result` and does not check `.is_error` will silently treat a truncated run as an answer. Check `is_error` first.
+
+Its sibling for scripted work is `--max-budget-usd`, which stops the run once spend reaches a dollar cap. Spend from subagents counts toward it.
+
+### Choosing a model and an effort level
+
+`--model` sets the model for the current session, taking a model alias — `sonnet`, `opus`, `haiku`, `fable` — or a full model name. It overrides both the `model` setting and the `ANTHROPIC_MODEL` environment variable.
+
+`--effort` sets the effort level: `low`, `medium`, `high`, `xhigh`, `max`, or `ultracode`. Available levels depend on the model. It overrides the `modelSettings` and `effortLevel` settings for this session, **and does not persist** — the next session is back to your configured default. Which model and which effort to pick is a level 2 topic (`m05-models-effort`); at this point the useful habit is simply knowing you can pin them per run.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+claude -p "Summarise src/store.ts in three bullets." --model haiku --effort low
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+claude -p "Summarise src/store.ts in three bullets." --model haiku --effort low
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+claude -p "Summarise src/store.ts in three bullets." --model haiku --effort low
+```
+
+  </Fragment>
+</OSTabs>
+
+### Starting in a permission mode
+
+`--permission-mode` begins the session in a named mode: `default`, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions`, or `manual` as an alias for `default`. It overrides `defaultMode` from your settings files.
+
+The one that surprises people in headless mode is `plan`. Plan mode's whole purpose is to produce a plan for a human to approve, and a bare `claude -p` run has nobody to approve it. Here is what actually happens:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/02-cli-flags/04-permission-mode-plan.txt"
+  range="2-3"
+/>
+
+The run burned its four turns and exited with `Reached max turns (4)`, and `git status --short` printed nothing at all — the working tree is untouched. That is the observable guarantee worth taking away: nothing was written.
+
+The mechanism is in the permission-modes reference. Plan mode blocks edits until you approve the plan, and a non-interactive `-p` run without a `--permission-prompt-tool` **has no prompt to fall back to** — so there is nothing that can approve anything. If you want plan mode headlessly, that flag is what gives the run an approver.
+
+Two related flags you will see in scripts: `--allowedTools` names tools that execute without prompting (used in every capture above to keep the runs read-only), and `--dangerously-skip-permissions` is equivalent to `--permission-mode bypassPermissions`. Treat the second one the way its name asks you to.
+
+### Reaching outside the working directory, and overriding settings
+
+`--add-dir` adds extra working directories Claude may read and edit. It grants **file access, not configuration**: most `.claude/` configuration is not discovered from an added directory, and the flag validates that each path exists as a directory. To keep directories across sessions, set `permissions.additionalDirectories` in settings instead.
+
+`--settings` takes a path to a settings JSON file, or an inline JSON string. Values there override the same keys in your `settings.json` files for this session only; keys you omit keep their file-based values. The file must be a regular file no larger than 2 MiB.
+
+<CodeBlock title="one-off configuration for a single run">
+
+```bash
+claude -p "Check for type errors" \
+  --add-dir ../shared-lib \
+  --settings '{"outputStyle":"Concise"}' \
+  --max-turns 6 --output-format json
+```
+
+</CodeBlock>
+
+Here is this lesson's example prompt, shaped for a headless run — a goal, a boundary, and a checkable result:
+
+```text
+Run the test suite and, if anything fails, tell me which test and why.
+Do not change any files.
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · drive a headless run and read its envelope"
+  lessonId="en/l1-beginner/m04-commands/cli-flags"
+  repoTag="lesson/m04-02-start"
+  steps={[
+    'Clone the lab repository if you have not already, then `git checkout lesson/m04-02-start` and `npm ci`.',
+    'Ask a read-only question in text mode: `claude -p "In one sentence, what does the paginate() function in src/store.ts do?" --model sonnet --max-turns 3 --output-format text --allowedTools "Read" "Grep" "Glob"`',
+    "Run the same prompt on `--model haiku` with `--output-format json`, piped through `jq '{type, subtype, is_error, num_turns, duration_ms, duration_api_ms, total_cost_usd, session_id, stop_reason, result}'`. Write the `session_id` down — lesson 03 uses one.",
+    'Force the ceiling: ask for something that needs several turns — `claude -p "Read src/store.ts and src/cli.ts, then list every exported function in each." --model haiku --max-turns 1 --output-format json --allowedTools "Read" "Grep" "Glob"` — and read `subtype`, `is_error` and `result`.',
+    'Ask for an edit under plan mode: `claude -p "Add a comment at the very top of src/store.ts that says HELLO." --model sonnet --max-turns 4 --permission-mode plan --output-format text`, then run `git status --short`.',
+    'Confirm the working tree is clean. Nothing should have been written.',
+  ]}
+  expected="Step 2 answers from the file without being told where to look. Step 3's envelope carries a session_id, num_turns, duration_ms and total_cost_usd. Step 4 returns subtype error_max_turns with is_error true and a null result. Step 5 exits with Reached max turns and git status --short prints nothing."
+  checklist={[
+    'The text run answered from `src/store.ts` without you pasting the file',
+    'The JSON envelope gave you a `session_id` you saved',
+    '`--max-turns 1` produced `error_max_turns` and `is_error: true`, not a partial answer',
+    'The plan-mode run left `git status --short` empty',
+    'You can name one flag that persists across sessions and one that does not',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/02-cli-flags/01-output-format-text.txt"
+    range="2-2"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/02-cli-flags/02-output-format-json.txt"
+    range="2-13"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/02-cli-flags/03-max-turns.txt"
+    range="2-8"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/02-cli-flags/04-permission-mode-plan.txt"
+    range="2-3"
+  />
+</Lab>
+
+## Anti-patterns
+
+**Reading `.result` without checking `.is_error`.** A run that hit `--max-turns` returns `result: null` and `is_error: true`. A script that only reads `.result` treats that as an empty answer rather than a failure. _Fix:_ branch on `is_error` and `subtype` before you touch `result`.
+
+**Running `-p` with no ceiling on an open-ended task.** Without `--max-turns` there is no limit, and an ambiguous prompt in a large repo can loop for a long time. _Fix:_ set `--max-turns`, or `--max-budget-usd`, on anything unattended.
+
+**Expecting `--model` or `--effort` to stick.** Both apply to the session you launched and nothing else. _Fix:_ put a lasting choice in your settings file, and use the flags for the exception.
+
+**Adding a directory and expecting its configuration to load.** `--add-dir` grants file access; most `.claude/` configuration in that directory is not discovered. _Fix:_ if you need the configuration too, open a session in that directory, or point `--settings` at the file you want.
+
+**Reaching for `--dangerously-skip-permissions` to make a prompt go away.** It is `bypassPermissions` under a longer name, and it applies to the whole session. _Fix:_ name the specific tools with `--allowedTools`, which is the narrow version of the same idea.
+
+**Assuming `--help` is the full flag list.** It is not, and the CLI reference says so explicitly. _Fix:_ check the reference before concluding a flag does not exist.
+
+<Callout variant="changed">
+  `--enable-auto-mode` was removed in v2.1.111. Auto mode is in the `Shift+Tab` cycle by default
+  now; use `--permission-mode auto` to start a session in it.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/cli-flags"
+  questionId="q1"
+  lang="en"
+  prompt="A headless run finishes with subtype error_max_turns. What is in the result field?"
+  options={[
+    {
+      text: 'The partial answer Claude produced before the ceiling.',
+      explanation: 'No — the run exits with an error rather than returning what it had.',
+    },
+    {
+      text: 'null, and is_error is true.',
+      correct: true,
+      explanation: 'Exactly what the captured run shows. Check is_error before you read result.',
+    },
+    {
+      text: 'An error message string explaining the limit.',
+      explanation: 'The explanation is in subtype; result itself is null.',
+    },
+    {
+      text: 'The same value as if the run had succeeded.',
+      explanation: 'Then there would be no way for a script to tell the difference.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/cli-flags"
+  questionId="q2"
+  lang="en"
+  prompt="Which pair of flags applies only to the session you launch and is gone next time?"
+  options={[
+    {
+      text: '`--model` and `--effort`',
+      correct: true,
+      explanation:
+        'Both override settings for that session and do not persist. Put a lasting choice in a settings file.',
+    },
+    {
+      text: '`--settings` and `permissions.additionalDirectories`',
+      explanation: 'The second is a settings key, which is exactly the persistent form.',
+    },
+    {
+      text: '`--permission-mode` and `defaultMode`',
+      explanation: '`defaultMode` is the settings key that persists; the flag overrides it.',
+    },
+    {
+      text: '`--add-dir` and `--print`',
+      explanation:
+        '`--add-dir` does apply per session, but `--print` is a mode, not a preference that could persist.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/cli-flags"
+  questionId="q3"
+  lang="en"
+  prompt="You add ../shared-lib with --add-dir. What does Claude Code do with the .claude/ directory inside it?"
+  options={[
+    {
+      text: 'Loads its settings, hooks and skills alongside your project’s.',
+      explanation:
+        'That is the trap the flag is documented against — file access is not configuration discovery.',
+    },
+    {
+      text: 'Mostly ignores it: --add-dir grants file access, and most .claude/ configuration is not discovered from an added directory.',
+      correct: true,
+      explanation:
+        'Right. Open a session in that directory, or point --settings at the file, if you need the configuration.',
+    },
+    {
+      text: 'Refuses to start unless the directory has no .claude/ folder.',
+      explanation: 'It validates that the path is a directory, nothing more.',
+    },
+    {
+      text: 'Merges it into ~/.claude for future sessions.',
+      explanation: 'Nothing about --add-dir writes to your user configuration.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/cli-flags"
+  questionId="q4"
+  lang="en"
+  prompt="Why does `claude -p --permission-mode plan` usually fail to produce a plan?"
+  options={[
+    {
+      text: 'Plan mode does not exist outside interactive sessions.',
+      explanation: 'The flag accepts `plan`; the problem is what happens next.',
+    },
+    {
+      text: 'Plan mode blocks edits until a plan is approved, and a non-interactive -p run without --permission-prompt-tool has no prompt to fall back to, so nothing can approve it.',
+      correct: true,
+      explanation:
+        'Right. In the captured run it burned its turns and exited, leaving the working tree untouched.',
+    },
+    {
+      text: 'Plan mode requires --output-format stream-json.',
+      explanation: 'The output format is unrelated to approval.',
+    },
+    {
+      text: '--max-turns is incompatible with plan mode.',
+      explanation:
+        'It is compatible; the ceiling is simply what ends the run once nothing can approve the plan.',
+    },
+  ]}
+/>
+
+**Next:** `03-sessions` uses the `session_id` this lesson taught you to read — resuming, continuing, branching and forking a conversation.

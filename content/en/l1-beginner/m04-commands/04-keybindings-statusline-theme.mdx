@@ -1,0 +1,453 @@
+---
+title: 'Keybindings, status line, themes and output styles'
+description: 'Make the terminal yours: rebind keys in ~/.claude/keybindings.json, build a status line from the JSON Claude Code pipes to it, pick or write a theme, switch to the fullscreen renderer, and change how Claude writes with an output style.'
+level: 1
+module: 'm04-commands'
+order: 4
+duration_min: 15
+difficulty: core
+tags: ['commands', 'keybindings', 'statusline', 'themes', 'output-styles']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Customize keyboard shortcuts'
+    url: 'https://code.claude.com/docs/en/keybindings.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Customize your status line'
+    url: 'https://code.claude.com/docs/en/statusline.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure your terminal for Claude Code'
+    url: 'https://code.claude.com/docs/en/terminal-config.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Output styles'
+    url: 'https://code.claude.com/docs/en/output-styles.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Interactive mode'
+    url: 'https://code.claude.com/docs/en/interactive-mode.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Fullscreen rendering'
+    url: 'https://code.claude.com/docs/en/fullscreen.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Open and edit `~/.claude/keybindings.json`, read its `bindings` / `context` shape, write a chord, and unbind a key.
+- Name the shortcuts you will actually use daily, and say which six can never be rebound and why.
+- Configure a status line with `/statusline` or by hand, and read the JSON Claude Code pipes to your script on stdin.
+- Pick a theme, write a custom one in `~/.claude/themes/`, and switch to the fullscreen renderer.
+- Choose an output style, and say what an output style changes that `CLAUDE.md` does not.
+
+**Prerequisites.** Lesson 01 of this module for the commands involved (`/keybindings`, `/statusline`, `/theme`, `/tui`, `/config`), and a terminal you can edit a JSON file from.
+
+<WhenNotToUse>
+  This is the most optional lesson in the module. Nothing here makes Claude better at your code — it
+  makes the interface fit your hands. Skip the customisation entirely if you are new: the defaults
+  are good, and a rebound key you half-remember is worse than the default you never think about. Do
+  not put slow work in a status-line script — it runs on every assistant message and a slow one
+  makes the whole UI feel laggy. And do not reach for a custom output style when what you actually
+  want is for Claude to know your project's conventions; that is what `CLAUDE.md` is for.
+</WhenNotToUse>
+
+## Concept
+
+### Keyboard shortcuts
+
+Run `/keybindings` to create or open your configuration file at `~/.claude/keybindings.json`. Changes are detected and applied without restarting Claude Code.
+
+The file is a list of blocks, each scoped to a **context** — the part of the UI the binding applies in. Contexts include `Global`, `Chat`, `Autocomplete`, `Settings`, `Confirmation`, `Tabs`, `Help`, `Transcript`, `HistorySearch`, `Task`, `ThemePicker`, `Attachments`, `Footer`, `MessageSelector`, `DiffDialog`, `DiffPanel`, `ModelPicker`, `Select`, `Plugin` and `Scroll`. Actions are named `namespace:action`.
+
+<CodeBlock title="~/.claude/keybindings.json">
+
+```json
+{
+  "$schema": "https://www.schemastore.org/claude-code-keybindings.json",
+  "$docs": "https://code.claude.com/docs/en/keybindings",
+  "bindings": [
+    {
+      "context": "Chat",
+      "bindings": {
+        "ctrl+e": "chat:externalEditor",
+        "ctrl+u": null
+      }
+    }
+  ]
+}
+```
+
+</CodeBlock>
+
+A `null` value unbinds the key. Modifiers join with `+`, and the aliases are worth knowing: `ctrl`/`control`; `shift`; `alt`/`opt`/`option`/`meta` (Alt on Windows and Linux, Option on macOS); `cmd`/`command`/`super`/`win`. The `cmd` group is only detected in terminals that report the Super modifier, so use `ctrl` or `meta` for bindings you want to work everywhere. **Chords are sequences separated by spaces**: `"ctrl+k ctrl+s"` means press Ctrl+K, release, then Ctrl+S.
+
+The defaults you will meet first:
+
+| Shortcut      | Action                              | What it does                                          |
+| ------------- | ----------------------------------- | ----------------------------------------------------- |
+| `Enter`       | `chat:submit`                       | Send the message                                      |
+| `Ctrl+J`      | `chat:newline`                      | Insert a newline without submitting                   |
+| `Escape`      | `chat:cancel`                       | Cancel the current input                              |
+| `Shift+Tab`   | `chat:cycleMode`                    | Cycle permission modes                                |
+| `Ctrl+O`      | `app:toggleTranscript`              | Show the full transcript                              |
+| `Ctrl+R`      | `history:search`                    | Search your prompt history                            |
+| `Up` / `Down` | `history:previous` / `history:next` | Step through prompt history                           |
+| `Ctrl+G`      | `chat:externalEditor`               | Edit the prompt in your editor (also `Ctrl+X Ctrl+E`) |
+| `Meta+P`      | `chat:modelPicker`                  | Open the model picker                                 |
+
+Six keys are **reserved and cannot be rebound**, because the terminal itself decides what they mean: `Ctrl+C` (interrupt), `Ctrl+D` (exit — press twice within 800 ms to confirm), `Ctrl+M` (always arrives as Enter), `Ctrl+[` (always arrives as Escape), `Ctrl+I` (always arrives as Tab), and `Ctrl+H` (the ASCII backspace byte). Caps Lock is never delivered to terminal applications at all.
+
+Two platform notes. On Windows without VT mode — Node below 24.2.0 or 22.17.0, Bun below 1.2.23 — `Shift+Tab` falls back to `Meta+M`. And image paste is `Ctrl+V` everywhere except Windows and WSL, where it is `Alt+V`.
+
+Watch out for terminal multiplexers stealing your key: `Ctrl+B` is the tmux prefix, `Ctrl+A` is GNU screen's, and `Ctrl+Z` suspends the process on Unix.
+
+If a binding does nothing, Claude Code has probably rejected it. It warns on parse errors, invalid context names, unknown action names, reserved-shortcut conflicts and duplicates — and writes those warnings to the debug log, so run with `--debug` to see them.
+
+### Multiline input, which is mostly a terminal problem
+
+Two ways work in **every** terminal with no setup: `Ctrl+J`, or type `\` then press `Enter`. `Shift+Enter` is the comfortable one, and whether it works depends on your terminal:
+
+| Terminal                                                                | What to do                                    |
+| ----------------------------------------------------------------------- | --------------------------------------------- |
+| Ghostty, Kitty, iTerm2, WezTerm, Warp, Apple Terminal, Windows Terminal | Works without setup                           |
+| VS Code, Cursor, Devin Desktop, Alacritty, Zed                          | Run `/terminal-setup` once                    |
+| gnome-terminal, JetBrains IDEs such as PyCharm and Android Studio       | Not available; use `Ctrl+J` or `\` then Enter |
+
+`/terminal-setup` writes the keybinding into the terminal's own configuration file. In VS Code, Cursor and Devin Desktop it also turns off `terminal.integrated.gpuAcceleration` to prevent garbled text, and adjusts `terminal.integrated.mouseWheelScrollSensitivity` for smoother fullscreen scrolling. In Apple Terminal it enables Option as Meta and turns off the audible bell instead; in iTerm2 it enables clipboard access so `/copy` works. Run it in the host terminal, not inside tmux or screen.
+
+### The status line
+
+`/statusline` accepts natural-language instructions describing what you want displayed. Claude Code generates a script in `~/.claude/` and updates your settings for you.
+
+<CodeBlock title="configure it by describing it">
+
+```text
+/statusline show model name and context percentage with a progress bar
+```
+
+</CodeBlock>
+
+The settings it writes look like this:
+
+<CodeBlock title="settings.json">
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "~/.claude/statusline.sh",
+    "padding": 2
+  }
+}
+```
+
+</CodeBlock>
+
+`command` is a script path or an inline shell command, and it runs in a shell. `padding` adds horizontal spacing in characters and defaults to `0`. Two optional siblings: `refreshInterval` re-runs the command every N seconds (minimum `1`; leave it unset to run only on events), and `hideVimModeIndicator` suppresses the built-in `-- INSERT --` text when your script renders `vim.mode` itself.
+
+The interesting part is what your script gets. Claude Code pipes it a JSON object on **stdin** with, among others:
+
+| Field                                   | What it holds                                                       |
+| --------------------------------------- | ------------------------------------------------------------------- |
+| `model.display_name`, `model.id`        | The model in use                                                    |
+| `workspace.current_dir`, `.project_dir` | Where the session is                                                |
+| `context_window.used_percentage`        | How full the window is (input tokens only — not output)             |
+| `cost.total_cost_usd`                   | Session spend; resets to $0 when `/clear` starts a new conversation |
+| `session_id`, `session_name`, `version` | Session identity and the Claude Code version                        |
+| `effort.level`, `thinking.enabled`      | Current effort and thinking state                                   |
+| `vim.mode`, `output_style.name`         | Editor mode, active output style                                    |
+| `pr.number`, `worktree.branch`          | The PR and worktree this session is tied to                         |
+
+Several fields may be **absent** rather than null — `session_name`, `effort`, `vim`, `agent`, `pr`, `worktree`, `rate_limits` among them — so write defaults into your `jq` expressions.
+
+<CodeBlock title="~/.claude/statusline.sh">
+
+```bash
+#!/bin/bash
+input=$(cat)
+MODEL=$(echo "$input" | jq -r '.model.display_name')
+DIR=$(echo "$input" | jq -r '.workspace.current_dir')
+PCT=$(echo "$input" | jq -r '.context_window.used_percentage // 0' | cut -d. -f1)
+echo "[$MODEL] ${DIR##*/} | ${PCT}% context"
+```
+
+</CodeBlock>
+
+Every `echo` is a separate row, and ANSI colour codes work. The script runs at session start and again on each new assistant message, after `/compact`, on a permission-mode or vim-mode change, and on a `refreshInterval` tick — debounced at 300 ms, and cancelled if a new update arrives while it is still running. That is the reason to keep it fast. It runs locally and costs no API tokens.
+
+A Windows note that costs people an hour: status-line commands run through Git Bash when Git Bash is installed, and Git Bash eats unquoted backslashes, so a path like `C:\Users\you\script.mjs` arrives with its separators removed and fails silently. **Write paths with forward slashes.**
+
+To remove a status line, run `/statusline` and ask it to: `/statusline clear` works.
+
+### Themes and the renderer
+
+Run `/theme`, or use the picker in `/config`. The `auto` option detects your terminal's light or dark background, so the theme follows OS appearance changes whenever your terminal does. The list includes light and dark variants, colourblind-accessible (daltonized) themes, ANSI themes that use your terminal's own palette, and any custom themes you have written.
+
+A custom theme is a JSON file in `~/.claude/themes/`. The filename without `.json` is the theme's slug, and selecting it stores `custom:<slug>` as your preference. Three optional fields: `name`, `base` (one of `dark`, `light`, `dark-daltonized`, `light-daltonized`, `dark-ansi`, `light-ansi`; defaults to `dark`), and `overrides`.
+
+<CodeBlock title="~/.claude/themes/dracula.json">
+
+```json
+{
+  "name": "Dracula",
+  "base": "dark",
+  "overrides": {
+    "claude": "#bd93f9",
+    "error": "#ff5555",
+    "success": "#50fa7b"
+  }
+}
+```
+
+</CodeBlock>
+
+Colour values may be `#rrggbb`, `#rgb`, `rgb(r,g,b)`, `ansi256(n)` or `ansi:<name>`. Unknown tokens and invalid values are ignored, so a typo cannot break rendering. The folder is watched and reloads live — but if `~/.claude/themes/` did not exist when Claude Code started, restart once after creating your first file.
+
+For the **renderer**, run `/tui fullscreen`. Claude Code saves the `tui` setting and relaunches with your conversation intact, so future sessions start in fullscreen — the flicker-free alt-screen renderer. `/tui default` switches back to the classic renderer, and `/tui` with no argument prints which one is active. Fullscreen is what makes `/focus` and `/scroll-speed` available. In screen-reader mode fullscreen does not apply, and `/tui fullscreen` prints an explanation instead of switching.
+
+### Output styles
+
+An output style changes **how Claude responds, not what Claude knows**. It modifies the system prompt to set role, tone and output format. Reach for one when you keep re-prompting for the same voice every turn.
+
+Besides the **Default** style, four are built in:
+
+| Style           | What it does                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| **Proactive**   | Executes immediately, makes reasonable assumptions instead of pausing for routine decisions |
+| **Concise**     | Leads with the result, skips preamble, keeps responses short — while doing the same work    |
+| **Explanatory** | Adds educational "Insights" while completing tasks                                          |
+| **Learning**    | Adds `TODO(human)` markers and asks you to contribute small pieces of code yourself         |
+
+Pick one in `/config` under **Output style**, which saves your choice to `.claude/settings.local.json`, or set `outputStyle` in a settings file directly. Output style is part of the system prompt, which Claude Code reads once at session start — **changes take effect after `/clear` or a new session**, not immediately.
+
+A custom style is a Markdown file in `~/.claude/output-styles`, `.claude/output-styles`, or the managed-settings equivalent. The filename becomes the style name unless frontmatter sets `name`. The field that decides everything is `keep-coding-instructions`: leave it out (it defaults to `false`) and Claude Code's built-in software-engineering instructions are dropped, which is right for a writing assistant and wrong for anything still writing code.
+
+<CodeBlock title=".claude/output-styles/diagrams-first.md">
+
+```markdown
+---
+name: Diagrams first
+description: Lead every explanation with a diagram
+keep-coding-instructions: true
+---
+
+When explaining code, architecture, or data flow, start with a Mermaid diagram showing the
+structure, then explain in prose.
+```
+
+</CodeBlock>
+
+Output styles apply to the main conversation only — a subagent runs its own system prompt, so styles do not change how subagents respond. A fork is the exception, because it inherits the parent's full system prompt.
+
+Here is this lesson's example prompt, which is how most people should configure a status line:
+
+```text
+/statusline show the model, the git branch, and how full the context window is,
+and keep it to one line
+```
+
+## Hands-on lab
+
+Everything in this lesson is an interactive surface — a JSON file you edit, a TUI picker, a script the running session invokes. There is no lab-repo exercise and deliberately no transcript: a recording of a theme picker is not something Claude Code prints to a terminal, and inventing one would be a fabrication. Do this in your own terminal instead.
+
+<Lab
+  title="Lab · make the terminal yours"
+  lessonId="en/l1-beginner/m04-commands/keybindings-statusline-theme"
+  repoTag="none"
+  steps={[
+    'Run `/keybindings` and read the file it opens or creates at `~/.claude/keybindings.json`. Add a `Chat` block binding `ctrl+e` to `chat:externalEditor`, save, and confirm it works without restarting.',
+    'Add a chord: bind `"ctrl+k ctrl+t"` to `app:toggleTranscript` in the `Global` context. Press Ctrl+K, release, then Ctrl+T.',
+    'Deliberately break one: bind a key to `chat:doesNotExist`, save, then restart with `claude --debug` and find the warning in the debug log. Remove it afterwards.',
+    'Run `/statusline show the model, the current directory and the context percentage`. Read the script it wrote into `~/.claude/` and the `statusLine` block it added to your settings.',
+    'Test the script from the previous step by hand, without starting a session: `echo \'{"model":{"display_name":"Opus"},"workspace":{"current_dir":"/home/user/project"},"context_window":{"used_percentage":25},"session_id":"test-session-abc"}\' | <the script /statusline wrote>`',
+    'Run `/theme` and try the `auto` option. Then create `~/.claude/themes/mine.json` with a `base` and one `overrides` entry, restart once, and select it from the bottom of the `/theme` list.',
+    'Run `/tui fullscreen` and confirm the conversation relaunches intact. Then run `/focus`, which only exists in fullscreen.',
+    'Set an output style: `/config`, then Output style, then Concise. Run `/clear` and ask a question — the change only takes effect on a new conversation.',
+  ]}
+  expected="The rebound Ctrl+E opens your editor without a restart; the chord toggles the transcript; the bad action name produces a warning in the --debug log; the status line renders your fields in the session and the piped-JSON test prints the same line standalone; the custom theme appears in /theme after one restart; /tui fullscreen relaunches and /focus becomes available; the Concise style takes effect after /clear."
+  checklist={[
+    '`~/.claude/keybindings.json` exists and a rebound key works without restarting',
+    'A chord (two keystrokes separated by a space) fires',
+    'An invalid action produced a warning you found with `--debug`',
+    'Your status-line script runs standalone against piped JSON',
+    'A custom theme in `~/.claude/themes/` shows up in `/theme`',
+    'An output style change took effect only after `/clear`',
+  ]}
+/>
+
+## Anti-patterns
+
+**Rebinding `Ctrl+C` or `Ctrl+D`.** They are reserved: the terminal decides what those bytes mean before Claude Code sees them. _Fix:_ pick a key that is not on the reserved list — `Ctrl+M`, `Ctrl+[`, `Ctrl+I` and `Ctrl+H` are out too.
+
+**Assuming a silent binding is a Claude Code bug.** An unknown action name or an invalid context is rejected, and the warning goes to the debug log, not the screen. _Fix:_ start with `--debug` and read the log before rewriting the file again.
+
+**Putting a network call or a slow git command in the status line.** It runs on every assistant message; a slow script makes the whole UI feel laggy, and Claude Code cancels an in-flight one when a new update arrives. _Fix:_ keep it to local, fast reads, and use `session_id` as a cache key if you need to memoise something.
+
+**Writing a Windows path with backslashes in `statusLine.command`.** Git Bash strips them and the command fails with no visible error. _Fix:_ forward slashes, always.
+
+**Expecting an output style change to take effect mid-conversation.** It is part of the system prompt, read once at session start. _Fix:_ `/clear`, or start a new session.
+
+**Writing a custom output style without `keep-coding-instructions: true` while still coding.** You silently drop Claude Code's built-in engineering instructions — how to scope changes, write comments and verify work. _Fix:_ set it to `true` unless Claude genuinely is not doing software engineering.
+
+**Reaching for an output style to teach Claude your project.** Styles change voice, not knowledge. _Fix:_ project conventions and codebase context belong in `CLAUDE.md`.
+
+<Callout variant="changed">
+  The `keybindingFlavor` setting is ignored and no longer appears in the keybindings reference —
+  verified against `keybindings.md` for Claude Code 2.1.263. Word-editing keys are always
+  Bash-style: `Ctrl+W` deletes back to the previous whitespace, `Alt+B` and `Alt+F` move a word,
+  `Alt+D` deletes to the end of a word, and `Ctrl+Y` pastes back whatever a word or line shortcut
+  last deleted — all of them documented in `interactive-mode.md`, and all of them needing
+  Option-as-Meta on macOS.
+</Callout>
+
+<Callout variant="changed">
+  There is no `/output-style` command any more: it was deprecated in v2.1.73 and removed in v2.1.91.
+  Pick a style in `/config` under **Output style**, or set the `outputStyle` field in a settings
+  file. Likewise, the renderer is switched with `/tui fullscreen`, not a `/fullscreen` command.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/keybindings-statusline-theme"
+  questionId="q1"
+  lang="en"
+  prompt="How do you write a chord — two keystrokes in sequence — in ~/.claude/keybindings.json?"
+  options={[
+    {
+      text: 'Separate the keystrokes with a space: "ctrl+k ctrl+s".',
+      correct: true,
+      explanation:
+        'Right: press Ctrl+K, release, then Ctrl+S. A `+` joins modifiers within one keystroke.',
+    },
+    {
+      text: 'Separate them with a plus: "ctrl+k+ctrl+s".',
+      explanation: 'That reads as one keystroke with impossible modifiers.',
+    },
+    {
+      text: 'Use an array: ["ctrl+k", "ctrl+s"].',
+      explanation: 'The key is a string, not an array.',
+    },
+    {
+      text: 'Chords are not supported; bind a single key instead.',
+      explanation: 'They are supported, and several defaults use a `ctrl+x` prefix.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/keybindings-statusline-theme"
+  questionId="q2"
+  lang="en"
+  prompt="Your status-line script gets its data how?"
+  options={[
+    {
+      text: 'As command-line arguments Claude Code appends to the command.',
+      explanation: 'Nothing is appended — the data arrives on stdin.',
+    },
+    {
+      text: 'As a JSON object piped to the script on stdin, with fields such as model.display_name, workspace.current_dir and context_window.used_percentage.',
+      correct: true,
+      explanation:
+        'Right, which is why the canonical example starts with `input=$(cat)` and reads it with jq.',
+    },
+    {
+      text: 'From environment variables Claude Code sets before running it.',
+      explanation: 'It does set COLUMNS and LINES, but the session data itself comes in on stdin.',
+    },
+    {
+      text: 'By reading the session transcript file directly.',
+      explanation:
+        'The transcript path is one of the fields you receive, but you do not have to parse it.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/keybindings-statusline-theme"
+  questionId="q3"
+  lang="en"
+  prompt="You switch to the Concise output style mid-conversation and nothing changes. Why?"
+  options={[
+    {
+      text: 'Concise only applies to subagents.',
+      explanation:
+        'The opposite: styles apply to the main conversation, and subagents run their own system prompt.',
+    },
+    {
+      text: 'The output style is part of the system prompt, which is read once at session start — it takes effect after /clear or a new session.',
+      correct: true,
+      explanation: 'Exactly. Nothing is broken; the prompt has not been rebuilt yet.',
+    },
+    {
+      text: 'You have to restart the terminal, not just the session.',
+      explanation: '`/clear` is enough.',
+    },
+    {
+      text: 'Concise needs `keep-coding-instructions: true`.',
+      explanation: 'That field belongs to custom styles; Concise is built in.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/keybindings-statusline-theme"
+  questionId="q4"
+  lang="en"
+  prompt="Which of these can you NOT rebind?"
+  options={[
+    {
+      text: '`Ctrl+E`',
+      explanation: 'That is the doc’s own example of a binding you add.',
+    },
+    {
+      text: '`Ctrl+D`',
+      correct: true,
+      explanation:
+        'Reserved — it is the hardcoded exit. `Ctrl+C`, `Ctrl+M`, `Ctrl+[`, `Ctrl+I` and `Ctrl+H` are reserved too.',
+    },
+    { text: '`Meta+P`', explanation: 'That is the default model picker and can be changed.' },
+    {
+      text: '`Ctrl+O`',
+      explanation: 'That is the default transcript toggle and can be changed.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/keybindings-statusline-theme"
+  questionId="q5"
+  lang="en"
+  prompt="You write a custom output style and leave keep-coding-instructions out of the frontmatter. What happens?"
+  options={[
+    {
+      text: 'Nothing — it defaults to true.',
+      explanation: 'It defaults to `false`.',
+    },
+    {
+      text: 'Claude Code’s built-in software-engineering instructions are dropped, so Claude loses guidance on scoping changes, comments and verification.',
+      correct: true,
+      explanation:
+        'Right — correct for a non-coding assistant, wrong if Claude is still writing code.',
+    },
+    {
+      text: 'The style is rejected as invalid.',
+      explanation: 'The field is optional.',
+    },
+    {
+      text: 'The style applies to subagents as well as the main conversation.',
+      explanation: 'Styles never change subagent system prompts, except in a fork.',
+    },
+  ]}
+/>
+
+**Next:** `05-subcommands` leaves the session entirely — `claude mcp`, `claude plugin`, the rest of the subcommand tree, and the environment variables worth knowing.

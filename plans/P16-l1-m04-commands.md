@@ -2,7 +2,7 @@
 id: P16
 title: "L1 Beginner module: Commands (m04-commands)"
 milestone: M1
-status: in_progress
+status: review
 owner: opus-p16-2026-09-07
 branch: plan/16-l1-m04-commands
 model_hint: opus
@@ -15,8 +15,12 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T07:57:34Z
-open_questions: []
+updated_at: 2026-09-07T08:46:11Z
+open_questions:
+  - "docs/CURRICULUM.md §2 m04-commands names `/fullscreen` (lesson 04) and `claude config` (lesson 05); neither exists in Claude Code 2.1.263. The real forms are `/tui fullscreen` and `/config key=value`. P03 owns CURRICULUM; the module index.mdx copy in both languages repeats the same two errors and needs the same fix."
+  - "research/deprecations.md says `/btw` history moved to `Shift+←/→`. The live interactive-mode.md says `Left`/`Right` (v2.1.187+). That row is wrong and needs correcting by its owner."
+  - "The `/new-lesson` scaffold emits `{/* … */}` MDX comments into TR stubs; `prettier --write` rewrites them to `{/_ … _/}`, which is not a valid MDX comment. P11 should change the scaffold."
+  - "Shiki's `github-light` keyword red (#D73A49) fails axe `color-contrast` (serious) on code backgrounds — hit by a PowerShell `function` keyword. Worked around in content; P05 should fix the theme."
 ---
 
 ## Goal
@@ -97,5 +101,147 @@ A reviewer opens `npm run dev`, visits each of the 4 lessons at `/en/l1-beginner
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+**What was written.** Five EN lessons (not four — see plan-file drift below), five TR `draft: true`
+stubs with translated `title`/`description` and a one-paragraph Turkish summary each, twelve raw
+transcripts across three folders, three transcript `README.md` files, and the EN module index
+lesson list turned into links.
+
+**Plan-file drift (this file was stale; `docs/CURRICULUM.md` §2 won, per step 1).**
+
+| This plan said | CURRICULUM §2 / reality |
+| --- | --- |
+| 4 lessons | 5 lessons |
+| `02-keybindings`, `03-statusline-themes-and-output-styles`, `04-sessions-resume-branch-fork` | `02-cli-flags`, `03-sessions`, `04-keybindings-statusline-theme`, `05-subcommands` |
+| transcripts at `transcripts/m04-commands/NN-<slug>.md` | `.claude/rules/content.md` §5 + the reference lesson use a folder per lesson with numbered `.txt` captures — followed that |
+| lab tag `lesson/m04-commands-NN-start` (also what the session brief said) | real tags are `lesson/m04-02-start` / `lesson/m04-03-start`; `docs/lab/README.md` and the lab repo's own README both use the `m0N-NN` form. Used the tags that exist |
+
+Lessons 01, 04 and 05 have no lab-repo tag (`repo_tag: 'none'`) — the lab repo only tags `m04-02`
+and `m04-03`, and those two tags both point at the stable `main` tip (process-only lessons, no
+seeded bug). 01 and 04 are interactive-only surfaces, so they carry a `<Lab>` the reader runs on
+their own machine and deliberately **no** transcript (D093: a TUI menu is not something Claude Code
+printed). 05 has four real captures taken on this machine rather than against a lab tag.
+
+**Doc-vs-research drift found while writing (docs win, per the brief).**
+
+1. **`research/deprecations.md` is wrong about `/btw`.** It says history navigation moved from
+   `←/→` to `Shift+←/→`. Live `interactive-mode.md` (fetched 2026-09-07) says the opposite: `Left`
+   steps to older `/btw` answers and `Right` returns toward the current one, requiring v2.1.187 or
+   later; and a bare `/btw` reopens the overlay on the most recent exchange, where before v2.1.212
+   it printed a usage message. The Changed callout in lesson 01 is written from the live doc. **P03
+   or whoever owns `research/deprecations.md` should correct that row** — it is outside this plan's
+   `owned_paths`.
+2. **`keybindingFlavor` does not appear anywhere in the live `keybindings.md`.** That is consistent
+   with the deprecations entry ("ignored"), and no version is recorded anywhere, so the lesson 04
+   callout says the setting is ignored and no longer documented, verified against `keybindings.md`
+   for 2.1.263 — it does not invent a version.
+3. **`/fullscreen` does not exist.** CURRICULUM §2 and both module `index.mdx` files name it in the
+   lesson-04 objective. The real command is `/tui [default|fullscreen]`; `terminal-config.md` and
+   `commands.md` agree. Lesson 04 teaches `/tui fullscreen` and carries a Changed callout.
+4. **`claude config` does not exist.** CURRICULUM §2 and both `index.mdx` files name it in the
+   lesson-05 objective. It is not in `cli-reference.md` and not in `claude --help` (captured
+   verbatim in `05-subcommands/03-claude-subcommands.txt`); running `claude config list` just starts
+   a session. The current form is the in-session `/config [key=value ...]` (v2.1.181+, shorthand
+   keys v2.1.182+), `--settings` at launch, or the settings file. Lesson 05 says so in prose with
+   the capture as evidence — no Changed callout, because there is no recorded deprecation or version
+   for it.
+
+Items 3 and 4 mean the **module index copy** (`content/{en,tr}/l1-beginner/m04-commands/index.mdx`)
+and **`docs/CURRICULUM.md` §2** still name `/fullscreen` and `claude config`. This plan only
+linkified the EN list (per the standing brief), and CURRICULUM is P03's. See `open_questions`.
+
+**Review pipeline (D071).** Both agents were run read-only from the worktree root and their reports
+are pasted in the PR.
+
+- `fact-checker`: verdict FAIL on lesson 05 with **0 "must fix"** and 6 "unverifiable". All six were
+  then checked by hand against the raw `curl`-downloaded doc, and **all six are confirmed verbatim**:
+  `MCP_TIMEOUT` "(default: 30000, or 30 seconds)"; `CLAUDE_CODE_SAFE_MODE` "Equivalent to passing
+  `--safe-mode`"; `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` "auto-updates, telemetry, error
+  reporting, the `/feedback` command…"; `CLAUDE_CONFIG_DIR` "Ignored in project and local settings";
+  and the whole "Features that need feature-flag fetching" section, which names exactly
+  `DISABLE_GROWTHBOOK`, `DISABLE_TELEMETRY`, `DO_NOT_TRACK`,
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` and lists Remote Control, `/import`, `/skill-doctor`,
+  the advisor tool, artifact comments, cross-machine messaging and default auto-mode start among the
+  effects. "Remote Control eligibility" in the `claude doctor` row is in `cli-reference.md`. The FAIL
+  is a **WebFetch truncation artefact**: `env-vars.md` is ~470 KB and the agent's own report says the
+  section "could not be fetched in full after 7 attempts". A future fact-checking pass over a very
+  large doc page should be given the raw file rather than a URL.
+- `reviewer`: CHANGES REQUESTED, 0 blockers, 3 majors. All fixed. Its major #1 (empty
+  `open_questions`) was already resolved before the review landed. Its "checked and clean" list
+  independently confirms the two judgement calls above: the missing `## Sources` heading is correct
+  (the page layout renders `<Sources>` from frontmatter, `src/pages/[lang]/[level]/[module]/[slug]/index.astro:143`),
+  and `<Lab repoTag="none">` is the established convention.
+
+Counts: **confirmed 60+, fixed 9, unverifiable 0** (all 6 the fact-checker could not reach were
+resolved from the raw docs).
+
+**What the reviews changed.**
+
+- Lesson 02 now shows the exact command behind the JSON transcript in a `<CodeBlock>` — it uses
+  `--model haiku` and a fuller `jq` filter than the text-mode example above it, and the lab step
+  matches. "Six fields" → "Seven".
+- Lesson 05's env-var `<OSTabs>` command now includes `--output-format json | jq …`, so running it as
+  written actually produces the output shown beneath it.
+- Both module `index.mdx` files stopped naming `/fullscreen` and `claude config`, which the lessons
+  they link to explicitly document as not existing. This is a copy fix inside `owned_paths`;
+  `docs/CURRICULUM.md` §2 still has both errors and is P03's.
+- Lesson 03 gained a short "Sessions that started somewhere else" section covering `--teleport` /
+  `/teleport` and `/remote-control`, which the index bullet promised and the body had omitted.
+- Sources added where prose leaned on a doc that was not cited: `permission-modes.md` and
+  `fullscreen.md`, `interactive-mode.md`, `mcp.md`, `plugins-reference.md`. `fullscreen.md` was
+  already tagged `m04-commands` in `sources.json` with no lesson citing it; lesson 04 now does.
+- Lesson 05 gained a Changed callout for `ANTHROPIC_SMALL_FAST_MODEL` → `ANTHROPIC_DEFAULT_HAIKU_MODEL`.
+
+**For the translation plan (P25/P26/P40/P41).** The TR stubs carry a real one-paragraph Turkish
+summary rather than the placeholder `/new-lesson` generates, because the standing brief asks for one.
+That is prose to **reconcile or discard** when the full translation lands, not text to keep.
+
+**One more inventory item.** The live `cli-reference.md` lists `claude daemon status`, `claude daemon
+stop`, `claude remote-control` and `claude self-hosted-runner` as subcommands. None appear in the
+`claude --help` output actually captured on 2.1.263
+(`05-subcommands/03-claude-subcommands.txt`), and the list is alphabetical, so they would be visible
+if present. Either they are hidden from `--help`, or the doc has drifted ahead of the pinned version.
+The lesson never claims the list is exhaustive — it says "the actual list from `claude --help` on
+Claude Code 2.1.263" — but whoever owns `research/feature-inventory.md`'s docs map should look.
+`research/feature-inventory.md` also has thin env-var coverage relative to what lesson 05 teaches.
+
+**Also worth recording.**
+
+- The reference lesson (`m01-start/01-what-claude-code-is.mdx`) has no `## Sources` heading — the
+  page layout renders the block from frontmatter. The `/new-lesson` scaffold template *does* emit
+  one. Followed the reference lesson, as the standing brief instructs ("copy its section order and
+  component usage exactly"). If the reviewer agent wants the heading back, it is a one-line add to
+  five files — but then the scaffold and the reference lesson disagree and P07/P12 should settle it.
+- `Callout` has exactly three variants (`note`, `when-not-to-use`, `changed`) — no `new` variant, so
+  the "New" badges `research/deprecations.md` suggests for recent additions were not used.
+- `.claude/rules/content.md` §4 also wants every Changed item on `playbook/06-changed-since-2025`.
+  That page is P42's and outside `owned_paths`; the four items used here (`/pr-comments`, `/vim`,
+  `/ultraplan`, `/output-style`; `/btw`; `keybindingFlavor`; `--enable-auto-mode`;
+  `claude --resume` cross-project search) need mirroring there.
+- Prettier rewrites `{/* … */}` MDX comments into `{/_ … _/}`, which is not a valid MDX comment.
+  The `/new-lesson` scaffold emits that exact construct into every TR stub, so **any plan that runs
+  the scaffold and then `prettier --write` will corrupt its TR stubs.** Worked around here by
+  replacing the comment with a Turkish blockquote note; the scaffold itself (P11) should stop
+  emitting it.
+- One a11y fix worth knowing about: a PowerShell snippet using the `function` keyword failed
+  `color-contrast` (serious) at both viewports — Shiki's `github-light` keyword red `#D73A49` on the
+  code background. Rewrote the snippet to avoid the keyword. This is a **theme/token gap in
+  `src/styles/shiki.css`** (P05), not a content problem; any lesson that shows a PowerShell
+  `function`, or any other token rendered in that red, will fail the same axe check.
+- The lab repository was cloned to a **private copy** at `../cct-lab-16` rather than the shared
+  `../claude-code-lab`, so that checking out `m04` tags could not disturb the sibling sessions in
+  `cct-wt-13/14/15`.
+- To take clean captures, `hasTrustDialogAccepted` was set for that clone in this machine's
+  `~/.claude.json`. Without it every capture is prefixed by a workspace-trust warning naming a local
+  path. That is a local-machine state change, not a repo change.
+- Every capture answers in **Turkish**. This machine's global Claude Code preferences ask for it, and
+  the recordings were kept verbatim per D093/D070 — the same thing `m01-start/01` records and
+  explains. Lesson 02 explains it in prose where the reader first meets it.
+- The 05 `--help` captures were filtered with `grep -E '^  [a-z]'` to the first line of each
+  subcommand description (the terminal wraps them); the filter is in each file's provenance header
+  and in the folder README. Lines were deleted, never rewritten.
+- `content/_shared/sources.json` (shared, append-only): added `m04-commands` to
+  `docs-interactive-mode`'s `modules`, and appended one new entry, `repo-claude-code-lab`. Edited as
+  text, not re-serialised — a `JSON.stringify` round-trip reflows every inline `modules` array and
+  would have produced a 300-line diff. Expect a merge conflict with the sibling sessions; resolve by
+  keeping both sides' entries and re-sorting by `id`.
 

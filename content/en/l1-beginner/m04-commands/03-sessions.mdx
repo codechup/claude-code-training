@@ -1,0 +1,400 @@
+---
+title: 'Sessions: resume, continue, branch and fork'
+description: 'A session is a saved conversation tied to a project directory. Name them, find them in the picker, resume by ID or name, and branch or fork when you want to try a second direction without losing the first.'
+level: 1
+module: 'm04-commands'
+order: 3
+duration_min: 15
+difficulty: core
+tags: ['commands', 'sessions', 'resume', 'branch']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Manage sessions'
+    url: 'https://code.claude.com/docs/en/sessions.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'CLI reference'
+    url: 'https://code.claude.com/docs/en/cli-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Commands'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'claude-code-lab (lesson tag `lesson/m04-03-start`)'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m04-03-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say what a session is, where its transcript lives, and how long it is kept.
+- Get back into a conversation four ways — `claude --continue`, `claude --resume <id>`, `claude --resume <name>`, `/resume` from inside a session — and say which one skips which sessions.
+- Name a session at launch or mid-session so it is findable later, and navigate the session picker with its keyboard shortcuts.
+- Explain what a resumed session restores and what it does not, including the permission-mode rules.
+- Choose correctly between `/branch`, `/fork` and `--fork-session` when you want a second direction.
+
+**Prerequisites.** Lesson 02 of this module — you need to be comfortable reading the `session_id` out of a `claude -p --output-format json` envelope. The lab runs against the lab repository at `lesson/m04-03-start`.
+
+<WhenNotToUse>
+  Resuming is not always the right move. A long session carries its whole history into every
+  request, so when the next task is genuinely a different task, `/clear` and a fresh start is
+  cheaper and sharper than resuming a conversation full of irrelevant context. Branching is not
+  version control either — it copies a conversation, not your files, so two branches editing the
+  same repository will still collide on disk. And do not use `--resume` as a substitute for writing
+  things down: a session is deleted after 30 days by default, so anything that has to survive
+  belongs in `CLAUDE.md`, a commit message or an issue.
+</WhenNotToUse>
+
+## Concept
+
+### What a session is
+
+A session is a saved conversation tied to a project directory. Claude Code writes it continuously to a local transcript as you work, so you can return to one after exiting or after `/clear`.
+
+Transcripts are JSONL at `~/.claude/projects/<project>/<session-id>.jsonl`, where `<project>` is your working directory path with non-alphanumeric characters replaced by `-`. The entry format is internal and changes between versions, so do not parse those files yourself — use `/export`, or the scripted interfaces below. Retention is 30 days by default, changed with the `cleanupPeriodDays` setting.
+
+The desktop app, Claude Code on the web and the VS Code extension each keep their own session history. This lesson is about the CLI.
+
+### Getting back in
+
+| Command                     | What it does                                                         |
+| --------------------------- | -------------------------------------------------------------------- |
+| `claude --continue`         | Resumes the most recent interactive session in the current directory |
+| `claude --resume`           | Opens the session picker                                             |
+| `claude --resume <name>`    | Resumes the named session directly                                   |
+| `claude --from-pr <number>` | Opens the picker filtered to sessions linked to that pull request    |
+| `/resume`                   | Switches to a different conversation from inside an active session   |
+
+The exclusions matter more than the table suggests. Sessions created with `claude -p` or the Agent SDK are **left out of the picker and out of `claude --continue`** — you resume one by passing its session ID to `claude --resume <session-id>`. `claude --continue` also skips background sessions and sessions whose first prompt was `/loop`. But `claude -p --continue` **includes** `-p`, SDK and `/loop` sessions, and still skips background ones.
+
+You can run `claude --resume <session-id>` from any directory. Claude Code looks in the current project directory and its git worktrees first, then in every other project on this machine.
+
+Here is that behaviour, captured for real. First, a headless run in the lab repository, keeping its `session_id`:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/03-sessions/01-start-session.txt"
+  range="2-6"
+/>
+
+Now the same session, resumed by ID with a follow-up that only makes sense if the history came back:
+
+<Transcript src="content/_shared/transcripts/m04-commands/03-sessions/02-resume.txt" range="2-6" />
+
+Note the `session_id` is identical. Resuming continues a conversation; it does not start a new one.
+
+### What a resumed session restores
+
+A resumed session brings back the conversation **and some of the state saved in it**:
+
+- **Conversation history** — the full history, including tool calls and results.
+- **Model** — the session continues on the model it was using, unless that model has been retired or a `--model` flag or `ANTHROPIC_MODEL`-family variable picks one at launch.
+- **Agent** — a session started with `--agent` continues as that agent, keeping its system prompt, tool restrictions and model.
+- **Permission mode** — restored on the terminal paths, with real exceptions (below).
+- **Active goal** — a goal still active when the session ended carries over; its turn count, timer and token baseline reset.
+- **Scheduled tasks** — those that have not expired. Background Bash and monitor tasks are not restored.
+
+What is **not** restored is the launch configuration. If the session depended on `--mcp-config`, `--settings`, `--plugin-dir`, `--fallback-model`, or directories added with `--add-dir`, pass them again when you resume. Directories added mid-session with `/add-dir` are not restored either. Settings files such as `settings.json` are re-read at launch, so anything living in them needs no repeating.
+
+The permission-mode rules are the ones that catch people:
+
+| Session ended in    | How you resume       | Permission mode after you resume                               |
+| ------------------- | -------------------- | -------------------------------------------------------------- |
+| `bypassPermissions` | Terminal             | The mode a new session would start in — never restored         |
+| `plan`              | Terminal             | The mode a new session would start in                          |
+| `auto`              | Terminal             | `auto`, if your account still meets the auto-mode requirements |
+| Any mode            | Session picker       | Not restored — the mode a new session would start in           |
+| Any mode            | `/resume` in-session | Not restored — the conversation continues in your current mode |
+
+The short version: resuming a permissive session never hands you back its permissiveness for free.
+
+### Naming a session so you can find it
+
+| When                    | How to set the name                                             |
+| ----------------------- | --------------------------------------------------------------- |
+| At startup              | `claude -n auth-refactor`                                       |
+| During a session        | `/rename auth-refactor` — the name also shows on the prompt bar |
+| From the session picker | Highlight a session and press `Ctrl+R`                          |
+| On plan accept          | Accepting a plan generates a title, unless you already named it |
+
+If another live session on this machine already uses the name you pick, Claude Code leaves the name with the session that has it and renames yours to a variant with a two-word suffix, such as `auth-refactor-graceful-unicorn`, and tells you.
+
+Sessions you never name still get two labels, and only one of them is a resume handle. The **default display name** — the working directory's name plus a two-character suffix, like `my-app-3f` — identifies the session in listings but **cannot be passed to `--resume`**. The **generated title**, a short summary of your first prompt written by a background request to a small fast model, can.
+
+### The session picker
+
+Run `/resume` inside a session, or `claude --resume` with no arguments. By default it shows sessions from the current worktree, including background ones marked `bg`, plus sessions started elsewhere that added the current directory with `/add-dir`.
+
+| Shortcut  | Action                                                                |
+| --------- | --------------------------------------------------------------------- |
+| `↑` / `↓` | Navigate between sessions                                             |
+| `→` / `←` | Expand or collapse grouped sessions                                   |
+| `Enter`   | Resume the highlighted session                                        |
+| `Space`   | Preview the session content                                           |
+| `Ctrl+R`  | Rename the highlighted session                                        |
+| `/`       | Enter search mode and filter; a pasted PR or MR URL finds its session |
+| `Ctrl+A`  | Show sessions from all projects on this machine                       |
+| `Ctrl+W`  | Show sessions from all worktrees of this repository                   |
+| `Ctrl+B`  | Filter to sessions from the current git branch                        |
+| `Esc`     | Exit the picker or search mode                                        |
+
+### Branching and forking
+
+Three things copy a conversation, and they differ in **where you end up**:
+
+| You want                                                    | Use               | Where you end up                                     |
+| ----------------------------------------------------------- | ----------------- | ---------------------------------------------------- |
+| To try a different direction yourself, keeping the original | `/branch [name]`  | Switched into the copy; the original stays resumable |
+| A copy to work in the background while you carry on here    | `/fork [prompt]`  | Still here; the copy runs as a background session    |
+| A side task whose answer comes back into this conversation  | `/subtask <task>` | Still here; a subagent reports back                  |
+
+`/branch` copies the transcript and switches the running process to write to it. The confirmation prints two session IDs — the branch you are now in, and the original, which is unchanged on disk. Because the branch runs in the same process, your "allow for this session" permission grants carry over; in-flight background subagents and Bash commands keep running and their output lands in the branch, and a connected Remote Control device follows you into it.
+
+From the command line, the same idea is `--fork-session` combined with `--continue` or `--resume`: it creates a new session ID instead of reusing the original. Because that is a **separate process**, it starts without your existing session grants and you re-approve there.
+
+Here is `--fork-session` against the same conversation as before:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/03-sessions/03-fork-session.txt"
+  range="2-7"
+/>
+
+The `session_id` is different — `bca4b3dd…` rather than the original `358bfc5d…` — and the answer still knows about all three files from the earlier turns. That is exactly what branching is: same history, new identity.
+
+And because that fork is now the most recent `-p` session in the directory, `claude -p --continue` picks it up:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/03-sessions/04-continue.txt"
+  range="2-6"
+/>
+
+### Sessions that started somewhere else
+
+Two entry points bring a conversation in from another surface rather than from your own transcript store. `claude --teleport`, and the in-session `/teleport` (also `/tp`), pull a Claude Code on the web session into this terminal: a picker opens, then Claude Code fetches the branch and the conversation. It needs a claude.ai subscription. Going the other way, `/remote-control` (alias `/rc`) makes the session you are in available for Remote Control from claude.ai or the Claude app, so you can carry on from another device without moving the session anywhere.
+
+### Asking an old session a question from a script
+
+`/export` renders a transcript for a person. For a script, pass a session ID to `claude -p --resume`:
+
+<CodeBlock title="ask a finished session for a summary">
+
+```bash
+claude -p --resume <session-id> --output-format json "summarize what we changed" | jq -r '.result'
+```
+
+</CodeBlock>
+
+Here is this lesson's example prompt, the shape that makes a resumed session worth resuming:
+
+```text
+Pick up where we left off: the pagination fix is in, the test passes.
+Next, do the same for the API handler and show me the diff before anything else.
+```
+
+Naming what is already done is what stops a resumed session from redoing it.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · resume, fork and continue a real conversation"
+  lessonId="en/l1-beginner/m04-commands/sessions"
+  repoTag="lesson/m04-03-start"
+  steps={[
+    'In your clone of the lab repository, `git checkout lesson/m04-03-start`.',
+    'Start a headless conversation and keep its id: `claude -p "Answer in English. Name the three source files under src/ that define the store, the CLI and the HTTP API." --model haiku --max-turns 3 --output-format json --allowedTools "Read" "Glob" "Grep" | jq \'{session_id, num_turns, result}\'`',
+    'Resume it by id with a follow-up that needs the history: `claude -p --resume <session-id> "Answer in English. Which of those three files did I name first, and what did you say it was for?" --model haiku --max-turns 2 --output-format json | jq \'{session_id, num_turns, result}\'`. Confirm the session_id came back unchanged.',
+    'Fork it: add `--fork-session` to the same resume command with a new question, and compare the session_id you get back with the original.',
+    'Run `claude -p --continue "Answer in English. In one sentence, what was the last thing I asked you?" --model haiku --max-turns 2 --output-format json | jq \'{session_id, num_turns, result}\'` and confirm it picked up the fork, not the original.',
+    'Open the picker interactively with `claude --resume`. Press `Ctrl+A` to widen to every project, `Ctrl+R` to rename a session, and `Esc` to leave without resuming.',
+  ]}
+  expected="Step 3 returns the same session_id as step 2 and answers from the earlier turn. Step 4 returns a different session_id while still knowing the conversation. Step 5 continues the forked session, not the original. The picker in step 6 lists your sessions and widens with Ctrl+A."
+  checklist={[
+    'You saved a `session_id` from the first run',
+    '`--resume <id>` returned the same id and remembered the earlier answer',
+    '`--fork-session` returned a different id with the history intact',
+    '`claude -p --continue` picked up the fork',
+    'You can say why plain `claude --continue` would not have found any of these sessions',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/03-sessions/01-start-session.txt"
+    range="2-6"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/03-sessions/02-resume.txt"
+    range="2-6"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/03-sessions/03-fork-session.txt"
+    range="2-7"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/03-sessions/04-continue.txt"
+    range="2-6"
+  />
+</Lab>
+
+The last step is the one to sit with: every session in this lab was created with `-p`, so plain `claude --continue` would have found none of them. `claude -p --continue` did, because print mode includes print-mode sessions.
+
+## Anti-patterns
+
+**Expecting `claude --continue` to find a headless session.** It will not: `-p` and SDK sessions are excluded from `--continue` and from the picker. _Fix:_ keep the `session_id` from the JSON envelope and use `claude --resume <id>`, or use `claude -p --continue`.
+
+**Resuming a `bypassPermissions` session and assuming it is still permissive.** It is not — that mode is never restored on resume. _Fix:_ pass the launch flag again, or set `permissions.defaultMode` in user or managed settings, if you genuinely want it.
+
+**Trying to resume by the default display name.** `my-app-3f` identifies a session in listings but is not a resume handle; `--resume` will not find it. _Fix:_ name sessions you care about with `-n` or `/rename`, or resume by the generated title, which does work.
+
+**Using `/branch` to protect your files.** Branching copies the conversation, not the working tree. Two branches editing the same repo still fight over the same files. _Fix:_ use a git worktree — `claude -w <name>` — when you want file isolation.
+
+**Resuming the same session in two terminals.** Without forking, messages from both interleave into one transcript. _Fix:_ `--fork-session` on the second one.
+
+**Parsing `~/.claude/projects/**/\*.jsonl`in a script.** The entry format is internal and changes between releases. _Fix:_ use`/export`, `--output-format json`, or `claude -p --resume` to ask the session itself.
+
+<Callout variant="changed">
+  `claude --resume <session-id>` now searches beyond the directory you are standing in: the current
+  project and its git worktrees first, then every other project on this machine. Before v2.1.223 the
+  lookup stopped at the current project directory, so you had to `cd` to wherever the session last
+  ran.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/sessions"
+  questionId="q1"
+  lang="en"
+  prompt="You ran a task with `claude -p` yesterday and want it back. Plain `claude --continue` finds nothing. Why?"
+  options={[
+    {
+      text: 'The session expired after 24 hours.',
+      explanation: 'Default retention is 30 days, set by `cleanupPeriodDays`.',
+    },
+    {
+      text: 'Sessions created with `-p` or the Agent SDK are excluded from `--continue` and the picker; resume by id, or use `claude -p --continue`.',
+      correct: true,
+      explanation: 'Right — which is why the JSON envelope’s session_id is worth keeping.',
+    },
+    {
+      text: '`--continue` only works inside a git repository.',
+      explanation: 'It is scoped to the current directory, not to git.',
+    },
+    {
+      text: 'Headless runs are never written to disk.',
+      explanation:
+        'They are, unless you pass `--no-session-persistence` or set `CLAUDE_CODE_SKIP_PROMPT_HISTORY`.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/sessions"
+  questionId="q2"
+  lang="en"
+  prompt="What does `--fork-session` change compared with a plain `--resume`?"
+  options={[
+    {
+      text: 'It reuses the session id but starts a new transcript file.',
+      explanation: 'The other way round — a new id is the whole point.',
+    },
+    {
+      text: 'It creates a new session id while carrying the conversation across, so the original stays untouched.',
+      correct: true,
+      explanation: 'Exactly what the capture shows: a different session_id, same history.',
+    },
+    {
+      text: 'It resumes without the conversation history.',
+      explanation: 'Then it would be no different from starting fresh.',
+    },
+    {
+      text: 'It moves the session into a git worktree.',
+      explanation: 'That is `--worktree`, which isolates files rather than conversations.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/sessions"
+  questionId="q3"
+  lang="en"
+  prompt="You want to try a second approach yourself, right now, without losing the conversation you are in. Which one?"
+  options={[
+    {
+      text: '`/fork`',
+      explanation: 'That runs the copy as a background session and leaves you in the original.',
+    },
+    {
+      text: '`/branch`',
+      correct: true,
+      explanation:
+        'Branch switches you into the copy in the same process, keeping your session permission grants, and preserves the original.',
+    },
+    {
+      text: '`/subtask`',
+      explanation: 'That delegates to a subagent that reports back here.',
+    },
+    { text: '`/clear`', explanation: 'That discards the context entirely.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/sessions"
+  questionId="q4"
+  lang="en"
+  prompt="Which of these does a resumed session NOT bring back on its own?"
+  options={[
+    {
+      text: 'The conversation history, including tool calls and results.',
+      explanation: 'That is restored in full.',
+    },
+    {
+      text: 'The model the session was using.',
+      explanation:
+        'Restored, unless the model was retired or a --model flag or environment variable picks one at launch.',
+    },
+    {
+      text: 'Directories you added with --add-dir, and flags like --mcp-config or --settings.',
+      correct: true,
+      explanation:
+        'Launch configuration is not restored — pass those again. Settings files are re-read, so they need no repeating.',
+    },
+    {
+      text: 'A goal that was still active when the session ended.',
+      explanation: 'It carries over; its turn count, timer and token baseline reset.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/sessions"
+  questionId="q5"
+  lang="en"
+  prompt="You never named a session and see `my-app-3f` in a listing. Can you resume with it?"
+  options={[
+    {
+      text: 'Yes — any label shown in a listing works as a resume handle.',
+      explanation: 'Only some do.',
+    },
+    {
+      text: 'No — that is the default display name, which is not a resume handle. The AI-generated title is.',
+      correct: true,
+      explanation: 'Right. Name the session with `-n` or `/rename` if you want a handle you chose.',
+    },
+    {
+      text: 'Only from the same directory the session started in.',
+      explanation: 'Directory is not the issue; the kind of label is.',
+    },
+    {
+      text: 'Only with `claude -p --resume`.',
+      explanation: 'The default display name is not accepted on any resume path.',
+    },
+  ]}
+/>
+
+**Next:** `04-keybindings-statusline-theme` makes the terminal itself yours — shortcuts, the status line, themes and output styles.

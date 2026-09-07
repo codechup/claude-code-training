@@ -1,0 +1,464 @@
+---
+title: 'Subcommands and environment variables'
+description: 'The `claude` command is a small tree: `mcp`, `plugin`, `auth`, `doctor`, `agents`, `project` and more. Plus the environment variables worth knowing, where to set them, and which one wins.'
+level: 1
+module: 'm04-commands'
+order: 5
+duration_min: 15
+difficulty: core
+tags: ['commands', 'cli', 'mcp', 'plugins', 'env-vars']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'CLI reference'
+    url: 'https://code.claude.com/docs/en/cli-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Environment variables'
+    url: 'https://code.claude.com/docs/en/env-vars.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Commands'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage sessions'
+    url: 'https://code.claude.com/docs/en/sessions.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Connect Claude Code to tools via MCP'
+    url: 'https://code.claude.com/docs/en/mcp.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Plugins reference'
+    url: 'https://code.claude.com/docs/en/plugins-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- List the `claude` subcommands and say which job each one does without starting a session.
+- Use `claude mcp` and `claude plugin` from the shell — list, add, install, validate — and find their subcommands with `--help`.
+- Name the environment variables a beginner actually meets, and say what each one changes.
+- Set an environment variable three ways — shell, settings `env` block, per-invocation — and say which one wins.
+- Recognise the variables that break the usual on/off convention, and the ones that turn feature-flag fetching off along with everything that depends on it.
+
+**Prerequisites.** Lessons 01–03 of this module. No lab repository is needed: every command here runs against your own machine, and none of them edits a file.
+
+<WhenNotToUse>
+  Subcommands are for setup and inspection, not for daily work — if you are reaching for `claude mcp
+  list` in a loop, you probably want the in-session `/mcp` panel instead. Environment variables are
+  the bluntest configuration surface Claude Code has: they are invisible in a shared repository,
+  they leak between projects when you export them globally, and a stray `ANTHROPIC_API_KEY` will
+  silently bill your Console account instead of your subscription. Prefer a settings file for
+  anything you want a teammate to see, and keep variables for the things that genuinely belong to
+  one machine or one shell.
+</WhenNotToUse>
+
+## Concept
+
+### The subcommand tree
+
+`claude` on its own starts a session. `claude <subcommand>` does something else and exits. Here is the actual list from `claude --help` on Claude Code 2.1.263:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/05-subcommands/03-claude-subcommands.txt"
+  range="2-20"
+/>
+
+Grouped by why you would run one:
+
+| Job                       | Subcommands                                                |
+| ------------------------- | ---------------------------------------------------------- |
+| Install and health        | `install`, `update`/`upgrade`, `doctor`                    |
+| Sign in                   | `auth login`, `auth logout`, `auth status`, `setup-token`  |
+| Configure tools           | `mcp`, `plugin`/`plugins`                                  |
+| Background sessions       | `agents`, `attach`, `logs`, `respawn`, `stop`/`kill`, `rm` |
+| Local state               | `project purge`, `auto-mode defaults`, `auto-mode reset`   |
+| Review and infrastructure | `ultrareview`, `gateway`, `import`                         |
+
+Two worth calling out now. `claude doctor` prints **read-only** installation and settings diagnostics from the terminal without starting a session — the in-session `/doctor` is the fuller checkup that can also fix things. And `claude auth status` prints authentication status as JSON, exiting 0 if logged in and 1 if not, which makes it the right check to put at the top of a CI script.
+
+If you mistype one, Claude Code suggests the closest match and exits without starting a session: `claude udpate` prints `Did you mean claude update?`.
+
+### `claude mcp`
+
+MCP servers are covered properly in level 3. What matters here is that you can inspect and configure them without opening a session:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/05-subcommands/01-claude-mcp.txt"
+  range="2-16"
+/>
+
+`add` takes a name and a command or URL, with `--transport http` for HTTP servers, `-e KEY=value` for stdio environment variables, and `--` before a subprocess's own flags. `get <name>` health-checks an approved server and shows unapproved `.mcp.json` servers as pending. `login` and `logout` run and clear a server's OAuth without opening the `/mcp` panel — over SSH, add `--no-browser` to `login` to print the authorization URL instead.
+
+`--mcp-config` on a normal launch loads servers from JSON files or strings for that session only, and `--strict-mcp-config` makes those the only ones used.
+
+### `claude plugin`
+
+Same shape, for plugins. `claude plugins` is an accepted alias:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/05-subcommands/02-claude-plugin.txt"
+  range="2-19"
+/>
+
+`install` takes `plugin@marketplace` when you need a specific marketplace; `marketplace` manages the marketplaces themselves; `init`/`new` scaffolds a plugin that auto-loads next session; `validate` checks a plugin or marketplace before you publish it; `details` shows a plugin's component inventory and its projected token cost, which is the number that matters when you are deciding whether a plugin earns its place in your context.
+
+For a single session, `--plugin-dir` loads a plugin from a directory or `.zip`, and `--plugin-url` fetches one from a URL. In-session, `/plugin` opens the same functionality as a menu, and `/reload-plugins` applies changes without restarting.
+
+### There is no `claude config`
+
+Look at the subcommand list above again: `config` is not in it. Configuration from the shell goes through `--settings` (lesson 02), through the settings files themselves, or through the environment. From **inside** a session, `/config` opens the Settings interface — and since v2.1.181 it also takes `key=value` pairs directly, with named shorthand keys since v2.1.182:
+
+<CodeBlock title="setting a value without opening the panel">
+
+```text
+/config theme=dark
+/config model=sonnet
+/config thinking=false
+/config --help
+```
+
+</CodeBlock>
+
+That form works in non-interactive mode with `-p` too. It cannot turn **on** a setting that needs your confirmation in the panel, though it can turn one off.
+
+### Environment variables
+
+Variables are read at startup, and there are three places to set them.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+export ANTHROPIC_MODEL="haiku"
+claude -p "Reply with the single word OK." --max-turns 1 --output-format json |
+  jq '{num_turns, result, model: (.modelUsage | keys)}'
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+export ANTHROPIC_MODEL="haiku"
+claude -p "Reply with the single word OK." --max-turns 1 --output-format json |
+  jq '{num_turns, result, model: (.modelUsage | keys)}'
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$env:ANTHROPIC_MODEL = "haiku"
+claude -p "Reply with the single word OK." --max-turns 1 --output-format json |
+  jq '{num_turns, result, model: (.modelUsage | keys)}'
+```
+
+  </Fragment>
+</OSTabs>
+
+Here is that working, with the run's `modelUsage` proving which model actually served it:
+
+<Transcript
+  src="content/_shared/transcripts/m04-commands/05-subcommands/04-env-var-model.txt"
+  range="2-8"
+/>
+
+The second place is a settings file's `env` block, which is how you share a variable with a project:
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "env": {
+    "API_TIMEOUT_MS": "1200000",
+    "BASH_DEFAULT_TIMEOUT_MS": "300000"
+  }
+}
+```
+
+</CodeBlock>
+
+A running session applies new and changed values when you save the file — but a feature that reads its variables once at startup keeps its startup values until you relaunch, and **removing a variable from the file does not unset it** in a running session.
+
+### Which one wins
+
+The precedence rules are short and worth memorising, because they are not what you would guess:
+
+- **The settings file beats your shell.** Claude Code writes each `env` entry into the process environment, replacing the value inherited from the shell.
+- **In a settings file you can set a variable but not remove one.** To override one you cannot unset, set it to an empty string: `"CLAUDE_CODE_USE_VERTEX": ""`.
+- **`--model` and `/model` override `ANTHROPIC_MODEL`.** But `CLAUDE_CODE_EFFORT_LEVEL` overrides `--effort` and `/effort` — the opposite direction.
+- Between settings files, `env` follows normal settings precedence: managed settings override user and project.
+
+For on/off variables, set `1` or `true` to turn a behaviour on and `0` or `false` to turn it off, in any casing. Several break that rule by reading only **presence**, so even `0` turns them on: `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `DISABLE_TELEMETRY`, `DISABLE_ERROR_REPORTING`, `CLAUDE_CODE_TMUX_TRUECOLOR`, `FALLBACK_FOR_ALL_PRIMARY_MODELS` and `IS_DEMO`. And `FORCE_HYPERLINK` reads a number, so only `0` turns it off — `false` enables it.
+
+### The variables worth knowing now
+
+| Variable                                   | What it changes                                                                                              |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `ANTHROPIC_API_KEY`                        | API key sent as `X-Api-Key`. **When set, it is used instead of your subscription even if you are logged in** |
+| `ANTHROPIC_MODEL`                          | The model setting to use                                                                                     |
+| `ANTHROPIC_DEFAULT_HAIKU_MODEL`            | The model the `haiku` alias resolves to, also used for background functionality                              |
+| `CLAUDE_CONFIG_DIR`                        | Override the configuration directory (default `~/.claude`) — settings, session history, plugins              |
+| `CLAUDE_CODE_EFFORT_LEVEL`                 | Effort level; takes precedence over `--effort`, `/effort` and the settings                                   |
+| `API_TIMEOUT_MS`                           | Timeout for API requests (default 600000, ten minutes)                                                       |
+| `BASH_DEFAULT_TIMEOUT_MS`                  | Default timeout for long-running bash commands (default 120000, two minutes)                                 |
+| `BASH_MAX_OUTPUT_LENGTH`                   | Maximum characters of bash output (default 30000, maximum 150000)                                            |
+| `MCP_TIMEOUT`                              | MCP server startup timeout (default 30000, thirty seconds)                                                   |
+| `CLAUDE_CODE_SAFE_MODE`                    | Start with every customisation disabled — equivalent to `--safe-mode`                                        |
+| `CLAUDE_CODE_SIMPLE`                       | Minimal system prompt and tools, no auto-discovery — equivalent to `--bare`                                  |
+| `CLAUDE_CODE_SKIP_PROMPT_HISTORY`          | Do not write prompt history or transcripts to disk; such sessions never appear in `--resume`                 |
+| `CLAUDE_AX_SCREEN_READER`                  | Screen-reader friendly output: flat text, no decorative borders or animations                                |
+| `DISABLE_AUTOUPDATER`                      | Disable automatic background updates; manual `claude update` still works                                     |
+| `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` | Disable auto-updates, telemetry, error reporting and `/feedback`                                             |
+
+`CLAUDE_CONFIG_DIR` is the one that unlocks a genuinely useful trick — a second, isolated Claude Code identity in the same shell:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+alias claude-work='CLAUDE_CONFIG_DIR=~/.claude-work claude'
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+alias claude-work='CLAUDE_CONFIG_DIR=~/.claude-work claude'
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$env:CLAUDE_CONFIG_DIR = "$HOME/.claude-work"; claude
+```
+
+  </Fragment>
+</OSTabs>
+
+Set it in your shell, user settings or managed settings — it is **ignored in project and local settings**.
+
+### The four that disable more than they say
+
+`DISABLE_GROWTHBOOK`, `DISABLE_TELEMETRY`, `DO_NOT_TRACK` and `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` all turn **feature-flag fetching** off. That in turn disables Remote Control, `/import`, `/skill-doctor`, the advisor tool, artifact comments, cross-machine messaging, and the default auto-mode start on Pro, Max and Team plans. If a feature you read about simply is not there, this is the first thing to check.
+
+Here is this lesson's example prompt — the shape that gets you a useful answer about your own setup:
+
+```text
+Read the output of `claude doctor` and `claude mcp list` and tell me whether
+anything in my install is misconfigured. Do not change any settings.
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · inspect your own install from the shell"
+  lessonId="en/l1-beginner/m04-commands/subcommands"
+  repoTag="none"
+  steps={[
+    'Run `claude --help` and read the Commands section. Confirm for yourself that there is no `config` subcommand.',
+    'Run `claude doctor` and read the report — install health, settings-file validation, update channel. It never starts a session.',
+    'Run `claude auth status` and then `echo $?` (PowerShell: `$LASTEXITCODE`). Confirm it is 0 when signed in.',
+    'Run `claude mcp list`, then `claude mcp --help`, and read the subcommand list.',
+    'Run `claude plugin list`, then `claude plugin --help`. Pick one subcommand and read its own `--help`.',
+    'Mistype a subcommand on purpose: `claude udpate`. Confirm it suggests the correct one and exits without starting a session.',
+    'Set a variable for one run and prove it took effect: `ANTHROPIC_MODEL=haiku claude -p "Reply with the single word OK." --max-turns 1 --output-format json | jq \'{result, model: (.modelUsage | keys)}\'` (PowerShell: set `$env:ANTHROPIC_MODEL = "haiku"` on its own line first).',
+    'Unset it again and re-run the same command. Confirm the model in `modelUsage` changed back to your default.',
+  ]}
+  expected="claude --help lists mcp, plugin, auth, doctor, agents, project and the background-session commands, and no config. claude doctor prints diagnostics without a session. claude mcp list and claude plugin list report what is configured. claude udpate suggests claude update. With ANTHROPIC_MODEL=haiku, modelUsage names a haiku model; without it, your default model."
+  checklist={[
+    'You can name three `claude` subcommands and what each does',
+    'You confirmed there is no `claude config` subcommand',
+    '`claude auth status` exited 0',
+    '`claude mcp --help` and `claude plugin --help` both listed their subcommands',
+    '`ANTHROPIC_MODEL` visibly changed which model served the run',
+    'You can say which wins between a shell variable and the same key in a settings `env` block',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/05-subcommands/03-claude-subcommands.txt"
+    range="2-20"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/05-subcommands/01-claude-mcp.txt"
+    range="2-16"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/05-subcommands/02-claude-plugin.txt"
+    range="2-19"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m04-commands/05-subcommands/04-env-var-model.txt"
+    range="2-8"
+  />
+</Lab>
+
+The `--help` recordings above are trimmed to the first line of each subcommand's description — the terminal wraps them over several lines, and the extra lines say nothing the first does not. Nothing was rewritten.
+
+## Anti-patterns
+
+**Leaving `ANTHROPIC_API_KEY` exported in your shell profile.** It is used instead of your Pro, Max, Team or Enterprise subscription even when you are logged in, and in `-p` mode always. You end up paying Console rates for work your plan already covers. _Fix:_ `unset ANTHROPIC_API_KEY`, and scope the key to the one shell or script that genuinely needs it.
+
+**Expecting a shell variable to beat a settings file.** It does not: Claude Code writes each `env` entry into the process environment, replacing the shell's value. _Fix:_ if a project's `env` block is fighting you, change the block, or override it at a higher-precedence settings scope.
+
+**Setting `DISABLE_TELEMETRY=0` and expecting telemetry on.** That variable reads presence, not value — `0` still opts out. _Fix:_ unset it entirely.
+
+**Turning off nonessential traffic and then wondering where a feature went.** `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` also turns off feature-flag fetching, which takes Remote Control, `/import`, `/skill-doctor` and the advisor tool with it. _Fix:_ if you only wanted to stop auto-updates, use `DISABLE_AUTOUPDATER`, which is narrower.
+
+**Looking for `claude config`.** It does not exist. _Fix:_ `/config key=value` inside a session, `--settings` at launch, or edit the settings file.
+
+**Removing a variable from a settings `env` block and expecting the running session to notice.** Values are applied on save; removals are not. _Fix:_ restart the session, or set the key to an empty string.
+
+**Installing plugins without looking at their cost.** Every plugin's skills and MCP tools consume context on every request. _Fix:_ `claude plugin details <name>` shows the projected token cost before you commit, and `/skill-doctor` shows what is actually being used afterwards.
+
+<Callout variant="changed">
+  `ANTHROPIC_SMALL_FAST_MODEL` is deprecated. The current variable is
+  `ANTHROPIC_DEFAULT_HAIKU_MODEL`, which sets the model the `haiku` alias resolves to and the model
+  Claude Code uses for background functionality — verified against `env-vars.md` for Claude Code
+  2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/subcommands"
+  questionId="q1"
+  lang="en"
+  prompt="You set ANTHROPIC_MODEL=opus in your shell, and your project's .claude/settings.json has an env block setting it to sonnet. Which model does the session use?"
+  options={[
+    {
+      text: 'opus — the shell environment is closest to the process.',
+      explanation:
+        'The intuitive answer, and the wrong one: Claude Code overwrites the inherited value.',
+    },
+    {
+      text: 'sonnet — Claude Code writes each env entry into the process environment, replacing the shell value.',
+      correct: true,
+      explanation: 'Right. Settings-file env beats the shell.',
+    },
+    {
+      text: 'It errors on the conflict.',
+      explanation: 'There is a defined precedence; nothing errors.',
+    },
+    {
+      text: 'Whichever was set most recently.',
+      explanation: 'Order of setting does not enter into it.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/subcommands"
+  questionId="q2"
+  lang="en"
+  prompt="You are signed in with a Max subscription, and ANTHROPIC_API_KEY is exported in your shell profile. What happens?"
+  options={[
+    {
+      text: 'The subscription is used; the key is ignored while you are logged in.',
+      explanation: 'The opposite — the key takes over.',
+    },
+    {
+      text: 'The API key is used instead of the subscription, so the work bills to your Console account.',
+      correct: true,
+      explanation:
+        'And in -p mode it is always used. `unset ANTHROPIC_API_KEY` to go back to the subscription.',
+    },
+    {
+      text: 'Claude Code refuses to start until you pick one.',
+      explanation: 'Interactively you approve the key once; it does not refuse.',
+    },
+    {
+      text: 'The two are used alternately for load balancing.',
+      explanation: 'There is no such behaviour.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/subcommands"
+  questionId="q3"
+  lang="en"
+  prompt="Which command prints installation diagnostics without starting a session?"
+  options={[
+    {
+      text: '`/doctor`',
+      explanation:
+        'That is the in-session checkup, which can also apply fixes — it needs a session.',
+    },
+    {
+      text: '`claude doctor`',
+      correct: true,
+      explanation:
+        'Read-only diagnostics from the terminal: install health, settings validation, Remote Control eligibility.',
+    },
+    { text: '`claude config list`', explanation: 'There is no `claude config` subcommand.' },
+    {
+      text: '`claude --verbose`',
+      explanation: 'That changes logging inside a session it has already started.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/subcommands"
+  questionId="q4"
+  lang="en"
+  prompt="A colleague reports that /skill-doctor and Remote Control are both missing on their machine. What is worth checking first?"
+  options={[
+    {
+      text: 'Whether they are on the right release channel.',
+      explanation: 'Possible, but it would not take out exactly that set of features.',
+    },
+    {
+      text: 'Whether a variable that disables feature-flag fetching is set — DISABLE_TELEMETRY, DO_NOT_TRACK, DISABLE_GROWTHBOOK or CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC.',
+      correct: true,
+      explanation:
+        'Those four turn flag fetching off, which takes Remote Control, /import, /skill-doctor and the advisor tool with it.',
+    },
+    {
+      text: 'Whether they have run `claude plugin install`.',
+      explanation: 'Neither feature ships as a plugin.',
+    },
+    {
+      text: 'Whether `CLAUDE_CONFIG_DIR` is set.',
+      explanation: 'That relocates configuration; it does not gate those features.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m04-commands/subcommands"
+  questionId="q5"
+  lang="en"
+  prompt="How do you set a Claude Code setting from the shell, given there is no `claude config` subcommand?"
+  options={[
+    {
+      text: 'Pass `--settings` with a file path or inline JSON at launch, or edit the settings file — and use `/config key=value` from inside a session.',
+      correct: true,
+      explanation: 'Those are the three surfaces. `/config key=value` also works with `-p`.',
+    },
+    {
+      text: 'Only by editing `~/.claude/settings.json` by hand.',
+      explanation: 'That works, but it is not the only way.',
+    },
+    {
+      text: 'With `claude set <key> <value>`.',
+      explanation: 'No such subcommand.',
+    },
+    {
+      text: 'Every setting is an environment variable.',
+      explanation: 'Some have variable equivalents; most do not.',
+    },
+  ]}
+/>
+
+**Next:** you have finished the Beginner level. Level 2 starts with `m05-models-effort` — choosing a model and an effort level deliberately rather than accepting the default.
