@@ -1,0 +1,267 @@
+---
+title: 'The effort lab'
+description: 'One bug, one model, three effort levels: low, medium and high on Sonnet 5, measured with real JSON envelopes — and an honest answer about how much difference the dial made on a small, well-posed task.'
+level: 2
+module: 'm05-models-effort'
+order: 4
+duration_min: 25
+difficulty: core
+tags: ['effort', 'cost', 'headless', 'lab']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Model configuration'
+    url: 'https://code.claude.com/docs/en/model-config.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage costs effectively'
+    url: 'https://code.claude.com/docs/en/costs.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'claude-code-lab (the course lab repository)'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m05-04-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Hold the model constant and vary only effort, so the numbers you get are about effort.
+- Read `thinking_tokens` out of an envelope and use it as the direct evidence that a level changed anything.
+- Recognise a null result and report it as one, instead of finding a story in the noise.
+- Say when raising effort is likely to pay, and when the same money is better spent elsewhere.
+
+**Prerequisites.** Lesson `03-effort-levels` for the levels themselves, and lesson `02-choosing-a-model` for the headless comparison method — this lab reuses it with the model held fixed.
+
+<WhenNotToUse>
+  Do not run an effort sweep to choose a level for tomorrow's work. Effort is calibrated per model
+  and per task shape; a sweep on a one-line bug tells you nothing about a refactor across twelve
+  files. Run the sweep when a specific, repeatable class of task is failing at your current level,
+  and stop as soon as one level clears the bar. And do not sweep on a task with no automated check:
+  without a test to run afterwards, you cannot tell a better answer from a longer one.
+</WhenNotToUse>
+
+## Concept
+
+### Holding the model still
+
+Lesson `02` varied the model and held everything else fixed. This lesson does the reverse: one model — Sonnet 5 — and three levels, `low`, `medium` and `high`. The discipline is identical. Same prompt, same starting state, same `--max-turns`, same `--allowedTools`; reset the working tree between runs; verify the outcome with `npm test` rather than with the model's summary.
+
+Be honest about what this is. The curriculum calls for an effort-by-model matrix; what is captured below is one row of it — three levels on one model. That is enough to demonstrate the method and to produce a real finding, and it is not enough to extrapolate to Opus or Fable, whose effort scales are calibrated separately.
+
+### The field that makes effort visible
+
+Cost and duration move for lots of reasons. The number that moves _because_ of effort is the thinking-token count, which the envelope reports at `usage.output_tokens_details.thinking_tokens`. Thinking tokens are billed as output tokens, which is the mechanism by which a higher level costs more.
+
+If you sweep three levels and the thinking-token counts barely move, you have learned something real: on this task, the model did not think the extra thinking was warranted. Adaptive reasoning means the model decides step by step whether to think at all — the level sets the budget, not the spend.
+
+This lesson's example prompt is the lab's, and it is deliberately the same shape as lesson `02`'s so the two comparisons are readable side by side:
+
+```text
+npm test fails two tests in test/overdue.test.ts. Find the root cause in src/ and
+fix it. Do not change any test file.
+```
+
+## Hands-on lab
+
+The `lesson/m05-04-start` tag re-uses the commits behind `lesson/m02-05` and seeds bug **B2** from the lab repository's `BUGS.md`: `isOverdue()` in `src/store.ts` compares `Date.parse(dueDate)` in milliseconds against `now() / 1000` in seconds, so a task due in the past is essentially never reported overdue. Two tests fail.
+
+One property of this tag matters for reading the numbers: its commits predate the lab repository's `.claude/` scaffold, so no project `CLAUDE.md` is loaded for these runs. The context each level worked from is as close to bare as this repository gets.
+
+<Lab
+  title="Lab · three effort levels on one bug"
+  lessonId="en/l2-intermediate/m05-models-effort/effort-lab"
+  repoTag="lesson/m05-04-start"
+  steps={[
+    'In your clone of the lab repository, `git checkout lesson/m05-04-start` and `npm ci`.',
+    'Run `npm test` and confirm two tests in `test/overdue.test.ts` fail. This is the state every run must meet.',
+    'Run the task at low effort: `claude -p "npm test fails two tests in test/overdue.test.ts. Find the root cause in src/ and fix it. Do not change any test file." --model sonnet --effort low --output-format json --max-turns 6 --permission-mode acceptEdits --allowedTools "Read Edit Grep Glob Bash(npm test*)"`',
+    'Verify with `git diff --stat` and `npm test` yourself, then reset: `git checkout -- . && git clean -fd`.',
+    'Repeat with `--effort medium`, then `--effort high`, resetting between each.',
+    'Tabulate `num_turns`, `duration_ms`, `total_cost_usd` and `usage.output_tokens_details.thinking_tokens` for the three runs, next to your own test result for each.',
+  ]}
+  expected="All three levels find the same root cause and make the same one-line fix in src/store.ts; npm test goes from `2 failed | 13 passed` to `15 passed` every time. The three envelopes all report subtype success, and the thinking-token counts are 14, 14 and 53 — small, and not ordered the way an intuition about effort would predict cost to be."
+  checklist={[
+    'The tree was reset and `npm test` re-failed before each run',
+    'Only `--effort` changed between the three commands',
+    'Each run’s diff is one line in `src/store.ts`',
+    '`thinking_tokens` was read from each envelope, not inferred from cost',
+    'The conclusion you wrote down matches the numbers, including where they show no effect',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/04-effort-lab/01-npm-test-before.txt"
+    range="2-6"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/04-effort-lab/02-effort-low.txt"
+    range="2-2"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/04-effort-lab/02-effort-low.txt"
+    range="99-107"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/04-effort-lab/03-effort-medium.txt"
+    range="99-107"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/04-effort-lab/04-effort-high.txt"
+    range="99-107"
+  />
+</Lab>
+
+### The real numbers
+
+Captured 2026-09-07 against Claude Code 2.1.263, Sonnet 5, in the order low → medium → high.
+
+| `--effort` | `subtype` | `num_turns` | `duration_ms` | `total_cost_usd` | Output tokens | Thinking tokens | Tests after |
+| ---------- | --------- | ----------- | ------------- | ---------------- | ------------- | --------------- | ----------- |
+| `low`      | `success` | 6           | 68,737        | 0.1033           | 1,068         | 14              | 15 passed   |
+| `medium`   | `success` | 5           | 37,849        | 0.0943           | 978           | 14              | 15 passed   |
+| `high`     | `success` | 6           | 54,878        | 0.1081           | 1,275         | 53              | 15 passed   |
+
+Every level produced the same one-line fix in `src/store.ts` — removing the stray `/ 1000` — and every run ended with all fifteen tests passing.
+
+The finding is a null result, and it is worth more than a tidy one would be. The spread in cost across three levels is about 1.15× — roughly a cent and a half on a task that cost about ten cents. The spread in duration does not track the level at all: `medium` was the fastest run and `low` the slowest, which is the signature of ordinary run-to-run variance rather than of a dial doing work.
+
+The thinking tokens explain why. At `low` and `medium` the model spent 14 thinking tokens; at `high`, 53. Even at the default level, on a bug this well-signposted, adaptive reasoning decided there was almost nothing to think about. Effort sets a ceiling on how hard the model may work, not a floor on how hard it must — and a failing test that names the file is about as un-ambiguous as a task gets.
+
+There is a second-order effect visible in the table too. `high` produced the longest answer (1,275 output tokens against `low`'s 1,068) and the most detailed root-cause explanation. If what you need is a better _explanation_, effort bought you something. If what you need is a passing test, it did not.
+
+So: raise effort when the task is genuinely ambiguous — a root-cause hunt with no failing test to anchor it, an architectural choice, a bug that reproduces only sometimes. On a task like this one, the honest recommendation is to leave the dial alone and spend the attention on the prompt.
+
+### One honest caveat
+
+The three `result` strings come back in Turkish, because the capture machine's global Claude Code preferences ask for Turkish. That is genuine output; the same thing happens in lesson `02`. It changes nothing about the numbers, and it is a standing reminder that your own settings ride along with every run.
+
+## Anti-patterns
+
+**Sweeping effort without a check to run afterwards.** Without `npm test`, all three runs "succeed" and you end up ranking prose. _Fix:_ sweep only on tasks with an automated pass/fail, and record it as its own column.
+
+**Reading a 1.15× cost spread as a trend.** Three runs with no repetition cannot separate a small effect from noise — and here the durations are not even monotonic in the level. _Fix:_ if the difference matters, repeat each arm several times; otherwise report it as inconclusive.
+
+**Changing two things at once.** Sweeping effort while also switching models, or while adding a hint to the prompt because the first run struggled, produces numbers about nothing. _Fix:_ one variable per sweep.
+
+**Assuming a level name means the same thing on another model.** The effort scale is calibrated per model. `high` on Sonnet 5 is not `high` on Opus 5. _Fix:_ re-run the sweep on the model you actually intend to use.
+
+**Concluding "effort does nothing" from one null result.** This task was small, well-posed and pointed at by a failing test — the conditions least likely to reward deeper reasoning. _Fix:_ re-run the sweep on an ambiguous task before generalising in either direction.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/effort-lab"
+  questionId="q1"
+  lang="en"
+  prompt="Which envelope field is the most direct evidence that an effort level changed the model's behaviour?"
+  options={[
+    {
+      text: '`total_cost_usd`',
+      explanation:
+        'Cost moves for many reasons — turn count, tool output size, cache state — not only effort.',
+    },
+    {
+      text: '`usage.output_tokens_details.thinking_tokens`',
+      correct: true,
+      explanation:
+        'Thinking tokens are what effort budgets, and they are billed as output tokens — the mechanism behind the cost difference.',
+    },
+    {
+      text: '`duration_ms`',
+      explanation: 'Wall-clock time is noisy; in this lab it was not even ordered by level.',
+    },
+    { text: '`num_turns`', explanation: 'Turn count reflects the tool loop, not thinking depth.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/effort-lab"
+  questionId="q2"
+  lang="en"
+  prompt="In this lab, `low` and `medium` both spent 14 thinking tokens and `high` spent 53, and all three fixed the bug. What is the right conclusion?"
+  options={[
+    {
+      text: 'Effort levels do not work.',
+      explanation:
+        'Too strong: one small, well-signposted task is the case least likely to reward deeper reasoning.',
+    },
+    {
+      text: 'On a task this well-posed, adaptive reasoning found little worth thinking about at any level — so the level bought almost nothing here.',
+      correct: true,
+      explanation:
+        'Effort sets a ceiling on how hard the model may work, not a floor on how hard it must.',
+    },
+    {
+      text: 'Sonnet 5 ignores the `--effort` flag.',
+      explanation: 'It does not — the thinking-token count did rise at `high`.',
+    },
+    {
+      text: '`high` produced a better fix.',
+      explanation: 'The fix was the same one line at every level; only the explanation was longer.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/effort-lab"
+  questionId="q3"
+  lang="en"
+  prompt="Why does this lab hold the model fixed at Sonnet 5?"
+  options={[
+    {
+      text: 'Because Sonnet is the only model that supports effort.',
+      explanation:
+        'Fable 5.1/5, Opus 5, Opus 4.8, 4.7 and 4.6 and Sonnet 4.6 all support effort; Haiku 4.5 does not.',
+    },
+    {
+      text: 'So that the only variable is effort — and because the effort scale is calibrated per model, which makes a level name meaningless across models.',
+      correct: true,
+      explanation:
+        'One variable per sweep, and a level name only has meaning relative to its own model.',
+    },
+    {
+      text: 'Because Opus cannot run headlessly.',
+      explanation: 'It can — lesson `02` runs it that way.',
+    },
+    {
+      text: 'To keep the prompt cache warm across the three runs.',
+      explanation:
+        'On most models each effort level has its own cache, so the runs did not share one anyway.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/effort-lab"
+  questionId="q4"
+  lang="en"
+  prompt="Which task is the best candidate for raising the effort level?"
+  options={[
+    {
+      text: 'A failing unit test that names the file and the assertion.',
+      explanation: 'Exactly this lab’s task — the level bought essentially nothing.',
+    },
+    {
+      text: 'Renaming a symbol across twelve files.',
+      explanation:
+        'Mechanical breadth. That is a tool-loop and turn-budget problem, not a thinking one.',
+    },
+    {
+      text: 'A bug that reproduces only intermittently, with no test pointing at a cause.',
+      correct: true,
+      explanation:
+        'Ambiguous, investigation-heavy work is where deeper reasoning has something to do.',
+    },
+    {
+      text: 'Reformatting a JSON fixture.',
+      explanation: 'A task with a deterministic answer and no reasoning content at all.',
+    },
+  ]}
+/>
+
+**Next:** `05-fast-mode` covers the third dial — buying latency instead of depth — and the conditions under which `/fast` refuses to turn on.

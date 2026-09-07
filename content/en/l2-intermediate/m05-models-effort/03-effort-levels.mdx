@@ -1,0 +1,314 @@
+---
+title: 'Effort levels'
+description: 'The second dial: /effort low, medium, high, xhigh and max, plus ultracode and the ultrathink keyword — what each level costs you, where a level is saved, and which models support which.'
+level: 2
+module: 'm05-models-effort'
+order: 3
+duration_min: 15
+difficulty: core
+tags: ['effort', 'models', 'settings']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Model configuration'
+    url: 'https://code.claude.com/docs/en/model-config.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'How Claude Code uses prompt caching'
+    url: 'https://code.claude.com/docs/en/prompt-caching.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Models overview (Claude Platform)'
+    url: 'https://platform.claude.com/docs/en/about-claude/models/overview'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Name the five effort levels and say what each one is for.
+- Say which models support which levels, and what happens when you ask for one a model does not have.
+- Set effort five ways — `/effort`, the `/model` slider, `--effort`, `CLAUDE_CODE_EFFORT_LEVEL`, settings — and know which one persists.
+- Explain what `ultracode` is (and is not), and when `ultrathink` is the right tool instead of a level change.
+- Predict the prompt-cache cost of changing effort mid-session.
+
+**Prerequisites.** Lesson `01-model-family`. You do not need lesson `02` first, but the two dials interact, and the next lesson measures them together.
+
+<WhenNotToUse>
+  Effort is not a quality slider you turn up when an answer disappoints. `max` is documented as
+  prone to overthinking with diminishing returns, and every level change mid-session throws away the
+  prompt cache on most models. If a task went wrong because the prompt was vague, or because Claude
+  could not run the test that would have told it the truth, raising effort will buy you a more
+  elaborate version of the same mistake. Fix the prompt and the evidence loop first. And on Haiku
+  4.5 there is nothing to turn: it does not support effort at all.
+</WhenNotToUse>
+
+## Concept
+
+### What effort actually controls
+
+Effort levels control **adaptive reasoning** — the model deciding, step by step, whether and how much to think based on how hard that step is. A lower level is faster and cheaper on straightforward work; a higher level buys deeper reasoning on hard problems. It is a spend-versus-capability trade, not a correctness switch.
+
+The scale is calibrated per model, so `medium` on Sonnet 5 and `medium` on Opus 5 are not the same underlying value. Comparing levels across models is meaningful only in outcomes, never in the level name.
+
+| Level       | When to use it                                                                                                                               |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `low`       | Short, scoped, latency-sensitive tasks that are not intelligence-sensitive                                                                   |
+| `medium`    | Cost-sensitive work that can trade off some intelligence                                                                                     |
+| `high`      | Balances token usage and intelligence. The default on every model except Opus 4.7                                                            |
+| `xhigh`     | Deeper reasoning at higher token spend. The default on Opus 4.7                                                                              |
+| `max`       | Can improve performance on demanding tasks, but shows diminishing returns and is prone to overthinking. Test before adopting broadly         |
+| `ultracode` | Not a model effort level — a Claude Code setting that plans a dynamic workflow for each substantive task, with `xhigh` per-message reasoning |
+
+### Which models have which levels
+
+| Model                                | Levels                                  |
+| ------------------------------------ | --------------------------------------- |
+| Fable 5.1, Fable 5                   | `low`, `medium`, `high`, `xhigh`, `max` |
+| Opus 5, Sonnet 5, Opus 4.8, Opus 4.7 | `low`, `medium`, `high`, `xhigh`, `max` |
+| Opus 4.6, Sonnet 4.6                 | `low`, `medium`, `high`, `max`          |
+
+Models not in that table — Haiku 4.5 among them — do not support effort. If you set a level the active model does not have, Claude Code falls back to the highest supported level at or below the one you asked for: `xhigh` runs as `high` on Opus 4.6. Nothing errors; you simply get less than you typed, which is why it is worth knowing.
+
+Organisations on Enterprise plans can cap the maximum level per model per role. Above the cap, the level is not offered in the `/effort` picker, and naming a higher one with `--effort` or `/effort` runs at the cap instead. Interactive sessions and plain-text `--print` runs warn you; with `json` or `stream-json` output the clamp is silent.
+
+### Setting it, and where the setting sticks
+
+Six places can set effort:
+
+- **`/effort`** — with no argument it opens a slider; with a level name it sets it directly; `/effort auto` clears your saved level for the active model.
+- **The `/model` picker** — left/right arrows move an effort slider while you choose a model.
+- **`--effort <level>`** at launch, for one session. `claude --help` lists the accepted values as `low, medium, high, xhigh, max`.
+- **`CLAUDE_CODE_EFFORT_LEVEL`** — a level name, or `auto`.
+- **Settings** — a per-model level under `modelSettings`, or `effortLevel` as the default for models without one. Neither key accepts `max`; `ultracode` has its own `ultracode` key.
+- **Skill and subagent frontmatter** — an `effort` field, applying while that skill or subagent runs. It overrides the session level but not the environment variable.
+
+The persistence rules are where people get surprised:
+
+- Setting `low`, `medium`, `high` or `xhigh` in an **interactive** session on your own machine **saves** the level, per model, under `modelSettings` in your user settings. Each model keeps its own.
+- `max` is the exception: unless you set it through `CLAUDE_CODE_EFFORT_LEVEL`, Claude Code applies `max` to the current session only.
+- A level set with `/effort` in **non-interactive** mode (`-p`) applies to that session only and is never saved. On Fable 5, Opus 4.8 and Opus 4.7, while the model's own default-effort hold is still in force, a non-interactive `/effort` reports `Not applied` — pass `--effort` at launch instead.
+- The `effortLevel` key in managed settings is a starting default, not enforcement: a user can change it for a session, and the managed value re-asserts in the next one.
+
+With `ultracode` off, the session resolves its effort in this order, first match wins: an explicit choice (`CLAUDE_CODE_EFFORT_LEVEL`, `--effort`, or `/effort`) → the model's default-effort hold on Fable 5, Opus 4.8 or Opus 4.7 → your saved settings → the model's default (`high` everywhere except Opus 4.7, which defaults to `xhigh`).
+
+You can see the active level without opening anything: it is shown in the session header next to the model name, for example "with low effort", and the footer shows it briefly at startup and whenever it changes.
+
+### `effort_hint` in a plan file
+
+Once you work from written plans rather than ad-hoc prompts, the effort choice moves upstream. This
+site's own repository carries `model_hint` and `effort_hint` fields in every plan's frontmatter —
+advice for whichever session claims the plan, not a gate: `haiku`/`low` for mechanical work,
+`sonnet`/`medium` for infrastructure and translation, `opus`/`high` for lesson authoring and UI work,
+`fable`/`xhigh` or `max` for architecture and curriculum design. The claiming session reads the hint,
+launches with `--model` and `--effort` to match, and escalates if it finds itself inventing decisions
+the plan did not make. Writing those hints for a body of work is covered in `m18-multi-session`; the
+point here is that "which effort level" is a question you can answer once, per kind of task, in
+writing, instead of every time you sit down.
+
+### `ultracode` is a different kind of thing
+
+`ultracode` appears in the `/effort` menu, which makes it look like a sixth level. It is not. It is a Claude Code setting: it sends `xhigh` to the model **and** has Claude orchestrate dynamic workflows for substantive tasks. Turn it on with `/effort ultracode`, `claude --effort ultracode`, `"ultracode": true` in a settings file, or the `/model` picker's slider.
+
+Two consequences follow from it not being a level. The persisted `effortLevel` setting and `CLAUDE_CODE_EFFORT_LEVEL` do not accept `ultracode` — and if that variable is set to anything other than `xhigh`, requests run at that level and ultracode's workflow orchestration stays inactive. Where workflows are turned off, `--effort ultracode` sets `xhigh` effort only.
+
+### `ultrathink`: deeper reasoning for one turn
+
+Include the word `ultrathink` anywhere in a prompt and Claude Code adds an in-context instruction asking for deeper reasoning on that turn. The effort level sent to the API is unchanged — so your session setting, and your prompt cache, both survive. This lesson's example prompt uses it exactly where it earns its place:
+
+```text
+ultrathink about why test/overdue.test.ts fails only for dates in the past. Give me
+the root cause and two candidate fixes with trade-offs. Do not edit anything yet.
+```
+
+Other phrasings are not keywords. "think", "think hard" and "think more" are passed through as ordinary prompt text and recognised as nothing in particular.
+
+### The cache cost of changing your mind
+
+On most models, changing effort mid-session means the next request reads the entire conversation history with no cache hits. While the cache is still warm, Claude Code asks you to confirm the change first. The exception is Fable 5.1 with an API key or a Claude subscription, where changing effort keeps the cache and no confirmation appears.
+
+The practical advice from the caching doc is a single sentence worth memorising: pick your model and effort level at the top of a session, and save `/compact` for natural breaks between tasks.
+
+## Hands-on lab
+
+This lesson's frontmatter carries `repo_tag: 'none'`, so the lab block below shows no checkout banner — the measurement lab is the next lesson, `04-effort-lab`, and step 4 borrows its tag (`lesson/m05-04-start`) purely to have something real to run against. What you can do in two minutes here is confirm that the dial exists, that the flag takes the values the docs list, and that a level you pass headlessly shows up in the run you get back.
+
+<Lab
+  title="Lab · find the dial and read it back"
+  lessonId="en/l2-intermediate/m05-models-effort/effort-levels"
+  repoTag="none"
+  steps={[
+    'Run `claude --help` and find the `--effort` entry. Confirm the accepted values are `low, medium, high, xhigh, max`.',
+    'Start an interactive session and look at the header next to the model name — it names the active effort level.',
+    'Run `/effort` with no argument to open the slider, note the levels offered for your current model, and press Escape without changing anything.',
+    'Borrow the next lesson’s tag for something real to run against — from the lab repository at `lesson/m05-04-start`, run one headless task at an explicit level: `claude -p "…" --model sonnet --effort low --output-format json --max-turns 6`. The command line below is the exact one the next lesson’s lab captured.',
+    'In the envelope, read `usage.output_tokens_details.thinking_tokens` — the thinking tokens the run actually spent. That is the number effort moves.',
+  ]}
+  expected="`claude --help` lists `--effort <level>` with `(low, medium, high, xhigh, max)`; the session header shows the active level; a headless run at `--effort low` returns a normal success envelope with a thinking-token count you can compare against another level."
+  checklist={[
+    '`--effort` appears in `claude --help` with five values',
+    'The session header names the active effort level',
+    '`/effort` offers `max` and `ultracode` in addition to the four saveable levels',
+    'A headless `--effort` run returns an envelope with `output_tokens_details.thinking_tokens`',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/04-effort-lab/02-effort-low.txt"
+    range="2-2"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/04-effort-lab/02-effort-low.txt"
+    range="8-20"
+  />
+</Lab>
+
+Two notes on that recording. `--effort` is a launch flag, so it applies to the session you start with it and is not saved as your default — which is exactly what you want for an experiment. And `thinking_tokens` sits inside `usage.output_tokens_details`, alongside the ordinary output token count: thinking is billed as output, which is why raising effort raises cost even when the answer is the same length.
+
+The interactive controls have no honest transcript, because a slider is not a stream of text. These are the exact commands:
+
+<CodeBlock title="effort controls">
+
+```text
+/effort              # open the slider
+/effort low          # set a level directly
+/effort auto         # clear the saved level for the active model
+/effort ultracode    # xhigh, plus dynamic workflow orchestration
+/model               # left/right arrows move the effort slider
+```
+
+</CodeBlock>
+
+## Anti-patterns
+
+**Raising effort to fix a bad prompt.** More thinking about the wrong question produces a longer wrong answer. _Fix:_ add the constraint, the acceptance criterion or the failing command first; change effort only when the task is well posed and still failing.
+
+**Flipping effort mid-task.** On most models that discards the prompt cache and the next request re-reads everything. _Fix:_ choose the level at the top of the session; if you must compare levels, compare in separate sessions from the same starting state.
+
+**Treating `ultracode` as "level six".** It is a Claude Code setting, not a model effort level: `effortLevel` and `CLAUDE_CODE_EFFORT_LEVEL` reject it, and an environment variable set to something other than `xhigh` silently disables its workflow orchestration. _Fix:_ set it through `/effort ultracode`, `--effort ultracode` or the `ultracode` setting key.
+
+**Expecting `max` to persist.** Unless it came from `CLAUDE_CODE_EFFORT_LEVEL`, `max` applies to the current session only, and `modelSettings`/`effortLevel` will not accept it. _Fix:_ if you truly want it everywhere, set the environment variable — and re-read the warning about overthinking first.
+
+**Writing "think hard" and expecting a keyword.** Only `ultrathink` is recognised; the rest is ordinary prompt text. _Fix:_ use `ultrathink` for a one-turn escalation that leaves your session setting and cache intact.
+
+<Callout variant="changed">
+  Passing `ultracode` to `--effort` needs Claude Code v2.1.203 or later; before that, `--effort
+  ultracode` printed `Unknown --effort value 'ultracode'` and the session started at the default
+  effort. Verified against `model-config.md` for Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/effort-levels"
+  questionId="q1"
+  lang="en"
+  prompt="You run `/effort xhigh` on Opus 4.6. What happens?"
+  options={[
+    {
+      text: 'Claude Code errors and keeps the previous level.',
+      explanation: 'It does not error — it falls back silently.',
+    },
+    {
+      text: 'The session runs at `high` — the highest supported level at or below the one you asked for.',
+      correct: true,
+      explanation: 'Opus 4.6 supports `low`, `medium`, `high` and `max` only.',
+    },
+    {
+      text: 'The session runs at `max`.',
+      explanation: 'Fallback goes down to the nearest supported level, never up.',
+    },
+    {
+      text: 'Claude Code switches you to a model that supports `xhigh`.',
+      explanation: 'Effort never changes your model.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/effort-levels"
+  questionId="q2"
+  lang="en"
+  prompt="Which statement about `max` is correct?"
+  options={[
+    {
+      text: 'It is saved per model in `modelSettings`, like the other levels.',
+      explanation: 'Neither `modelSettings` nor `effortLevel` accepts `max`.',
+    },
+    {
+      text: 'Unless it comes from `CLAUDE_CODE_EFFORT_LEVEL`, it applies to the current session only — and the docs warn it shows diminishing returns and is prone to overthinking.',
+      correct: true,
+      explanation: 'Both halves are stated outright in the model-configuration doc.',
+    },
+    {
+      text: 'It is the default level on Opus 5.',
+      explanation: '`high` is the default on every model that supports effort, except Opus 4.7.',
+    },
+    {
+      text: 'It enables dynamic workflows.',
+      explanation: 'That is `ultracode`, which sends `xhigh` and adds workflow orchestration.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/effort-levels"
+  questionId="q3"
+  lang="en"
+  prompt="You want deeper reasoning for exactly one turn without disturbing your session's effort setting or its prompt cache. What do you do?"
+  options={[
+    {
+      text: 'Run `/effort max`, ask the question, then run `/effort auto`.',
+      explanation:
+        'That is two effort changes — two cache invalidations on most models — for one question.',
+    },
+    {
+      text: 'Include the word `ultrathink` in the prompt.',
+      correct: true,
+      explanation:
+        'It adds an in-context instruction; the effort level sent to the API is unchanged.',
+    },
+    {
+      text: 'Write "think really hard about this".',
+      explanation: 'Not a keyword — it is passed through as ordinary prompt text.',
+    },
+    {
+      text: 'Switch to Fable for one turn.',
+      explanation: 'A model switch also invalidates the cache, and is a much bigger change.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/effort-levels"
+  questionId="q4"
+  lang="en"
+  prompt="Why does changing effort mid-session usually cost you a slow, expensive turn?"
+  options={[
+    {
+      text: 'Claude Code restarts the session.',
+      explanation: 'It does not; the conversation continues.',
+    },
+    {
+      text: 'On most models each effort level has its own cache, so the next request reads the whole conversation history with no cache hits.',
+      correct: true,
+      explanation:
+        'The exception is Fable 5.1 with an API key or a Claude subscription, where the cache survives.',
+    },
+    {
+      text: 'The model has to re-read your repository from disk.',
+      explanation: 'Nothing on disk is re-read; the cost is in reprocessing the request prefix.',
+    },
+    {
+      text: 'Higher effort always means more output tokens.',
+      explanation:
+        'Thinking tokens do rise with effort, but that is not why the turn after a change is expensive.',
+    },
+  ]}
+/>
+
+**Next:** `04-effort-lab` puts three effort levels on the same bug and shows what the difference is actually worth.

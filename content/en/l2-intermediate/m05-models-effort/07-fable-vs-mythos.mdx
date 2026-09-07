@@ -1,0 +1,269 @@
+---
+title: 'Fable vs. Mythos'
+description: 'Fable 5.1 is the most capable model you can select in Claude Code. Mythos is the frontier model you almost certainly cannot — limited availability, defensive security work, and the safety-classifier routing that separates the two.'
+level: 2
+module: 'm05-models-effort'
+order: 7
+duration_min: 10
+difficulty: advanced
+tags: ['models', 'fable', 'mythos', 'safety']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Model configuration'
+    url: 'https://code.claude.com/docs/en/model-config.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Pricing (Claude Platform)'
+    url: 'https://platform.claude.com/docs/en/about-claude/pricing'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Models overview (Claude Platform)'
+    url: 'https://platform.claude.com/docs/en/about-claude/models/overview'
+    verified_at: 2026-09-07
+  - type: article
+    title: 'Claude Fable 5.1 (Anthropic)'
+    url: 'https://www.anthropic.com/claude/fable'
+    verified_at: 2026-09-07
+  - type: article
+    title: 'Project Glasswing (Anthropic)'
+    url: 'https://www.anthropic.com/glasswing'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say what Fable 5.1 is for, how to select it, and what it costs — including the usage-credit consent behaviour that differs between interactive and headless runs.
+- Explain what "Mythos-class" refers to, who has access, and why.
+- Recognise automatic model fallback when a safety classifier flags a request, and know which model each category falls back to.
+- Explain why this course's labs target Fable and Opus rather than a model you cannot select.
+
+**Prerequisites.** The rest of this module, especially `01-model-family` (aliases) and `06-cost-and-usage` (usage credits and where spend lands).
+
+<WhenNotToUse>
+  This lesson is orientation, not a recommendation. Fable 5.1 is the most expensive model in the
+  lineup at $10/$50 per MTok, it is slower than the others, and on many plans it bills to usage
+  credits rather than your plan's included usage — so reaching for it out of curiosity has a real
+  price. Mythos is not something you can turn on: it is limited-availability, and Anthropic states
+  it does not plan to make Claude Mythos Preview generally available. If you are here looking for a
+  way to get access, the answer is a trusted access programme through your account team, not a
+  setting.
+</WhenNotToUse>
+
+## Concept
+
+### Fable 5.1: the top of the selectable lineup
+
+Claude Fable 5.1 and Claude Fable 5 are the most capable models in Claude Code, suited to tasks larger than a single sitting. The model-configuration doc is specific about what that means in practice: they sustain long autonomous sessions, investigate before acting, and verify their work more often than smaller models. Fable 5.1 is the newer release.
+
+Neither Fable model is the account-type default on any plan or provider — you select one explicitly:
+
+<CodeBlock title="selecting Fable">
+
+```text
+/model fable                    # Fable 5.1 (from Claude Code v2.1.255)
+/model claude-fable-5           # Fable 5 by model ID on the Anthropic API
+```
+
+</CodeBlock>
+
+```bash
+claude --model fable
+```
+
+Anthropic's own Fable page describes it as the model for ambitious, long-running projects — one that avoids easy-seeming shortcuts and fixes root causes — and lists availability for Pro, Max, Team and Enterprise users on Claude.ai, plus developers on the Claude Platform, AWS, Google Cloud and Microsoft Foundry.
+
+The docs' advice for getting value from it is worth quoting in outline, because it is the opposite of how people usually prompt a cheaper model: **describe the outcome, not the steps**; hand it **ambiguous problems** — root-cause investigations, outage debugging, architecture decisions; **skip the verification reminders**, because it verifies its own work with less prompting; and **size up larger tasks** you would normally break into pieces.
+
+Prices, from the pricing page: $10 per MTok input, $50 per MTok output. Its cache reads are unusually cheap relative to that — $0.25 per MTok, which is 2.5% of the base input price rather than the standard 10% multiplier every other model except Mythos 5.1 uses.
+
+### The usage-credit trap in headless runs
+
+This is the one operational detail in this lesson that can cost you money by surprise.
+
+Depending on your plan and seat tier, Fable usage can bill to **usage credits** instead of drawing on your plan's included limits; when it does, the `/model` picker shows "Requires usage credits" on the Fable row. In an interactive session, Claude Code shows a consent prompt before a Fable request bills usage credits, and you can continue on Fable or switch to your default model.
+
+In non-interactive mode — `claude -p` — and through the Agent SDK, **Claude Code never shows the consent prompt. When a Fable request there would bill to usage credits, Claude Code bills it without asking.**
+
+That is why none of this module's labs run `--model fable` or `--model best`. A course that teaches you to measure cost should not hand you a script that spends credits silently.
+
+### Automatic fallback: when Fable hands the request back
+
+Fable models and Opus 5 run with safety classifiers, which most often flag cybersecurity and biology content. When a classifier flags a request and the category has a fallback model, Claude Code re-runs the request on that model and shows a notice in the transcript:
+
+| Model that refused    | Cybersecurity-flagged | Biology-flagged                                      |
+| --------------------- | --------------------- | ---------------------------------------------------- |
+| Fable 5.1 and Fable 5 | Re-runs on Opus 4.8   | Re-runs on Opus 5                                    |
+| Opus 5                | Re-runs on Opus 4.8   | Ends with a refusal — Opus 5 has no biology fallback |
+
+After a fallback the session continues on the fallback model; `/model` puts you back. It is also, in cache terms, a model switch, so it starts a fresh prompt cache.
+
+Two practical notes. Fallback can trigger on the **first** request of a session, before you have typed anything unusual, because that request carries workspace context such as your `CLAUDE.md` and git status — a repository containing security or biology material can trip the classifier on that alone. `claude --safe-mode` disables customisations so you can check whether they are the trigger. And you can take the decision back: `/config` has a **Switch models when a message is flagged** toggle, or set `switchModelsOnFlag: false`, and a flagged request pauses with a choice instead of switching.
+
+The docs are explicit that this is expected routing for offensive-security and biology work, not an account flag — and they close with the sentence that leads directly to the second half of this lesson: if your organisation needs Fable-class capability for that work, ask your Anthropic account team about trusted access programmes.
+
+### Mythos: the model you probably cannot select
+
+"Mythos-class" is not a Claude Code setting, an alias, or a tier you can upgrade to. It is a model family that appears in Anthropic's public pricing table and almost nowhere else in the product surface.
+
+What the sources fetched on 2026-09-07 actually say:
+
+- The **pricing page** lists **Claude Mythos 5.1** and **Claude Mythos 5**, each annotated **limited availability** with a link to Project Glasswing. Their prices match the Fable models exactly — $10 per MTok input, $50 per MTok output, $12.50 / $20 per MTok for 5-minute and 1-hour cache writes — and Mythos 5.1 shares Fable 5.1's unusually cheap $0.25 per MTok cache reads. The page also notes that **Claude Mythos Preview**, along with Claude 4.7 and later models, uses a newer tokenizer, and that it includes the full 1M-token context window at standard pricing.
+- The **models overview** page mentions Mythos 5.1 only once, in the same cache-pricing footnote as Fable 5.1. Mythos has **no column in the model comparison table** — no latency, no context window, no model ID, no retirement date.
+- **Project Glasswing** is a cybersecurity initiative Anthropic announced on 7 April 2026, with partners including AWS, Apple, Microsoft, Google and Cisco, aimed at securing critical software. Claude Mythos Preview is described there as an unreleased frontier model with a significant step up in coding and vulnerability-detection ability — the announcement credits it with finding thousands of high-severity zero-day vulnerabilities, including a 27-year-old flaw in OpenBSD and a 16-year-old flaw in FFmpeg. Access is restricted to the initiative's launch partners, to further organisations maintaining critical software infrastructure, and to open-source maintainers who apply through the Claude for Open Source programme. Anthropic states it does **not plan to make Claude Mythos Preview generally available**, given its offensive potential, while aiming eventually to deploy safer Mythos-class models at scale with stronger safeguards.
+- Anthropic's **Fable page** states that Claude Mythos 5.1 is available to vetted organisations through Anthropic's trusted access programs, and that cyberdefenders can apply to the Cyber Verification Program.
+
+So the honest summary is: Mythos is a real, priced, named model family, deliberately gated behind vetting rather than behind a plan tier, aimed at defensive security work. If you have access, you know — because an organisation applied for it on your behalf.
+
+**What is not documented** in any page fetched for this lesson: whether Mythos appears in Claude Code's `/model` picker for organisations that have it, what its context window and effort levels are, or which Claude Code version is required. Those questions are open, and this lesson does not answer them from anywhere but a source.
+
+### Why this course targets Fable
+
+Every lesson in this course is verifiable by a reader with an ordinary subscription. Fable 5.1 is selectable with one command, priced publicly, and documented in the same reference pages as the rest of the family. Mythos is none of those things for almost everyone reading this. Teaching against a model you cannot run would break the course's own evidence rule — you could not reproduce a single transcript.
+
+This lesson's example prompt is the shape of work Fable is documented for — outcome-first, ambiguous, and larger than one sitting:
+
+```text
+Our nightly job silently drops about 2% of task records. I don't know where. Find
+the root cause, prove it with a failing test, then fix it and show me both runs.
+```
+
+## Hands-on lab
+
+This lesson has no lab. Every hands-on exercise in it would either cost usage credits without asking — a `claude -p --model fable` run does exactly that on many plans — or require access to a model that is limited-availability by design.
+
+What you can do instead, at no cost, is read the two things that decide whether Fable is available to you at all:
+
+<CodeBlock title="check before you spend">
+
+```text
+/status                   # login method: subscription, or a Console organisation
+/model                    # the picker marks a Fable row "Requires usage credits" when it applies
+/usage                    # your usage-credit spend for the month, when credits are on
+```
+
+</CodeBlock>
+
+If the `/model` picker does not list a Fable row, note that on the Anthropic API the picker shows one only after the server reports it available for your organisation — typing `/model fable` checks availability with the server directly, so a typed selection can succeed where the picker shows nothing.
+
+## Anti-patterns
+
+**Running `--model fable` or `--model best` in a script.** Headless runs get no usage-credit consent prompt; they bill and continue. _Fix:_ decide deliberately, in an interactive session, before you automate anything on a Fable model — and check `/usage` afterwards.
+
+**Prompting Fable like a cheaper model.** Step-by-step instructions and "remember to run the tests" reminders spend its strengths on obedience. _Fix:_ describe the outcome, hand it the ambiguity, and let it plan and verify.
+
+**Reading a fallback notice as an account problem.** Security and biology work triggers classifier fallback frequently, often on the first request, and the docs call that expected routing rather than a flag on you. _Fix:_ check with `claude --safe-mode` whether your customisations are the trigger, and use `switchModelsOnFlag: false` if you would rather be asked.
+
+**Treating "Mythos-class" as a tier you can buy.** It is gated by vetting for defensive security work, not by plan. _Fix:_ if your organisation genuinely needs it, that conversation goes through your Anthropic account team's trusted access programmes.
+
+**Citing Mythos capabilities from memory.** It has no row in the model comparison table; almost everything circulating about it is inference. _Fix:_ cite the pricing page and the Glasswing announcement, or say you do not know.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/fable-vs-mythos"
+  questionId="q1"
+  lang="en"
+  prompt="You run `claude -p '…' --model fable` on a plan where Fable bills to usage credits. What happens?"
+  options={[
+    {
+      text: 'Claude Code asks you to confirm before spending credits.',
+      explanation: 'The consent prompt appears in interactive sessions only.',
+    },
+    {
+      text: 'The run proceeds and bills usage credits without asking — non-interactive mode never shows the consent prompt.',
+      correct: true,
+      explanation:
+        'Which is exactly why this module’s labs use haiku, sonnet and opus rather than fable or best.',
+    },
+    {
+      text: 'The run fails with a "requires usage credits" error.',
+      explanation: 'That message belongs to fast mode when credits are off, not to a Fable run.',
+    },
+    {
+      text: 'Claude Code silently downgrades you to Opus.',
+      explanation: 'Downgrades happen on safety-classifier fallback, not on billing.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/fable-vs-mythos"
+  questionId="q2"
+  lang="en"
+  prompt="A biology-flagged request on Fable 5.1 is re-run on which model?"
+  options={[
+    { text: 'Opus 4.8', explanation: 'That is the cybersecurity-flagged fallback target.' },
+    {
+      text: 'Opus 5',
+      correct: true,
+      explanation:
+        'And note that a later biology flag on Opus 5 ends in a refusal, because Opus 5 has no biology fallback.',
+    },
+    { text: 'Sonnet 5', explanation: 'Sonnet is not a fallback target for either category.' },
+    { text: 'Fable 5', explanation: 'Fallback moves out of the Fable family, not within it.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/fable-vs-mythos"
+  questionId="q3"
+  lang="en"
+  prompt="What do the public sources actually say about Claude Mythos?"
+  options={[
+    {
+      text: 'It is the paid tier above Fable, available on Enterprise plans.',
+      explanation: 'Nothing ties it to a plan tier; the gate is vetting, not billing.',
+    },
+    {
+      text: 'Mythos 5.1 and Mythos 5 appear in the pricing table marked "limited availability", linked to Project Glasswing — a defensive-security initiative — and Anthropic states it does not plan to make Claude Mythos Preview generally available.',
+      correct: true,
+      explanation:
+        'That, plus the trusted-access route, is the whole of what the fetched sources establish.',
+    },
+    {
+      text: 'It is a Claude Code effort level above `max`.',
+      explanation: 'That would be `ultracode`, and it is a setting rather than a level.',
+    },
+    {
+      text: 'It is an older model retained for compatibility.',
+      explanation: 'It is described as a frontier model, unreleased for general availability.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/fable-vs-mythos"
+  questionId="q4"
+  lang="en"
+  prompt="Which prompt gets the most out of Fable 5.1, per the documented guidance?"
+  options={[
+    {
+      text: '"Open src/store.ts, change line 86, then run npm test and report back."',
+      explanation: 'Dictating steps spends its investigation and planning strengths on obedience.',
+    },
+    {
+      text: '"The nightly job silently drops about 2% of records and I don\'t know why. Find the root cause, prove it with a failing test, then fix it."',
+      correct: true,
+      explanation:
+        'Outcome-first, genuinely ambiguous, larger than one sitting — the documented sweet spot.',
+    },
+    {
+      text: '"Reformat this JSON file. Remember to check your work afterwards."',
+      explanation:
+        'A deterministic task, plus a verification reminder the docs say is usually unnecessary.',
+    },
+    {
+      text: '"Rename `addTask` to `createTask` everywhere."',
+      explanation: 'Mechanical breadth — a cheaper model handles it for a tenth of the price.',
+    },
+  ]}
+/>
+
+That closes the module. You can now pick a model on evidence, set an effort level on purpose, decide whether latency is worth paying for, and read the number that tells you what any of it cost.

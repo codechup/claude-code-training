@@ -1,0 +1,321 @@
+---
+title: 'Cost and usage'
+description: 'Watch what a session actually spends: /usage (and its /cost alias), the prompt cache line, the cache fields in a JSON envelope, plan versus API billing, and the handful of habits that move the number most.'
+level: 2
+module: 'm05-models-effort'
+order: 6
+duration_min: 20
+difficulty: core
+tags: ['cost', 'usage', 'prompt-caching', 'context']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Manage costs effectively'
+    url: 'https://code.claude.com/docs/en/costs.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'How Claude Code uses prompt caching'
+    url: 'https://code.claude.com/docs/en/prompt-caching.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Slash commands'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Explore the context window'
+    url: 'https://code.claude.com/docs/en/context-window.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Pricing (Claude Platform)'
+    url: 'https://platform.claude.com/docs/en/about-claude/pricing'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Read the `/usage` Session block, including the `Prompt cache (main)` line, and say what a miss means.
+- Read `cache_read_input_tokens`, `cache_creation_input_tokens` and `cache_creation.ephemeral_*` out of a JSON envelope and infer the cache TTL you got.
+- Explain why a long-running session's usage climbs even when you are barely typing.
+- Say which billing model you are on and where the authoritative number lives.
+- Apply the five habits that move a bill the most, and skip the ones that do not.
+
+**Prerequisites.** Lessons `01`–`05` of this module. `m02-interact`'s `06-context-basics` helps, because most cost questions are really context questions.
+
+<WhenNotToUse>
+  Do not optimise cost before you have a number. On a Pro or Max subscription the session cost
+  figure is a locally computed estimate for API users — your usage is included in your subscription,
+  so the dollar figure is not what you are billed. Chasing it there wastes attention that belongs on
+  the plan-usage bars instead. And do not micro-manage the cache: the biggest, most reliable savings
+  come from keeping context small and picking your model and effort once, not from clever settings.
+</WhenNotToUse>
+
+## Concept
+
+### `/usage`, and its aliases
+
+`/usage` shows session cost, plan usage limits and activity stats. **`/cost` and `/stats` are aliases for it** — the same screen under three names. The Session block at the top looks like this. This is the illustrative sample printed in the official `costs.md` page, quoted so you know the shape to look for — it is **not** a capture from this course's sessions, which is why it names a model (`claude-sonnet-4-6`) that appears in none of this module's recordings:
+
+<CodeBlock title="Sample from the official costs.md doc — not a capture">
+
+```text
+Total cost:            $0.55
+Total duration (API):  6m 20s
+Total duration (wall): 6h 33m 10s
+Total code changes:    0 lines added, 0 lines removed
+Usage by model:
+   claude-sonnet-4-6:  1.2k input, 5.3k output, 940.0k cache read, 50.0k cache write ($0.55)
+```
+
+</CodeBlock>
+
+Three things about that number. It is computed **locally**, from token counts at list price — the authoritative figure for billing is the Usage page in the Claude Console. It **resets on `/clear`**, so the next session's total starts at $0. And on Pro and Max it is explicitly not what you are billed: your usage is included in your subscription, and the same screen shows you plan usage bars, activity stats and a usage breakdown instead.
+
+On a Pro, Max, Team or Enterprise plan, `/usage` also breaks down what counts against your plan limits: **attribution** (which skills, subagents, plugins and MCP servers your recent usage went to), **behaviour flags** (long context, cache misses — flagged when one accounts for 10% or more), and **loops** (the heaviest scheduled tasks). Press `d` or `w` to switch between the last 24 hours and the last 7 days. The figures are computed from local session history on this machine, so usage from other devices or claude.ai is not included.
+
+### The prompt cache line
+
+After the main conversation's first API response, `/usage` adds a `Prompt cache (main)` line. Again, the example below is the one printed in `costs.md`, not a session of ours:
+
+<CodeBlock title="Sample from the official costs.md doc — not a capture">
+
+```text
+Prompt cache (main):   14 requests · 91% of input tokens from cache · 2 misses (last 6m 10s ago, 310.2k tokens re-cached) · 1 expected rebuild (compaction or tool-result clearing) · warm (1h TTL, last activity 40s ago)
+```
+
+</CodeBlock>
+
+- **Misses** are requests that re-processed content the cache already held. Claude Code counts a request as a miss when it re-processed more than 5% and at least 2,000 tokens of what it could have read from cache. Where it can identify a cause, the line names it — for example `likely cause: tool definitions changed`.
+- **Expected rebuilds** are the misses Claude Code caused itself, by compacting or by clearing old tool results.
+- **Warm or cold** says whether the cached prefix is still inside its lifetime, and which TTL is in effect.
+
+That line covers the main conversation only, not subagents, and `/clear` resets it with the rest of the Session block.
+
+### Why caching is most of your bill
+
+Claude Code re-sends the full context on every request: system prompt, project context, every prior message and tool result, plus your new message. Most of each request is identical to the one before it, and prompt caching is how the API avoids reprocessing the unchanged part.
+
+The economics are stark. A cache **read** costs 10% of the standard input price — 2.5% on Fable 5.1 — while uncached input costs the full rate. Concretely, on Sonnet 5 that is $2 per MTok for fresh input against $0.20 per MTok for a cache hit; a 5-minute cache **write** is $2.50 per MTok and a 1-hour write is $4.
+
+So the single most expensive thing you can do in a session is invalidate the cache repeatedly. The documented invalidators are: switching models, changing effort level, turning on fast mode, connecting or disconnecting an MCP server, enabling or disabling a plugin, denying an entire tool, compacting, accumulating many images, and upgrading Claude Code. The documented keepers include editing files in your repository, editing `CLAUDE.md` mid-session, changing output style or permission mode, invoking skills and commands, and rewinding.
+
+The TTL matters too. On a Claude subscription, within your plan's included usage, the main conversation gets a **one-hour** TTL; on usage credits, an API key or a cloud provider it is **five minutes**. `promptCacheTtl` (or `CLAUDE_CODE_PROMPT_CACHE_TTL`) sets it yourself; each control takes `5m` or `1h`.
+
+The cache is also scoped more narrowly than people expect: effectively to one machine and one directory, because the system prompt embeds the working directory, platform, shell and memory paths. **That includes worktrees of the same repository** — each worktree has its own working directory and therefore its own cache.
+
+### Why a long session's usage climbs
+
+The docs list the causes, and they are all worth recognising because none of them look like "I asked for something expensive":
+
+- **Long context** — every request carries the whole conversation, so a one-line question in a session that has been open all day still draws usage for the whole thing.
+- **Cache misses** — your first message after a break longer than the cache lifetime reprocesses your full context.
+- **Scheduled tasks**, **cross-session messages** and **goal check-ins** — each fires on its own schedule and sends your full context, even while you are idle.
+- **Agent teammates** — each active teammate keeps consuming tokens until it exits.
+- **Compaction** — `/compact` reads the conversation it summarises, so compacting a large context is itself a large request. `/clear` costs nothing.
+
+Background functionality — conversation summarisation for `--resume`, some command processing — is real but small: typically under $0.04 per session.
+
+### The habits that actually move the number
+
+From the cost doc, in rough order of leverage:
+
+1. **Clear between tasks.** `/clear` when you switch to unrelated work; `/rename` first if you want to `/resume` later.
+2. **Choose the right model.** Sonnet handles most coding tasks and costs less than Opus; reserve Opus for complex architectural decisions and multi-step reasoning. For simple subagent work, `model: haiku` in the subagent's configuration.
+3. **Pick model and effort once, at the top.** Every mid-session change is a cache rebuild.
+4. **Give compaction instructions.** `/compact Focus on code samples and API usage`, or a "Compact instructions" section in `CLAUDE.md`.
+5. **Keep tool definitions lean.** MCP tool definitions are deferred by default, so only tool names and server instructions enter context until Claude uses a specific tool. Whether connecting or disconnecting a server invalidates the cache depends on that: deferred tools leave the prefix alone, tools loaded into the prefix do not. `/context` shows what is consuming space, and CLI tools like `gh` and `aws` cost no per-tool listing at all.
+
+This lesson's example prompt is a cost-shaped one — asking for the work to be scoped before it is done:
+
+```text
+Before you change anything: list the files you would need to read to add pagination
+to the /tasks endpoint, and estimate how much of the context window that is. Then stop.
+```
+
+## Hands-on lab
+
+`/usage` is a TUI screen, so this lesson shows the commands rather than pretending to record them — and the two screen samples in the Concept section above are quoted from the official doc and labelled as such, not passed off as recordings. The measurable half is the result envelope, which reports the same cache counters the `Prompt cache (main)` line summarises — and this module already captured real ones. The two below are the Sonnet run from lesson `02` and the low-effort run from lesson `04`.
+
+<Lab
+  title="Lab · find your cache hit ratio, twice"
+  lessonId="en/l2-intermediate/m05-models-effort/cost-and-usage"
+  repoTag="none"
+  steps={[
+    'In an interactive session that has been running for a few turns, run `/usage`. Read the Session block, then the `Prompt cache (main)` line: request count, share of input tokens from cache, misses, and whether the cache is warm.',
+    'Press `d` and `w` to switch the plan-usage breakdown between the last 24 hours and the last 7 days.',
+    'Run `/context` and compare: the cache line tells you what your requests cost to send, `/context` tells you what is in them.',
+    'Now do it headlessly. Run any task with `--output-format json` and read `usage.cache_read_input_tokens`, `usage.cache_creation_input_tokens` and `usage.cache_creation`.',
+    'Work out your TTL: one-hour cache writes appear under `ephemeral_1h_input_tokens`, five-minute writes under `ephemeral_5m_input_tokens`.',
+    'Run `/clear`, then `/usage` again, and confirm the Session block has reset to $0.',
+  ]}
+  expected="The `Prompt cache (main)` line reports a high share of input tokens from cache in a healthy session. In the envelope, cache_read_input_tokens is an order of magnitude larger than cache_creation_input_tokens, and the whole of cache_creation sits under ephemeral_1h_input_tokens on a Claude subscription within plan usage."
+  checklist={[
+    'You read a real hit-ratio figure rather than assuming caching is working',
+    'You can name one action from your own session that caused a miss',
+    'You located the three cache fields in a JSON envelope',
+    'You know which TTL bucket your writes landed in, and why',
+    '`/clear` reset the Session block',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/03-sonnet.txt"
+    range="2-2"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/03-sonnet.txt"
+    range="6-24"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/04-effort-lab/02-effort-low.txt"
+    range="6-24"
+  />
+</Lab>
+
+Read the Sonnet envelope as a worked example. `input_tokens` is **12** — the only genuinely new input in the whole run. `cache_read_input_tokens` is **214,589** and `cache_creation_input_tokens` is **15,938**: a read-to-write ratio of about 13 to 1, which is what a healthy session looks like. A high read-to-creation ratio means caching is working well; creation staying high turn after turn means something in your prefix keeps changing.
+
+The `cache_creation` split is the TTL evidence: all 15,938 written tokens sit under `ephemeral_1h_input_tokens`, with `ephemeral_5m_input_tokens` at zero. That is the one-hour TTL a Claude subscription gets for the main conversation while it is inside the plan's included usage. On usage credits, an API key or a cloud provider, the same run would report those tokens under the five-minute bucket instead.
+
+Now compare the effort-lab run: **12** new input tokens, **205,380** read from cache, **12,639** written. Nearly the same shape on a different task in a different repository — which is the point. Across ordinary agentic work, the overwhelming majority of what you pay for input is cache reads, and your leverage is in not throwing that cache away.
+
+<CodeBlock title="cost and usage commands">
+
+```text
+/usage          # session cost, plan bars, prompt cache line (aliases: /cost, /stats)
+/context        # what is currently in the context window
+/compact Focus on code samples and API usage
+/clear          # reset the session and its cost counters; costs nothing
+/rename         # name the session first if you want to /resume it later
+/insights       # HTML report on how you work, written to ~/.claude/usage-data/
+/usage-credits  # turn usage credits on, or request them from an admin
+```
+
+</CodeBlock>
+
+## Anti-patterns
+
+**Treating the session cost figure as your bill.** It is a local estimate at list price, and on Pro and Max your usage is included in the subscription anyway. _Fix:_ use the Console Usage page for billing, and the plan bars in `/usage` for "am I about to hit a limit".
+
+**Compacting to save money.** `/compact` reads the whole conversation to summarise it, and the summary invalidates the cache. It is a context-management tool, not a cost-saving one. _Fix:_ `/clear` between unrelated tasks — it costs nothing.
+
+**Switching model or effort mid-task "just to try".** Each switch reprocesses the entire conversation as uncached input, at full rate. _Fix:_ decide at the top of the session; compare across sessions, not within one.
+
+**Leaving a session open all day.** Long context plus scheduled tasks, cross-session messages and goal check-ins all keep sending your full conversation while you do nothing. _Fix:_ `/clear` (or close and reopen) between work blocks, and check the `/usage` behaviour flags.
+
+**Optimising the cache in a worktree-heavy workflow and expecting sharing.** Each worktree is its own working directory and therefore its own cache prefix. _Fix:_ expect a cold first turn per worktree, and do not treat that as a bug.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/cost-and-usage"
+  questionId="q1"
+  lang="en"
+  prompt="What is the relationship between `/cost` and `/usage`?"
+  options={[
+    {
+      text: '`/cost` shows the dollar figure and `/usage` shows plan limits — two different screens.',
+      explanation: 'One screen shows both.',
+    },
+    {
+      text: '`/cost` is an alias for `/usage`; so is `/stats`.',
+      correct: true,
+      explanation: 'Three names, one screen: session cost, plan usage limits and activity stats.',
+    },
+    {
+      text: '`/cost` is deprecated and does nothing.',
+      explanation: 'It is a current alias, not a removed command.',
+    },
+    {
+      text: '`/cost` reports your Console bill directly.',
+      explanation: 'The figure is computed locally from token counts at list price.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/cost-and-usage"
+  questionId="q2"
+  lang="en"
+  prompt="A run's envelope reports `input_tokens: 12`, `cache_read_input_tokens: 214589` and `cache_creation_input_tokens: 15938`. What does that tell you?"
+  options={[
+    {
+      text: 'The session is leaking context and needs compacting.',
+      explanation: 'A 13:1 read-to-write ratio is a healthy cache, not a leak.',
+    },
+    {
+      text: 'Almost all the input was served from cache at roughly a tenth of the standard input rate — caching is working well.',
+      correct: true,
+      explanation:
+        'A high read-to-creation ratio is the signal to look for; persistent high creation is the warning sign.',
+    },
+    {
+      text: 'The model only read 12 tokens of your repository.',
+      explanation: '`input_tokens` counts uncached input for the run, not files read.',
+    },
+    {
+      text: 'The cache TTL expired mid-run.',
+      explanation: 'That would show as high creation and low reads.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/cost-and-usage"
+  questionId="q3"
+  lang="en"
+  prompt="Which of these keeps the prompt cache intact?"
+  options={[
+    {
+      text: 'Changing the effort level mid-session.',
+      explanation:
+        'On most models each level has its own cache. Fable 5.1 on an API key or subscription is the exception.',
+    },
+    {
+      text: 'Editing `CLAUDE.md` while the session is running.',
+      correct: true,
+      explanation:
+        'It is listed among the actions that keep the cache — project context is loaded at session start.',
+    },
+    {
+      text: 'Connecting an MCP server whose tools load into the prefix.',
+      explanation: 'Tool definitions sit in the system prompt layer, so the cache invalidates.',
+    },
+    {
+      text: 'Turning on fast mode.',
+      explanation: 'The fast-mode header is part of the cache key.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/cost-and-usage"
+  questionId="q4"
+  lang="en"
+  prompt="You have been in one session for six hours, mostly reading. Usage is far higher than your typing suggests. What is the most likely explanation?"
+  options={[
+    {
+      text: 'Claude Code bills per minute of session time.',
+      explanation: 'Billing is per token, not per minute.',
+    },
+    {
+      text: 'Every request carries the full conversation, so late one-line questions still draw usage for the whole history — and each break longer than the cache TTL reprocesses all of it.',
+      correct: true,
+      explanation:
+        'Long context plus cache misses are the first two causes the cost doc lists, and `/usage` flags them when either exceeds 10% of recent usage.',
+    },
+    {
+      text: 'The `/usage` figure is wrong in long sessions.',
+      explanation: 'It is an estimate at list price, but it is not wrong about the trend.',
+    },
+    {
+      text: 'Reading files is billed at a premium rate.',
+      explanation: 'Tool results are ordinary input tokens.',
+    },
+  ]}
+/>
+
+**Next:** `07-fable-vs-mythos` closes the module with the two names at the top of the family — one you can select today, and one you almost certainly cannot.

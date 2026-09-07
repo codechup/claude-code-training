@@ -1,0 +1,294 @@
+---
+title: 'Choosing a model'
+description: 'Run one real bug through Haiku 4.5, Sonnet 5 and Opus 5 with identical prompts and a fixed turn budget, then read the JSON envelopes side by side: duration, cost, turns, and whether the fix actually landed.'
+level: 2
+module: 'm05-models-effort'
+order: 2
+duration_min: 25
+difficulty: core
+tags: ['models', 'cost', 'headless', 'lab']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Model configuration'
+    url: 'https://code.claude.com/docs/en/model-config.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage costs effectively'
+    url: 'https://code.claude.com/docs/en/costs.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'How Claude Code uses prompt caching'
+    url: 'https://code.claude.com/docs/en/prompt-caching.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'claude-code-lab (the course lab repository)'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m05-02-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Design a model comparison that is actually fair: identical prompt, identical starting state, identical turn budget.
+- Run the same task headlessly on three models and capture machine-readable evidence with `--output-format json`.
+- Read `duration_ms`, `total_cost_usd`, `num_turns`, `subtype` and `result` out of a result envelope and turn them into a decision.
+- Separate the two questions people collapse into one — "did it work?" and "what did it cost?" — and measure each with the right instrument.
+
+**Prerequisites.** Lesson `01-model-family` (aliases and what they resolve to), a clone of the lab repository, Node 24, and a terminal. The whole lab is headless, so you will not be babysitting a TUI.
+
+<WhenNotToUse>
+  This comparison is a diagnostic, not a habit. Running every task three times triples your spend to
+  answer a question you usually already know: most day-to-day coding sits comfortably on Sonnet, and
+  the docs say so. Run the comparison when a class of work is genuinely failing, or when you are
+  setting a team default and want evidence instead of folklore — not before every task. And do not
+  read a single three-run comparison as a benchmark: one bug, one repository, one prompt, one
+  afternoon is an anecdote with numbers attached.
+</WhenNotToUse>
+
+## Concept
+
+### What makes a model comparison fair
+
+Three things have to be identical across runs, or the numbers mean nothing:
+
+- **The starting state.** Model two must meet the same broken repository model one met. In git terms: `git checkout -- . && git clean -fd` between runs.
+- **The prompt.** Byte-for-byte the same string, with no extra hint added because run one struggled.
+- **The budget.** The same `--max-turns`, the same `--allowedTools`, the same permission mode.
+
+And one thing has to be measured _outside_ the model's own report: whether the fix worked. A model saying "all tests pass" is a claim; `npm test` exiting green is evidence. That distinction is the whole point of D093 in this course, and it is exactly what separates a useful comparison from a vibe.
+
+### The result envelope is the instrument
+
+`claude -p … --output-format json` prints one JSON object when the run ends. The fields that carry the comparison:
+
+| Field                | What it tells you                                                                 |
+| -------------------- | --------------------------------------------------------------------------------- |
+| `subtype`            | `success`, or an error kind such as `error_max_turns`                             |
+| `is_error`           | Whether Claude Code considers the run to have completed                           |
+| `num_turns`          | How many turns the run consumed                                                   |
+| `duration_ms`        | Wall-clock time for the whole run                                                 |
+| `total_cost_usd`     | Claude Code's local estimate, computed from token counts at list price            |
+| `result`             | The final assistant message — present on success, absent when the run was cut off |
+| `modelUsage`         | Per-model token counts, `contextWindow`, and that model's `costUSD`               |
+| `permission_denials` | Every tool call your `--allowedTools` list refused                                |
+
+`total_cost_usd` is an estimate that Claude Code computes locally from token counts at list price; the authoritative figure is the Usage page in the Claude Console. For a comparison run minutes apart on the same machine, the estimate is exactly the right instrument — you are comparing like with like.
+
+One subtlety that makes the comparison cleaner than you might fear: each model has its own prompt cache. Switching models means the next request reads the whole conversation with no cache hits — so three consecutive runs on three models do not warm each other's caches, and run three is not unfairly cheap.
+
+This lesson's example prompt is the one the lab uses. Notice that it names the symptom and forbids the shortcut, but does not name the file with the bug:
+
+```text
+npm test fails one test in test/persist.test.ts. Find the root cause in src/ and
+fix it. Do not change any test file.
+```
+
+## Hands-on lab
+
+The `lesson/m05-02-start` tag seeds bug **B3** from the lab repository's `BUGS.md`: in `runAdd()` in `src/cli.ts`, the call to `save()` is fired without `await` or a `.catch`, so a disk-write failure becomes an unobserved promise rejection instead of an error the caller can handle. One test fails.
+
+<Lab
+  title="Lab · the same bug on Haiku, Sonnet and Opus"
+  lessonId="en/l2-intermediate/m05-models-effort/choosing-a-model"
+  repoTag="lesson/m05-02-start"
+  steps={[
+    'Clone the lab repository somewhere outside this course, then `git checkout lesson/m05-02-start` and `npm ci`. Re-run `npm ci` after every tag change — the lockfile differs between tags.',
+    'Run `npm test` and read the failure. This is the state every model must meet.',
+    'Run the task on Haiku: `claude -p "npm test fails one test in test/persist.test.ts. Find the root cause in src/ and fix it. Do not change any test file." --model haiku --output-format json --max-turns 6 --permission-mode acceptEdits --allowedTools "Read Edit Grep Glob Bash(npm test*)"`',
+    'Check the work yourself, not the model’s summary: `git diff --stat` and `npm test`.',
+    'Reset with `git checkout -- . && git clean -fd`, confirm `npm test` fails again, and repeat step 3 with `--model sonnet`, then again with `--model opus`.',
+    'Put `subtype`, `num_turns`, `duration_ms` and `total_cost_usd` from the three envelopes into one table next to your own `npm test` result for each run.',
+  ]}
+  expected="All three models produce a working fix in src/cli.ts and npm test goes from `1 failed | 14 passed` to `15 passed` each time. Only the Sonnet run finishes inside the six-turn budget; the Haiku and Opus envelopes report subtype error_max_turns after the edit had already landed."
+  checklist={[
+    'The working tree was reset between every run',
+    'The prompt string was identical for all three runs',
+    '`npm test` was run by you after each model, not trusted from the `result` text',
+    'Each run’s diff touches only `src/cli.ts`',
+    'The three envelopes were saved, not just glanced at',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/01-npm-test-before.txt"
+    range="2-7"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/02-haiku.txt"
+    range="2-2"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/02-haiku.txt"
+    range="85-95"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/03-sonnet.txt"
+    range="99-112"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/06-npm-test-after-sonnet.txt"
+    range="2-5"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/04-opus.txt"
+    range="108-118"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/05-npm-test-after-opus.txt"
+    range="2-6"
+  />
+</Lab>
+
+### The real numbers
+
+These are the values from the three envelopes above, captured on 2026-09-07 against Claude Code 2.1.263. The "tests after" column is the writer's own `npm test`, not the model's claim.
+
+| Run              | `subtype`         | `num_turns` | `duration_ms` | `total_cost_usd` | Tests after | Diff                                    |
+| ---------------- | ----------------- | ----------- | ------------- | ---------------- | ----------- | --------------------------------------- |
+| `--model haiku`  | `error_max_turns` | 7           | 60,125        | 0.0588           | 15 passed   | `src/cli.ts`, 1 insertion, 3 deletions  |
+| `--model sonnet` | `success`         | 6           | 38,164        | 0.1201           | 15 passed   | `src/cli.ts`, 1 insertion, 3 deletions  |
+| `--model opus`   | `error_max_turns` | 7           | 76,868        | 0.2453           | 15 passed   | `src/cli.ts`, 2 insertions, 3 deletions |
+
+Read that table honestly, because it does not say "the expensive model is better".
+
+**Every model fixed the bug**, and all three found the same root cause: the un-awaited `save()` call. Haiku and Sonnet each produced the same shape of change — one inserted line, three deleted, in `src/cli.ts`. Opus made the same fix and additionally replaced the now-misleading comment above it with an accurate one, which is why its diff has one more inserted line. That is a real, if small, quality difference, and the kind you only see by reading diffs rather than totals.
+
+**Haiku was four times cheaper than Opus** on this task and finished in less wall-clock time. On a scoped bug with a failing test pointing at it, the cheapest model was entirely sufficient.
+
+**Sonnet was the only run that finished.** Haiku and Opus both hit `--max-turns 6` — _after_ editing the file, which is why the tests pass despite `is_error: true` and no `result` string. That is a genuinely important finding: `subtype: error_max_turns` means "the budget ran out", not "the work failed", and if your automation keys off `is_error` alone it will throw away good work. The lesson is that a turn budget is a variable in the experiment, exactly like the model.
+
+**Opus's envelope also explains part of its turn spend.** Its `permission_denials` array records a `Bash` call that was refused:
+
+<Transcript
+  src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/04-opus.txt"
+  range="71-81"
+/>
+
+The allowlist was `Bash(npm test*)`, and the model tried to run `cd "<lab>" && npm test … && npm run typecheck … && npm run lint …`, which does not match that pattern. The denial cost a turn. That is not a model weakness; it is an experiment design flaw worth knowing about — your `--allowedTools` pattern is part of the environment you are comparing models in.
+
+### One honest caveat about the `result` strings
+
+The Sonnet envelope's `result` is in Turkish. That is genuine, unmodified output: the machine that captured these transcripts has global Claude Code preferences asking for Turkish answers, and a headless run loads your settings and memory like any other session. It is a useful reminder that "identical prompt" is not the same as "identical context" — your own configuration is part of every run you make.
+
+## Anti-patterns
+
+**Comparing models without resetting the repository.** Run two finds the bug already fixed and reports success in one turn, and you conclude the second model is faster. _Fix:_ `git checkout -- . && git clean -fd` between runs, and re-run `npm test` to confirm the failure is back.
+
+**Trusting the `result` text as the outcome.** A model's summary is a claim about the work, generated by the thing that did the work. _Fix:_ run the tests yourself and record the exit state; that column is the only one that answers "did it work?".
+
+**Treating `is_error: true` as "the run failed".** Two of the three runs here reported `error_max_turns` after landing a correct fix. _Fix:_ read `subtype` and `terminal_reason`, and check the working tree before discarding the run.
+
+**Letting `--allowedTools` differ between runs.** A pattern that denies one model's tool call and permits another's makes the comparison about your allowlist, not about the models. _Fix:_ fix the allowlist first, then re-run all arms.
+
+**Generalising one bug into a policy.** One async bug in one small TypeScript repository does not tell you which model to use for a schema migration. _Fix:_ run the comparison on work that looks like your work, and re-run it when your work changes.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/choosing-a-model"
+  questionId="q1"
+  lang="en"
+  prompt="A run's envelope says `subtype: error_max_turns` and `is_error: true`, but `npm test` is green and `git diff` shows a sensible fix. What happened?"
+  options={[
+    {
+      text: 'The model failed and something else fixed the code.',
+      explanation: 'Nothing else touched the tree — the model made the edit before the cut-off.',
+    },
+    {
+      text: 'The run used its whole turn budget and was stopped, after the edit had already landed. The work is good; the run just never got to report.',
+      correct: true,
+      explanation:
+        'Exactly what happened to the Haiku and Opus runs in this lab. Check the tree, not just the flag.',
+    },
+    {
+      text: 'The JSON envelope is unreliable when a run is cut off.',
+      explanation:
+        'The envelope is accurate; it reports a budget exhaustion, which is what occurred.',
+    },
+    {
+      text: 'The tests were cached from the previous run.',
+      explanation: 'Vitest re-ran; and the tree was reset before the run began.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/choosing-a-model"
+  questionId="q2"
+  lang="en"
+  prompt="Why do three consecutive runs on three different models not unfairly favour the last one?"
+  options={[
+    {
+      text: 'Because Claude Code disables the prompt cache in headless mode.',
+      explanation: 'It does not; caching applies to `-p` runs like any other.',
+    },
+    {
+      text: 'Because each model has its own prompt cache, so one model’s run cannot warm another model’s.',
+      correct: true,
+      explanation:
+        'The caching doc is explicit: switching models means reading the whole request with no cache hits.',
+    },
+    {
+      text: 'Because `--max-turns` resets the cache.',
+      explanation: 'The turn budget has nothing to do with the cache.',
+    },
+    {
+      text: 'They do favour the last one, and the comparison is invalid.',
+      explanation: 'Per-model caches are exactly why it is not.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/choosing-a-model"
+  questionId="q3"
+  lang="en"
+  prompt="Which field would you read to find out that a tool call was refused by your `--allowedTools` list?"
+  options={[
+    { text: '`num_turns`', explanation: 'It counts turns; it does not say why one was spent.' },
+    {
+      text: '`permission_denials`',
+      correct: true,
+      explanation:
+        'It records the refused calls, including the exact command string the model tried to run.',
+    },
+    { text: '`total_cost_usd`', explanation: 'A cost estimate, not a permission record.' },
+    { text: '`modelUsage`', explanation: 'Per-model token and cost accounting.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/choosing-a-model"
+  questionId="q4"
+  lang="en"
+  prompt="On this lab’s task, which conclusion is supported by the captured evidence?"
+  options={[
+    {
+      text: 'Opus is the only model that can fix an async bug.',
+      explanation: 'All three produced a working fix.',
+    },
+    {
+      text: 'A scoped bug with a failing test pointing at it was fixed correctly by all three models, and the cheapest one cost about a quarter of the most expensive.',
+      correct: true,
+      explanation:
+        'That — plus the turn-budget finding — is what the three envelopes and the three test runs actually show.',
+    },
+    {
+      text: 'Haiku is always four times cheaper than Opus.',
+      explanation:
+        'It was on this task. Cost depends on the tokens a run actually consumes, not on a fixed ratio.',
+    },
+    {
+      text: 'Sonnet produced a better fix than Haiku.',
+      explanation:
+        'Their diffs were the same shape here — one inserted line and three deleted, in the same file.',
+    },
+  ]}
+/>
+
+**Next:** `03-effort-levels` turns to the other dial — how hard the model thinks — and what each level is actually for.

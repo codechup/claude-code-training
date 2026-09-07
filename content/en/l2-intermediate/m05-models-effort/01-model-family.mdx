@@ -1,0 +1,305 @@
+---
+title: 'The model family and its aliases'
+description: 'Fable 5.1, Opus 5, Sonnet 5 and Haiku 4.5 — what each is for, what they cost, how big their context windows are, and what every alias (best, fable, opus, sonnet, haiku, sonnet[1m], opus[1m], opusplan) actually resolves to.'
+level: 2
+module: 'm05-models-effort'
+order: 1
+duration_min: 15
+difficulty: core
+tags: ['models', 'aliases', 'context-window']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Model configuration'
+    url: 'https://code.claude.com/docs/en/model-config.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Explore the context window'
+    url: 'https://code.claude.com/docs/en/context-window.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Models overview (Claude Platform)'
+    url: 'https://platform.claude.com/docs/en/about-claude/models/overview'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Pricing (Claude Platform)'
+    url: 'https://platform.claude.com/docs/en/about-claude/pricing'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Name the four current Claude models and say in one line what each one is for.
+- Read the alias table: what `best`, `fable`, `opus`, `sonnet`, `haiku`, `sonnet[1m]`, `opus[1m]` and `opusplan` select, and why `default` is not a model at all.
+- Explain why the same alias can resolve to a different model on a different provider.
+- Set a model four ways — `/model`, `--model`, `ANTHROPIC_MODEL`, the `model` setting — and say which wins.
+- Prove which model ID an alias resolved to, from a real result envelope rather than from the picker.
+
+**Prerequisites.** A working Claude Code install (`m01-start`) and a first session under your belt (`m02-interact`). You do not need to have changed the model before — this lesson is where you start doing it on purpose.
+
+<WhenNotToUse>
+  Do not go alias-shopping before you have a task that is actually failing. The default model is a
+  good default, and switching models mid-session throws away the prompt cache — the next request
+  re-reads your whole conversation at full price. If your problem is that Claude keeps running out
+  of room, the fix is context hygiene (`/context`, `/compact`, `/clear`), not a bigger model. And if
+  you work through Amazon Bedrock, Google Cloud's Agent Platform or Microsoft Foundry, treat the
+  alias table below as a starting point only: your provider decides which versions you can reach.
+</WhenNotToUse>
+
+## Concept
+
+### The four models
+
+All four current models take text and image input, return text, and use tools. What differs is how hard they think, how fast they answer, how much they cost, and how much they can hold.
+
+|                                 | Fable 5.1                                         | Opus 5                                     | Sonnet 5                                       | Haiku 4.5                                         |
+| ------------------------------- | ------------------------------------------------- | ------------------------------------------ | ---------------------------------------------- | ------------------------------------------------- |
+| For                             | Demanding reasoning and long-horizon agentic work | Complex agentic coding and enterprise work | The best combination of speed and intelligence | The fastest model with near-frontier intelligence |
+| Relative latency                | Slower                                            | Moderate                                   | Fast                                           | Fastest                                           |
+| Price per MTok (input / output) | $10 / $50                                         | $5 / $25                                   | $2 / $10                                       | $1 / $5                                           |
+| Claude API ID                   | `claude-fable-5-1`                                | `claude-opus-5`                            | `claude-sonnet-5`                              | `claude-haiku-4-5-20251001`                       |
+| Context window                  | 1M tokens                                         | 1M tokens                                  | 1M tokens                                      | 200K tokens                                       |
+| Max output                      | 128K tokens                                       | 128K tokens                                | 128K tokens                                    | 64K tokens                                        |
+| Default effort                  | `high`                                            | `high`                                     | `high`                                         | Effort not supported                              |
+
+The platform docs' own advice is to start with Opus 5 for most workloads, and reach for Fable 5.1 for demanding reasoning and long-horizon agentic work — or when your evaluations on Opus 5 at a higher effort level still fall short.
+
+Two numbers on that table are worth internalising because they change how you plan a session. Haiku 4.5 costs a tenth of Fable 5.1 per input token and a tenth per output token — so a task you can hand to Haiku is a task that costs an order of magnitude less. And Haiku's 200K context window is a fifth of the others', so a long investigation that comfortably fits on Sonnet may not fit on Haiku at all.
+
+### Aliases, and what they hide
+
+You rarely type a model ID. You type an alias, and Claude Code resolves it to a version:
+
+| Alias        | What it selects                                                                                                       |
+| ------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `default`    | Not a model alias. It clears any model override and reverts to the runtime default for your account                   |
+| `best`       | The latest Fable model where it is available to you, otherwise the same model as `opus`                               |
+| `fable`      | The latest Fable model, for your hardest and longest-running tasks                                                    |
+| `opus`       | The latest Opus model, for complex reasoning tasks                                                                    |
+| `sonnet`     | The latest Sonnet model, for daily coding tasks                                                                       |
+| `haiku`      | The fast, efficient Haiku model, for simple tasks                                                                     |
+| `sonnet[1m]` | Sonnet with a 1M-token context window. No effect when `sonnet` already resolves to Sonnet 5 with its native 1M window |
+| `opus[1m]`   | Opus with a 1M-token context window                                                                                   |
+| `opusplan`   | A hybrid: `opus` during plan mode, then `sonnet` for execution                                                        |
+
+An alias points at the recommended version _for your provider_, and that moves over time. On the Anthropic API, `opus` is Opus 5 and `sonnet` is Sonnet 5. On Claude Platform on AWS, `opus` is Opus 5 but `sonnet` is Sonnet 4.6. On Amazon Bedrock and Google Cloud's Agent Platform, `sonnet` is Sonnet 4.5. On Microsoft Foundry, `opus` is Opus 4.6 and `sonnet` is Sonnet 4.5. Unless you set `ANTHROPIC_DEFAULT_FABLE_MODEL`, `fable` resolves to Fable 5.1.
+
+`default` deserves its own line, because it is the one most people are running without knowing it. What it resolves to depends on your account type: Opus 5 on Max, Team Premium, Enterprise and the Anthropic API (and on Claude Platform on AWS, Amazon Bedrock and Google Cloud's Agent Platform); Sonnet 5 on Pro and Team Standard; Sonnet 4.5 on Microsoft Foundry.
+
+If you need a version that will not move under you, use the full model name — `claude-opus-5` — or pin the family with `ANTHROPIC_DEFAULT_OPUS_MODEL` / `ANTHROPIC_DEFAULT_SONNET_MODEL` / `ANTHROPIC_DEFAULT_FABLE_MODEL`.
+
+### `opusplan`, the one alias that is a strategy
+
+`opusplan` is not a model. In plan mode it uses `opus` for the reasoning and architecture; when you leave plan mode it switches to `sonnet` for the implementation. That is a genuinely good default for "think hard, then type a lot" work — with one cost you should know about: each plan-mode toggle is a model switch, and every model switch starts a fresh prompt cache.
+
+### Where a model setting comes from
+
+Five places can set your model. In priority order, highest first:
+
+1. `/model <alias|name>` during the session.
+2. `claude --model <alias|name>` at startup.
+3. `ANTHROPIC_MODEL=<alias|name>` in the environment.
+4. The `model` field in a settings file.
+5. `ANTHROPIC_DEFAULT_MODEL=<alias|name>`, the default for new sessions.
+
+Two behaviours surprise people. First, `/model` **saves** your choice: it writes the `model` field into your user settings, so the next session starts there too. Press `s` in the picker to switch for this session only. Second, in non-interactive mode (`claude -p`), a `/model` inside the prompt applies to that session only and is never saved.
+
+To see what you are on right now, run `/status`, or put the model in your status line.
+
+### A model per subagent
+
+The choice is not one-per-session. A subagent can carry its own `model` field in its
+`.claude/agents/*.md` frontmatter — `sonnet`, `opus`, `haiku`, `fable`, a full model ID, or
+`inherit` — and `CLAUDE_CODE_SUBAGENT_MODEL` sets a default for subagents that do not. That is the
+cheapest structural cost lever in this course: the cost doc's own advice is to specify `model: haiku`
+for simple subagent tasks, so a verbose, mechanical search does not run on the model you chose for
+the architecture. Model resolution order for subagents, and the strategy around it, are covered in
+`m10-subagents`; what matters here is knowing the dial exists one level down from the session.
+
+Here is this lesson's example prompt — the shape that makes a model choice matter, because it is long-horizon rather than a one-liner:
+
+```text
+Read src/store.ts and test/, then tell me which functions have no test coverage
+at all. Give me the list and a one-line risk note for each. Do not write any code.
+```
+
+## Hands-on lab
+
+This lesson has no lab-repo tag. The exercise runs in any empty directory, because what we want to see is not a code change — it is which model ID an alias actually resolved to. `claude --output-format json` prints a `modelUsage` object naming exactly that, which is the authoritative answer; the model picker is a menu, not evidence.
+
+<Lab
+  title="Lab · prove what an alias resolved to"
+  lessonId="en/l2-intermediate/m05-models-effort/model-family"
+  repoTag="none"
+  steps={[
+    'Make an empty scratch directory and `cd` into it. Nothing here needs a repository.',
+    'Run the cheapest possible one-turn session on Haiku: `claude -p "Reply with exactly: OK" --model haiku --output-format json --max-turns 1`',
+    'Find `modelUsage` in the envelope. Read the key (the resolved model ID), then `canonicalModel` and `contextWindow` inside it.',
+    'Run the same command with `--model sonnet` and compare the two `modelUsage` blocks.',
+    'Run `/status` in an interactive session and confirm it names the same model your settings resolve to.',
+  ]}
+  expected="The haiku run reports one model, claude-haiku-4-5-20251001, with contextWindow 200000. The sonnet run reports claude-sonnet-5 with contextWindow 1000000 — plus a second, much smaller claude-haiku-4-5-20251001 entry."
+  checklist={[
+    'The `modelUsage` key is a full model ID, not the alias you typed',
+    'Haiku reports `contextWindow: 200000`; Sonnet reports `contextWindow: 1000000`',
+    '`canonicalModel` drops the dated suffix (`claude-haiku-4-5`)',
+    '`costUSD` per model is reported separately from the envelope’s `total_cost_usd`',
+    '`/status` agrees with the envelope',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/01-model-family/01-alias-haiku.txt"
+    range="2-2"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/01-model-family/01-alias-haiku.txt"
+    range="41-56"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/01-model-family/02-alias-sonnet.txt"
+    range="41-70"
+  />
+</Lab>
+
+Three things in those two envelopes are worth stopping on.
+
+The alias `haiku` resolved to `claude-haiku-4-5-20251001` — a dated ID — while `canonicalModel` is the undated `claude-haiku-4-5`. That is the pairing to remember: aliases move, dated IDs do not, and `canonicalModel` is the family name in between.
+
+`contextWindow` is reported per model, and it matches the table above: 200,000 for Haiku 4.5, 1,000,000 for Sonnet 5. You never have to guess how much room a session has.
+
+And the Sonnet run reports **two** models: `claude-sonnet-5`, which did the work, and a much cheaper `claude-haiku-4-5-20251001` entry alongside it. `modelUsage` reports every model a session billed, not only the one you selected, so a per-model cost breakdown can have more rows than you expect. Separately, the cost doc notes that Claude Code uses some tokens for background functionality — summarising previous conversations for `--resume`, processing some commands — and puts that at typically under $0.04 per session.
+
+## Anti-patterns
+
+**Treating an alias as a version.** Writing "we run `opus`" in a runbook says nothing durable: `opus` is Opus 5 on the Anthropic API today and Opus 4.6 on Microsoft Foundry. _Fix:_ record the full model name (`claude-opus-5`) when reproducibility matters, or pin the family variable.
+
+**Reaching for the biggest model first.** Fable 5.1 costs ten times Haiku 4.5 per token and answers more slowly. A rename across five files does not need it. _Fix:_ start at the model that plausibly fits and escalate on evidence — the next lesson makes that comparison for real.
+
+**Switching models mid-task to "see if it does better".** Every model has its own cache; a switch re-reads the entire conversation with no cache hits. _Fix:_ pick the model at the top of the session; if you must compare, compare in two separate sessions from the same starting state.
+
+**Assuming Haiku's window is like the others'.** Haiku 4.5 holds 200K tokens, a fifth of the rest. A session that fits comfortably on Sonnet can hit the wall on Haiku. _Fix:_ check `contextWindow` in the envelope, or `/context` in a session, before delegating long work to Haiku.
+
+**Believing the `/model` picker is evidence.** The picker shows what you can choose and, on the Anthropic API, a price label — it is a display, not a record of what answered. _Fix:_ read `modelUsage` in a JSON envelope.
+
+<Callout variant="changed">
+  Alias resolution moved recently: `fable` resolves to Fable 5.1 from Claude Code v2.1.255 (it was
+  Fable 5 before), and `opus` and `default` resolve to Opus 5 from v2.1.219 (Opus 4.8 before that on
+  the Anthropic API). Verified against `model-config.md` for Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/model-family"
+  questionId="q1"
+  lang="en"
+  prompt="What does the `default` model setting select?"
+  options={[
+    {
+      text: 'The cheapest model available to your account.',
+      explanation: 'Cost is not what `default` resolves on — account type is.',
+    },
+    {
+      text: 'Nothing — it clears any model override and reverts to the runtime default for your account, which is Opus 5 on Max/Team Premium/Enterprise/the Anthropic API and Sonnet 5 on Pro and Team Standard.',
+      correct: true,
+      explanation:
+        'Right — the docs are explicit that `default` is a special value, not itself a model alias.',
+    },
+    {
+      text: 'Whatever model the project `.claude/settings.json` names.',
+      explanation: 'That is the `model` setting, a separate (and lower-priority) mechanism.',
+    },
+    {
+      text: 'Sonnet 5, on every plan and provider.',
+      explanation: 'Sonnet 5 is the default on Pro and Team Standard only.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/model-family"
+  questionId="q2"
+  lang="en"
+  prompt="You need to know, after the fact, exactly which model version answered a headless run. Where do you look?"
+  options={[
+    {
+      text: 'The `/model` picker.',
+      explanation: 'The picker shows what you can select, not what ran.',
+    },
+    {
+      text: 'The `modelUsage` object in the JSON result envelope.',
+      correct: true,
+      explanation:
+        'It names the resolved model ID as its key, plus `canonicalModel`, `contextWindow` and that model’s own `costUSD`.',
+    },
+    {
+      text: 'The `--model` flag you typed.',
+      explanation: 'That is the alias you asked for, which is exactly the thing that can move.',
+    },
+    {
+      text: 'The shell exit code.',
+      explanation: 'The exit code reports success or failure, not the model.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/model-family"
+  questionId="q3"
+  lang="en"
+  prompt="Which statement about `opusplan` is correct?"
+  options={[
+    {
+      text: 'It is a model that plans before it acts.',
+      explanation: 'It is an alias for a switching strategy, not a model.',
+    },
+    {
+      text: 'It uses `opus` in plan mode and switches to `sonnet` for execution — and each toggle is a model switch, so it starts a fresh prompt cache.',
+      correct: true,
+      explanation: 'Both halves matter: the strategy is useful, and the cache cost is real.',
+    },
+    {
+      text: 'It runs Opus and Sonnet at the same time and picks the better answer.',
+      explanation: 'Nothing in Claude Code runs two models in parallel on one turn.',
+    },
+    {
+      text: 'It is only available on Amazon Bedrock.',
+      explanation: 'It is a general alias; on some providers the plan-mode substitution differs.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/model-family"
+  questionId="q4"
+  lang="en"
+  prompt="Which of these wins when several of them are set at once?"
+  options={[
+    {
+      text: '`ANTHROPIC_DEFAULT_MODEL`',
+      explanation: 'That is the lowest-priority of the five — the default for new sessions.',
+    },
+    {
+      text: 'The `model` field in a settings file',
+      explanation: 'It beats `ANTHROPIC_DEFAULT_MODEL`, but the flag and the env var beat it.',
+    },
+    {
+      text: '`/model` typed during the session',
+      correct: true,
+      explanation:
+        'The in-session command is the top of the precedence list — and on your own machine it saves the choice as your default too.',
+    },
+    {
+      text: '`ANTHROPIC_MODEL`',
+      explanation: 'Third of five: `--model` and an in-session `/model` both beat it.',
+    },
+  ]}
+/>
+
+**Next:** `02-choosing-a-model` runs one real bug through Haiku, Sonnet and Opus and puts the durations, costs and outcomes side by side.

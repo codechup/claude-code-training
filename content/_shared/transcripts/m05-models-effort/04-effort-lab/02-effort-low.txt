@@ -1,0 +1,112 @@
+# Captured 2026-09-07, Claude Code 2.1.263, Windows 11. Verbatim stdout, pretty-printed with JSON.stringify(obj, null, 2); no value changed. Command on the next line.
+› claude -p "npm test fails two tests in test/overdue.test.ts. Find the root cause in src/ and fix it. Do not change any test file." --model sonnet --effort low --output-format json --max-turns 6 --permission-mode acceptEdits --allowedTools "Read Edit Grep Glob Bash(npm test*)"
+{
+  "duration_api_ms": 17986,
+  "stop_reason": "end_turn",
+  "session_id": "3a1b6381-354b-46c4-8394-71d0b9b7aa31",
+  "total_cost_usd": 0.10331800000000001,
+  "usage": {
+    "input_tokens": 12,
+    "cache_creation_input_tokens": 12639,
+    "cache_read_input_tokens": 205380,
+    "output_tokens": 1068,
+    "output_tokens_details": {
+      "thinking_tokens": 14
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 12639,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 179,
+        "cache_read_input_tokens": 37016,
+        "cache_creation_input_tokens": 372,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 372
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard"
+  },
+  "modelUsage": {
+    "claude-haiku-4-5-20251001": {
+      "inputTokens": 907,
+      "outputTokens": 15,
+      "cacheReadInputTokens": 0,
+      "cacheCreationInputTokens": 0,
+      "webSearchRequests": 0,
+      "costUSD": 0.000982,
+      "contextWindow": 200000,
+      "maxOutputTokens": 32000,
+      "thinkingTokens": 0,
+      "canonicalModel": "claude-haiku-4-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    },
+    "claude-sonnet-5": {
+      "inputTokens": 12,
+      "outputTokens": 1068,
+      "cacheReadInputTokens": 205380,
+      "cacheCreationInputTokens": 12639,
+      "webSearchRequests": 0,
+      "costUSD": 0.10233600000000001,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "thinkingTokens": 14,
+      "canonicalModel": "claude-sonnet-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "is_error": false,
+  "num_turns": 6,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "Tüm testler geçiyor (15/15). Kök neden: `isOverdue` fonksiyonunda `now()` milisaniye cinsinden değer döndürüyordu ama gereksiz yere 1000'e bölünüp saniyeye çevriliyordu, sonra ms cinsindeki `Date.parse` sonucuyla karşılaştırılıyordu — birim uyuşmazlığı. `src/store.ts:86` içindeki `/ 1000` kısmını kaldırarak düzelttim.",
+  "ttft_ms": 2018,
+  "type": "result",
+  "duration_ms": 68737,
+  "uuid": "5efa97a5-04ae-4823-a646-cccad98b1594",
+  "ttft_stream_ms": 1281,
+  "time_to_request_ms": 61,
+  "first_content_frame_ms": 1386,
+  "queued_turn_count": 0
+}

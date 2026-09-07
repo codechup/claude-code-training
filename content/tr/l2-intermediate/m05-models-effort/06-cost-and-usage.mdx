@@ -1,0 +1,42 @@
+---
+title: 'Maliyet ve kullanım'
+description: 'Bir oturumun gerçekte ne harcadığını izleyin: /usage (ve /cost takma adı), prompt cache satırı, JSON zarfındaki cache alanları, plan ile API faturalandırması ve sayıyı en çok değiştiren alışkanlıklar.'
+level: 2
+module: 'm05-models-effort'
+order: 6
+duration_min: 20
+difficulty: core
+tags: ['cost', 'usage', 'prompt-caching', 'context']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Manage costs effectively'
+    url: 'https://code.claude.com/docs/en/costs.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'How Claude Code uses prompt caching'
+    url: 'https://code.claude.com/docs/en/prompt-caching.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Slash commands'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Explore the context window'
+    url: 'https://code.claude.com/docs/en/context-window.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Pricing (Claude Platform)'
+    url: 'https://platform.claude.com/docs/en/about-claude/pricing'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l2-intermediate/m05-models-effort/06-cost-and-usage.mdx` dosyasıdır.
+
+## Özet
+
+`/cost` ve `/stats`, `/usage` komutunun takma adlarıdır — üç ad, tek ekran. Session bloğundaki dolar rakamı, token sayımlarından liste fiyatı üzerinden yerel olarak hesaplanan bir tahmindir; Pro ve Max aboneliklerinde kullanımınız zaten aboneliğe dahildir, bu yüzden faturalandırma için Claude Console'un Usage sayfasına bakılır. Faturanızın büyük kısmını prompt caching belirler: bir cache okuması standart girdi fiyatının %10'una (Fable 5.1'de %2,5'ine) mal olur, bu yüzden en pahalı davranış cache'i tekrar tekrar geçersiz kılmaktır — model değiştirmek, efor değiştirmek, fast mode'u açmak, MCP server bağlamak, compact etmek. Ders, gerçek zarflardan okunan cache sayaçlarını (`cache_read_input_tokens`, `cache_creation_input_tokens`, `cache_creation.ephemeral_1h_input_tokens`) ve maliyeti en çok düşüren beş alışkanlığı gösterir.

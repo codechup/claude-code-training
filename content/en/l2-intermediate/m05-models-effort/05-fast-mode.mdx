@@ -1,0 +1,312 @@
+---
+title: 'Fast mode'
+description: 'What /fast trades — up to 2.5x faster Opus at $10/$50 per MTok, billed from usage credits — where it is available, why it refuses to turn on, and why enabling it late in a conversation costs more than enabling it early.'
+level: 2
+module: 'm05-models-effort'
+order: 5
+duration_min: 10
+difficulty: core
+tags: ['fast-mode', 'models', 'cost']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Speed up responses with fast mode'
+    url: 'https://code.claude.com/docs/en/fast-mode.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'How Claude Code uses prompt caching'
+    url: 'https://code.claude.com/docs/en/prompt-caching.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Model configuration'
+    url: 'https://code.claude.com/docs/en/model-config.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Pricing (Claude Platform)'
+    url: 'https://platform.claude.com/docs/en/about-claude/pricing'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say exactly what fast mode is and is not: same model, same quality, lower latency, higher price per token.
+- Name the models it works on and the platforms it is unavailable on.
+- Explain each way `/fast` can refuse, and what the refusal message tells you to fix.
+- Say why enabling it at the start of a conversation costs less than enabling it later.
+- Choose between fast mode and a lower effort level for a given kind of work.
+
+**Prerequisites.** Lessons `01-model-family` and `03-effort-levels`. Fast mode is the third dial, and it interacts with both of the others.
+
+<WhenNotToUse>
+  Fast mode is for interactive work where you are waiting at the keyboard — rapid iteration, live
+  debugging, a deadline. It is the wrong tool for long autonomous tasks, batch processing and CI/CD
+  pipelines, and for anything cost-sensitive: you pay $10/$50 per MTok where standard Opus 5 is
+  $5/$25, and on a subscription that spend comes out of usage credits rather than your plan's
+  included usage. It is also unavailable on Amazon Bedrock, Google Cloud's Agent Platform, Microsoft
+  Foundry and Claude Platform on AWS. Fast mode is in research preview, so its pricing and
+  availability may change.
+</WhenNotToUse>
+
+## Concept
+
+### What it is
+
+Fast mode is a high-speed configuration for Claude Opus that makes the model **up to 2.5× faster at a higher cost per token**. It is not a different model: it is Opus with a different API configuration that prioritises speed over cost efficiency, so you get identical quality and capabilities with faster responses.
+
+It is supported on **Opus 5 and Opus 4.8**, and not on Sonnet, Haiku or other models. Opus 5 is the fast-mode default from Claude Code v2.1.219.
+
+### What it costs
+
+| Model    | Input (MTok) | Output (MTok) |
+| -------- | ------------ | ------------- |
+| Opus 5   | $10          | $50           |
+| Opus 4.8 | $10          | $50           |
+
+That is double the standard Opus 5 rate of $5 / $25 per MTok, and the fast-mode price is flat across the full 1M-token context window.
+
+Where the spend appears depends on how you signed in — run `/status` to check. On Pro and Max, fast mode is paid from your usage credits, and **Settings > Usage** on claude.ai shows the month's usage-credit spend without breaking fast mode out separately. On Team and Enterprise, your organisation pays from its usage credits and `/usage` shows your own spend. On Claude Console, your organisation pays with the rest of its API usage, and the Usage and Cost pages can group by **Speed (Research Preview)** to separate it.
+
+One line from the docs is worth reading twice: fast mode usage draws directly from usage credits, even if you have remaining usage on your plan.
+
+### The one-time cost of turning it on
+
+Enabling fast mode adds a request header that is part of the cache key. So the first request Claude Code sends with fast mode on reads the entire conversation history with **no cache hits** — and those uncached input tokens are billed at fast-mode rates.
+
+The consequence is a rule you can act on: the deeper into a conversation you are when you enable it, the more that first turn costs. Enable fast mode at the start of a session, not in the middle of a long one. The cost applies once per conversation, so toggling it off and on again later does not repeat it.
+
+### Fast mode versus a lower effort level
+
+Both make responses arrive sooner, by opposite means:
+
+| Setting            | Effect                                                                           |
+| ------------------ | -------------------------------------------------------------------------------- |
+| Fast mode          | Same model quality, lower latency, higher cost                                   |
+| Lower effort level | Less thinking time, faster responses, potentially lower quality on complex tasks |
+
+They combine: fast mode plus a lower effort level is the maximum-speed configuration for straightforward tasks. If your problem is that a task is intrinsically slow because it requires a lot of reasoning, lowering effort changes the answer and fast mode does not.
+
+### When `/fast` refuses
+
+`/fast` is a toggle that reports its state, and it has several distinct refusals. Each one names its own fix:
+
+| Message                                                             | What it means                                                                                                                       |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `Fast mode requires usage credits · /usage-credits to turn them on` | Usage credits are off for your account                                                                                              |
+| `Fast mode has been disabled by your organization`                  | An Owner has not enabled it for a Team or Enterprise organisation — or a gateway configuration is being read as a disabled response |
+| `is not in your organization's allowed models`                      | The `availableModels` allowlist excludes the fast-mode Opus model                                                                   |
+| `Fast mode unavailable during evaluation. Please purchase credits.` | A Console organisation on the free Evaluation plan                                                                                  |
+| `Fast mode unavailable due to network connectivity issues`          | The availability check to `api.anthropic.com` failed; requests run at standard speed                                                |
+
+The allowlist case has one exception worth knowing: a session already running on an allowed Opus model that supports fast mode gets fast mode enabled on the current model instead of being refused.
+
+Behind an LLM gateway there is a wrinkle. Before offering fast mode, Claude Code checks availability with a request made **directly** to `api.anthropic.com` — the check does not follow `ANTHROPIC_BASE_URL`. On a network that routes Claude traffic through a gateway and blocks direct egress, the check fails even though inference works. `CLAUDE_CODE_SKIP_FAST_MODE_NETWORK_ERRORS=1` treats a failed check as available; `CLAUDE_CODE_SKIP_FAST_MODE_ORG_CHECK=1` skips the check entirely. To disable fast mode outright, set `CLAUDE_CODE_DISABLE_FAST_MODE=1`.
+
+### Toggling, persistence, and rate limits
+
+In the CLI, type `/fast` and press Tab to toggle, or set `"fastMode": true` in your user settings. When it turns on, you see `Fast mode ON` and a small `↯` icon next to the prompt; run `/fast` again at any time to check the state. If your current model does not support fast mode, turning fast mode on also switches your model to Opus. Turning it off leaves you on Opus — use `/model` to move.
+
+By default, fast mode you turn on in an interactive session persists across sessions. Set `fastModePerSessionOptIn: true` in any settings file to make every session start with it off; the saved preference is kept, so removing the setting restores the persistent behaviour. Owners on Team or Enterprise plans can deploy that organisation-wide through server-managed settings.
+
+Fast mode has its own rate-limit pool, shared across the supported Opus models. When you hit it, fast mode falls back to standard speed automatically, the `↯` icon turns grey, you keep working at standard speed and pricing, and fast mode re-enables when the cooldown expires.
+
+This lesson's example prompt is the kind of work fast mode is actually for — short, interactive, and waiting on you:
+
+```text
+The dev server is throwing "Cannot read properties of undefined" on /tasks after my
+last change. Reproduce it, tell me the line, and stop. I'm watching.
+```
+
+## Hands-on lab
+
+Fast mode has no lab-repo tag, and it deliberately gets no fabricated session recording: toggling it is a TUI interaction, and enabling it on an account that has usage credits turned on spends real money outside your plan's included usage. So this lesson does two honest things instead — it shows you the exact commands, and it shows you the field in the result envelope that reports fast mode's state on runs that were captured for the other lessons in this module.
+
+<Lab
+  title="Lab · read the state, then decide"
+  lessonId="en/l2-intermediate/m05-models-effort/fast-mode"
+  repoTag="none"
+  steps={[
+    'Run `/status` in an interactive session and note the login method row: a `Claude Max account`-style row means a subscription; an `API key` row means a Console organisation. That determines where fast mode spend would appear.',
+    'Run `/fast` once, and read what it says. If it turns on, you will see `Fast mode ON` and a `↯` icon; if it refuses, the message names the reason — match it against the refusal table above.',
+    'If it turned on, run `/fast` again to turn it off, and note that you stay on Opus.',
+    'Run any headless command with `--output-format json` and find the `fast_mode_state` and `fast_mode_disabled_reason` fields in the envelope.',
+    'Decide, in one sentence, whether your next task is interactive-and-waiting (fast mode) or long-and-autonomous (standard).',
+  ]}
+  expected="`/fast` either reports `Fast mode ON` or names one of the documented refusals. Every headless run reports `fast_mode_state`, and — where it is off — a `fast_mode_disabled_reason`; on a plain `claude -p` run that reason is `sdk_opt_in_required`, because in non-interactive mode fast mode has to be opted into through the session's `--settings` value."
+  checklist={[
+    '`/status` told you where fast mode spend would land',
+    'You read the actual `/fast` response rather than assuming it worked',
+    'You located `fast_mode_state` in a real JSON envelope',
+    'You can state the standard Opus 5 rate and the fast-mode rate from memory',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/04-opus.txt"
+    range="2-2"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/04-opus.txt"
+    range="82-83"
+  />
+</Lab>
+
+That envelope is from lesson `02`'s Opus run — an ordinary `claude -p` invocation with no fast-mode settings. It reports `"fast_mode_state": "off"` with `"fast_mode_disabled_reason": "sdk_opt_in_required"`, which is precisely the documented non-interactive behaviour: with the `-p` flag, `/fast` works only in a session launched with fast mode in its `--settings` value.
+
+<CodeBlock title="fast mode controls">
+
+```text
+/fast                                     # toggle (Tab), or report the current state
+/status                                   # login method: subscription or Console organisation
+/usage                                    # Team/Enterprise: your own usage-credit spend
+/usage-credits                            # open the page that turns usage credits on
+/model                                    # move off Opus after turning fast mode off
+```
+
+</CodeBlock>
+
+<CodeBlock title="settings and environment">
+
+```json
+{
+  "fastMode": true,
+  "fastModePerSessionOptIn": true
+}
+```
+
+</CodeBlock>
+
+To use fast mode in a non-interactive run, pass it at launch — `claude -p --settings '{"fastMode": true}'` — which applies it to that session only and does not save it as your default.
+
+## Anti-patterns
+
+**Turning fast mode on halfway through a long session.** The first request with the header on reads your whole conversation with no cache hits, billed at fast-mode rates — the deeper in you are, the more it costs. _Fix:_ enable it at the start of a session, or start a new one.
+
+**Reaching for fast mode when the problem is depth.** Fast mode gives you the same answer sooner, not a better answer. If Claude is producing shallow work, you want a different model or a higher effort level. _Fix:_ diagnose latency versus quality before you spend.
+
+**Using it for autonomous or CI work.** Nobody is waiting on a pipeline's latency, and the pipeline pays double per token. _Fix:_ standard mode for batch, CI/CD and long autonomous tasks.
+
+**Assuming a refusal means "not available to me".** Five distinct refusals exist, and three of them are configuration you or an admin can change. _Fix:_ read the exact message and match it against the table above.
+
+**Forgetting you are still on Opus after turning it off.** `/fast` off leaves the model where it put it. _Fix:_ `/model` back to whatever you meant to be on.
+
+<Callout variant="changed">
+  Fast mode for Opus 4.7 was deprecated on 25 June 2026 and removed on 24 July 2026; Claude Code now
+  treats Opus 4.7 like any other model without fast-mode support, so switching to it turns fast mode
+  off. Verified against `fast-mode.md` for Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/fast-mode"
+  questionId="q1"
+  lang="en"
+  prompt="What does fast mode change?"
+  options={[
+    {
+      text: 'It switches you to a smaller, faster model.',
+      explanation: 'It is not a different model — it is Opus with a different API configuration.',
+    },
+    {
+      text: 'Nothing about the model or its quality: it is Opus served with a speed-prioritising configuration, up to 2.5x faster at $10/$50 per MTok instead of $5/$25.',
+      correct: true,
+      explanation: 'Same quality and capabilities, lower latency, higher price per token.',
+    },
+    {
+      text: 'It lowers the effort level automatically.',
+      explanation: 'Effort is a separate dial; the two can be combined but neither sets the other.',
+    },
+    {
+      text: 'It reduces the context window to make requests smaller.',
+      explanation: 'Fast-mode pricing is flat across the full 1M-token context window.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/fast-mode"
+  questionId="q2"
+  lang="en"
+  prompt="Why is enabling fast mode at the start of a session cheaper than enabling it two hours in?"
+  options={[
+    {
+      text: 'Because the price per token rises over the course of a session.',
+      explanation: 'The rate is flat.',
+    },
+    {
+      text: 'Because the fast-mode header is part of the cache key, so the first request with it on reprocesses the whole conversation as uncached input — at fast-mode rates.',
+      correct: true,
+      explanation:
+        'The cost applies once per conversation, and it scales with how much conversation there is.',
+    },
+    {
+      text: 'Because Claude Code charges a flat activation fee per session.',
+      explanation: 'There is no activation fee.',
+    },
+    {
+      text: 'Because rate limits are stricter later in the day.',
+      explanation: 'Fast mode has its own rate-limit pool, unrelated to when you enable it.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/fast-mode"
+  questionId="q3"
+  lang="en"
+  prompt="`/fast` reports `Fast mode requires usage credits · /usage-credits to turn them on`. What is going on?"
+  options={[
+    {
+      text: 'Your organisation has disabled fast mode.',
+      explanation: 'That refusal has its own distinct message.',
+    },
+    {
+      text: 'Usage credits are not turned on for your account — fast mode bills to them, so it cannot start until they are.',
+      correct: true,
+      explanation:
+        'On Pro and Max you turn them on in Settings > Usage; on Team and Enterprise a member with billing access does.',
+    },
+    {
+      text: 'You are on a model that does not support fast mode.',
+      explanation: 'In that case turning fast mode on switches you to Opus instead of refusing.',
+    },
+    {
+      text: 'Your network blocks `api.anthropic.com`.',
+      explanation: 'That produces the connectivity message instead.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m05-models-effort/fast-mode"
+  questionId="q4"
+  lang="en"
+  prompt="Which workload is the best fit for fast mode?"
+  options={[
+    {
+      text: 'A nightly CI job that runs a review pipeline over every open PR.',
+      explanation: 'Nobody is waiting, and the pipeline pays double per token.',
+    },
+    {
+      text: 'Live debugging where you are at the keyboard reacting to each response.',
+      correct: true,
+      explanation:
+        'Interactive work where latency matters more than cost is exactly the documented case.',
+    },
+    {
+      text: 'A long autonomous refactor you plan to leave running.',
+      explanation: 'Standard mode is the documented choice for long autonomous tasks.',
+    },
+    {
+      text: 'A Sonnet 5 session you want to speed up.',
+      explanation: 'Fast mode is supported on Opus 5 and Opus 4.8 only.',
+    },
+  ]}
+/>
+
+**Next:** `06-cost-and-usage` turns the dials into numbers you can watch — `/cost`, `/usage`, and the cache fields that decide most of your bill.
