@@ -1,0 +1,243 @@
+---
+title: 'GitLab CI/CD, cloud providers and Enterprise Server'
+description: 'Claude Code outside github.com: a GitLab CI/CD job built on claude -p, the AI_FLOW_ variables that carry a comment into a pipeline, OIDC instead of static keys on Bedrock, Agent Platform and Foundry, and what does and does not work on GitHub Enterprise Server.'
+level: 3
+module: 'm13-headless-ci'
+order: 4
+duration_min: 10
+difficulty: advanced
+tags: ['ci', 'gitlab', 'enterprise', 'oidc']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Claude Code GitLab CI/CD'
+    url: 'https://code.claude.com/docs/en/gitlab-ci-cd.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Use Claude Code GitHub Actions with cloud providers'
+    url: 'https://code.claude.com/docs/en/github-actions-cloud-providers.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code with GitHub Enterprise Server'
+    url: 'https://code.claude.com/docs/en/github-enterprise-server.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Read and adapt the GitLab CI/CD job that runs `claude -p` in a pipeline.
+- Explain what the `AI_FLOW_*` variables are and where they come from.
+- Choose between a masked API-key variable and OIDC/Workload Identity Federation, and say why the second is preferred.
+- Name the one input that switches the GitHub Action to Bedrock, Agent Platform or Foundry.
+- List what does not work on GitHub Enterprise Server, and the workaround for each.
+
+**Prerequisites.** Lessons 01–03: `claude -p` with `--allowedTools` and `--permission-mode`, and the GitHub Actions workflow shape.
+
+<WhenNotToUse>
+  This lesson is a map, not a recipe. Skip it entirely if you are on github.com with the Claude API
+  — lessons 02 and 03 already cover you. Reach for a cloud provider only when your organization
+  already has Claude model access there and a data-residency or procurement reason to use it;
+  routing through Bedrock, Agent Platform or Foundry adds an identity-federation setup you then own
+  forever, and buys nothing if the Claude API is already approved. And treat the GitLab
+  integration's beta status as real: it is maintained by GitLab, not Anthropic, and its shape may
+  change.
+</WhenNotToUse>
+
+## Concept
+
+### GitLab: one job, one masked variable
+
+There is no GitLab equivalent of `claude-code-action`. The integration is the CLI itself: you install Claude Code in a job and call `claude -p`. It is currently in beta and is maintained by GitLab.
+
+The quick setup is two things — an `ANTHROPIC_API_KEY` added under **Settings → CI/CD → Variables** as a masked variable, and a job:
+
+<CodeBlock title=".gitlab-ci.yml">
+
+```yaml
+stages:
+  - ai
+
+claude:
+  stage: ai
+  image: node:24-alpine3.21
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  variables:
+    GIT_STRATEGY: fetch
+  before_script:
+    - apk update
+    - apk add --no-cache git curl bash
+    - curl -fsSL https://claude.ai/install.sh | bash
+    # The installer places claude in ~/.local/bin, which isn't on PATH in this image
+    - export PATH="$HOME/.local/bin:$PATH"
+  script:
+    # Optional: start a GitLab MCP server if your setup provides one
+    - /bin/gitlab-mcp-server || true
+    # Use AI_FLOW_* variables when invoking via web/API triggers with context payloads
+    - echo "$AI_FLOW_INPUT for $AI_FLOW_CONTEXT on $AI_FLOW_EVENT"
+    - >
+      claude
+      -p "${AI_FLOW_INPUT:-'Review this MR and implement the requested changes'}"
+      --permission-mode acceptEdits
+      --allowedTools "Bash Read Edit Write mcp__gitlab"
+      --debug
+```
+
+</CodeBlock>
+
+Everything you learned in lesson 01 applies unchanged: `-p` for the prompt, `--permission-mode acceptEdits` because the job edits files, `--allowedTools` naming the surface, `--max-turns` and the job-level `timeout` keyword (`timeout: 30m`) to bound it.
+
+### `AI_FLOW_*` is your own plumbing
+
+`AI_FLOW_INPUT`, `AI_FLOW_CONTEXT` and `AI_FLOW_EVENT` are not GitLab built-ins that appear by magic. They are variables _you_ pass to the pipeline trigger API. The mention-driven flow works like this: you add a project webhook for "Comments (notes)", point it at an event listener you run, and have that listener call the trigger API with `AI_FLOW_INPUT` and `AI_FLOW_CONTEXT` set from the comment when it contains `@claude`. The `${AI_FLOW_INPUT:-'…'}` default in the job is what makes the same job still work when you run it manually from **CI/CD → Pipelines**.
+
+For the GitLab API side — posting comments, opening MRs — the job uses `CI_JOB_TOKEN` by default, or a Project Access Token with `api` scope stored as a masked `GITLAB_ACCESS_TOKEN`.
+
+### One input switches provider
+
+On GitHub Actions, routing inference through your own cloud account is a single `with:` input:
+
+| Provider                      | Input                 | Repository secrets                                            |
+| ----------------------------- | --------------------- | ------------------------------------------------------------- |
+| Amazon Bedrock                | `use_bedrock: "true"` | `AWS_ROLE_TO_ASSUME`                                          |
+| Google Cloud's Agent Platform | `use_vertex: "true"`  | `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`       |
+| Microsoft Foundry             | `use_foundry: "true"` | `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` |
+
+With all three you authenticate through OIDC identity federation rather than a Claude API key, so no static cloud credential lives in the repository. The workflow needs `id-token: write` for GitHub to issue the token your cloud exchanges for credentials — that is the single most common cause of an authentication failure here, alongside a trust-policy repository condition that does not match exactly.
+
+GitLab offers the same two providers it supports through `id_tokens:`: an `aws sts assume-role-with-web-identity` exchange for Bedrock (with `CLAUDE_CODE_USE_BEDROCK: "1"`), or a Workload Identity Federation credential file exposed through `GOOGLE_APPLICATION_CREDENTIALS` for Agent Platform (with `CLAUDE_CODE_USE_VERTEX: "1"`). Bedrock model IDs carry a cross-region inference profile prefix such as `us.`, and you need model access granted in every region of that region group.
+
+### GitHub Enterprise Server
+
+GHES support is available on Team and Enterprise plans, and an Owner connects the instance once from the Claude Code admin settings; after that, developers need no per-repository configuration — Claude Code detects the GHES hostname from your git remote.
+
+What changes relative to github.com:
+
+| Feature                | On GHES                                                           |
+| ---------------------- | ----------------------------------------------------------------- |
+| Claude Code on the web | Supported — `claude --cloud`, and `--teleport` back to a terminal |
+| Code Review            | Supported                                                         |
+| Plugin marketplaces    | Supported, with credential requirements that differ by surface    |
+| GitHub Actions         | Supported, but **manual workflow setup only**                     |
+| `/install-github-app`  | **github.com only**                                               |
+| GitHub MCP server      | **Not supported**                                                 |
+
+Both gaps have documented workarounds. For workflows, adapt the action repository's `examples/claude.yml` by hand instead of running `/install-github-app`. For the MCP server, use the `gh` CLI configured for your host — `gh auth login --hostname github.example.com` — and let Claude call `gh` commands. One more detail that catches teams out: the `owner/repo` marketplace shorthand always resolves to github.com, so a GHES-hosted plugin marketplace needs a full git URL, and HTTPS is recommended because Claude Code runs git non-interactively and rejects SSH hosts that are not in `known_hosts`.
+
+If Anthropic-hosted sessions or reviews time out, the cause is usually reachability: your GHES instance has to be reachable from Anthropic infrastructure, so a firewalled instance needs Anthropic's outbound IP addresses allowlisted.
+
+## Hands-on lab
+
+This lesson has no lab — it has no lab repository tag (`repo_tag: 'none'`), and every path in it requires infrastructure this course cannot provision for you: a GitLab project with a runner, or an AWS/GCP/Azure account with Claude model access, or a self-hosted GHES instance. The `.gitlab-ci.yml` above is the artifact to take away; drop it into a project you control, add the masked `ANTHROPIC_API_KEY` variable, and run the job manually from **CI/CD → Pipelines** as the docs describe. Lesson 01's lab already exercised every `claude -p` flag that job uses.
+
+## Anti-patterns
+
+**Storing a cloud key as a CI variable when OIDC is available.** A masked variable is still a long-lived credential in a system many people can read. _Fix:_ use `id_tokens:` on GitLab or `id-token: write` on GitHub Actions and exchange the workflow's OIDC token for short-lived credentials.
+
+**Assuming `AI_FLOW_INPUT` appears on its own.** Nothing sets it unless you build the webhook listener that does. _Fix:_ keep the `${AI_FLOW_INPUT:-'…'}` default so the job is useful manually, and treat the listener as a separate piece of work.
+
+**Copying the GitLab job without `--max-turns` or `timeout`.** The published example has neither; it is a starting point, not a production job. _Fix:_ add both before the job ever runs on a schedule or a trigger.
+
+**Expecting `/install-github-app` to work against GHES.** It is github.com only, and the failure is confusing rather than explicit. _Fix:_ complete the admin setup on claude.ai, then adapt the example workflow by hand.
+
+**Reaching for the GitHub MCP server on GHES.** It does not work with GHES instances. _Fix:_ `gh auth login --hostname <your-host>` and use `gh` commands.
+
+**Trusting a Bedrock model ID without its region prefix.** Cross-region inference profiles need the `us.`-style prefix and model access in every region of that group. _Fix:_ pass the full profile ID in `claude_args --model`.
+
+<Callout>
+  Claude Code for GitLab CI/CD is in beta and is maintained by GitLab, not Anthropic — support goes
+  through GitLab's own issue tracker. The docs also note that exact flags may vary by version of the
+  installed package; run `claude --help` inside the job to see what your image actually supports.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/gitlab-and-others"
+  questionId="q1"
+  lang="en"
+  prompt="What is the GitLab equivalent of `anthropics/claude-code-action@v1`?"
+  options={[
+    {
+      text: 'There is none — the job installs Claude Code and calls `claude -p` directly',
+      correct: true,
+      explanation:
+        'The GitLab integration is the CLI in a job, which is why every flag from lesson 01 applies unchanged.',
+    },
+    {
+      text: 'A GitLab CI/CD component published by Anthropic',
+      explanation: 'The documented setup is a hand-written job, not a component.',
+    },
+    {
+      text: 'The `mcp__gitlab` tool',
+      explanation: 'That is a tool Claude can call inside the job, not the integration itself.',
+    },
+    {
+      text: '`claude --gitlab`',
+      explanation: 'No such flag exists.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/gitlab-and-others"
+  questionId="q2"
+  lang="en"
+  prompt="Where does `AI_FLOW_INPUT` come from?"
+  options={[
+    {
+      text: 'From variables you pass to the pipeline trigger API, typically from a webhook listener you run',
+      correct: true,
+      explanation:
+        'That is why the example job supplies a default with `${AI_FLOW_INPUT:-…}` for manual runs.',
+    },
+    {
+      text: 'GitLab sets it automatically on merge request events',
+      explanation: 'GitLab sets `CI_*` variables; `AI_FLOW_*` are yours.',
+    },
+    {
+      text: 'Claude Code exports it after reading the MR',
+      explanation: 'It is read by the job, not written by Claude Code.',
+    },
+    {
+      text: 'It is an alias for `CI_COMMIT_MESSAGE`',
+      explanation: 'No such aliasing exists.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/gitlab-and-others"
+  questionId="q3"
+  lang="en"
+  prompt="Which two things are NOT available on GitHub Enterprise Server?"
+  options={[
+    {
+      text: '`/install-github-app` and the GitHub MCP server',
+      correct: true,
+      explanation:
+        'Set the workflow up by hand, and use the `gh` CLI pointed at your host instead of the MCP server.',
+    },
+    {
+      text: 'Code Review and Claude Code on the web',
+      explanation: 'Both are supported on GHES.',
+    },
+    {
+      text: 'GitHub Actions and plugin marketplaces',
+      explanation: 'Both are supported; Actions just needs manual workflow setup.',
+    },
+    {
+      text: 'Teleport sessions and contribution metrics',
+      explanation: 'Both are supported.',
+    },
+  ]}
+/>
+
+**Next:** `05-agent-sdk-typescript` drops the CI wrapper entirely and builds the agent loop into your own program.

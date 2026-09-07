@@ -2,7 +2,7 @@
 id: P30
 title: "L3 Advanced module: Headless and CI (m13-headless-ci)"
 milestone: M2
-status: in_progress
+status: review
 owner: opus-p30-2026-09-07
 branch: plan/30-l3-m13-headless-ci
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T10:55:14Z
+updated_at: 2026-09-07T19:06:56Z
 open_questions: []
 ---
 
@@ -98,5 +98,114 @@ A reviewer opens `npm run dev`, visits each of the 5 lessons at `/en/l3-advanced
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+**Session:** `opus-p30-2026-09-07`, worktree `../cct-wt-30`, branch `plan/30-l3-m13-headless-ci`.
 
+### Scope delta from this plan file (CURRICULUM wins)
+
+This plan's Deliverables list 5 lessons with different slugs. `docs/CURRICULUM.md` §2 `m13-headless-ci` lists **6**, and per Step 1 the curriculum is authoritative. Written:
+
+| # | Slug | min | difficulty | `lab.repo_tag` |
+|---|---|---|---|---|
+| 01 | `01-claude-p` | 20 | core | `lesson/m13-01-start` |
+| 02 | `02-github-actions-review` | 25 | core | `lesson/m13-02-start` |
+| 03 | `03-issue-to-pr` | 25 | core | `lesson/m13-03-start` |
+| 04 | `04-gitlab-and-others` | 10 | advanced | `none` (no lab) |
+| 05 | `05-agent-sdk-typescript` | 30 | advanced | `lesson/m13-05-start` |
+| 06 | `06-agent-sdk-python` | 25 | advanced | `lesson/m13-06-start` |
+
+Module `index.mdx` copy already matched the 6-lesson shape and was left untouched (it holds intro prose only, no lesson list — D-compliant).
+
+### What was written
+
+- 6 EN lessons under `content/en/l3-advanced/m13-headless-ci/`, full D006 order (Objectives & prerequisites → `<WhenNotToUse>` → Concept → Hands-on lab → Anti-patterns → `<Callout variant="changed">` → Quiz; Sources render from frontmatter). Lesson 04 has no lab, so its `## Hands-on lab` heading carries a one-paragraph explanation instead of a `<Lab>` — the heading is not dropped.
+- 6 TR twins, `draft: true` stubs with translated `title`/`description`/`tags`, identical `level`/`module`/`order`/`duration_min`/`difficulty`/`verified_version`/`sources[]`/`lab.repo_tag`, and a one-paragraph Turkish summary. Translation belongs to P25/P26/P40/P41.
+- 15 transcripts under `content/_shared/transcripts/m13-headless-ci/`, all captured this session, each with a `# ` provenance header (date, command, versions). Local paths redacted to `<lab-clone>` / `~/.claude.json`.
+
+### Transcripts and what they prove
+
+Captured against a dedicated clean clone of `codechup/claude-code-lab` (the shared `../claude-code-lab` had uncommitted edits to `BUGS.md`/`README.md` from the tag-adding session — a separate clone avoided both interference and a capture that did not match the tag).
+
+- `01-claude-p/02-json-envelope.txt` — `--output-format json | jq`: `subtype success`, `num_turns 1`, `result "7"`.
+- `01-claude-p/03-json-schema.txt` — `--json-schema` → `structured_output` with `bug_ids` B1–B7.
+- `01-claude-p/04-max-turns-overrun.txt` — the forced overrun: **`exit=1`**, `subtype "error_max_turns"`, `is_error true`, `terminal_reason "max_turns"`, `errors ["Reached maximum number of turns (1)"]`, and `num_turns 2` despite a cap of 1.
+- `01-claude-p/05-stream-json.txt` — event order: `hook_started`/`hook_progress`/`hook_response` (the lab repo ships a `SessionStart` hook) **before** `system/init`, then `assistant`, `rate_limit_event`, `result`.
+- `01-claude-p/06-bare-no-api-key.txt` — `--bare` with no `ANTHROPIC_API_KEY`: `exit=1`, `subtype "success"` but `is_error true` and `result` = `Not logged in · Please run /login`. Confirms headless.md's "bare mode never reads OAuth credentials" and "an in-run failure is printed as the result on stdout".
+- `01-claude-p/07-json-schema-powershell.txt` — the same schema run on Windows PowerShell 5.1, with the backslash-escaped quoting the OSTabs Windows panel teaches.
+- `02-github-actions-review/01-action-validator.txt` — the lab repo's shipped `claude-review.yml` at `lesson/m13-02-solution`, exit 0.
+- `02-github-actions-review/02-docs-workflows-validated.txt` — the three docs workflows (`claude.yml`, `code-review.yml`, `daily-report.yml`) copied verbatim from `github-actions.md`, all exit 0.
+- `03-issue-to-pr/01-action-validator.txt` — the issue-trigger workflow, exit 0.
+- `05-agent-sdk-typescript/01-agent-ts.txt` — `@anthropic-ai/claude-agent-sdk` **0.3.263** on Node 24.18.0, real run, `Done: success (turns=3)`, exit 0.
+- `06-agent-sdk-python/01-agent-py.txt` — `claude-agent-sdk` **0.2.152** on Python 3.12.10, real run, `Done: success (turns=3)`, exit 0.
+
+No GitHub Actions or GitLab run was triggered with a real API key; the CI lessons validate workflow files locally with `action-validator` (`npx --yes -p @action-validator/cli -p @action-validator/core action-validator` — the bare `npx --yes action-validator` form fails with `could not determine executable to run`; `actionlint` is not installed on this machine).
+
+### Drift and findings worth carrying forward
+
+- **`--bare` is not usable with a subscription login.** Documented, but sharp: `research/feature-inventory.md` lists `--bare` in the headless row without this caveat. The lesson teaches it and the transcript proves it.
+- **Exit codes: only 0, 1 and 143 are stated by the live docs.** `headless.md` documents 0/non-zero and 143 (SIGTERM). `research/feature-inventory.md` line 42 claims `0/1/2 (partial)/130/143` and marks it partial. This session reproduced **0** and **1** only. `2` and `130` stay out of lesson text — see open questions.
+- **`Bash(x:*)` is current, not legacy.** `permissions.md` states the `:*` suffix is an equivalent trailing wildcard, so the lab repo's `Bash(gh pr comment:*)` and the docs' `Bash(git diff *)` are both correct. The lesson teaches both forms and the equivalence.
+- **SDK `settingSources: []` / `setting_sources=[]` is the reproducibility lever.** The first TS and Python captures ran without it and the agent answered in Turkish, because this machine's `~/.claude` memory asks for Turkish. Adding it produced English, machine-independent output. Both lessons teach this, and lesson 05 tells the story honestly rather than hiding the reshoot.
+- **Lab tag coverage:** `lesson/m13-01/02/03/05/06-{start,solution}` exist; there is deliberately no `m13-04` tag (lesson 04 has no lab). `m13-03`, `m13-05` and `m13-06` are process-only pairs (`-start` == `-solution` == `lesson/m13-02-solution`'s commit); the lessons say so explicitly. `docs/lab/README.md` still says P22 tagged M1 (`m01`–`m09`) only — it now understates coverage and should be refreshed by its owner (P22), not by this plan.
+- **Python on Windows:** the first `agent.py` capture produced mojibake through the console's legacy code page. Fixed at the source (`PYTHONIOENCODING=utf-8`) and re-captured; lesson 06's Windows OSTab and prose carry the fix.
+
+### Sources registry (`content/_shared/sources.json`, shared, append-only)
+
+Appended 5 entries in id-sorted position: `docs-agent-sdk-overview`, `docs-agent-sdk-quickstart`, `repo-claude-agent-sdk-python`, `repo-claude-agent-sdk-typescript`, `repo-claude-code-action`. Added `m13-headless-ci` to the `modules` array of two existing entries (`docs-cli-reference`, `docs-permissions`). `docs-github-actions`, `docs-github-actions-cloud-providers`, `docs-gitlab-ci-cd`, `docs-github-enterprise-server` and `docs-headless` were already tagged for this module. Diff is +42/−2 lines; no entry rewritten or reordered.
+
+Four further captures were added after the review pipeline (see below): `01-claude-p/08-stream-json-no-verbose.txt`, `05-agent-sdk-typescript/02-agent-ts-no-isolation.txt` and `06-agent-sdk-python/02-agent-py-mojibake.txt` and `01-claude-p/09-permission-prompts-none.txt`.
+
+### Verification
+
+`npm run gate` (170 files OK) · `npm run typecheck` (0 errors) · `npm run lint` (prettier clean, `check-no-inline-script: OK`) · `npm test` (22 files / 184 tests passed) · `npm run build` (ends `check-no-inline-script (dist): OK`; `dist/en/l3-advanced/m13-headless-ci/` has 6 lesson pages + index, `dist/tr/…` has index only, drafts correctly excluded) · `node scripts/check-raw-colors.mjs` OK · `node scripts/check-public-hygiene.mjs` OK (tracked) · `node tools/plan/cli.ts check` ok. Playwright on port 4430 with a temporary config and spec (both deleted afterwards): `e2e/a11y.spec.ts` plus a temporary spec visiting all 6 EN lesson routes and both module indexes at 390 px and 1280 px — **30 passed**, 0 serious/critical axe violations.
+
+Two MDX authoring traps hit and fixed during the build: `\"` is not an escape inside a double-quoted JSX attribute, and a bare `'` inside a single-quoted JS string in a `steps={[…]}` array breaks the expression. Both were rephrased rather than escaped.
+
+### Review pipeline (D071)
+
+**`reviewer` subagent — CHANGES REQUESTED (0 P0, 0 P1, 5 P2, 7 P3).** All 5 P2s fixed, plus 4 of the 7 P3s:
+
+| # | Finding | Resolution |
+|---|---|---|
+| P2 1 | Lesson 03's lab told the reader to create `claude.yml`, but the capture validated `claude-issue.yml` | Renamed to `claude-issue.yml` in the CodeBlock title, both lab steps and the triage snippet — evidence and instructions now agree |
+| P2 2 | Lesson 02's capture validates three workflows; the lab only asks for one | Added a paragraph naming all three and why they are validated together |
+| P2 3 | Lesson 04's `variant="changed"` carried a beta-status caveat, not a superseded behaviour (D044) | Plain `<Callout>` |
+| P2 4 | Lessons 05/06 cite "the official migration guide" in prose but not in `sources[]` (D041) | Added `agent-sdk/migration-guide.md` as an `official` source to both, fetched and verified 2026-09-07 |
+| P2 5 | "the built-in starting mode is Manual" not traceable to the inventory | It is verbatim from `headless.md`; the lesson now also names `manual` as the CLI's documented alias for `default` (`cli-reference.md`) |
+| P3 6 | Prerequisite pointed at m07 for allow/deny rule syntax | Corrected to `m02-interact` `03-permissions` |
+| P3 8 | "run the same question with `--bare`" — the capture used a different prompt | Reworded to describe what the capture actually asks |
+| P3 9 | The stream capture shows a `rate_limit_event` the prose never mentioned | Mentioned, with the lesson "match on the `type` values you care about" |
+| P3 10 | Lessons 02/04 do not label a worked example prompt (D027) | Lesson 03 carries the module's `@claude` example; 02 and 04 keep their prompts inside the workflow/job YAML where they belong. Left as-is deliberately |
+
+P3 7 (splitting two-change "Changed" callouts) was judged style, not drift, and left. P3 11/12 are inventory items — see Open questions.
+
+**`fact-checker` subagent — three passes, all findings resolved.** The first pass reached lessons 05 and 06 within its turn budget, so two more passes covered 01+05 and 02–04.
+
+| Pass | Files | CONFIRMED | WRONG | UNVERIFIABLE |
+|---|---|---|---|---|
+| 1 | 05, 06 | ~55 | 4 | 4 |
+| 2 | 01, 05 | 46 | 1 | 0 |
+| 3 | 02, 03, 04 | all checkable | 0 | 2 |
+| | **total** | **~102** | **5 — all fixed** | **6 — all resolved** |
+
+Pass 3 found no contradicted claim in 02–04; both of its `WRONG` candidates resolved to CONFIRMED against the live docs. Its two UNVERIFIABLE items were its own fetch-permission limits, and both were closed here:
+
+- **The lab repo's `actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1` SHA pin.** Confirmed: `gh api repos/actions/checkout/git/ref/tags/v7.0.1 --jq '.object.sha'` returns `3d3c42e5aac5ba805825da76410c181273ba90b1`. (It is a lightweight tag, so there is no annotated tag object to dereference.)
+- **The `gh run list` / `gh api` triage commands in lesson 03.** GitHub CLI syntax, outside the Claude Code docs the agent was pointed at; left as-is.
+
+- **WRONG — `settingSources: []` / `setting_sources=[]` described as full isolation.** `agent-sdk/claude-code-features.md` says managed and server-managed policy, the global `~/.claude.json`, claude.ai MCP connectors, and **auto memory** under `~/.claude/projects/<project>/memory/` are read regardless, and tells multi-tenant deployers to add `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`. Corrected in both lessons: objective, concept prose, code comments, an anti-pattern and a quiz explanation. This was a genuine error on my part and the single most valuable finding of the pipeline.
+- **WRONG — lesson 06 quiz Q2** said permission modes "behave the same in both SDKs"; `agent-sdk/agent-loop.md` documents that the TypeScript SDK additionally requires `allowDangerouslySkipPermissions: true` for `bypassPermissions`. Narrowed to "both default to `default`".
+- **UNVERIFIABLE → now evidenced.** Two anecdotes (the first TS run answering in Turkish; the Windows mojibake) were true but had no committed artifact, which is exactly the D093/D099 objection. Both runs were **re-done and captured**: `05-agent-sdk-typescript/02-agent-ts-no-isolation.txt` and `06-agent-sdk-python/02-agent-py-mojibake.txt`. Both lessons now render the recording instead of telling a story. Transcript count is therefore 15, not 11.
+- **UNVERIFIABLE → resolved.** `message.cwd` on the TypeScript init message: confirmed in the installed SDK's own `sdk.d.ts`, where `SDKSystemMessage` declares `subtype: 'init'`, `cwd: string` and `model: string`; the real transcript prints both.
+- **UNVERIFIABLE → resolved.** Whether `lesson/m13-05-start` exists: it does. `git tag -l 'lesson/m13*'` in a fresh clone lists `lesson/m13-01/02/03/05/06-{start,solution}`. The fact-checker could not reach github.com and fell back to `docs/lab/README.md`, which is stale — see Open questions.
+
+### Open questions
+
+- Exit codes `2` (partial) and `130` from `research/feature-inventory.md` line 42 are neither on the live `headless.md`/`cli-reference.md` nor reproduced here. They are kept out of lesson text. Someone should either reproduce them or drop them from the inventory row.
+- `docs/lab/README.md` (owned by P22) states tag coverage stops at `m09`; `m13` tags now exist. Not edited here — outside `owned_paths`.
+- `research/deprecations.md` has no row for the **Claude Code SDK → Agent SDK package rename** (`claude-code-sdk` → `claude-agent-sdk` / `@anthropic-ai/claude-agent-sdk`). The claim is sourced — `agent-sdk/overview.md` links a migration guide for exactly this — and lessons 05/06 carry it as a `<Callout variant="changed">`, but D044 also wants a changelog entry on `playbook/06-changed-since-2025` (P42). Proposed row: *"`claude-code-sdk` / Claude Code SDK packages → `claude-agent-sdk` (Python) and `@anthropic-ai/claude-agent-sdk` (TypeScript); version of the rename not documented — say 'replaced', not 'since vX'."*
+- The three `type: repo` sources (`anthropics/claude-code-action`, `claude-agent-sdk-typescript`, `claude-agent-sdk-python`) were fetched and HTTP-checked on 2026-09-07; the packages themselves were installed and run from npm/PyPI, not from a git checkout of those repos.
+- **`research/feature-inventory.md` line 23** lists the Agent SDK doc-map entry as `migration`; the live slug is `agent-sdk/migration-guide`. It also has no row for GitLab CI/CD (`AI_FLOW_*`, the job shape) or for GitHub Enterprise Server specifics that lesson 04 leans on. `research/` is outside this plan's `owned_paths`.
+- **`research/deprecations.md` has no rows** for the patch versions this module's "Changed" callouts cite (`--permission-prompts` in 2.1.259, the review workflow posting to the PR since 2.1.229, `--json-schema` behaviour before 2.1.205). Each is sourced from the live doc page and verified same-day, but there is no repo-local record for future cross-checking.
+- **Plan/lesson tag-pattern mismatch:** this plan's Step 3 names the start tags `lesson/m13-headless-ci-NN-start`; the tags that actually exist (and that the lessons use) are `lesson/m13-NN-start`, matching every other module. The lessons follow the repository, not this plan file.
+- The `-p` exit codes stay at what was reproduced; see the note above. `--permission-prompts none` now has a capture too (`01-claude-p/09-permission-prompts-none.txt`): accepted on 2.1.263, exits 0, `permission_denials` empty. The `fact-checker` also flagged that `agent-sdk/python.md` and `agent-sdk/typescript.md` truncate before their message-type reference tables when fetched, so the literal `data` dict keys were confirmed from the installed SDK and the real run rather than from a doc page.
+- **Scratch clone left on disk:** `../cct-lab-p30`, a second clone of the lab repo used for captures so the shared `../claude-code-lab` was never disturbed. Nothing depends on it — every transcript is committed — so it can be deleted.

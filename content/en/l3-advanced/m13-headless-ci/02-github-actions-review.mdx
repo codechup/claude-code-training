@@ -1,0 +1,380 @@
+---
+title: 'PR review with claude-code-action@v1'
+description: 'Put Claude Code in GitHub Actions: interactive vs automation mode, the action inputs that matter, a review workflow copied from the docs and one from the lab repo, and the secrets discipline that keeps both safe on a public repository.'
+level: 3
+module: 'm13-headless-ci'
+order: 2
+duration_min: 25
+difficulty: core
+tags: ['ci', 'github-actions', 'code-review', 'automation']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Claude Code GitHub Actions'
+    url: 'https://code.claude.com/docs/en/github-actions.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run Claude Code programmatically'
+    url: 'https://code.claude.com/docs/en/headless.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'anthropics/claude-code-action'
+    url: 'https://github.com/anthropics/claude-code-action'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m13-02-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Tell interactive mode from automation mode, and say which input decides it.
+- Write a `.github/workflows/` file that runs `anthropics/claude-code-action@v1` on pull requests.
+- Choose the right `permissions:` block, and explain why `id-token: write` is there.
+- Pass CLI flags through `claude_args`, and pre-approve exactly the tools the run needs.
+- Validate a workflow file locally before you push it.
+
+**Prerequisites.** Lesson 01 (`claude -p`, `--allowedTools`, `--max-turns`). A GitHub repository you have admin access to, if you want to install the app for real — the lab itself validates workflow files locally and never triggers a billed run.
+
+<WhenNotToUse>
+  If all you want is an automatic review on every pull request, you do not need a workflow file at
+  all — Code Review does that without one, and this lesson's workflow is the option you pick when
+  you want to control the prompt, the model and the triggers yourself. Skip the action entirely when
+  your review criteria are mechanical (formatting, import order, lockfile drift): a linter is
+  cheaper, faster and deterministic. And do not wire it to fork pull requests on a public repository
+  expecting it to work — GitHub withholds secrets from those runs by design.
+</WhenNotToUse>
+
+## Concept
+
+### One action, two modes
+
+`anthropics/claude-code-action@v1` decides how to run from your workflow configuration:
+
+- **Interactive mode** — the workflow provides no `prompt` input. Claude waits for the trigger phrase (`@claude` by default) in an issue or pull request comment, in a PR review, or in the body or title of a newly opened issue, then responds. Progress and results appear as a comment on the triggering issue or PR.
+- **Automation mode** — the workflow provides a `prompt` input. Claude runs without waiting for a mention, on any GitHub event including a `schedule`. By default results go to the workflow run log; Claude posts to the issue or PR only when the prompt directs it to and it has a tool that can post.
+
+Both modes run two checks on the triggering actor before Claude starts, and the run fails when either rejects it. The user needs **write access** on issue and pull request events (`allowed_non_write_users` plus your own `github_token` is the exception), and the actor must not be a **bot** unless listed in `allowed_bots` — which is what stops two automations from triggering each other in a loop.
+
+### The inputs that matter
+
+| Input                     | What it does                                                                                         |
+| ------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `prompt`                  | Instructions, as plain text or a skill invocation. Omitting it selects interactive mode              |
+| `claude_args`             | CLI arguments passed straight to Claude Code — `--model`, `--max-turns`, `--allowedTools`, `--debug` |
+| `anthropic_api_key`       | A Claude API key from the Claude Console                                                             |
+| `claude_code_oauth_token` | A subscription token, generated with `claude setup-token`                                            |
+| `github_token`            | Token for GitHub operations; omit it to authenticate as the Claude GitHub App                        |
+| `plugin_marketplaces`     | Newline-separated marketplace Git URLs                                                               |
+| `plugins`                 | Newline-separated `plugin-name@marketplace-name` entries to install before execution                 |
+| `settings`                | Claude Code settings, as a JSON string or a path to a settings file                                  |
+| `trigger_phrase`          | Defaults to `@claude`                                                                                |
+
+### The docs' review workflow
+
+This is the canonical review workflow from the official docs. It installs the `code-review` plugin from Anthropic's marketplace and runs its skill — the same plugin the review workflow from `/install-github-app` uses:
+
+<CodeBlock title=".github/workflows/code-review.yml">
+
+```yaml
+name: Code Review
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
+          plugins: 'code-review@claude-code-plugins'
+          prompt: '/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
+          claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment"'
+```
+
+</CodeBlock>
+
+Two lines control where the review goes. `--comment` makes Claude post its review on the pull request — an inline comment on each issue it finds, or one summary comment when it finds none; without it, Claude posts nothing and you read the findings in the run log. The `claude_args` line stays even though the skill's own `allowed-tools` frontmatter names the same tool, because the action starts the MCP server that posts inline comments only when `--allowedTools` in `claude_args` names it.
+
+Claude skips draft and closed pull requests, ones it judges not to need a review, and ones that already have a comment from Claude.
+
+### The lab repository's workflow
+
+The lab repo ships a different shape at `lesson/m13-02-solution`, and the difference is instructive. It is a
+public repository with no `ANTHROPIC_API_KEY` secret, so it has to stay green anyway. The block below is
+abridged — the prompt is trimmed to two lines and the file's header comments are dropped; check out the tag
+for the file as shipped:
+
+<CodeBlock title="claude-review.yml — abridged; full file at lesson/m13-02-solution">
+
+```yaml
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  review:
+    name: claude-review
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code review
+        if: ${{ env.ANTHROPIC_API_KEY != '' }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review this pull request against this repo's own conventions.
+            Use `gh pr comment` for top-level feedback.
+          claude_args: |
+            --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+
+      - name: Skipped (no ANTHROPIC_API_KEY secret)
+        if: ${{ env.ANTHROPIC_API_KEY == '' }}
+        run: echo "ANTHROPIC_API_KEY is not set — skipping the Claude review step."
+```
+
+</CodeBlock>
+
+Four differences worth naming, none of them accidental:
+
+1. **A job-level `env` plus a step-level `if`.** A secret cannot be referenced in a job-level `if`, so the workflow lifts it into `env` and guards the step. On a fork PR against a public repo GitHub withholds secrets, so the same guard covers that case for free instead of failing red.
+2. **`pull-requests: write`, not `read`.** This one posts with `gh pr comment` rather than the inline-comment MCP server, and writing a comment needs write.
+3. **`actions/checkout` pinned to a commit SHA** with the version in a trailing comment. A tag is mutable; a SHA is not. This training repository's own `ci.yml` and `deploy.yml` pin the same way — read them as worked examples.
+4. **Tool allow rules in `claude_args`, not a permission mode.** `Bash(gh pr comment:*)` is the `:*` suffix form of `Bash(gh pr comment *)`, and the three rules together are the entire shell surface the review gets.
+
+### Costs, and how to cap them
+
+Each run spends GitHub Actions minutes and API tokens. Both are bounded the same way: `--max-turns` in `claude_args`, a workflow-level `timeout-minutes`, GitHub's concurrency controls to limit parallel runs, and a `CLAUDE.md` short enough that re-reading it on every run is cheap. Authenticating with `claude_code_oauth_token` bills against your Claude subscription instead of the API.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · write and validate a review workflow"
+  lessonId="en/l3-advanced/m13-headless-ci/github-actions-review"
+  repoTag="lesson/m13-02-start"
+  steps={[
+    '`git checkout lesson/m13-02-start` in your lab clone. The tag carries `scripts/headless-example.sh` from lesson 01 and no workflow yet.',
+    'Write `.github/workflows/code-review.yml` with the docs workflow from the Concept section above, exactly as printed.',
+    'Validate it locally: `npx --yes -p @action-validator/cli -p @action-validator/core action-validator .github/workflows/code-review.yml` and check `$?`.',
+    'Now `git checkout lesson/m13-02-solution` and read the workflow the lab repo actually ships. Diff its permissions block, its checkout pin and its claude_args against yours.',
+    'Validate the shipped workflow the same way.',
+    'Do NOT push a workflow that carries a real API key, and do not trigger a run: the lab repository has no ANTHROPIC_API_KEY secret, and adding one to a public fork exposes it to every workflow in that fork.',
+  ]}
+  expected="action-validator exits 0 with no output for the docs workflow and for the lab repo's shipped claude-review.yml. The diff between them is: read vs write on pull-requests, an inline-comment MCP tool vs gh pr comment, a floating tag vs a pinned SHA, and the env/if secret guard."
+  checklist={[
+    'Your workflow file validates with exit code 0',
+    'The `permissions:` block includes `id-token: write`',
+    'The action is referenced as `anthropics/claude-code-action@v1`, not `@beta`',
+    'No secret value appears anywhere in the file — only `${{ secrets.NAME }}`',
+    'You can say in one sentence why `claude_args` names the inline-comment tool',
+    'No workflow run was triggered against a real API key',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/02-github-actions-review/02-docs-workflows-validated.txt"
+    range="2-8"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/02-github-actions-review/01-action-validator.txt"
+    range="2-3"
+  />
+</Lab>
+
+The first capture validates all three workflows printed on the official GitHub Actions page, not only the review one: `claude.yml` is the docs' interactive `@claude` workflow, whose shape lesson 03 adapts under its own filename, `code-review.yml` is the one you just wrote, and `daily-report.yml` is the scheduled automation-mode shape from the Concept section's cost discussion. Validating all three at once is the cheap way to prove the docs' YAML is legal before you adapt any of it.
+
+`action-validator` is quiet on success — no output, exit `0`. That is the result you want; it means the workflow's schema, event names and step shapes are all legal. It does not check that `anthropics/claude-code-action@v1` exists or that your inputs are spelled right, so read the input table above once more before you push.
+
+The second capture validates the lab repository's own `claude-review.yml` at `lesson/m13-02-solution` — the SHA-pinned, secret-guarded version — and it passes too.
+
+### Getting the action installed
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+gh auth login
+claude
+# then, inside the session:
+# /install-github-app
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+gh auth login
+claude
+# then, inside the session:
+# /install-github-app
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+gh auth login
+claude
+# then, inside the session:
+# /install-github-app
+```
+
+  </Fragment>
+</OSTabs>
+
+`/install-github-app` installs the Claude GitHub App, saves the credential as a repository secret — `ANTHROPIC_API_KEY` for an API key, `CLAUDE_CODE_OAUTH_TOKEN` for a subscription token generated with `claude setup-token` — pushes a branch with the workflow files you select, and opens a pull request ready to create. You need admin access on the repository and the GitHub CLI installed and authenticated. The manual path is the same three pieces done by hand: install the app, add the secret, copy `examples/claude.yml` from the action's repository into `.github/workflows/`.
+
+## Anti-patterns
+
+**Pinning the action to `@beta`.** The beta inputs are gone. _Fix:_ `@v1`, drop the `mode` input (the action detects the mode itself), rename `direct_prompt` to `prompt`, and move `max_turns` and `model` into `claude_args`. `custom_instructions` becomes `--append-system-prompt`.
+
+**Leaving out `id-token: write`.** The action's default GitHub App authentication needs it, as does workload identity federation — even when you pass your own `github_token`. _Fix:_ include it in every `permissions:` block for this action.
+
+**Passing `github_token: ${{ secrets.GITHUB_TOKEN }}` and then wondering why CI never runs on Claude's commits.** GitHub does not trigger workflows on commits made with the default token. _Fix:_ remove the line so the action authenticates as the Claude GitHub App, or pass a custom app token.
+
+**Granting the whole tool surface "to be safe".** A review job that can run any shell command is a review job that can push. _Fix:_ name the exact tools in `claude_args --allowedTools`, and keep `permissions:` at `read` for anything the job does not write.
+
+**Echoing a secret to debug it.** `run: echo "$ANTHROPIC_API_KEY"` puts the key in a log that anyone with read access can download. _Fix:_ test the credential locally with `claude` before debugging the workflow, and assert only on its emptiness (`if: ${{ env.ANTHROPIC_API_KEY != '' }}`) inside the workflow.
+
+**Using a floating tag for third-party actions.** `actions/checkout@v6` resolves to whatever that tag points at today. _Fix:_ pin to a commit SHA with the version in a trailing comment, as the lab repository does.
+
+<Callout variant="changed">
+  Workflows that still say `anthropics/claude-code-action@beta` need updating: the current version
+  is `@v1`, the `mode` input is gone, `direct_prompt` is now `prompt`, and CLI options such as
+  `max_turns` and `model` move into `claude_args`. Also new: since 2.1.229 the generated review
+  workflow posts its review on the pull request; before that it wrote only to the workflow run log.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/github-actions-review"
+  questionId="q1"
+  lang="en"
+  prompt="Which input decides whether the action runs in interactive or automation mode?"
+  options={[
+    {
+      text: '`prompt` — present means automation, absent means interactive',
+      correct: true,
+      explanation:
+        'With a prompt Claude runs on the event itself; without one it waits for the trigger phrase.',
+    },
+    {
+      text: '`mode`',
+      explanation: 'That input existed in the beta and was removed in v1.',
+    },
+    {
+      text: '`trigger_phrase`',
+      explanation: 'That only changes which phrase interactive mode listens for.',
+    },
+    {
+      text: 'The workflow `on:` block',
+      explanation: 'The trigger decides when the job starts, not which mode the action picks.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/github-actions-review"
+  questionId="q2"
+  lang="en"
+  prompt="The docs' review workflow names mcp__github_inline_comment__create_inline_comment in --allowedTools inside claude_args, even though the skill already declares that tool. Why?"
+  options={[
+    {
+      text: 'The action starts the MCP server that posts inline comments only when --allowedTools names it',
+      correct: true,
+      explanation: 'Drop the line and the review runs but has no way to post inline comments.',
+    },
+    {
+      text: 'Skill frontmatter is ignored inside GitHub Actions',
+      explanation: 'It is honoured; the issue is which MCP server the action starts.',
+    },
+    {
+      text: 'It overrides the repository permission block',
+      explanation: 'Tool rules and GitHub token permissions are separate systems.',
+    },
+    {
+      text: 'It is legacy syntax kept for the beta',
+      explanation: 'It is current and load-bearing.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/github-actions-review"
+  questionId="q3"
+  lang="en"
+  prompt="Your review workflow runs on a public repository. A contributor opens a pull request from their fork. What happens?"
+  options={[
+    {
+      text: 'GitHub withholds secrets from the run, so the review cannot authenticate',
+      correct: true,
+      explanation:
+        'That is why the lab repository guards the step on the secret being non-empty instead of failing red.',
+    },
+    {
+      text: 'The action reads the secret from the fork instead',
+      explanation: 'A fork has no access to the upstream repository secrets.',
+    },
+    {
+      text: 'The run is blocked because the contributor is a bot',
+      explanation: 'The bot check applies to bot actors, not to fork contributors.',
+    },
+    {
+      text: 'Nothing changes — fork PRs get secrets like any other PR',
+      explanation: 'They do not, by design.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/github-actions-review"
+  questionId="q4"
+  lang="en"
+  prompt="You want to cap what one review run can spend. Which pair actually bounds it?"
+  options={[
+    {
+      text: '`--max-turns` in claude_args plus a workflow timeout',
+      correct: true,
+      explanation:
+        'One bounds the agentic loop, the other bounds wall-clock; concurrency limits bound parallel runs.',
+    },
+    {
+      text: 'A shorter `prompt` and a smaller `fetch-depth`',
+      explanation: 'Both help marginally; neither is a cap.',
+    },
+    {
+      text: '`permissions: contents: read`',
+      explanation: 'That limits what the token can do, not how long the run goes.',
+    },
+    {
+      text: '`--debug` so you can see where the time went',
+      explanation: 'Debug output is diagnosis, not a limit.',
+    },
+  ]}
+/>
+
+**Next:** `03-issue-to-pr` uses the same action in the other direction — an issue comment becomes a branch and a pull request.

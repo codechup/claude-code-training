@@ -1,0 +1,305 @@
+---
+title: 'Issue to pull request with @claude'
+description: 'Turn an issue or a comment into a branch and a pull request: the interactive-mode workflow, the trigger and actor checks that gate it, the permissions a writing job needs, and the CLAUDE.md that decides what Claude produces.'
+level: 3
+module: 'm13-headless-ci'
+order: 3
+duration_min: 25
+difficulty: core
+tags: ['ci', 'github-actions', 'automation', 'pull-request']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Claude Code GitHub Actions'
+    url: 'https://code.claude.com/docs/en/github-actions.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Use Claude Code GitHub Actions with cloud providers'
+    url: 'https://code.claude.com/docs/en/github-actions-cloud-providers.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m13-03-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Write an interactive-mode workflow that answers `@claude` on issues, issue comments and PR review comments.
+- Explain exactly who is allowed to trigger it, and what happens when someone who is not tries.
+- Pick the `permissions:` block a job needs when Claude will push a branch and open a pull request.
+- Say what `CLAUDE.md` does to the output, and why keeping it short is a cost decision.
+- Diagnose the three failures that account for most "Claude is not responding" reports.
+
+**Prerequisites.** Lesson 02 (the action, its inputs, `claude_args`, secrets discipline). The lab tag for this lesson is process-only: `lesson/m13-03-start` and `lesson/m13-03-solution` point at the same commit, because the exercise is about GitHub's side of the loop, not a change to the lab repository's code.
+
+<WhenNotToUse>
+  Issue-to-PR automation pays off when the issue already contains the decision and only the typing
+  is left — a dependency bump, a mechanical refactor, a well-specified small feature. It is the
+  wrong tool when the issue is really a design question, when the change touches something with no
+  test to prove it works, or when the repository has no branch protection and no review requirement:
+  the whole safety model here is that a human reads the diff before it merges. On a public
+  repository, weigh it once more — every `@claude` comment from a user with write access starts a
+  billed run.
+</WhenNotToUse>
+
+## Concept
+
+### The loop
+
+Interactive mode is the whole feature. You omit `prompt`, and the action waits for the trigger phrase — `@claude` by default, changeable with `trigger_phrase` — in an issue or pull request comment, in a pull request review, or in the body or title of a newly opened issue. Claude replies in a comment on the same issue or PR and updates that comment as it works. When the request implies a change, it writes the change on a branch and opens a pull request.
+
+This lesson's worked example prompt is a comment, not a CLI argument:
+
+```text
+@claude implement this feature based on the issue description
+```
+
+Requests that work well have the same shape as any good delegation: a goal, the constraints, and a way to check the result. `@claude fix the TypeError in the user dashboard component` gives Claude a symptom and a place to look. `@claude make this better` gives it nothing.
+
+### The workflow
+
+Interactive mode needs no `prompt`, so the step is short. What grows is the `on:` block and the `if:` guard, because you want the runner to start only when the phrase is actually present:
+
+<CodeBlock title=".github/workflows/claude-issue.yml">
+
+```yaml
+name: Claude PR Action
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened]
+jobs:
+  claude-pr:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: '--max-turns 15'
+```
+
+</CodeBlock>
+
+Compare it with the review workflow from lesson 02 and three things stand out.
+
+**`contents: write`, not `read`.** A job that pushes a branch needs it. `pull-requests: write` lets it open the PR, and `issues: write` lets it comment back on the issue that triggered it. `id-token: write` is there for the action's default GitHub App authentication, the same as always.
+
+**The `if:` guard duplicates a check the action already makes.** That is deliberate: the action checks the trigger phrase itself before responding, but by then a runner has already started. The guard keeps runners from spinning up on every comment in the repository.
+
+**`actions/checkout` comes first.** Without it Claude has no local copy of the repository to work in. A job that only reads through the GitHub API — the scheduled-report shape from lesson 02 — can skip it; a job that edits files cannot.
+
+### Who is allowed to trigger it
+
+Two checks run on the triggering actor before Claude starts, and the run **fails** when either rejects it:
+
+- **Write access.** On issue and pull request events the triggering user must have write access to the repository. To allow specific users without it, set `allowed_non_write_users` and pass your own `github_token`. Events no user authors, such as a `schedule` trigger, skip this check.
+- **Human actor.** On every event a bot actor is rejected unless listed in `allowed_bots`. This also applies to scheduled runs, which GitHub attributes to a repository user — usually whoever last changed the workflow's `cron` schedule. If that user is a bot, list it.
+
+There is a sharp edge on public repositories worth stating plainly: the credential steps in your workflow run _before_ the action checks the commenter's write access. If your workflow generates a GitHub App token or signs in to a cloud provider first, an unauthorized comment still burns Actions minutes and leaves audit-log entries before it is rejected. The documented fix is to add a step that verifies the commenter's write access ahead of the credential steps.
+
+### What shapes the output
+
+A `CLAUDE.md` in the repository root is read on every run. It is where code style, review criteria, project rules and preferred patterns belong, and Claude follows them when creating PRs and answering requests. Two consequences follow from "on every run": keep it concise, because you pay for it every time, and treat it as the highest-leverage file in the repository for making automated PRs look like your team's PRs.
+
+Issue templates do the same job from the other end — they get the context into the issue body so Claude needs fewer turns to work out what you meant. Fewer turns is the cost lever that matters most, alongside `--max-turns` in `claude_args` and a workflow-level timeout.
+
+### Why CI does not run on Claude's commits
+
+This is the most common surprise, and it is a GitHub rule, not a Claude one: GitHub does not trigger workflows on commits made with the default `GITHUB_TOKEN`. If you passed `github_token: ${{ secrets.GITHUB_TOKEN }}` to the action, remove it so the action authenticates as the Claude GitHub App, or pass a custom app token instead. Then check that your CI workflow's own triggers include the events Claude's pushes produce, such as `push` or `pull_request`.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · an issue-triggered workflow, validated locally"
+  lessonId="en/l3-advanced/m13-headless-ci/issue-to-pr"
+  repoTag="lesson/m13-03-start"
+  steps={[
+    '`git checkout lesson/m13-03-start` in your lab clone. This tag is process-only — it is identical to `lesson/m13-03-solution`, and to `lesson/m13-02-solution` before it, because the lesson is about GitHub, not about the lab code.',
+    'Write `.github/workflows/claude-issue.yml` with the interactive-mode workflow from the Concept section, including all three triggers and the three-clause `if:` guard.',
+    'Validate it: `npx --yes -p @action-validator/cli -p @action-validator/core action-validator .github/workflows/claude-issue.yml` and check `$?`.',
+    'Read the BUGS.md of the lab repository and write, in a scratch file, the `@claude` comment you would post to get B5 fixed — the flaky "becomes overdue" test. Name the file, the symptom and the check that proves it is fixed.',
+    'Compare your comment with the prompt inside the `claude-review.yml` at `lesson/m13-02-solution`: both are instructions to the same agent, one from a comment and one from a workflow input.',
+    'Do NOT push the workflow or post the comment against a repository with a live API key. Trigger a real run only in a repository you own and are willing to bill.',
+  ]}
+  expected="action-validator exits 0 with no output. Your @claude comment names test/overdue.test.ts, says the test depends on real wall-clock time, and asks for an injectable clock plus a passing `npm test` as the proof."
+  checklist={[
+    'The workflow validates with exit code 0',
+    '`permissions:` includes contents: write, pull-requests: write, issues: write and id-token: write',
+    'The `if:` guard covers issue_comment, pull_request_review_comment and issues',
+    '`actions/checkout` runs before the action step',
+    'Your @claude comment states a goal, a constraint and a check — not just a symptom',
+    'No run was triggered against a repository with a live secret',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/03-issue-to-pr/01-action-validator.txt"
+    range="2-3"
+  />
+</Lab>
+
+The validator is silent on success. That is all a local check can tell you: the file is legal YAML with legal event names, job keys and step shapes. Everything this lesson is actually about — whether the trigger phrase matches, whether the commenter has write access, whether the token can push — is only observable in a real run, which is why the lab stops here and the next section is a troubleshooting list rather than a transcript.
+
+### Reading a run that did nothing
+
+<CodeBlock title="triage, in order">
+
+```bash
+gh run list --workflow claude-issue.yml --limit 5
+gh run view <run-id> --log
+gh api repos/:owner/:repo/collaborators/<user>/permission
+```
+
+</CodeBlock>
+
+If no run appears at all, the `if:` guard rejected the event or the workflow file is not on the default branch. If a run appears and fails immediately, it is almost always one of the actor checks. If it succeeds but Claude posted nothing, check that the comment contains `@claude` as a complete word — not `/claude`, not `@claude-bot`.
+
+## Anti-patterns
+
+**Letting the workflow authenticate before it checks the actor.** On a public repository this means an unauthorized comment still generates an app token and signs in to your cloud provider before being rejected. _Fix:_ verify the commenter's write access in a step ahead of the credential steps.
+
+**Giving the job `contents: write` when it only reviews.** Write access is what turns a compromised prompt into a pushed commit. _Fix:_ scope `permissions:` per workflow — review jobs read, issue-to-PR jobs write.
+
+**Treating an open pull request from Claude as reviewed.** It is a draft written quickly by something that cannot run your staging environment. _Fix:_ keep branch protection and required reviews on; the whole model assumes a human reads the diff.
+
+**A `CLAUDE.md` that has grown into a wiki.** It is re-read on every run, so every paragraph is a recurring cost and a dilution of the parts that matter. _Fix:_ keep it to rules a reviewer would actually enforce, and move background material elsewhere.
+
+**Debugging "no CI on Claude's commits" by editing CI.** The cause is usually the default `GITHUB_TOKEN`, not your CI triggers. _Fix:_ drop `github_token: ${{ secrets.GITHUB_TOKEN }}` so the action authenticates as the app, or pass a custom app token.
+
+**No turn cap on an open-ended request.** "Implement this feature" against a vague issue is exactly the run that keeps finding more to do. _Fix:_ `--max-turns` in `claude_args`, a job `timeout-minutes`, and a concurrency group so one issue cannot start five runs.
+
+<Callout variant="changed">
+  If your workflow still uses `anthropics/claude-code-action@beta` with `mode: tag` and
+  `direct_prompt`, none of those exist in v1: the action detects interactive versus automation mode
+  from whether `prompt` is set, and CLI options such as `max_turns` and `model` move into
+  `claude_args`.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/issue-to-pr"
+  questionId="q1"
+  lang="en"
+  prompt="A user without write access comments `@claude fix this` on an issue. What happens?"
+  options={[
+    {
+      text: 'The run fails the write-access check before Claude starts',
+      correct: true,
+      explanation:
+        'Unless you set `allowed_non_write_users` and pass your own github_token, the run is rejected.',
+    },
+    {
+      text: 'Claude replies but refuses to push',
+      explanation: 'The check happens before Claude starts; there is no partial run.',
+    },
+    {
+      text: 'The comment is ignored silently and no run is recorded',
+      explanation:
+        'A run starts if the `if:` guard matches; it then fails the check, which is visible in the run list.',
+    },
+    {
+      text: 'The action asks a maintainer to approve it',
+      explanation: 'There is no approval step; the run fails.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/issue-to-pr"
+  questionId="q2"
+  lang="en"
+  prompt="Claude opened a pull request, but none of your CI workflows ran on it. The most likely cause?"
+  options={[
+    {
+      text: 'The workflow passes github_token: ${{ secrets.GITHUB_TOKEN }}, and GitHub does not trigger workflows on commits made with the default token',
+      correct: true,
+      explanation:
+        'Remove the line so the action authenticates as the Claude GitHub App, or pass a custom app token.',
+    },
+    {
+      text: 'The action ran in automation mode instead of interactive mode',
+      explanation: 'The mode changes what triggers Claude, not whether your CI fires.',
+    },
+    {
+      text: '`id-token: write` was missing',
+      explanation: 'That would break the action itself, not downstream CI.',
+    },
+    {
+      text: 'Claude pushed to a branch that CI ignores',
+      explanation:
+        'Possible but far less common than the default-token rule; check the token first.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/issue-to-pr"
+  questionId="q3"
+  lang="en"
+  prompt="Which permissions block fits a job where Claude pushes a branch and opens a PR from an issue comment?"
+  options={[
+    {
+      text: 'contents: write, pull-requests: write, issues: write, id-token: write',
+      correct: true,
+      explanation: 'Push, open the PR, comment back on the issue, and authenticate as the app.',
+    },
+    {
+      text: 'contents: read, pull-requests: read, issues: read, id-token: write',
+      explanation: 'That is the review shape — it cannot push or open a PR.',
+    },
+    {
+      text: 'contents: write only',
+      explanation: 'It could push but not open the PR or reply on the issue.',
+    },
+    {
+      text: 'permissions: write-all',
+      explanation:
+        'It works and grants far more than the job needs — the opposite of least privilege.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/issue-to-pr"
+  questionId="q4"
+  lang="en"
+  prompt="Why does the workflow keep an `if: contains(github.event.comment.body, '@claude')` guard when the action checks the trigger phrase itself?"
+  options={[
+    {
+      text: 'To stop a runner from starting on every comment in the repository',
+      correct: true,
+      explanation: 'The action checks after the runner boots; the guard checks before.',
+    },
+    {
+      text: 'Because the action only checks the phrase in automation mode',
+      explanation: 'The phrase check belongs to interactive mode.',
+    },
+    {
+      text: 'Because `trigger_phrase` has no default',
+      explanation: 'It defaults to `@claude`.',
+    },
+    {
+      text: 'To satisfy action-validator',
+      explanation: 'The validator has no opinion about `if:` expressions.',
+    },
+  ]}
+/>
+
+**Next:** `04-gitlab-and-others` covers the same two patterns outside GitHub — GitLab CI/CD jobs and GitHub Enterprise Server.

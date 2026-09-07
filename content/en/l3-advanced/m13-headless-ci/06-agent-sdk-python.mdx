@@ -1,0 +1,363 @@
+---
+title: 'The same agent in Python'
+description: 'Rebuild the review agent with claude-agent-sdk in Python: a venv install, the async query() generator, ClaudeAgentOptions in snake_case, typed message classes, and the two platform gotchas that bite on Windows.'
+level: 3
+module: 'm13-headless-ci'
+order: 6
+duration_min: 25
+difficulty: advanced
+tags: ['agent-sdk', 'python', 'automation']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Agent SDK quickstart'
+    url: 'https://code.claude.com/docs/en/agent-sdk/quickstart.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Agent SDK overview'
+    url: 'https://code.claude.com/docs/en/agent-sdk/overview.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Migrate to Claude Agent SDK'
+    url: 'https://code.claude.com/docs/en/agent-sdk/migration-guide.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'anthropics/claude-agent-sdk-python'
+    url: 'https://github.com/anthropics/claude-agent-sdk-python'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m13-06-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Install `claude-agent-sdk` into a virtual environment with either `uv` or `pip`.
+- Write the same read-only review agent in Python, and map every option name to its TypeScript twin.
+- Handle messages with the SDK's typed classes (`SystemMessage`, `AssistantMessage`, `ResultMessage`) instead of string comparisons.
+- Recognise the two platform problems that show up on Windows and fix both.
+- Decide, for a given job, which of the two SDKs you should reach for.
+
+**Prerequisites.** Python 3.10 or later (this lesson was verified on 3.12.10), and lesson 05 — the concepts are identical, so this lesson spends its time on what is different.
+
+<WhenNotToUse>
+  Everything from lesson 05 applies here: if you only need one answer, `claude -p` is simpler than a
+  dependency, and a hosted agent with a managed sandbox is a different product. The Python-specific
+  boundary is the runtime: `query()` is an async generator, so it needs an event loop. Dropping it
+  into a synchronous framework — a plain WSGI view, a Celery task, a notebook cell that is not
+  async-aware — means wrapping it in `asyncio.run()` per call and paying full agent startup each
+  time. If your host is synchronous and latency matters, run the CLI as a subprocess instead.
+</WhenNotToUse>
+
+## Concept
+
+### Same SDK, snake_case
+
+The Python and TypeScript SDKs are the same product. `query()` is still the entry point, still returns an async iterator, and still yields one message per step of the loop. The differences are naming and typing:
+
+| TypeScript                     | Python                                  |
+| ------------------------------ | --------------------------------------- |
+| `query({ prompt, options })`   | `query(prompt=..., options=...)`        |
+| `options: { … }`               | `options=ClaudeAgentOptions(…)`         |
+| `allowedTools`                 | `allowed_tools`                         |
+| `permissionMode`               | `permission_mode`                       |
+| `maxTurns`                     | `max_turns`                             |
+| `settingSources`               | `setting_sources`                       |
+| `cwd`                          | `cwd`                                   |
+| `message.type === 'assistant'` | `isinstance(message, AssistantMessage)` |
+
+The Python side gives you real classes to match on, which is nicer than string comparison: `SystemMessage`, `AssistantMessage`, `ResultMessage`. The one wrinkle is that `SystemMessage` carries its payload in a `data` dict, so the `init` event's model and cwd come out as `message.data.get('model')` and `message.data.get('cwd')` rather than attributes.
+
+The worked example prompt is deliberately identical to lesson 05's, so you can compare the two runs line by line:
+
+```text
+Read BUGS.md and src/store.ts. Name the one function that holds the off-by-one
+pagination bug, and quote the single line that is wrong. Do not edit anything.
+```
+
+### Installing
+
+Two supported paths. `uv init` then `uv add claude-agent-sdk` handles the virtual environment for you. Or do it by hand: `python3 -m venv .venv` and `source .venv/bin/activate` on macOS or Linux, `py -m venv .venv` and `.venv\Scripts\Activate.ps1` on Windows, then `pip install claude-agent-sdk`.
+
+If PowerShell blocks `Activate.ps1` with an execution-policy error, `Set-ExecutionPolicy -Scope Process RemoteSigned` clears it for that shell only.
+
+The SDK bundles a native Claude Code binary, with one documented exception: if pip installs the source distribution instead of a platform wheel — on ARM64 Windows, for example — there is no bundled binary, and you install Claude Code natively instead. The SDK then finds it on your `PATH`.
+
+### Authentication and settings
+
+Identical to lesson 05, because it is the same engine underneath. `ANTHROPIC_API_KEY` is read from the process environment, `.env` files are not loaded for you, and the third-party provider switches are the same environment variables. `setting_sources=[]` gives you the same isolation mode, with the same limits: no `settings.json` from `~/.claude` or `.claude/`, no `CLAUDE.md` — but managed policy, the global `~/.claude.json` and auto memory under `~/.claude/projects/<project>/memory/` still load, so pair it with `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` when that matters too. One version caveat the TypeScript side does not have: Python SDK 0.1.59 and earlier treated an empty list the same as omitting the option, so isolation silently did nothing. This lesson was verified on 0.2.152.
+
+### Which SDK for which job
+
+Neither is more capable. Pick by where the agent has to live: the language your surrounding application is written in, and the ecosystem you need alongside the agent — a web framework, a data pipeline, a notebook. If you have a genuine choice, the deciding question is usually whether the rest of the system is already async.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · the lesson-05 agent, rebuilt in Python"
+  lessonId="en/l3-advanced/m13-headless-ci/agent-sdk-python"
+  repoTag="lesson/m13-06-start"
+  steps={[
+    'In your lab clone, `git checkout lesson/m13-06-start`. Like the tag for lesson 05 it is process-only: `-start` and `-solution` point at the same commit, because your agent lives in its own project.',
+    'In a fresh scratch folder, create a virtual environment and activate it, then `pip install claude-agent-sdk`.',
+    'Confirm the install: `python -c "import claude_agent_sdk, importlib.metadata as m; print(m.version(\'claude-agent-sdk\'))"`.',
+    'Write `agent.py` with the code below — the same prompt, the same bounds, the same isolation as lesson 05.',
+    'Run it against the lab clone: `LAB_DIR=../claude-code-lab python agent.py`.',
+    'Compare the output with the transcript from lesson 05: same tools, same conclusion, different wording.',
+    'Confirm `git status` in the lab clone is clean.',
+  ]}
+  expected="`python agent.py` prints `init: model=claude-sonnet-5 cwd=<your lab clone>`, two `Tool: Read` lines, an answer naming paginate() in src/store.ts and quoting `const start = page * pageSize;` as the wrong line, then `Done: success (turns=3)`, exiting 0."
+  checklist={[
+    'The venv is activated and `claude-agent-sdk` imports without error',
+    '`python agent.py` exits 0',
+    'The init line shows the lab clone path',
+    'Only `Read` was used — no Edit, no Bash',
+    '`git status` in the lab clone reports no modifications',
+    'Non-ASCII output is not mangled (see the encoding note below)',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/06-agent-sdk-python/01-agent-py.txt"
+    range="3-17"
+  />
+</Lab>
+
+<CodeBlock title="agent.py">
+
+```python
+import asyncio
+import os
+
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    ResultMessage,
+    SystemMessage,
+    query,
+)
+
+LAB = os.environ["LAB_DIR"]
+
+
+async def main():
+    async for message in query(
+        prompt=(
+            "Read BUGS.md and src/store.ts. Name the one function that holds the "
+            "off-by-one pagination bug, and quote the single line that is wrong. "
+            "Do not edit anything."
+        ),
+        options=ClaudeAgentOptions(
+            cwd=LAB,
+            allowed_tools=["Read", "Glob", "Grep"],
+            permission_mode="dontAsk",
+            max_turns=8,
+            model="sonnet",
+            setting_sources=[],  # no settings.json or CLAUDE.md (auto memory still loads)
+        ),
+    ):
+        if isinstance(message, SystemMessage) and message.subtype == "init":
+            print(f"init: model={message.data.get('model')} cwd={message.data.get('cwd')}")
+        elif isinstance(message, AssistantMessage):
+            for block in message.content:
+                if hasattr(block, "text"):
+                    print(block.text)
+                elif hasattr(block, "name"):
+                    print(f"Tool: {block.name}")
+        elif isinstance(message, ResultMessage):
+            print(f"Done: {message.subtype} (turns={message.num_turns})")
+
+
+asyncio.run(main())
+```
+
+</CodeBlock>
+
+Two things about that run are worth stopping on.
+
+**Two SDKs, one agent.** Put this transcript next to lesson 05's: both agents read the same two files, reach the same conclusion about `paginate()`, and both volunteer that the checked-out tag already carries the fixed line. Nothing about the reasoning is language-specific, because the loop is the same engine in both cases. What differs is the wording — the model is not deterministic, and treating two runs as byte-identical is a test you will lose.
+
+**`asyncio.run(main())` is not decoration.** `query()` is an async generator, so `async for` needs a running event loop. That single line is the whole reason the "When not to use this" section warns about synchronous hosts.
+
+### Install and run, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install claude-agent-sdk
+export ANTHROPIC_API_KEY=your-api-key
+LAB_DIR=../claude-code-lab python agent.py
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install claude-agent-sdk
+export ANTHROPIC_API_KEY=your-api-key
+LAB_DIR=../claude-code-lab python agent.py
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install claude-agent-sdk
+$env:ANTHROPIC_API_KEY = "your-api-key"
+$env:PYTHONIOENCODING = "utf-8"
+$env:LAB_DIR = "..\claude-code-lab"; python agent.py
+```
+
+  </Fragment>
+</OSTabs>
+
+The `PYTHONIOENCODING` line in the Windows panel is not decoration. Here is the same agent run on Windows PowerShell with the variable unset — and with `setting_sources` removed, so the answer comes back in this machine's preferred language and actually contains non-ASCII characters to mangle:
+
+<Transcript
+  src="content/_shared/transcripts/m13-headless-ci/06-agent-sdk-python/02-agent-py-mojibake.txt"
+  range="5-14"
+/>
+
+Every `ç`, `ı`, `ş` and `ğ` came back as `�`. The agent was fine and the model's output was valid UTF-8; the console's legacy code page could not print it. Set `PYTHONIOENCODING=utf-8`, or call `sys.stdout.reconfigure(encoding="utf-8")` at the top of your script. This is also the second thing that recording shows: with `setting_sources` omitted, the Python SDK leaks host settings exactly as the TypeScript one does.
+
+## Anti-patterns
+
+**Calling `query()` without an event loop.** It is an async generator; a bare `for` over it raises. _Fix:_ put the loop in an `async def` and call it with `asyncio.run()`, or `await` it from an already-async host.
+
+**Installing into the system Python.** The SDK pulls in a sizeable dependency tree, and mixing it into a global interpreter is how version conflicts start. _Fix:_ `uv` or a `venv`, always.
+
+**Assuming a wheel was installed.** On a platform with no wheel, pip falls back to the source distribution and no Claude Code binary is bundled. _Fix:_ if the SDK cannot find a binary, install Claude Code natively — the SDK picks it up from `PATH`.
+
+**Matching on strings instead of types.** `message["type"] == "assistant"` throws away everything the Python SDK gives you. _Fix:_ `isinstance(message, AssistantMessage)`, and remember `SystemMessage` keeps its payload in `.data`.
+
+**Copying the TypeScript option names.** `allowedTools` is silently not `allowed_tools`. _Fix:_ build the options with `ClaudeAgentOptions(...)` so a wrong keyword is a `TypeError` at the call site rather than a silently ignored setting.
+
+**Diffing two runs and calling a difference a regression.** The model is not deterministic; the wording changes. _Fix:_ assert on what you actually care about — the tools used, the exit status, a value you extracted — not on the prose.
+
+<Callout variant="changed">
+  The Python package is `claude-agent-sdk`, imported as `claude_agent_sdk`; it was renamed from
+  `claude-code-sdk` / `claude_code_sdk`, and `ClaudeCodeOptions` became `ClaudeAgentOptions`. Two
+  version notes matter: since v0.1.0 the SDK no longer applies Claude Code's system prompt by
+  default, and Python SDK 0.1.59 and earlier treated `setting_sources=[]` the same as omitting it —
+  upgrade before relying on isolation mode.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/agent-sdk-python"
+  questionId="q1"
+  lang="en"
+  prompt="Which line is required to run the Python agent from a normal script?"
+  options={[
+    {
+      text: '`asyncio.run(main())`, because `query()` is an async generator',
+      correct: true,
+      explanation: '`async for` needs a running event loop.',
+    },
+    {
+      text: '`claude_agent_sdk.configure()` before the first query',
+      explanation: 'There is no such call.',
+    },
+    {
+      text: '`load_dotenv()` — the SDK requires a .env file',
+      explanation:
+        'The SDK reads the process environment and never requires a .env file; loading one is optional and manual.',
+    },
+    {
+      text: '`query.sync(...)` for synchronous hosts',
+      explanation: 'No synchronous wrapper is documented.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/agent-sdk-python"
+  questionId="q2"
+  lang="en"
+  prompt="You port a TypeScript agent to Python and the tool restrictions stop applying. What is the likely mistake?"
+  options={[
+    {
+      text: 'The option was written as `allowedTools`; Python uses `allowed_tools`',
+      correct: true,
+      explanation:
+        'Constructing options via `ClaudeAgentOptions(...)` turns that mistake into a TypeError instead of a silent default.',
+    },
+    {
+      text: 'Python defaults to `bypassPermissions`',
+      explanation:
+        'It does not — both SDKs start at `default`. (The SDKs do differ on `bypassPermissions`: the TypeScript one also requires `allowDangerouslySkipPermissions: true`.)',
+    },
+    {
+      text: '`cwd` must be absolute in Python',
+      explanation: 'Unrelated to tool restrictions.',
+    },
+    {
+      text: 'Python needs `setting_sources=["user"]` for allow rules to work',
+      explanation: 'Allow rules you pass in options apply regardless of setting sources.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/agent-sdk-python"
+  questionId="q3"
+  lang="en"
+  prompt="`pip install claude-agent-sdk` succeeds on ARM64 Windows, but the agent cannot start Claude Code. Why?"
+  options={[
+    {
+      text: 'pip installed the source distribution rather than a platform wheel, so no binary was bundled',
+      correct: true,
+      explanation: 'Install Claude Code natively; the SDK then finds it on PATH.',
+    },
+    {
+      text: 'The SDK does not support Windows',
+      explanation: 'It does; the quickstart documents the PowerShell path.',
+    },
+    {
+      text: 'ANTHROPIC_API_KEY must be set before pip install',
+      explanation: 'Install time and run time are unrelated here.',
+    },
+    {
+      text: 'The venv was not activated',
+      explanation: 'That would break the import, not the bundled binary.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/agent-sdk-python"
+  questionId="q4"
+  lang="en"
+  prompt="How do you read the model and working directory out of the `init` event in the Python SDK?"
+  options={[
+    {
+      text: 'From `message.data` on the SystemMessage whose subtype is "init"',
+      correct: true,
+      explanation: '`message.data.get("model")` and `message.data.get("cwd")`.',
+    },
+    {
+      text: 'From `message.model` and `message.cwd` attributes',
+      explanation: 'Those are the TypeScript shape; Python keeps the payload in `.data`.',
+    },
+    {
+      text: 'From the ResultMessage at the end of the run',
+      explanation: 'The result message carries outcome metadata, not the session init payload.',
+    },
+    {
+      text: 'You cannot — the Python SDK does not emit system messages',
+      explanation: 'It does; `SystemMessage` is one of the exported classes.',
+    },
+  ]}
+/>
+
+**Next:** module `m14-security` takes the permission boundaries this module leaned on and makes them the subject.

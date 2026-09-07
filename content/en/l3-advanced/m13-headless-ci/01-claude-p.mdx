@@ -1,0 +1,360 @@
+---
+title: 'claude -p: headless runs and structured output'
+description: 'Run Claude Code non-interactively with claude -p: text, json and stream-json output, --json-schema for a guaranteed shape, --allowedTools and permission modes for unattended runs, and the exit codes your script branches on.'
+level: 3
+module: 'm13-headless-ci'
+order: 1
+duration_min: 20
+difficulty: core
+tags: ['headless', 'ci', 'json', 'automation']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Run Claude Code programmatically'
+    url: 'https://code.claude.com/docs/en/headless.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'CLI reference'
+    url: 'https://code.claude.com/docs/en/cli-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure permissions'
+    url: 'https://code.claude.com/docs/en/permissions.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m13-01-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Run a one-off Claude Code task with `claude -p` and choose between `text`, `json` and `stream-json` output.
+- Read the JSON envelope: `result`, `subtype`, `is_error`, `num_turns`, `duration_ms`, `total_cost_usd`, `session_id`.
+- Force a specific output shape with `--json-schema` and read it back from `structured_output`.
+- Bound an unattended run with `--max-turns`, `--allowedTools` and a permission mode, and branch on the exit code afterwards.
+- Explain what `--bare` skips, and why a CI run usually wants it.
+
+**Prerequisites.** Claude Code 2.1.263 or later, `jq` on your `PATH`, and a clone of the lab repository. You should already be comfortable with permission modes and allow/deny rule syntax (m02-interact, `03-permissions`).
+
+<WhenNotToUse>
+  `claude -p` is for a task you can describe once and walk away from. Do not reach for it when you
+  are still exploring — an interactive session lets you steer mid-turn, and a headless run cannot.
+  Do not use it as a cheaper chat window: every run pays full startup and re-reads your project
+  context. And do not put a `-p` run in a pipeline where nobody reads the exit code; an unchecked
+  headless run that failed authentication looks exactly like one that succeeded, because Claude Code
+  prints in-run failures as the result on stdout, not to stderr.
+</WhenNotToUse>
+
+## Concept
+
+### One flag turns the agent into a command
+
+Adding `-p` (or `--print`) to any `claude` command runs it non-interactively: Claude works through the agentic loop as usual, prints a result, and exits. Everything else you know still applies — the same tools, the same permission rules, the same `CLAUDE.md`.
+
+Here is this lesson's worked example prompt, shaped so the answer is small enough for a script to consume:
+
+```text
+How many bugs does BUGS.md list? Answer with the number only.
+```
+
+Not every CLI option combines with `-p`. Claude Code rejects `--bg` outright, and rejects `--cloud` with a task description.
+
+### Three output formats
+
+`--output-format` takes three values:
+
+| Value         | What you get                                                           | Use it for                                      |
+| ------------- | ---------------------------------------------------------------------- | ----------------------------------------------- |
+| `text`        | Plain text — the default                                               | A human reading the terminal, or a `>` redirect |
+| `json`        | One JSON object with the result plus session metadata                  | Anything a script parses                        |
+| `stream-json` | Newline-delimited JSON, one object per event, ending in a `result` one | Live progress, or reconstructing a transcript   |
+
+The `json` envelope carries more than the answer. `result` holds the text, and alongside it you get `session_id` (to `--resume` later), `num_turns`, `duration_ms`, `total_cost_usd` plus a per-model breakdown in `modelUsage`, and `subtype` / `is_error` telling you how the run ended. The cost figures are client-side estimates and can differ from your bill.
+
+`stream-json` **requires** `--verbose` — without it the run refuses to start with `Error: When using --print, --output-format=stream-json requires --verbose` and exits 1 (captured in the lab below). Add `--include-partial-messages` on top of that if you want token-level deltas rather than whole messages.
+
+### `--json-schema` when you need a shape, not prose
+
+`--output-format json` guarantees an envelope, not the shape of the answer inside `result`. Pair it with `--json-schema '<a JSON Schema>'` and Claude Code puts a value matching that schema in a separate `structured_output` field:
+
+<CodeBlock title="extract, don't parse">
+
+```bash
+claude -p "Extract the main function names from auth.py" \
+  --output-format json \
+  --json-schema '{"type":"object","properties":{"functions":{"type":"array","items":{"type":"string"}}},"required":["functions"]}' \
+  | jq '.structured_output'
+```
+
+</CodeBlock>
+
+If the value is not a valid JSON Schema, `claude` exits with `Error: --json-schema is not a valid JSON Schema` followed by the validator's diagnostic. The `format` keyword (`"format": "email"`) is accepted but treated as an annotation only — it is not enforced.
+
+### Bounding an unattended run
+
+Three levers, and you usually want all three:
+
+- **`--allowedTools`** pre-approves specific tools so nothing prompts. It uses [permission rule syntax](https://code.claude.com/docs/en/permissions.md#permission-rule-syntax): `Bash(git diff *)` allows any command starting with `git diff`. The space before `*` matters — `Bash(git diff*)` would also match `git diff-index`. The `:*` suffix is an equivalent way to write that trailing wildcard, so `Bash(gh pr comment:*)` and `Bash(gh pr comment *)` match the same commands.
+- **A permission mode.** For `-p`, the docs say the built-in starting permission mode is **Manual** on every plan — `manual` is the CLI's alias for `default` — so pass what you want: `--permission-mode acceptEdits` for a run that writes files, or `--permission-mode dontAsk` for a locked-down CI run that denies anything outside your allow rules.
+- **`--max-turns N`** caps the agentic loop. It is print-mode only, and the run ends with an error when it hits the limit.
+
+For a genuinely unattended job, add `--permission-prompts none` (Claude Code 2.1.259 or later): anything that would prompt is denied, Claude is told nobody can approve it and not to retry, and the run continues instead of hanging. With `--output-format stream-json` those denials arrive as `permission_denied` system messages, and the final result message lists them in `permission_denials` — a field the lab below shows empty, because a run whose tools are all pre-approved never reaches for one it cannot get.
+
+### Exit codes
+
+Claude Code exits `0` on success and non-zero when the run fails, so a script can branch on `$?`. An invalid flag is reported to stderr before the run starts; a failure _inside_ the run — missing authentication, for example — is printed as the result on stdout, with a non-zero exit. A `--max-turns` overrun is a failure: the lab below captures exit code `1`, `subtype: "error_max_turns"` and `is_error: true`. If you stop a `-p` run with SIGTERM, Claude Code exits with code `143` after running `SessionEnd` hooks.
+
+### `--bare` for CI
+
+Without `--bare`, a `-p` session loads exactly what an interactive session would: hooks, skills, custom commands, subagents, plugins, MCP servers, auto memory and `CLAUDE.md` — from the project directory and from `~/.claude`, even in a folder you have never trusted, with no trust dialog and no per-server approval prompt. `--bare` skips all of that, so every machine gets the same result.
+
+The catch: in bare mode Claude Code never reads OAuth credentials or the system keychain. It needs `ANTHROPIC_API_KEY` (or a cloud provider's own credentials). The lab captures exactly what happens when you forget.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · five headless runs against the lab repo"
+  lessonId="en/l3-advanced/m13-headless-ci/claude-p"
+  repoTag="lesson/m13-01-start"
+  steps={[
+    'Clone the lab repository and `git checkout lesson/m13-01-start`, then `npm ci` in the repo root and in `mcp/`.',
+    'Read `scripts/headless-example.sh` at `lesson/m13-01-solution` — it is the shape this lab builds up to.',
+    'Run a read-only question with a JSON envelope and pipe it through jq: `claude -p "How many bugs does BUGS.md list? Answer with the number only." --model sonnet --max-turns 6 --output-format json --allowedTools "Read" | jq \'{subtype, is_error, num_turns, duration_ms, total_cost_usd, session_id, result}\'`',
+    'Ask the same repo for a fixed shape with `--json-schema` and read `.structured_output` instead of `.result`.',
+    'Force an overrun: repeat a prompt that needs at least two tool calls with `--max-turns 1`, redirect stdout to a file, and print `$?` immediately after.',
+    'Watch the event sequence with `--output-format stream-json --verbose`, filtering each line to its `type` and `subtype` with jq.',
+    'Drop `--verbose` from that stream-json command and run it again — read the error and the exit code.',
+    'Prove an unattended shape works: run a read-only question with `--permission-mode dontAsk --permission-prompts none` and check that `permission_denials` in the envelope is empty.',
+    'Finally, run any read-only question with `--bare` in a shell where `ANTHROPIC_API_KEY` is unset — the capture below asks it to summarize README.md — and read both the exit code and the `result` field.',
+  ]}
+  expected="The jq run prints subtype 'success', is_error false and result '7'. The --json-schema run prints an object with a bug_ids array of B1…B7. The --max-turns 1 run exits 1 with subtype 'error_max_turns'. The stream shows hook events, then system/init, then assistant, a rate_limit_event, then result; without --verbose it refuses to start and exits 1. The --bare run exits 1 with the result text 'Not logged in · Please run /login'."
+  checklist={[
+    'The JSON envelope shows num_turns, duration_ms, total_cost_usd and session_id',
+    '`.structured_output` matches the schema you passed, not free prose',
+    'The overrun run exited non-zero and reported subtype error_max_turns',
+    'The stream-json output ends with a single `result` line',
+    'The `--permission-prompts none` run exits 0 with an empty `permission_denials` array',
+    'You piped stdout only (`2>/dev/null`) — merging stderr into jq breaks the parse',
+    'No file in the lab repo was modified (`git status` is clean)',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/01-claude-p/02-json-envelope.txt"
+    range="2-12"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/01-claude-p/03-json-schema.txt"
+    range="2-14"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/01-claude-p/04-max-turns-overrun.txt"
+    range="2-12"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/01-claude-p/05-stream-json.txt"
+    range="2-10"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/01-claude-p/08-stream-json-no-verbose.txt"
+    range="2-5"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/01-claude-p/09-permission-prompts-none.txt"
+    range="2-9"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/01-claude-p/06-bare-no-api-key.txt"
+    range="2-8"
+  />
+</Lab>
+
+Four things in those recordings are worth stopping on.
+
+**The overrun is a real failure.** `exit=1`, `is_error: true`, `subtype: "error_max_turns"` and `errors: ["Reached maximum number of turns (1)"]`. Note that `num_turns` reads `2` even though the cap was `1` — the counter includes the turn that tripped the limit, so do not use it as an assertion.
+
+**The stream starts with hooks, not `init`.** The lab repo ships a `SessionStart` hook, so the first three events are `hook_started`, `hook_progress` and `hook_response`; `system/init` — the event that reports model, tools, MCP servers and loaded plugins — only arrives afterwards. That ordering is documented, and a CI gate that assumes `init` is line one will break on any repo with a startup hook. The same capture also carries a `rate_limit_event` between the assistant message and the result: treat the event list as open, match on the `type` values you care about, and ignore the rest.
+
+**The `--bare` run failed honestly.** `subtype` still reads `success`, but `is_error` is `true` and the `result` field carries `Not logged in · Please run /login`. That is the documented behaviour — an in-run failure appears as the result on stdout — and it is exactly why you check the exit code and `is_error`, not just whether you got output.
+
+**`--verbose` is not optional for `stream-json`.** The fifth capture is the same command with `--verbose` removed: Claude Code refuses before the run starts, prints `Error: When using --print, --output-format=stream-json requires --verbose` and exits 1. Note where that message went — stderr, ahead of the run — which is the documented shape for a flag error, and the opposite of the `--bare` failure above.
+
+**Merging stderr into the pipe breaks jq.** The first attempt at this capture used `2>&1`, and Claude Code's untrusted-workspace warning went into the pipe ahead of the JSON: `jq: parse error: Invalid numeric literal at line 1, column 9`. Keep stderr separate.
+
+### The same commands, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+claude -p "List the bug ids in BUGS.md." --model sonnet --max-turns 6 \
+  --output-format json --allowedTools "Read" \
+  --json-schema '{"type":"object","properties":{"bug_ids":{"type":"array","items":{"type":"string"}}},"required":["bug_ids"]}' \
+  | jq '.structured_output'
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+claude -p "List the bug ids in BUGS.md." --model sonnet --max-turns 6 \
+  --output-format json --allowedTools "Read" \
+  --json-schema '{"type":"object","properties":{"bug_ids":{"type":"array","items":{"type":"string"}}},"required":["bug_ids"]}' \
+  | jq '.structured_output'
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$schema = '{\"type\":\"object\",\"properties\":{\"bug_ids\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"required\":[\"bug_ids\"]}'
+claude -p "List the bug ids in BUGS.md." --model sonnet --max-turns 6 `
+  --output-format json --allowedTools "Read" --json-schema $schema |
+  ConvertFrom-Json | Select-Object -ExpandProperty structured_output | ConvertTo-Json
+```
+
+  </Fragment>
+</OSTabs>
+
+The Windows panel is not cosmetic: PowerShell strips the inner double quotes from a single-quoted JSON argument before the executable sees it, so each `"` inside the schema needs a backslash. Here is that run, captured on Windows PowerShell 5.1:
+
+<Transcript
+  src="content/_shared/transcripts/m13-headless-ci/01-claude-p/07-json-schema-powershell.txt"
+  range="2-5"
+/>
+
+## Anti-patterns
+
+**Ignoring the exit code.** A headless run that could not authenticate still prints JSON on stdout and still looks like output. _Fix:_ check `$?`, and check `is_error` in the envelope; treat any non-zero exit as a pipeline failure.
+
+**No `--max-turns`.** There is no turn limit by default. A prompt that keeps finding "one more thing" to check will keep spending until something else stops it. _Fix:_ set a limit you have actually seen the task fit inside, and add `--max-budget-usd` for a hard money cap.
+
+**`--dangerously-skip-permissions` in CI.** It is `bypassPermissions` under another name, and it applies to everything the run touches — including whatever a fetched web page or a checked-out branch tells Claude to do. _Fix:_ name the tools you need with `--allowedTools`, and use `--permission-mode dontAsk` so anything unlisted is denied instead of prompted.
+
+**Running `-p` in an untrusted checkout without `--bare`.** A `-p` session runs the hooks in that repo's `.claude/settings.json` and connects the servers in its `.mcp.json`, with no trust dialog and no per-server prompt. _Fix:_ `--bare` in CI, and pass what you actually need back in with `--settings`, `--mcp-config` or `--append-system-prompt`.
+
+**Parsing `text` output with a regex.** The wording of a plain-text answer is not a contract. _Fix:_ `--output-format json` for the envelope, `--json-schema` when you need the answer's shape too.
+
+**Piping stderr into your parser.** `2>&1 | jq` mixes warnings into the JSON stream. _Fix:_ redirect stdout only, and read stderr separately if you care about it.
+
+<Callout variant="changed">
+  `--permission-prompts` is new in Claude Code 2.1.259 — earlier versions reject it with an
+  unknown-option error. `--json-schema` also changed: before 2.1.205 Claude Code silently ignored an
+  invalid schema and returned unstructured text, and rejected any schema containing `format`.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/claude-p"
+  questionId="q1"
+  lang="en"
+  prompt="You need the answer to conform to a fixed JSON shape. Which combination does that?"
+  options={[
+    {
+      text: '--output-format json alone',
+      explanation:
+        'That guarantees the envelope, not the shape of the answer inside the `result` string.',
+    },
+    {
+      text: '--output-format json with --json-schema, then read .structured_output',
+      correct: true,
+      explanation:
+        'The schema-conforming value lands in `structured_output`, next to the usual metadata.',
+    },
+    {
+      text: '--output-format stream-json with --verbose',
+      explanation: 'That gives you an event stream, not a schema guarantee.',
+    },
+    {
+      text: '--append-system-prompt "reply as JSON"',
+      explanation: 'A prompt is a request, not a validated contract.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/claude-p"
+  questionId="q2"
+  lang="en"
+  prompt="A `claude -p --max-turns 1` run hits the limit. What does the run report?"
+  options={[
+    {
+      text: 'Exit code 0 with subtype "success" — the cap is not an error',
+      explanation: 'The captured run exits 1; hitting the cap ends the run in error.',
+    },
+    {
+      text: 'Exit code 1, is_error true, subtype "error_max_turns"',
+      correct: true,
+      explanation:
+        'Exactly what the lab captured, along with errors: ["Reached maximum number of turns (1)"].',
+    },
+    {
+      text: 'Exit code 143',
+      explanation: '143 is the SIGTERM exit code, not the turn-limit one.',
+    },
+    {
+      text: 'Nothing on stdout — the failure only goes to stderr',
+      explanation: 'The JSON envelope is still printed on stdout; only the flag errors precede it.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/claude-p"
+  questionId="q3"
+  lang="en"
+  prompt="Why does `claude --bare -p …` fail on a machine that is logged in but has no ANTHROPIC_API_KEY?"
+  options={[
+    {
+      text: 'Bare mode never reads OAuth credentials or the system keychain',
+      correct: true,
+      explanation:
+        'It needs ANTHROPIC_API_KEY, an apiKeyHelper in --settings, or a cloud provider credential.',
+    },
+    {
+      text: 'Bare mode disables the Read tool',
+      explanation: 'Bare mode keeps Bash, file read and file edit tools.',
+    },
+    {
+      text: 'Bare mode requires --output-format json',
+      explanation: 'The output format is unrelated to authentication.',
+    },
+    {
+      text: 'Bare mode only works inside a trusted workspace',
+      explanation: 'Bare mode skips project discovery entirely; trust is not the issue.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/claude-p"
+  questionId="q4"
+  lang="en"
+  prompt="Which allow rule lets Claude run `gh pr comment 42 --body ok` without prompting, and nothing else starting with `gh pr comm`?"
+  options={[
+    {
+      text: 'Bash(gh pr comment *)',
+      correct: true,
+      explanation:
+        'The space before the trailing `*` is part of the rule; `Bash(gh pr comment:*)` is the equivalent suffix form.',
+    },
+    {
+      text: 'Bash(gh pr comment*)',
+      explanation: 'With no space it also matches `gh pr commentary`-style commands.',
+    },
+    {
+      text: 'Bash(gh * comment)',
+      explanation: 'A `*` before the subcommand allows every gh subcommand — far too wide.',
+    },
+    {
+      text: 'Bash(command:gh pr comment *)',
+      explanation:
+        "Claude Code ignores a rule on a tool's primary content field and warns at startup.",
+    },
+  ]}
+/>
+
+**Next:** `02-github-actions-review` takes the same headless run and puts it behind a GitHub Actions workflow that reviews pull requests.

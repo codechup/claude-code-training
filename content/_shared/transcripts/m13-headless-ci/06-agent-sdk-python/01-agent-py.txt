@@ -1,0 +1,17 @@
+# 2026-09-07 · claude-agent-sdk 0.2.152 · Python 3.12.10 · Claude Code 2.1.263
+# lab repo checked out at lesson/m13-06-start; LAB_DIR points at that clone
+# $ LAB_DIR=../claude-code-lab .venv/Scripts/python.exe agent.py
+init: model=claude-sonnet-5 cwd=<lab-clone>
+Tool: Read
+Tool: Read
+**Function:** `paginate()` in `src/store.ts`
+
+**The wrong line** (as described in BUGS.md's B1 entry — this is the bug present at the `lesson/m02-02-start` tag, not in the current checkout):
+
+```
+const start = page * pageSize;
+```
+
+Note: the `src/store.ts` in this working tree is already on the fixed baseline — line 63 currently reads `const start = (page - 1) * pageSize;`, which is correct. BUGS.md explains that `main` has every seeded bug already fixed, and this off-by-one only reappears when checking out `lesson/m02-02-start`. The bug: starting the slice at `page * pageSize` instead of `(page - 1) * pageSize` causes page 1 to skip the first `pageSize` items.
+Done: success (turns=3)
+exit=0

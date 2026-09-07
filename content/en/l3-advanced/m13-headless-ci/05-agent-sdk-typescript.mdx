@@ -1,0 +1,359 @@
+---
+title: 'A custom agent with the TypeScript Agent SDK'
+description: 'Build a real agent on @anthropic-ai/claude-agent-sdk: the query() async iterator, the options that bound it (cwd, allowedTools, permissionMode, maxTurns, settingSources), and how to read the message stream.'
+level: 3
+module: 'm13-headless-ci'
+order: 5
+duration_min: 30
+difficulty: advanced
+tags: ['agent-sdk', 'typescript', 'automation']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Agent SDK overview'
+    url: 'https://code.claude.com/docs/en/agent-sdk/overview.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Agent SDK quickstart'
+    url: 'https://code.claude.com/docs/en/agent-sdk/quickstart.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run Claude Code programmatically'
+    url: 'https://code.claude.com/docs/en/headless.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Migrate to Claude Agent SDK'
+    url: 'https://code.claude.com/docs/en/agent-sdk/migration-guide.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'anthropics/claude-agent-sdk-typescript'
+    url: 'https://github.com/anthropics/claude-agent-sdk-typescript'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m13-05-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Set up a TypeScript project with `@anthropic-ai/claude-agent-sdk` and run an agent against a directory of your choosing.
+- Describe what `query()` returns and why the loop is an `async for`.
+- Bound an agent with `cwd`, `allowedTools`, `permissionMode`, `maxTurns` and `model`.
+- Use `settingSources: []` to stop a host machine's settings and `CLAUDE.md` leaking into a run — and name what it still does not exclude.
+- Filter the message stream down to the parts a human — or a log — should see.
+
+**Prerequisites.** Node.js 18 or later (this lesson was verified on 24.18.0), and lesson 01: the Agent SDK's options are the same concepts as the `-p` flags, under JavaScript names.
+
+<WhenNotToUse>
+  Reach for the SDK when you are building an application — something with its own inputs, its own
+  UI, its own error handling — that happens to need an agent inside it. If you only need to run one
+  task and read the answer, `claude -p --output-format json` already does that from any language,
+  and it is one process instead of a dependency. If you want a hosted agent with a managed sandbox
+  and no session infrastructure of your own, that is Managed Agents, a different product. And if you
+  are calling the API and writing the tool loop yourself, you want the Client SDK, not this.
+</WhenNotToUse>
+
+## Concept
+
+### What the SDK is
+
+The Agent SDK gives you the same tools, agent loop and context management that power Claude Code, as a library that runs in your own process. It is available for Python and TypeScript only; to drive the same loop from another language, run the CLI as a subprocess with `-p` and `--output-format json`.
+
+Both SDKs bundle a native Claude Code binary, so most installs need nothing else. The TypeScript SDK installs its binary through npm optional dependencies — an install that skips them (`npm ci --omit=optional`) gets no binary even on a supported platform, and you then either reinstall without skipping them or install Claude Code natively and point `pathToClaudeCodeExecutable` at it.
+
+### `query()` is an async iterator
+
+There is one entry point. `query({ prompt, options })` returns an async iterator, so you consume it with `for await`. Each iteration yields a message: Claude's reasoning, a tool call, a tool result, or the final outcome. The SDK handles orchestration, tool execution, context management and retries. The loop ends when Claude finishes or hits an error.
+
+Here is this lesson's worked example prompt, written to be answerable read-only:
+
+```text
+Read BUGS.md and src/store.ts. Name the one function that holds the off-by-one
+pagination bug, and quote the single line that is wrong. Do not edit anything.
+```
+
+### The options that bound a run
+
+| Option           | What it does                                                             | The `-p` equivalent |
+| ---------------- | ------------------------------------------------------------------------ | ------------------- |
+| `cwd`            | Working directory for the session. Defaults to `process.cwd()`           | the shell's cwd     |
+| `allowedTools`   | Tools that run without prompting                                         | `--allowedTools`    |
+| `permissionMode` | `default`, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions` | `--permission-mode` |
+| `maxTurns`       | Cap on agentic turns                                                     | `--max-turns`       |
+| `model`          | Alias (`sonnet`, `opus`, `haiku`, `fable`) or a full model name          | `--model`           |
+| `systemPrompt`   | Replace or extend the system prompt                                      | `--system-prompt`   |
+| `settingSources` | Which filesystem settings to load: `'user'`, `'project'`, `'local'`      | (`--bare` is close) |
+
+`cwd` is the one with no flag-shaped analogue, and it is what makes the SDK useful: your program can live anywhere and point the agent at a different directory, so the agent reads and edits the project you name rather than the folder your script happens to sit in.
+
+`settingSources` deserves its own paragraph. Omit it and all sources load, matching the CLI's defaults — your `~/.claude/settings.json`, the project's `.claude/settings.json` and `.claude/settings.local.json`, and (via `'project'`) any `CLAUDE.md`. `'project'` must be included for the _project's_ `CLAUDE.md` to load; a user-level `~/.claude/CLAUDE.md` comes in with `'user'` and a `CLAUDE.local.md` with `'local'`, so the three scopes are separate switches rather than one. Pass `[]` and you get SDK isolation mode: none of those files load.
+
+`[]` is not total isolation, and the docs are explicit about the gap. Settings that are read regardless include managed and server-managed policy, the global `~/.claude.json`, claude.ai MCP connectors, and — the one most likely to surprise you — **auto memory**, which lives under `~/.claude/projects/<project>/memory/` and is loaded into the system prompt at session start. To exclude that too, set `autoMemoryEnabled: false` or the `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` environment variable alongside `settingSources: []`. Treat `[]` as "none of this machine's settings files or memory files apply", not as a sandbox.
+
+### Authentication
+
+The SDK reads `ANTHROPIC_API_KEY` from the environment of the process that runs your agent, and it does **not** load `.env` files automatically — load them yourself with something like `dotenv` before calling the SDK. Third-party providers work through their own environment variables: `CLAUDE_CODE_USE_BEDROCK=1`, `CLAUDE_CODE_USE_VERTEX=1`, `CLAUDE_CODE_USE_FOUNDRY=1`.
+
+One rule is easy to miss and is not a technicality: unless previously approved, Anthropic does not allow third-party developers to offer claude.ai login or subscription rate limits for their products, including agents built on the Agent SDK. Ship an API key path, not a "sign in with Claude" path.
+
+### Reading the stream
+
+Without filtering you see raw message objects including system initialization and internal state — useful for debugging, noisy otherwise. A small filter covers most cases: pull the `init` system message for session metadata, print text blocks and tool names from `assistant` messages, and print the `subtype` of the final `result` message.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · a read-only review agent, pointed at the lab repo"
+  lessonId="en/l3-advanced/m13-headless-ci/agent-sdk-typescript"
+  repoTag="lesson/m13-05-start"
+  steps={[
+    'In your lab clone, `git checkout lesson/m13-05-start`. This tag is process-only — `-start` and `-solution` point at the same commit, because the agent you build lives in its own project and only reads the lab repo.',
+    'In a scratch folder somewhere else: `npm init -y`, `npm pkg set type=module`, `npm install @anthropic-ai/claude-agent-sdk`, `npm install --save-dev tsx`.',
+    'Write `agent.ts` with the code below: `query()` with `cwd` set from an env var, read-only tools, `permissionMode: "dontAsk"`, `maxTurns: 8` and `settingSources: []`.',
+    'Run it with the lab clone as the target: `LAB_DIR=../claude-code-lab npx tsx agent.ts`.',
+    'Read the output: the `init` line reports the resolved model and cwd, then the tool calls, then the answer, then `Done: success`.',
+    'Confirm nothing changed: `git status` in the lab clone is clean.',
+    'Now copy the script, delete `settingSources: []` from the copy, and run it. Compare the two recordings below — anything in your own `~/.claude` that shapes answers now applies.',
+  ]}
+  expected="The agent prints `init: model=claude-sonnet-5 cwd=<your lab clone>`, two `Tool: Read` lines, an answer naming paginate() in src/store.ts and quoting `const start = page * pageSize;` as the wrong line, then `Done: success (turns=3)`, exiting 0. The lab clone stays clean."
+  checklist={[
+    '`npx tsx agent.ts` exits 0',
+    'The init line shows the lab clone path, not your scratch project path',
+    'The agent used Read only — no Edit, no Bash',
+    '`git status` in the lab clone reports no modifications',
+    'With `settingSources: []` the answer is reproducible; without it, your own settings leak in',
+    'You can say what `settingSources: []` still does not exclude',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/05-agent-sdk-typescript/01-agent-ts.txt"
+    range="3-19"
+  />
+</Lab>
+
+<CodeBlock title="agent.ts">
+
+```typescript
+import { query } from '@anthropic-ai/claude-agent-sdk';
+
+const LAB = process.env.LAB_DIR!;
+
+for await (const message of query({
+  prompt:
+    'Read BUGS.md and src/store.ts. Name the one function that holds the off-by-one ' +
+    'pagination bug, and quote the single line that is wrong. Do not edit anything.',
+  options: {
+    cwd: LAB,
+    allowedTools: ['Read', 'Glob', 'Grep'],
+    permissionMode: 'dontAsk',
+    maxTurns: 8,
+    model: 'sonnet',
+    settingSources: [], // no settings.json or CLAUDE.md from ~/.claude or .claude/ (auto memory still loads)
+  },
+})) {
+  if (message.type === 'system' && message.subtype === 'init') {
+    console.log(`init: model=${message.model} cwd=${message.cwd}`);
+  } else if (message.type === 'assistant' && message.message?.content) {
+    for (const block of message.message.content) {
+      if ('text' in block) console.log(block.text);
+      else if ('name' in block) console.log(`Tool: ${block.name}`);
+    }
+  } else if (message.type === 'result') {
+    console.log(`Done: ${message.subtype} (turns=${message.num_turns})`);
+  }
+}
+```
+
+</CodeBlock>
+
+Three things in that recording are worth stopping on.
+
+**`cwd` really does relocate the agent.** The `init` line reports the lab clone, not the scratch project the script lives in — which is why `Read` found `BUGS.md` at all. Point `cwd` at a directory and that directory (plus its subdirectories) is what the agent has access to by default.
+
+**`dontAsk` plus three read-only tools is a hard boundary, not a hint.** With that mode, anything not in your allow rules or the read-only command set is denied. The agent could not have edited the file even if the prompt had asked it to.
+
+**The answer noticed the lab tag's state and said so.** `src/store.ts` at this tag is the clean baseline, so the agent reported the correct line that is _there_ and quoted the buggy line that `BUGS.md` describes at `lesson/m02-02-start`. That is a genuinely good agent answer and a reminder that a review agent's output is only as good as the checkout you point it at.
+
+Here is the same agent with that one line removed, captured on the same machine minutes later. The machine's own Claude Code settings ask for Turkish answers, so the agent answers in Turkish:
+
+<Transcript
+  src="content/_shared/transcripts/m13-headless-ci/05-agent-sdk-typescript/02-agent-ts-no-isolation.txt"
+  range="4-24"
+/>
+
+Same code, same prompt, same tools, same conclusion — different language, because the SDK loaded this machine's settings exactly as documented. Nothing was broken; the run was simply not reproducible.
+
+### Install, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+npm init -y && npm pkg set type=module
+npm install @anthropic-ai/claude-agent-sdk
+npm install --save-dev tsx
+export ANTHROPIC_API_KEY=your-api-key
+LAB_DIR=../claude-code-lab npx tsx agent.ts
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+npm init -y && npm pkg set type=module
+npm install @anthropic-ai/claude-agent-sdk
+npm install --save-dev tsx
+export ANTHROPIC_API_KEY=your-api-key
+LAB_DIR=../claude-code-lab npx tsx agent.ts
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+npm init -y; npm pkg set type=module
+npm install @anthropic-ai/claude-agent-sdk
+npm install --save-dev tsx
+$env:ANTHROPIC_API_KEY = "your-api-key"
+$env:LAB_DIR = "..\claude-code-lab"; npx tsx agent.ts
+```
+
+  </Fragment>
+</OSTabs>
+
+Setting `"type": "module"` is what lets the script use top-level `await`. In an existing CommonJS project, name the file `agent.mts` instead and run `npx tsx agent.mts` — the `.mts` extension makes tsx treat it as an ES module without converting the rest of your project.
+
+## Anti-patterns
+
+**Leaving `settingSources` unset in a shipped agent.** All sources load by default, so your agent inherits whatever the host machine's `~/.claude` says. _Fix:_ `settingSources: []`, then add back exactly what you need (`['project']` if you want the target repo's `CLAUDE.md`) — and add `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` when auto memory must not apply either.
+
+**Relying on `process.cwd()`.** The agent then reads whatever directory your program was launched from, which is a different folder in development, in tests and in production. _Fix:_ set `cwd` explicitly.
+
+**Giving an agent `Bash` because it might need it.** Every tool you add is a capability an injected instruction in a file the agent reads can reach for. _Fix:_ start with `Read`, `Glob`, `Grep`, add `Edit` when the agent must write, and add `Bash` last with scoped rules.
+
+**No `maxTurns`.** There is no default cap, and an agent that keeps finding one more file to check will keep spending. _Fix:_ set a limit you have seen the task fit inside.
+
+**Expecting `.env` to load itself.** The SDK reads the environment, not your `.env` file. _Fix:_ load it yourself before calling `query()`.
+
+**Printing every message.** Raw message objects include system initialization and internal state, and the useful lines drown. _Fix:_ filter to `init`, text and tool-name blocks, and the final `result`.
+
+<Callout variant="changed">
+  The package is `@anthropic-ai/claude-agent-sdk`; it was renamed from `@anthropic-ai/claude-code`.
+  One behaviour changed with it: since v0.1.0 the SDK no longer uses Claude Code's system prompt by
+  default. Ask for it explicitly with `systemPrompt: { type: 'preset', preset: 'claude_code' }`.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/agent-sdk-typescript"
+  questionId="q1"
+  lang="en"
+  prompt="What does `query()` return?"
+  options={[
+    {
+      text: 'An async iterator you consume with `for await`, yielding one message per step',
+      correct: true,
+      explanation:
+        'Reasoning, tool calls, tool results and the final result all arrive as stream messages.',
+    },
+    {
+      text: 'A Promise resolving to the final answer string',
+      explanation: 'That would hide the loop; the SDK streams it instead.',
+    },
+    {
+      text: 'A child process handle',
+      explanation:
+        'A binary is bundled, but the API you use is the iterator, not a process handle.',
+    },
+    {
+      text: 'An EventEmitter',
+      explanation: 'The SDK uses async iteration, not events.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/agent-sdk-typescript"
+  questionId="q2"
+  lang="en"
+  prompt="Your agent gives different answers on your machine and a teammate's, with identical code. What is the most likely cause?"
+  options={[
+    {
+      text: '`settingSources` is unset, so each machine loads its own ~/.claude settings and memory',
+      correct: true,
+      explanation:
+        'Pass `[]` so no settings file or CLAUDE.md loads — the second transcript in this lesson is that exact leak. Auto memory needs CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 as well.',
+    },
+    {
+      text: 'The bundled Claude Code binary differs',
+      explanation: 'Possible in principle, but settings leakage is the documented default.',
+    },
+    {
+      text: '`maxTurns` is too low',
+      explanation: 'That would truncate runs, not change their voice or conclusions.',
+    },
+    {
+      text: '`cwd` defaults differ',
+      explanation:
+        'That changes what is read, and is worth checking — but the answer here is settings.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/agent-sdk-typescript"
+  questionId="q3"
+  lang="en"
+  prompt="You want an agent that can analyze and modify code but never run shell commands. Which `allowedTools` set fits?"
+  options={[
+    {
+      text: "['Read', 'Edit', 'Glob']",
+      correct: true,
+      explanation: 'Read and search to understand, Edit to change, no execution.',
+    },
+    {
+      text: "['Read', 'Glob', 'Grep']",
+      explanation: 'That is read-only analysis — it cannot modify anything.',
+    },
+    {
+      text: "['Read', 'Edit', 'Bash', 'Glob', 'Grep']",
+      explanation: 'That is the full-automation set, which includes the shell you wanted excluded.',
+    },
+    {
+      text: "['*']",
+      explanation: 'Allowing everything is the opposite of the requirement.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m13-headless-ci/agent-sdk-typescript"
+  questionId="q4"
+  lang="en"
+  prompt="Your product wants users to sign in with their Claude subscription instead of supplying an API key. Is that allowed?"
+  options={[
+    {
+      text: 'No — unless previously approved, Anthropic does not allow third-party developers to offer claude.ai login or its rate limits for products built on the Agent SDK',
+      correct: true,
+      explanation: 'Use the API key authentication methods the quickstart describes.',
+    },
+    {
+      text: 'Yes, the SDK exposes an OAuth flow for it',
+      explanation: 'It does not, and the policy prohibits it without prior approval.',
+    },
+    {
+      text: 'Yes, by running `claude setup-token` on the machine of each user',
+      explanation: 'That token is for your own CI, not for reselling subscription access.',
+    },
+    {
+      text: 'Only on Team and Enterprise plans',
+      explanation: 'The restriction is not plan-dependent.',
+    },
+  ]}
+/>
+
+**Next:** `06-agent-sdk-python` builds the same agent again in Python, where the same concepts wear snake_case names.
