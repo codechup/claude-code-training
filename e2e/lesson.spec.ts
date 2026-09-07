@@ -19,7 +19,7 @@ test('module index lists its lessons', async ({ page }) => {
   const response = await page.goto('/en/l1-beginner/m01-start/');
   expect(response?.status()).toBe(200);
   await expect(page.locator('h1')).toBeVisible();
-  await expect(page.locator(`a[href="${EN}"]`)).toBeVisible();
+  await expect(page.locator(`a[href="${EN}"]`).first()).toBeVisible();
 });
 
 test('lesson page renders title, sources and the shared shell', async ({ page }) => {
@@ -43,7 +43,7 @@ test('the TR twin is live and is a real translation', async ({ page }) => {
 
 test('TR module index lists the translated lesson', async ({ page }) => {
   await page.goto('/tr/l1-beginner/m01-start/');
-  await expect(page.locator(`a[href="${TR}"]`)).toBeVisible();
+  await expect(page.locator(`a[href="${TR}"]`).first()).toBeVisible();
 });
 
 // Un-skipped by P06 (content-pipeline), rewritten by P12 (M0 release): the
@@ -57,11 +57,12 @@ test('lesson prev/next bar, TOC and module progress', async ({ page }) => {
   // empty spacer: the bar is in the DOM, with neither a prev nor a next link.
   const prevNext = page.getByRole('navigation', { name: 'Previous / Next' });
   await expect(prevNext).toHaveCount(1);
+  // Lesson 01 is the first of its module: no prev link; a next link once the
+  // module has more than one live lesson (P13 onward).
   await expect(prevNext.locator('a[rel="prev"]')).toHaveCount(0);
-  await expect(prevNext.locator('a[rel="next"]')).toHaveCount(0);
 
   // Module progress bar renders "n / m in m01" from localStorage (D020).
-  await expect(page.getByText('0 / 1 in m01')).toBeVisible();
+  await expect(page.getByText(/0 \/ \d+ in m01/)).toBeVisible();
 
   // "On this page" lists the lesson's real H2s.
   await page.setViewportSize({ width: 1280, height: 900 });
@@ -75,13 +76,13 @@ test('marking a lesson done round-trips through localStorage', async ({ page }) 
   await page.goto(EN);
   const toggle = page.getByRole('button', { name: 'Mark as done' });
   await toggle.click();
-  await expect(page.getByText('1 / 1 in m01')).toBeVisible();
+  await expect(page.getByText(/1 \/ \d+ in m01/)).toBeVisible();
 
   const stored = await page.evaluate(() => window.localStorage.getItem('cc:progress:en'));
   expect(stored).toContain('en/l1-beginner/m01-start/what-claude-code-is');
 
   await page.reload();
-  await expect(page.getByText('1 / 1 in m01')).toBeVisible();
+  await expect(page.getByText(/1 \/ \d+ in m01/)).toBeVisible();
 });
 
 // Un-skipped by P12 (the M0 release plan), replacing
