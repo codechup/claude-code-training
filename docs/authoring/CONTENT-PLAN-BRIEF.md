@@ -1,0 +1,35 @@
+# Content-plan brief (read this before writing any lesson)
+
+This is the standing brief for every content plan (P13–P21, P25–P38, P40–P44). Your plan file (`plans/PNN-*.md`) is binding; this document tells you how the lead expects the work to be done and verified. Keep your final report under 300 words.
+
+## 0. Setup
+
+1. Confirm `git branch --show-current` matches your plan's `branch:`; you work only in your worktree.
+2. `npm ci`. Clone the lab repository once, outside this repo: `git clone https://github.com/codechup/claude-code-lab ../claude-code-lab` (skip if present). Read its `README.md`, `BUGS.md` and `git tag -l`.
+3. Read, in order: `CLAUDE.md`, `.claude/rules/content.md`, `.claude/rules/i18n.md`, `docs/CURRICULUM.md` (§2 your module's lesson list — slugs, objectives, durations, difficulty; §3 template; §4 source policy), `DECISIONS.md` (the D-numbers your plan cites), `research/feature-inventory.md`, `research/deprecations.md`, `content/_shared/sources.json`, the finished reference lesson `content/en/l1-beginner/m01-start/01-what-claude-code-is.mdx` (copy its frontmatter shape, section order and component usage exactly), `docs/lab/README.md`, and the component header comments in `src/components/mdx/*.astro` (props and usage).
+
+## 1. Per lesson (D006, D041–D044, D093, D098, D099)
+
+For each lesson slug in CURRICULUM §2 for your module, in order:
+
+1. **Research** (the "researcher" step): WebFetch the official doc page(s) for the topic from the inventory map (`https://code.claude.com/docs/en/<slug>.md`) — read them now, do not rely on memory. Note the exact command names, flags, frontmatter fields and behaviours you will teach. If the docs contradict the inventory, the docs win — record the drift in your Handoff notes.
+2. **Write the EN lesson** at `content/en/<level>/<module>/NN-<slug>.mdx` with frontmatter per `src/content/schema.ts` (`verified_version: "2.1.263"`, `updated: 2026-09-07`, `draft: false`, `tags`, `duration_min`/`difficulty` from CURRICULUM, `sources[]` with `verified_at: 2026-09-07` — official doc mandatory; a `video` entry only if you actually opened it; `lab: { repo_tag: "lesson/<module>-<NN>-start" }` when the lesson has a lab, else `repo_tag: "none"`). Body order: Objectives & prerequisites → `<WhenNotToUse>` → Concept → `<Lab>` (steps, expected, checklist, embedded `<Transcript>`s) → Anti-patterns → `<Callout variant="changed">` where `research/deprecations.md` has an item → 3–5 `<Quiz>` → optional one-line "Next". Components come from the page's components map — no imports needed. Use `<OSTabs>` for every OS-specific command (macOS / Linux / Windows PowerShell; WSL falls back to Linux). Use `<CodeBlock title=…>` around fenced code that needs a title, copy button or annotations. No emoji, no filler, no marketing copy.
+3. **Run the lab for real** (D099): in `../claude-code-lab`, `git checkout lesson/<module>-<NN>-start`, do the lab steps yourself with real commands. Capture Claude Code output headlessly to keep it reproducible and cheap: `claude -p "<the lab prompt>" --model sonnet --max-turns 6 --output-format text` (add `--allowedTools` as the lesson needs; use `--permission-mode acceptEdits` only when the lab edits files). Save each capture verbatim under `content/_shared/transcripts/<module>/<NN-slug>/<kk>-<name>.txt` with a first-line `# ` provenance header (date, command, version) and embed it with `<Transcript src="…" range="2-N" />`. Never edit the captured text beyond redacting a local path or username. If a capture reveals the lab step is wrong, fix the step, not the transcript. Interactive-only features (a TUI dialog, a keybinding) are described in prose and shown with a `<CodeBlock>` of the exact commands, not a fake transcript.
+4. **TR twin**: create `content/tr/<level>/<module>/NN-<slug>.mdx` as a `draft: true` stub with the same frontmatter (title translated) and a one-paragraph Turkish summary, unless your plan is a TR translation plan (then write the full translation per `.claude/rules/i18n.md`, English terms first with a Turkish gloss on first use, glossary links to `/tr/playbook/glossary/#<term>` — add missing terms to `content/tr/playbook/glossary.mdx` only if your plan lists it in `shared_paths`; otherwise note them in Handoff).
+5. **Sources registry**: append this lesson's new official sources to `content/_shared/sources.json` (shared, append-only, keep it sorted and valid; do not remove or reorder existing entries).
+6. Update the module `index.mdx` (both languages) only to turn the lesson list items into links to the real routes — no other edits.
+
+## 2. Verification before the PR (paste real output)
+
+`npm run typecheck && npm run lint && npm run gate && npm test && npm run build` (must end with `check-no-inline-script (dist): OK`), `node scripts/check-raw-colors.mjs`, `node scripts/check-public-hygiene.mjs`, `node tools/plan/cli.ts check`. Playwright: copy `playwright.config.ts` to a temporary `playwright.pNN.config.ts` with port `44NN` (NN = your plan number), run `ASTRO_PREVIEW_BACKGROUND=1 npx playwright test -c playwright.pNN.config.ts e2e/a11y.spec.ts` plus a temporary spec of your own that visits every lesson route of your module in both languages and asserts no axe serious/critical violations at 390 and 1280; delete both temporary files afterwards. Then run the review pipeline (D071) from the worktree root, read-only, and apply the findings:
+
+```
+claude -p "Delegate to the project's 'fact-checker' subagent (.claude/agents/fact-checker.md) and return its findings verbatim. Task: fact-check every factual claim in <list your EN lesson files> against research/feature-inventory.md, research/deprecations.md and live fetches of the official docs they cite. Report CONFIRMED / WRONG (with the correct fact + URL) / UNVERIFIABLE with line numbers. Read-only." --output-format text --permission-mode plan --max-turns 40
+claude -p "Delegate to the project's 'reviewer' subagent (.claude/agents/reviewer.md) and return its findings verbatim. Task: review <the same files and the TR twins> against .claude/rules/content.md, .claude/rules/i18n.md, docs/CURRICULUM.md §3 and the D006/D041–D044/D070/D093 rules; prioritised list with file:line pointers. Read-only." --output-format text --permission-mode plan --max-turns 30
+```
+
+Fix every WRONG/blocking item, re-run the gate, and record the counts (confirmed / fixed / unverifiable) in your Handoff notes.
+
+## 3. Finish
+
+Fill `## Handoff notes` (what was written, transcripts captured, review counts, drift found, open questions), `node tools/plan/cli.ts status PNN review`, `node tools/plan/cli.ts state`, commit (`content(<module>): <n> lessons, transcripts and sources (PNN)`), `git push`, `gh pr create --base main --title "[PNN] <plan title>"` using `.github/PULL_REQUEST_TEMPLATE.md` with the real outputs. Do NOT merge. Never touch files outside your `owned_paths`/`shared_paths`; never write private infrastructure details (the hygiene hook blocks them). Report: PR URL, lesson count, transcript count, review counts, anything unverified — under 300 words.
