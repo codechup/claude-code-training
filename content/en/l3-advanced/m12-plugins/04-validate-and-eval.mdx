@@ -1,0 +1,348 @@
+---
+title: 'claude plugin validate, and what eval adds'
+description: 'Read a validation report, treat warnings as errors in CI with --strict, parse the --json envelope, and understand what claude plugin eval measures — an early-access command whose surface you can read from its own help.'
+level: 3
+module: 'm12-plugins'
+order: 4
+duration_min: 20
+difficulty: advanced
+tags: ['plugins', 'validation', 'ci', 'eval']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Plugins reference'
+    url: 'https://code.claude.com/docs/en/plugins-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Create plugins'
+    url: 'https://code.claude.com/docs/en/plugins.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Create and distribute a plugin marketplace'
+    url: 'https://code.claude.com/docs/en/plugin-marketplaces.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Read a `claude plugin validate` report and tell an error from a warning from a note.
+- Say exactly which exit code means what, and wire the command into CI with `--strict`.
+- Parse the `--json` envelope and pick out the fields a build script cares about.
+- Say what validation does **not** check, and what you have to do instead.
+- Describe what `claude plugin eval` is for and what its options control — and check whether it is enabled for you.
+
+**Prerequisites.** Lesson `03-build-a-plugin`, or any plugin directory of your own. Claude Code 2.1.263 or later; `--json` needs v2.1.259 or later.
+
+<WhenNotToUse>
+  `claude plugin validate` is not a test suite and should not be presented as one. It reads
+  manifests. It will not tell you that a skill's description is too vague for Claude to pick it,
+  that a hook's matcher never fires, that an MCP server fails to start, or that your components sit
+  in a directory Claude Code does not scan. Do not gate a release on validation alone, and do not
+  reach for `claude plugin eval` for a plugin whose value is a hook or a bundled binary rather than
+  a skill or an agent — eval scores what a model does with your plugin loaded, so a plugin that
+  contributes nothing to the model's context has nothing for it to measure.
+</WhenNotToUse>
+
+## Concept
+
+### What validate checks
+
+`claude plugin validate <path>` checks a plugin or a marketplace for syntax and schema errors before you publish. It takes a path to a plugin directory or a marketplace directory, and it exits:
+
+| Exit | Meaning                                                               |
+| ---- | --------------------------------------------------------------------- |
+| 0    | Validation passed (possibly with warnings)                            |
+| 1    | Validation failed                                                     |
+| 2    | The validation run itself failed — for example the path is unreadable |
+
+On exit 2 the command writes nothing to stdout; the error goes to stderr. Inside a session, `/plugin validate <path>` runs the same checks inline.
+
+Its options are few:
+
+| Option     | Effect                                                                                        |
+| ---------- | --------------------------------------------------------------------------------------------- |
+| `--strict` | Treat warnings as errors and exit 1 on them                                                   |
+| `--json`   | Output the validation report as one JSON object, with the same exit codes (v2.1.259 or later) |
+
+### Errors versus warnings
+
+The distinction is not cosmetic — it maps onto whether the plugin loads at runtime.
+
+An **error** is something that stops the plugin loading. A recognized field with the wrong type is the usual case: `"keywords": "git"` where an array belongs fails to load, and validation reports it as an error.
+
+A **warning** is something the runtime tolerates. Unrecognized top-level fields are the headline case: Claude Code ignores fields it does not recognize, so one `plugin.json` can double as an npm `package.json`, a VS Code extension manifest or an MCPB bundle manifest. Validation still flags them, and when a field is a character or two off a recognized one, it names the likely intended field. Missing author metadata is a warning too. A plugin with only warnings passes and loads.
+
+Two fields are deliberately lenient: `experimental` and `metadata` are **ignored** when their value is not an object, and validation reports a warning rather than an error.
+
+`--strict` collapses that distinction so CI fails on a misspelled field name or a leftover key from another tool's manifest, even though the plugin would load fine.
+
+### The `--json` envelope
+
+With `--json`, the report is one JSON object on stdout:
+
+- `success` — the same verdict the exit code gives
+- `strict` — whether the run treated warnings as errors
+- `target` — the resolved path that was validated
+- `manifest` — the manifest's own result, or `null` for a run without a manifest
+- `contents` — per-file results, each naming its `file` and carrying `errors`, `warnings` and `notes` arrays
+
+Those five fields are what the plugins reference documents. The shape of an individual finding is not documented, but the lab's captured run shows each entry in `errors` / `warnings` / `notes` carrying a `path` (the field it concerns), a `message`, and a `code` — read that off the transcript below rather than treating it as a contract.
+
+### Where validate sits in a release
+
+Anthropic's own submission pipeline runs the same check on every plugin submitted to the community marketplace, alongside automated safety screening — so running it locally first is not busywork, it is running the gate before the gate runs you. When it passes, Claude Code prints `✔ Validation passed`, or `✔ Validation passed with warnings` when there are warnings.
+
+Two neighbouring commands complete the release picture. `claude plugin details <name>` prints a plugin's component inventory and projected token cost — the check validation cannot do, because it needs the plugin loaded. And `claude plugin tag [path]` creates a `{name}--v{version}` git tag for a release, validating that `plugin.json` and any enclosing marketplace entry agree; it takes `--push`, `--dry-run`, `--force`, `--message` and `--remote`.
+
+### What `claude plugin eval` is
+
+Validation asks "is this manifest well-formed?" Eval asks a different question: **does the plugin actually change what Claude does?**
+
+`claude plugin eval` is an **early-access** command. It is enabled per organisation, and there is no public documentation page for it — Anthropic's docs index lists no eval page, and the plugins reference has no eval section. Everything below is read from the command's own `--help` on Claude Code 2.1.263, which is the only source this lesson has for it.
+
+<Callout>
+  On the machine this lesson was written on, `claude plugin eval` prints `` `plugin eval` is
+  currently in early access `` and stops. If you get the same message, the command is not enabled
+  for your account — the lab below records that outcome rather than pretending otherwise.
+</Callout>
+
+From `--help`, the shape of the feature is:
+
+- **Cases** live at `<eval dir>/**/case.yaml`, or as `prompt.md` plus `graders/*.md`. The eval directory is `evals/` unless `--eval-dir` or the manifest says otherwise (the manifest key is `experimental.evals`).
+- **Target** is a path, a plugin name, or a `plugin@marketplace` id. Installed and skills-directory plugins both resolve.
+- **Ablation** (`--ablation none | with-without`) runs a no-plugin baseline arm and reports the score delta. It defaults to `with-without` whenever a plugin resolves, and `none` when nothing does. Under `with-without`, graders marked `with-only` — including `tool_used: Skill` — are treated as a plugin-fired _indicator_ rather than part of the score.
+- **Mocks** (`--mocks record | off`) provide stand-ins for MCP servers from `<eval dir>/mocks/`. The default is `record`; `off` spawns the real servers, gated by `--allow-tools` as usual.
+- **Tool access** is not implicit: `--allow-tools <tools...>` is an operator grant for gated tools (`Bash`, `Write`, `Edit`, `WebFetch`, `mcp__*`), and supports `Tool(pattern:*)` syntax. `--scaffold` runs each case's `scaffold_script`, which is author-supplied bash executed as you, and is off by default.
+- **Selection and repetition**: `--case <glob>`, `--tag <tag...>` (repeatable), `--runs <n>` (default: the case's `runs`, else 3).
+- **Models**: `--model` overrides the model for all cases; `--judge-model` overrides the LLM-grader model, whose default is `haiku`.
+- **Budget**: runs are already bounded by `max_turns` and `timeout_seconds`; `--max-cost-usd` adds a hard ceiling that aborts with partial results and exit 2.
+- **Output**: `--json [path]` prints or writes the full run result (prompts, graders, per-run scores); `--report <path>` writes a self-contained HTML report of scores, prompts and grader verdicts; `--output-dir` sets where `aggregate-result.json` lands, defaulting to `./<eval dir>/results/<timestamp>/`. Reports publish to claude.ai by default where the account supports it, and `--no-publish` keeps them local.
+- **CI**: `--threshold <0..1>` exits 1 if any case scores below it, defaulting to `1.0`.
+- **Authoring**: `claude plugin eval init [name]` runs an interview that sources inputs and designs graders; `--bare <name>` produces a blank single-case template.
+
+The through-line worth taking away, whether or not you have the command: a plugin's value is a claim about behaviour, and behaviour is measured by running it with and without the plugin and comparing. The ablation arm is the whole idea in one flag.
+
+This lesson's example prompt is the CI gate you would actually want:
+
+```text
+Add a GitHub Actions step to .github/workflows/ that runs
+`claude plugin validate ./plugins/labtrack-tools --strict --json`,
+fails the job on a non-zero exit, and prints the warnings array so a
+reviewer can see what tripped it.
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · make validation fail on purpose, then read the JSON"
+  lessonId="en/l3-advanced/m12-plugins/validate-and-eval"
+  repoTag="none"
+  steps={[
+    'Work from the plugin you built in lesson `03` (`git checkout lesson/m12-03-solution` if you want the finished state), or from any plugin directory of your own.',
+    'Copy it to a scratch directory you can vandalise, and open its `.claude-plugin/plugin.json`.',
+    'Introduce two misspelled fields — `licence` instead of `license`, `homepag` instead of `homepage` — and remove the `author` block.',
+    'Run `claude plugin validate ./warn-plugin` and read the three warnings. Check the exit code: `echo $?` on macOS/Linux, `$LASTEXITCODE` in PowerShell.',
+    'Run the same command with `--strict` and check the exit code again. Same findings, different verdict.',
+    'Run it with `--json` and locate `success`, `strict`, `target`, `manifest.warnings[]` and `contents`.',
+    'Now try `claude plugin eval ./hello-plugin --no-publish` and record what it prints. If your organisation does not have early access, the honest result is the message below — write it down rather than guessing at what the command would have done.',
+  ]}
+  expected="Without --strict: three warnings, `✔ Validation passed with warnings`, exit 0. With --strict: the same three warnings, `✘ Validation failed (--strict treats warnings as errors)`, exit 1. The --json run reports `success: true` and `strict: false` with three entries in `manifest.warnings`. `claude plugin eval` reports early access unless your organisation has it enabled."
+  checklist={[
+    'The two misspelled fields were reported as warnings with a suggested correction each',
+    'The missing author block produced a third warning, not an error',
+    'Exit code was 0 without `--strict` and 1 with it, from identical findings',
+    'You found `success`, `strict`, `target` and `manifest.warnings[]` in the JSON',
+    'You recorded what `claude plugin eval` actually printed on your machine',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/04-validate-and-eval/01-validate-strict.txt"
+    range="2-24"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/04-validate-and-eval/02-validate-json.txt"
+    range="2-31"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/04-validate-and-eval/03-eval-early-access.txt"
+    range="2-4"
+  />
+</Lab>
+
+Notice what the two validate runs have in common: **identical findings, different verdict**. `--strict` changes nothing about what is wrong with the manifest, only what you have decided counts as failure. That is exactly the right thing to put in CI and exactly the wrong thing to put in a developer's inner loop.
+
+The third recording is the honest limit of this lesson. `claude plugin eval` is early access; it is not enabled on the machine that produced these transcripts, so no eval suite was run and none is shown. The surface described in the Concept section comes from the command's own help output, reproduced here in full:
+
+<Transcript
+  src="content/_shared/transcripts/m12-plugins/04-validate-and-eval/04-eval-help.txt"
+  range="2-72"
+/>
+
+### Validating in CI, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+claude plugin validate ./plugins/labtrack-tools --strict --json > report.json
+echo "exit: $?"
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+claude plugin validate ./plugins/labtrack-tools --strict --json > report.json
+echo "exit: $?"
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+claude plugin validate ./plugins/labtrack-tools --strict --json > report.json
+Write-Output "exit: $LASTEXITCODE"
+```
+
+  </Fragment>
+</OSTabs>
+
+## Anti-patterns
+
+**Shipping a plugin because validation passed.** It read your manifest. It did not load your plugin, run your hook, or notice that your `skills/` directory is in the wrong place. _Fix:_ load it with `--plugin-dir`, invoke each component, and read `claude plugin details` for the inventory.
+
+**Running `--strict` in your inner loop.** Failing a local run on a warning you already know about trains you to ignore the output. _Fix:_ plain `validate` while you work, `--strict` in CI.
+
+**Parsing the human output in a script.** The pass/fail line and the warning bullets are for people; they change. _Fix:_ `--json` plus the exit code, which are the documented contract.
+
+**Treating exit 2 as a validation failure.** Exit 2 means the run itself failed — usually an unreadable path — and stdout is empty. A script that folds it into "invalid plugin" will report a typo'd path as a broken manifest. _Fix:_ branch on 0, 1 and 2 separately.
+
+**Describing `claude plugin eval` as if you had run it.** It is early access, gated per organisation, and has no public documentation page. _Fix:_ check whether you have it, and say so either way — the message it prints when you do not is itself the useful evidence.
+
+**Pointing eval at author-supplied scaffolding you have not read.** `--scaffold` runs each case's `scaffold_script`, which is bash executed as you. It is off by default for that reason. _Fix:_ only pass it for case files you wrote.
+
+<Callout variant="changed">
+  `claude plugin validate --json` requires Claude Code v2.1.259 or later; earlier versions have the
+  command but not the flag. `claude plugin eval` is a recent addition and remains early access at
+  2.1.263 — treat any behaviour beyond its `--help` as unverified until Anthropic documents it.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/validate-and-eval"
+  questionId="q1"
+  lang="en"
+  prompt="`claude plugin validate ./my-plugin` exits 2. What happened?"
+  options={[
+    {
+      text: 'The manifest has two errors.',
+      explanation: 'The exit code is not a count of findings.',
+    },
+    {
+      text: 'The validation run itself failed — for example the path is unreadable — and stdout is empty.',
+      correct: true,
+      explanation: 'The error message goes to stderr. Branch on 0, 1 and 2 separately in scripts.',
+    },
+    {
+      text: 'Validation passed with warnings.',
+      explanation: 'That is exit 0, with `✔ Validation passed with warnings`.',
+    },
+    {
+      text: '`--strict` was implied and warnings became errors.',
+      explanation: '`--strict` failures are exit 1, and they still print the report.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/validate-and-eval"
+  questionId="q2"
+  lang="en"
+  prompt="Your manifest sets keywords to a bare string instead of an array, and misspells license as licence. How does validate treat each?"
+  options={[
+    {
+      text: 'Both are errors — the plugin will not load.',
+      explanation:
+        'The unrecognized field is tolerated at runtime; only the wrong type stops the load.',
+    },
+    {
+      text: 'Both are warnings — the plugin loads either way.',
+      explanation:
+        'A recognized field with the wrong type is a load error for most fields, `keywords` included.',
+    },
+    {
+      text: '`keywords` is an error (wrong type stops the load); `licence` is a warning with a suggested correction.',
+      correct: true,
+      explanation:
+        'Unrecognized fields are ignored at load time, which is why one manifest can double as another ecosystem’s.',
+    },
+    {
+      text: '`keywords` is a warning; `licence` is an error because the field does not exist.',
+      explanation: 'It is the other way round.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/validate-and-eval"
+  questionId="q3"
+  lang="en"
+  prompt="What does `--ablation with-without` add to an eval run?"
+  options={[
+    {
+      text: 'It runs each case twice on different models and averages the scores.',
+      explanation:
+        'Model overrides are `--model` and `--judge-model`; ablation is about the plugin.',
+    },
+    {
+      text: 'It adds a no-plugin baseline arm and reports the score delta.',
+      correct: true,
+      explanation:
+        'It is the default whenever a plugin resolves — the point is to measure what the plugin changed.',
+    },
+    {
+      text: 'It disables graders that need tool access.',
+      explanation: 'Tool access is granted with `--allow-tools`.',
+    },
+    {
+      text: 'It skips cases that have no `scaffold_script`.',
+      explanation: 'Case selection is `--case` and `--tag`.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/validate-and-eval"
+  questionId="q4"
+  lang="en"
+  prompt="Which of these does `claude plugin validate` confirm?"
+  options={[
+    {
+      text: 'That your `skills/` directory is somewhere Claude Code will scan.',
+      explanation:
+        'A plugin with its components inside `.claude-plugin/` still validates cleanly — see lesson 01.',
+    },
+    {
+      text: 'That the manifest parses and its fields have the expected shape.',
+      correct: true,
+      explanation: 'That is the whole scope. Everything else needs the plugin loaded.',
+    },
+    {
+      text: 'That every hook’s command is executable on the target machine.',
+      explanation: 'Validation never runs your hook commands.',
+    },
+    {
+      text: 'That the plugin improves Claude’s behaviour.',
+      explanation: 'That is the question `claude plugin eval` exists to ask.',
+    },
+  ]}
+/>
+
+**Next:** `05-team-marketplace` puts the validated plugin in a catalog your team can add with one command.

@@ -1,0 +1,393 @@
+---
+title: 'Build a plugin from the skill and hook you already wrote'
+description: 'Package the m06 commit-msg skill and the m07 format-on-save hook as labtrack-tools: manifest, hooks.json, the CLAUDE_PLUGIN_ROOT rule, and the one line of the hook you must change. Then load it with --plugin-dir and prove it runs.'
+level: 3
+module: 'm12-plugins'
+order: 3
+duration_min: 30
+difficulty: core
+tags: ['plugins', 'skills', 'hooks', 'packaging']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Create plugins'
+    url: 'https://code.claude.com/docs/en/plugins.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Plugins reference'
+    url: 'https://code.claude.com/docs/en/plugins-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Constrain plugin dependency versions'
+    url: 'https://code.claude.com/docs/en/plugin-dependencies.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m12-03-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Convert an existing `.claude/skills/` skill and a `.claude/settings.json` hook into a plugin, following the official migration steps.
+- Write a plugin `hooks/hooks.json` and address a bundled script through `${CLAUDE_PLUGIN_ROOT}`.
+- Explain why a hook copied out of `.claude/hooks/` needs one line changed before it works inside a plugin.
+- Load a plugin under development with `--plugin-dir`, without installing it, and reload it with `/reload-plugins`.
+- Prove a plugin skill really runs, headlessly, with a command you can put in CI.
+
+**Prerequisites.** Lessons `01-plugin-anatomy` and `02-marketplaces`. The `commit-msg` skill from `m06-skills` and the `format-on-save` hook from `m07-hooks` — both are already in the lab repository at this lesson's tag. Node 24 and a clone of the lab repository.
+
+<WhenNotToUse>
+  Do not convert a `.claude/` setup to a plugin while you are still changing it every day. The
+  official advice is to start standalone for quick iteration and convert when you are ready to
+  share, and the reason is concrete: a plugin adds a manifest to keep in sync, a namespace prefix on
+  every skill, a version to bump, and a distribution channel. If the answer to "who else needs
+  this?" is "nobody yet", the conversion is work you are doing early. And do not convert a hook
+  whose whole job is enforcing one repository's own conventions — that hook belongs to that
+  repository, not to a package.
+</WhenNotToUse>
+
+## Concept
+
+### What migration actually changes
+
+The docs summarise the conversion in four rows:
+
+| Standalone (`.claude/`)       | Plugin                           |
+| ----------------------------- | -------------------------------- |
+| Only available in one project | Can be shared via marketplaces   |
+| Files in `.claude/commands/`  | Files in `plugin-name/commands/` |
+| Hooks in `settings.json`      | Hooks in `hooks/hooks.json`      |
+| Must manually copy to share   | Install with `/plugin install`   |
+
+Two of those rows are mechanical file moves. The third — hooks moving from `settings.json` to `hooks/hooks.json` — keeps the **same JSON shape**: you copy the `hooks` object out of your settings file into a file whose top-level key is `hooks`. The fourth is the whole point.
+
+After migrating, remove the originals from `.claude/` to avoid duplicates. Note the asymmetry the docs flag: project and user `.claude/agents/` definitions **override** same-named plugin agents, so a plugin agent only takes effect once the original is gone. Plugin skills are namespaced, so `/commit-msg` and `/labtrack-tools:commit-msg` both remain available — nothing overrides anything, you just have two.
+
+### The plugin we are building
+
+`labtrack-tools` bundles one skill and one hook from earlier in the course:
+
+```text
+plugins/labtrack-tools/
+  .claude-plugin/plugin.json   manifest — name, description, version, author
+  skills/commit-msg/SKILL.md   copy of .claude/skills/commit-msg (m06-03)
+  hooks/hooks.json             registers the hook below
+  hooks/format-on-save.mjs     copy of .claude/hooks/format-on-save.mjs (m07-03)
+  README.md                    what it is and how to try it
+```
+
+The manifest is the four-field shape from lesson `01`:
+
+<CodeBlock title="plugins/labtrack-tools/.claude-plugin/plugin.json">
+
+```json
+{
+  "name": "labtrack-tools",
+  "description": "The m06/m07 example skill and hook (commit-msg, format-on-save), packaged as an installable plugin for the m12-03-build-a-plugin lab.",
+  "version": "1.0.0",
+  "author": {
+    "name": "CodeChup Claude Code Academy"
+  }
+}
+```
+
+</CodeBlock>
+
+### `hooks/hooks.json` and the root variable
+
+The hook configuration is the `hooks` object you would have written in `settings.json`, with one difference that is not optional:
+
+<CodeBlock title="plugins/labtrack-tools/hooks/hooks.json" highlight="9">
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/format-on-save.mjs\""
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+</CodeBlock>
+
+`${CLAUDE_PLUGIN_ROOT}` resolves to the plugin's installation directory. It has to, because installing a plugin **copies it into a cache location** — the path you developed at is not the path it runs from. A relative `./hooks/format-on-save.mjs` would resolve against the user's project and fail on every machine but yours.
+
+### The one line of the hook that must change
+
+This is the part that catches people. The `m07` hook computes the repository root from its own file location:
+
+```javascript
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+```
+
+That works when the script lives at `.claude/hooks/` inside the repository. Inside a plugin it walks up into the plugin's own cache directory, so `node_modules/prettier` is never found and the hook silently does nothing — the worst failure mode, because everything looks fine.
+
+A plugin hook has no fixed path relative to the project it is installed into, so it takes the project root from the hook payload instead. `PostToolUse` receives `{tool_name, tool_input, tool_response, cwd, ...}` as JSON on stdin:
+
+<CodeBlock title="plugins/labtrack-tools/hooks/format-on-save.mjs (the changed lines)">
+
+```javascript
+// Unlike the project-local hook, a plugin hook has no fixed path relative to the project
+// it's installed into — use the project root PostToolUse itself reports (`cwd`).
+const root = input.cwd ?? process.cwd();
+const abs = isAbsolute(filePath) ? filePath : resolve(root, filePath);
+const rel = relative(root, abs).replace(/\\/g, '/');
+if (rel.startsWith('..') || rel.length === 0) return; // not inside the project
+```
+
+</CodeBlock>
+
+The rest of the hook is unchanged, including the rule that every path exits 0: `PostToolUse` is not a blocking event, and formatting must never interrupt a session.
+
+### Testing without installing
+
+`--plugin-dir` loads a plugin directly from a directory, with no marketplace and no install:
+
+```bash
+claude --plugin-dir ./plugins/labtrack-tools
+```
+
+Repeat the flag to load several at once, and pass a `.zip` archive instead of a directory if that is what you have. A `--plugin-dir` plugin whose name matches an installed marketplace plugin **takes precedence for that session**, which is how you test a change to a plugin you already have installed. The exception is a plugin that managed settings force-enable or force-disable — `--plugin-dir` cannot override those. Loaded this way, the plugin's identity is `<name>@inline`.
+
+As you edit, `/reload-plugins` picks up changes without restarting: plugins, skills, agents, hooks, plugin MCP servers and plugin LSP servers.
+
+This lesson's example prompt is the conversion itself, delegated:
+
+```text
+Package .claude/skills/commit-msg and .claude/hooks/format-on-save.mjs as a
+plugin at ./plugins/labtrack-tools. Keep the skill's frontmatter as-is, register
+the hook through hooks/hooks.json, and make every bundled path work after an
+install — then run claude plugin validate on the result and show me the output.
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · package the m06 skill and the m07 hook as labtrack-tools"
+  lessonId="en/l3-advanced/m12-plugins/build-a-plugin"
+  repoTag="lesson/m12-03-start"
+  steps={[
+    'Check out the tag above in your clone of the lab repository and run `npm ci`.',
+    'Create the plugin skeleton: `plugins/labtrack-tools/` with `.claude-plugin/`, `skills/` and `hooks/` underneath it. Only the manifest goes in `.claude-plugin/`.',
+    'Copy `.claude/skills/commit-msg/` to `plugins/labtrack-tools/skills/commit-msg/` and change its heading from `/commit-msg` to `/labtrack-tools:commit-msg` — the plugin namespace is now part of the name.',
+    'Write `plugins/labtrack-tools/.claude-plugin/plugin.json` with `name`, `description`, `version` and `author`.',
+    'Copy `.claude/hooks/format-on-save.mjs` to `plugins/labtrack-tools/hooks/`, then change how it finds the project root: take it from the hook payload’s `cwd` instead of from the script’s own location.',
+    'Write `plugins/labtrack-tools/hooks/hooks.json` registering the hook on `PostToolUse` with matcher `Write|Edit` and the command `node "${CLAUDE_PLUGIN_ROOT}/hooks/format-on-save.mjs"`.',
+    'Add a `README.md` saying what the plugin contains and how to try it.',
+    'Compare your tree with the solution: `git add -A plugins && git diff --cached --stat lesson/m12-03-solution -- plugins/`. No output means an exact match.',
+    'Validate it: `claude plugin validate ./plugins/labtrack-tools`, then again with `--json` to see the machine-readable report.',
+    'Prove the skill runs. With the plugin loaded from disk and a staged diff to describe, run the headless command in the third transcript below.',
+  ]}
+  expected="`git diff --cached --stat lesson/m12-03-solution -- plugins/` prints nothing; `claude plugin validate ./plugins/labtrack-tools` prints `✔ Validation passed` and exits 0; the headless run invokes `/labtrack-tools:commit-msg` and prints one conventional commit message for the staged plugin files."
+  checklist={[
+    'Five files under `plugins/labtrack-tools/`, and only `plugin.json` inside `.claude-plugin/`',
+    'The hook command uses `${CLAUDE_PLUGIN_ROOT}`, not a relative path',
+    'The hook takes the project root from the payload’s `cwd`, not from `import.meta.url`',
+    '`git diff --cached --stat` against the solution tag prints nothing',
+    '`claude plugin validate` exits 0',
+    'The headless run printed a `type(scope): summary` line — the plugin skill actually fired',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/03-build-a-plugin/01-build-tree.txt"
+    range="2-10"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/03-build-a-plugin/02-validate.txt"
+    range="2-21"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/03-build-a-plugin/03-skill-headless.txt"
+    range="2-7"
+  />
+</Lab>
+
+Three things in those recordings are worth naming.
+
+The `--json` report is the shape lesson `04` builds a CI check on: `success`, `strict`, `target`, `manifest` and a `contents` array. Here `contents` is empty and `manifest` carries empty `errors`, `warnings` and `notes` — a clean manifest, and nothing said about the components, because validation reads manifests.
+
+The headless run passes `--allowedTools "Bash(git diff:*),Bash(git status:*)"`. The skill's own `allowed-tools` frontmatter already declares those, but the lab clone has not been trusted, so the session ignores the project's `permissions.allow` entries and says so in its first line. That warning is real and worth reading: **an untrusted workspace drops the project's allow rules**, so a headless run needs its permissions on the command line.
+
+And the prompt is the slash command itself — `/labtrack-tools:commit-msg cli` — not a description of it. `commit-msg` sets `disable-model-invocation: true`, so Claude will never reach for it on its own; the only way to fire it is to invoke it. `--append-system-prompt "Reply in English."` is there because the machine that made this recording has global preferences that answer in another language, exactly as `m01-start/01` describes.
+
+### Creating the plugin tree, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+mkdir -p plugins/labtrack-tools/.claude-plugin plugins/labtrack-tools/hooks plugins/labtrack-tools/skills
+cp -r .claude/skills/commit-msg plugins/labtrack-tools/skills/commit-msg
+cp .claude/hooks/format-on-save.mjs plugins/labtrack-tools/hooks/format-on-save.mjs
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+mkdir -p plugins/labtrack-tools/.claude-plugin plugins/labtrack-tools/hooks plugins/labtrack-tools/skills
+cp -r .claude/skills/commit-msg plugins/labtrack-tools/skills/commit-msg
+cp .claude/hooks/format-on-save.mjs plugins/labtrack-tools/hooks/format-on-save.mjs
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+New-Item -ItemType Directory -Force plugins/labtrack-tools/.claude-plugin, plugins/labtrack-tools/hooks, plugins/labtrack-tools/skills
+Copy-Item -Recurse .claude/skills/commit-msg plugins/labtrack-tools/skills/commit-msg
+Copy-Item .claude/hooks/format-on-save.mjs plugins/labtrack-tools/hooks/format-on-save.mjs
+```
+
+  </Fragment>
+</OSTabs>
+
+### One honest note about installing this plugin here
+
+The lab repository already wires `.claude/hooks/format-on-save.mjs` directly in its own `.claude/settings.json`. Installing `labtrack-tools` **in that same repository** therefore runs Prettier twice per `Write` or `Edit`. It is harmless — formatting an already-formatted file is a no-op — but it is the kind of thing a plugin should say out loud in its README rather than let a user discover. In a project that does not already have the hook, installing the plugin is exactly the `m07-03` outcome, delivered as a package instead of a hand-copied file.
+
+## Anti-patterns
+
+**Copying the hook script without changing how it finds the project.** A hook that derives the repository root from `import.meta.url` lands in the plugin cache after an install and silently does nothing. _Fix:_ read `cwd` from the hook payload.
+
+**A relative path in `hooks.json`.** `node ./hooks/format-on-save.mjs` works in your working copy and nowhere else. _Fix:_ `node "${CLAUDE_PLUGIN_ROOT}/hooks/format-on-save.mjs"`.
+
+**Leaving the originals in `.claude/` after migrating.** You now have two copies drifting apart, and a plugin agent that never takes effect because the project definition overrides it. _Fix:_ delete the originals once the plugin works, and say so in the commit.
+
+**Editing the plugin and wondering why nothing changed.** Skills reload live; hooks, `.mcp.json`, agents and output styles do not. _Fix:_ run `/reload-plugins` after changing anything but a `SKILL.md`.
+
+**Testing only by reading the code.** A plugin that validates, loads and lists its components can still have a skill Claude never picks or a hook whose matcher never fires. _Fix:_ invoke the skill by its namespaced name and trigger the hook's event, then check the debug log for which hooks matched and how they exited.
+
+**Reaching for `../` to share code between two plugins.** Installation copies each plugin directory; files outside it are not copied. _Fix:_ duplicate the file, or share it within a marketplace with a symlink.
+
+<Callout variant="changed">
+  Write new plugin skills as `skills/<name>/SKILL.md`. The flat `commands/*.md` form still loads,
+  but the plugins reference now directs new plugins to `skills/` — the standalone
+  `.claude/commands/*.md` mechanism merged into skills in 2.1.3, and the plugin directory kept its
+  name. Verified against `plugins-reference.md` for Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/build-a-plugin"
+  questionId="q1"
+  lang="en"
+  prompt="Where does a plugin's hook configuration live, and in what shape?"
+  options={[
+    {
+      text: '`.claude-plugin/hooks.json`, with a top-level `hooks` object.',
+      explanation: 'Only `plugin.json` goes inside `.claude-plugin/`.',
+    },
+    {
+      text: '`hooks/hooks.json` at the plugin root, with the same `hooks` object shape as `settings.json`.',
+      correct: true,
+      explanation:
+        'The format is identical — you copy the `hooks` object out of your settings file.',
+    },
+    {
+      text: 'In `plugin.json` only; a separate hooks file is not supported.',
+      explanation:
+        'A manifest `hooks` field exists, but the default location is `hooks/hooks.json`.',
+    },
+    {
+      text: 'In the user’s `~/.claude/settings.json`, written at install time.',
+      explanation: 'A plugin never edits the user’s settings to register its own hooks.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/build-a-plugin"
+  questionId="q2"
+  lang="en"
+  prompt="Your plugin hook worked in development and does nothing after an install. What is the most likely cause?"
+  options={[
+    {
+      text: 'The matcher is wrong.',
+      explanation: 'Possible, but it would also have failed in development.',
+    },
+    {
+      text: 'The script computes the project root from its own file location, which after install points into the plugin cache.',
+      correct: true,
+      explanation:
+        'Installing copies the plugin elsewhere. Take the project root from the payload’s `cwd`.',
+    },
+    {
+      text: 'PostToolUse hooks do not run for installed plugins.',
+      explanation: 'They do; plugin hooks fire exactly like project hooks.',
+    },
+    {
+      text: '`claude plugin validate` would have caught it.',
+      explanation: 'Validation reads the manifest; it never runs your hook.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/build-a-plugin"
+  questionId="q3"
+  lang="en"
+  prompt="You already have `labtrack-tools` installed from a marketplace and want to test a local change. What does `claude --plugin-dir ./plugins/labtrack-tools` do?"
+  options={[
+    {
+      text: 'Refuses to start, because a plugin of that name is already installed.',
+      explanation: 'It starts; the name clash is handled deliberately.',
+    },
+    {
+      text: 'Loads the local copy, which takes precedence for that session.',
+      correct: true,
+      explanation:
+        'That is the point — you can test a change without uninstalling. Managed force-enabled or force-disabled plugins are the exception.',
+    },
+    {
+      text: 'Loads both copies and namespaces the local one differently.',
+      explanation: 'One name, one plugin — the local copy wins for the session.',
+    },
+    {
+      text: 'Permanently replaces the installed copy on disk.',
+      explanation: '`--plugin-dir` affects only that session.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/build-a-plugin"
+  questionId="q4"
+  lang="en"
+  prompt="You changed your plugin's `hooks/hooks.json` mid-session. What picks it up?"
+  options={[
+    {
+      text: 'Nothing — hook config changes need a full restart.',
+      explanation: '`/reload-plugins` is enough; a restart is not required.',
+    },
+    {
+      text: '`/reload-plugins`. Only `SKILL.md` changes take effect on their own.',
+      correct: true,
+      explanation:
+        'Skills reload live; hooks, `.mcp.json`, agents and output styles need the reload.',
+    },
+    {
+      text: 'It reloads automatically, like a `SKILL.md`.',
+      explanation: 'Live change detection covers skills, not the plugin’s other components.',
+    },
+    {
+      text: '`claude plugin update labtrack-tools`.',
+      explanation: 'That fetches a new version from a marketplace, which is a different operation.',
+    },
+  ]}
+/>
+
+**Next:** `04-validate-and-eval` turns `claude plugin validate` into a CI gate, and looks at what `claude plugin eval` measures once your organisation has it.

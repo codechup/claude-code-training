@@ -1,0 +1,34 @@
+---
+title: "Zaten yazdığınız skill ve hook'tan bir plugin kurun"
+description: "m06 commit-msg skill'ini ve m07 format-on-save hook'unu labtrack-tools olarak paketleyin: manifest, hooks.json, CLAUDE_PLUGIN_ROOT kuralı ve hook'ta değiştirmeniz gereken tek satır. Sonra --plugin-dir ile yükleyip çalıştığını kanıtlayın."
+level: 3
+module: 'm12-plugins'
+order: 3
+duration_min: 30
+difficulty: core
+tags: ['plugins', 'skills', 'hooks', 'packaging']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Create plugins'
+    url: 'https://code.claude.com/docs/en/plugins.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Plugins reference'
+    url: 'https://code.claude.com/docs/en/plugins-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Constrain plugin dependency versions'
+    url: 'https://code.claude.com/docs/en/plugin-dependencies.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m12-03-start'
+---
+
+> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m12-plugins/03-build-a-plugin.mdx` dosyasıdır.
+
+## Özet
+
+Bu laboratuvar, kursun başında yazdığınız `commit-msg` [skill](/tr/playbook/glossary/#skill)'ini ve `format-on-save` [hook](/tr/playbook/glossary/#hook)'unu `labtrack-tools` adlı tek bir plugin hâline getirir. Dönüşümün büyük kısmı dosya taşımaktır: skill `plugins/labtrack-tools/skills/commit-msg/` altına gider, hook yapılandırması `settings.json`'daki `hooks` nesnesiyle birebir aynı şekilde `hooks/hooks.json` dosyasına taşınır. İki nokta mekanik değildir. Birincisi, hook komutu paketlenmiş script'e mutlaka `${CLAUDE_PLUGIN_ROOT}` üzerinden ulaşmalıdır; çünkü kurulum plugin dizinini bir önbellek konumuna kopyalar ve göreli yol kullanıcının projesine çözülür. İkincisi, `m07` hook'u proje kökünü kendi dosya konumundan hesaplıyordu — plugin içinde bu, önbellek dizinine çıkar ve hook sessizce hiçbir şey yapmaz; bunun yerine kök, `PostToolUse` payload'ındaki `cwd` alanından alınmalıdır. Geliştirme sırasında plugin'i kurmadan `claude --plugin-dir ./plugins/labtrack-tools` ile yükler, değişiklikleri `/reload-plugins` ile alırsınız. Laboratuvar sonunda ağacı `lesson/m12-03-solution` etiketiyle karşılaştırır, `claude plugin validate` çalıştırır ve headless bir `claude -p "/labtrack-tools:commit-msg cli"` çağrısıyla plugin skill'inin gerçekten çalıştığını kanıtlarsınız.

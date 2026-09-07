@@ -1,0 +1,34 @@
+---
+title: "claude plugin validate ve eval'in eklediği"
+description: "Bir doğrulama raporunu okuyun, CI'da --strict ile uyarıları hataya çevirin, --json zarfını ayrıştırın ve claude plugin eval'in neyi ölçtüğünü anlayın — yüzeyi kendi help çıktısından okunabilen, erken erişimdeki bir komut."
+level: 3
+module: 'm12-plugins'
+order: 4
+duration_min: 20
+difficulty: advanced
+tags: ['plugins', 'validation', 'ci', 'eval']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Plugins reference'
+    url: 'https://code.claude.com/docs/en/plugins-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Create plugins'
+    url: 'https://code.claude.com/docs/en/plugins.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Create and distribute a plugin marketplace'
+    url: 'https://code.claude.com/docs/en/plugin-marketplaces.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m12-plugins/04-validate-and-eval.mdx` dosyasıdır.
+
+## Özet
+
+`claude plugin validate <path>` bir plugin'i ya da bir marketplace'i yayımlamadan önce sözdizimi ve şema hatalarına karşı denetler: 0 geçti, 1 başarısız, 2 çalıştırmanın kendisi başarısız (bu durumda stdout boştur, hata stderr'e gider). Hata ile uyarı ayrımı gerçek bir davranışa karşılık gelir — tanınan bir alanın yanlış tipte olması plugin'in yüklenmesini engeller ve hata sayılır; tanınmayan alanlar çalışma zamanında yok sayıldığı için uyarı sayılır ve yazım hatası varsa doğru alan adı önerilir. `--strict` bu ayrımı kaldırıp uyarıları da başarısızlığa çevirir; CI için doğru, günlük geliştirme döngüsü için yanlış olan davranış budur. `--json` (v2.1.259+) raporu `success`, `strict`, `target`, `manifest` ve `contents` alanlarıyla tek bir JSON nesnesi olarak verir. Doğrulamanın **yapmadığı** şey de en az bu kadar önemlidir: plugin'i yüklemez, hook'unuzu çalıştırmaz, yanlış dizindeki bileşenleri fark etmez. `claude plugin eval` ise farklı bir soru sorar — plugin Claude'un davranışını gerçekten değiştiriyor mu? Bu komut kuruluş bazında **erken erişimdedir** ve herkese açık bir dokümantasyon sayfası yoktur; bu dersteki her ayrıntı komutun kendi `--help` çıktısından okunmuştur ve dersin yazıldığı makinede komut `` `plugin eval` is currently in early access `` mesajıyla durmuştur.

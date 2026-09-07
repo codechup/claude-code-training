@@ -1,0 +1,358 @@
+---
+title: 'Plugin anatomy: the manifest and the directories'
+description: 'A plugin is a directory with an optional .claude-plugin/plugin.json manifest and component folders at its root. Learn the layout, the manifest fields, the path rules, and the one mistake that silently drops half your plugin.'
+level: 3
+module: 'm12-plugins'
+order: 1
+duration_min: 15
+difficulty: core
+tags: ['plugins', 'plugin.json', 'packaging']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Create plugins'
+    url: 'https://code.claude.com/docs/en/plugins.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Plugins reference'
+    url: 'https://code.claude.com/docs/en/plugins-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Discover and install prebuilt plugins through marketplaces'
+    url: 'https://code.claude.com/docs/en/discover-plugins.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say what a plugin is in one sentence, and what it buys you over a plain `.claude/` directory.
+- Write a `.claude-plugin/plugin.json` manifest and name every field Claude Code actually reads.
+- Place `skills/`, `agents/`, `hooks/`, `.mcp.json`, `.lsp.json`, `monitors/`, `bin/` and `settings.json` correctly, and explain why only `plugin.json` — none of those — lives inside `.claude-plugin/`.
+- Predict a plugin skill's invocation name from the manifest's `name` field.
+- Run `claude plugin validate` on a directory and read both a pass and a failure.
+
+**Prerequisites.** You have written a skill (`m06-skills`) and a hook (`m07-hooks`), and you know where `.claude/settings.json` lives (`m03-memory`). Claude Code 2.1.263 or later, and a scratch folder outside any repository you care about.
+
+<WhenNotToUse>
+  Do not package something as a plugin just because you can. A workflow only you use, in only one
+  project, belongs in that project's `.claude/` directory: it is one file, it needs no manifest, no
+  version and no namespace, and you can change it without republishing anything. The official
+  guidance is to start standalone in `.claude/` and convert to a plugin when you are ready to share.
+  A plugin earns its overhead when the same skill, hook or agent must reach other people, other
+  repositories, or a versioned release cycle — and it costs you a namespace prefix on every skill
+  name plus a distribution channel to maintain.
+</WhenNotToUse>
+
+## Concept
+
+### What a plugin is
+
+A plugin is a **self-contained directory** holding skills, agents, hooks or MCP servers, optionally alongside a `.claude-plugin/plugin.json` manifest. Claude Code loads it as one unit that can be enabled, disabled, versioned and shared.
+
+The docs put the choice between the two ways of extending Claude Code like this:
+
+| Approach                                 | Skill names          | Best for                                                               |
+| ---------------------------------------- | -------------------- | ---------------------------------------------------------------------- |
+| **Standalone** (`.claude/` directory)    | `/hello`             | Personal workflows, project-specific customizations, quick experiments |
+| **Plugins** (self-contained directories) | `/plugin-name:hello` | Sharing with teammates, distributing to community, versioned releases  |
+
+That second column is the visible difference. Plugin skills are **always namespaced** with the plugin's `name`, so two plugins can both ship a `commit` skill without colliding. Change the namespace by changing `name` in `plugin.json` — there is no separate namespace field.
+
+### The manifest
+
+`.claude-plugin/plugin.json` is **optional**. Without it, Claude Code auto-discovers components in their default locations and derives the plugin name from the directory name. You add a manifest when you want metadata or custom component paths. When you do include one, `name` is the only required field.
+
+<CodeBlock title="my-first-plugin/.claude-plugin/plugin.json">
+
+```json
+{
+  "name": "my-first-plugin",
+  "description": "A greeting plugin to learn the basics",
+  "version": "1.0.0",
+  "author": {
+    "name": "Your Name"
+  }
+}
+```
+
+</CodeBlock>
+
+The fields worth knowing before you write your first one:
+
+| Field                                           | What it does                                                                                                              |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `name`                                          | Required (if you have a manifest). Kebab-case, no spaces. The skill namespace: `hello/` becomes `/my-first-plugin:hello`. |
+| `displayName`                                   | Human-readable name shown in the `/plugin` picker. Falls back to `name`. Never used for namespacing or lookup.            |
+| `description`                                   | Shown in the plugin manager when browsing or installing.                                                                  |
+| `version`                                       | Optional semantic version. Setting it pins the plugin: users only get updates when you bump the field.                    |
+| `author`                                        | Optional; `name` required, `email` and `url` optional. Helpful for attribution.                                           |
+| `homepage`, `repository`, `license`, `keywords` | Discovery and attribution metadata.                                                                                       |
+| `defaultEnabled`                                | Defaults to `true`. Set `false` to ship a plugin that installs disabled until the user opts in.                           |
+| `metadata`                                      | A free-form object for your own data. Claude Code does not read it, so nothing in it affects behaviour.                   |
+| `dependencies`                                  | Other plugins this one requires, optionally with a semver range.                                                          |
+
+Claude Code **ignores top-level fields it does not recognize**, so one `plugin.json` can double as another ecosystem's manifest. `claude plugin validate` reports unrecognized fields as warnings rather than errors, and suggests the likely intended name when a field is a character or two off.
+
+Types, though, are not forgiving. For most fields a wrong type is a **load error**, not a warning: `"keywords": "git"` where an array was expected stops the plugin from loading. The exceptions are `experimental` and `metadata`, where a non-object value is ignored with a warning.
+
+### The directory layout
+
+This is where plugins are most often got wrong, so the docs state it as a warning:
+
+<Callout>
+  Only `plugin.json` goes inside `.claude-plugin/`. Every other directory — `skills/`, `agents/`,
+  `commands/`, `hooks/`, `workflows/` — must be at the **plugin root**, one level up. The plugin
+  root is the plugin's own directory: the one you pass to `--plugin-dir` or that contains
+  `.claude-plugin/plugin.json`. It is never `~/.claude/`.
+</Callout>
+
+| Directory / file  | Location    | Purpose                                                                                     |
+| ----------------- | ----------- | ------------------------------------------------------------------------------------------- |
+| `.claude-plugin/` | Plugin root | Contains `plugin.json` (optional if components use default locations)                       |
+| `skills/`         | Plugin root | Skills as `<name>/SKILL.md` directories                                                     |
+| `commands/`       | Plugin root | Skills as flat Markdown files. Use `skills/` for new plugins                                |
+| `agents/`         | Plugin root | Custom agent definitions                                                                    |
+| `hooks/`          | Plugin root | Event handlers in `hooks.json`                                                              |
+| `.mcp.json`       | Plugin root | MCP server configurations                                                                   |
+| `.lsp.json`       | Plugin root | LSP server configurations for code intelligence                                             |
+| `monitors/`       | Plugin root | Background monitor configurations in `monitors.json`                                        |
+| `bin/`            | Plugin root | Executables added to the Bash tool's `PATH` while the plugin is enabled                     |
+| `settings.json`   | Plugin root | Default settings applied when the plugin is enabled (`agent` and `subagentStatusLine` only) |
+
+Two shortcuts are worth remembering. A plugin that ships **exactly one skill** can put `SKILL.md` at the plugin root with no `skills/` directory and no `skills` manifest field — Claude Code loads it as a single-skill plugin and takes the invocation name from the frontmatter `name`. And a `CLAUDE.md` at the plugin root is **not** loaded as project context: plugins contribute context through skills, agents and hooks, so instructions you want in Claude's context go in a skill.
+
+### Custom paths and the three variables
+
+If the defaults do not suit you, the manifest's component-path fields take relative paths that must start with `./`. They do not all behave the same way:
+
+- **Replace the default**: `commands`, `agents`, `workflows`, `outputStyles`, `experimental.themes`, `experimental.monitors`. Declaring `commands` means the default `commands/` folder is no longer scanned. To keep both, list it: `"commands": ["./commands/", "./extras/"]`.
+- **Adds to the default**: `skills`. The default `skills/` directory is always scanned and your extra directories load alongside it.
+- **Own merge rules**: `hooks`, `mcpServers`, `lspServers`.
+
+Inside those components, three variables give you paths that survive installation, since Claude Code copies a plugin into a cache directory when a user installs it:
+
+| Variable                | Resolves to                                          |
+| ----------------------- | ---------------------------------------------------- |
+| `${CLAUDE_PLUGIN_ROOT}` | Absolute path to the plugin's installation directory |
+| `${CLAUDE_PLUGIN_DATA}` | A persistent directory that survives plugin updates  |
+| `${CLAUDE_PROJECT_DIR}` | The project root                                     |
+
+All three are exported as environment variables to hook processes and to MCP and LSP subprocesses. `${CLAUDE_PLUGIN_ROOT}` is the one you will reach for constantly: a hook that shells out to a bundled script must address it through that variable, never a relative path, because the plugin's location is not knowable at authoring time.
+
+Here is this lesson's example prompt — a request shaped so Claude has to reason about the layout rather than guess at it:
+
+```text
+I have a skill in .claude/skills/changelog/ and a PostToolUse hook wired in
+.claude/settings.json. Package both as a plugin named release-tools under
+./plugins/, and tell me which files moved where and why.
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · build the smallest possible plugin, then break it"
+  lessonId="en/l3-advanced/m12-plugins/plugin-anatomy"
+  repoTag="none"
+  steps={[
+    'Make a scratch folder outside any repository you care about, and change into it.',
+    'Create the plugin directory and its manifest directory: `mkdir -p hello-plugin/.claude-plugin hello-plugin/skills/hello`.',
+    'Write `hello-plugin/.claude-plugin/plugin.json` with the four fields from the Concept section (name, description, version, author).',
+    'Write `hello-plugin/skills/hello/SKILL.md` with a `description` frontmatter field, `disable-model-invocation: true`, and one line of instructions.',
+    'Run `claude plugin validate ./hello-plugin` and read the path it prints — that is how you confirm it found the manifest you meant.',
+    'Now build a deliberately wrong copy: `broken-plugin/` with the skill under `.claude-plugin/skills/hello/` instead of the plugin root, and `"keywords": "git"` (a string where an array belongs).',
+    'Run `claude plugin validate ./broken-plugin`. Note which of the two mistakes it catches and which it does not.',
+  ]}
+  expected="hello-plugin validates with `✔ Validation passed` and exit 0. broken-plugin fails with `keywords: Invalid input` and exit 1 — the wrong type is caught, but the misplaced skills/ directory is not mentioned at all."
+  checklist={[
+    'plugin.json sits at `.claude-plugin/plugin.json`, and nothing else does',
+    '`claude plugin validate ./hello-plugin` exits 0',
+    'The validator prints the absolute path of the manifest it read',
+    '`claude plugin validate ./broken-plugin` exits 1 and names the `keywords` field',
+    'You noticed that validate said nothing about the misplaced `skills/` directory',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/01-plugin-anatomy/01-validate-minimal.txt"
+    range="2-6"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/01-plugin-anatomy/02-validate-broken.txt"
+    range="2-10"
+  />
+</Lab>
+
+The second recording is the important one. `claude plugin validate` checks the **manifest**: it caught `keywords` being a string where an array belongs, and it exited 1. It said nothing at all about `skills/` sitting inside `.claude-plugin/`, because from the manifest's point of view nothing is wrong — the plugin simply has no skills. A plugin can validate cleanly and still ship none of the components you thought you wrote. The check for that is loading it and looking, which is lesson `03`.
+
+### Creating the directories, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+mkdir -p hello-plugin/.claude-plugin hello-plugin/skills/hello
+claude plugin validate ./hello-plugin
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+mkdir -p hello-plugin/.claude-plugin hello-plugin/skills/hello
+claude plugin validate ./hello-plugin
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+New-Item -ItemType Directory -Force hello-plugin/.claude-plugin, hello-plugin/skills/hello
+claude plugin validate ./hello-plugin
+```
+
+  </Fragment>
+</OSTabs>
+
+## Anti-patterns
+
+**Putting components inside `.claude-plugin/`.** The single most common plugin bug: the plugin loads, the manifest validates, and none of your skills, agents or hooks exist. _Fix:_ only `plugin.json` goes in `.claude-plugin/`; everything else sits at the plugin root.
+
+**Referring to bundled scripts by relative path.** Installing a plugin copies it into a cache directory, so `node ./hooks/format.mjs` in a `hooks.json` resolves against the user's project, not your plugin. _Fix:_ address bundled files as `${CLAUDE_PLUGIN_ROOT}/hooks/format.mjs`.
+
+**Computing the project root from the script's own location.** A hook copied out of `.claude/hooks/` often walks up two directories to find the repository. Inside a plugin that walk lands in the plugin's cache directory, not the user's project. _Fix:_ take the project root from the hook payload's `cwd`, which is exactly what lesson `03` does.
+
+**Reaching outside the plugin directory.** `../shared-utils` does not survive installation, because those files are never copied. _Fix:_ keep everything the plugin needs inside it, or share files within a marketplace with symlinks.
+
+**Shipping a `CLAUDE.md` and expecting it to load.** A plugin-root `CLAUDE.md` is not loaded as project context. _Fix:_ put instructions in a skill.
+
+**Treating `claude plugin validate` as proof the plugin works.** It validates manifests. It does not confirm your hook fires, your agent is discoverable, or your skill has a usable description. _Fix:_ load the plugin with `--plugin-dir` and exercise each component.
+
+<Callout variant="changed">
+  `commands/` — skills as flat Markdown files — still loads, but the plugins reference now says to
+  use `skills/` for new plugins. The standalone equivalent, `.claude/commands/*.md`, merged into
+  skills in 2.1.3; the plugin directory kept its name. Write `skills/<name>/SKILL.md`, and keep
+  `commands/` only for a plugin that already ships it. Verified against `plugins-reference.md` for
+  Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/plugin-anatomy"
+  questionId="q1"
+  lang="en"
+  prompt="Your plugin is named `release-tools` and contains `skills/changelog/SKILL.md`. What invokes the skill?"
+  options={[
+    {
+      text: '/changelog',
+      explanation:
+        'That is the standalone `.claude/skills/` form. Plugin skills are always namespaced.',
+    },
+    {
+      text: '/release-tools:changelog',
+      correct: true,
+      explanation:
+        "Right — the namespace comes from the manifest's `name`, and the skill name from the folder.",
+    },
+    {
+      text: '/skills:changelog',
+      explanation: 'The prefix is the plugin name, never the directory the skill sits in.',
+    },
+    {
+      text: '/release-tools/changelog',
+      explanation: 'The separator is a colon, not a slash.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/plugin-anatomy"
+  questionId="q2"
+  lang="en"
+  prompt="Which file belongs inside the plugin's `.claude-plugin/` directory?"
+  options={[
+    {
+      text: 'Everything the plugin ships — it is the plugin metadata directory.',
+      explanation:
+        'The opposite: components there are silently not loaded, and the manifest still validates.',
+    },
+    {
+      text: 'Only `plugin.json`.',
+      correct: true,
+      explanation:
+        'Every other directory — skills/, agents/, hooks/, commands/ — sits at the plugin root.',
+    },
+    {
+      text: '`plugin.json` and `hooks/hooks.json`.',
+      explanation: 'Hooks live at `<plugin root>/hooks/hooks.json`.',
+    },
+    {
+      text: 'Nothing — `.claude-plugin/` is created by the installer.',
+      explanation: 'You create it; it is where the manifest goes when you write one.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/plugin-anatomy"
+  questionId="q3"
+  lang="en"
+  prompt="A hook in your plugin runs a bundled Node script. Which command string survives a real install?"
+  options={[
+    {
+      text: 'node ./hooks/format.mjs',
+      explanation:
+        'Installing copies the plugin into a cache directory, so a relative path resolves against the user’s project.',
+    },
+    {
+      text: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/format.mjs"',
+      correct: true,
+      explanation:
+        "That variable resolves to the plugin's installation directory wherever it landed.",
+    },
+    {
+      text: 'node "${CLAUDE_PROJECT_DIR}/hooks/format.mjs"',
+      explanation: 'That points at the user’s project root, not at your plugin.',
+    },
+    {
+      text: 'node ~/.claude/plugins/my-plugin/hooks/format.mjs',
+      explanation: 'A hard-coded cache path is not a contract, and differs per platform and scope.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/plugin-anatomy"
+  questionId="q4"
+  lang="en"
+  prompt="`claude plugin validate ./my-plugin` prints `✔ Validation passed`. What have you proved?"
+  options={[
+    {
+      text: 'The plugin loads and every component works.',
+      explanation:
+        'Validation reads the manifest. It never loads the plugin or exercises a component.',
+    },
+    {
+      text: 'The manifest parses and its fields have the expected shape.',
+      correct: true,
+      explanation:
+        'Exactly — and a plugin whose components sit in the wrong directory still passes.',
+    },
+    {
+      text: 'Every skill has a usable description.',
+      explanation: 'Nothing in the manifest describes your skills’ quality.',
+    },
+    {
+      text: 'The plugin is ready to publish to the official marketplace.',
+      explanation:
+        'Validation is one of the checks the submission pipeline runs, not the whole review.',
+    },
+  ]}
+/>
+
+**Next:** `02-marketplaces` covers the other half — how a plugin reaches somebody else's machine through `/plugin`, and what the plugin manager shows you before you install.

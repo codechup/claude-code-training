@@ -1,0 +1,38 @@
+---
+title: 'Ekibiniz için dahili bir marketplace'
+description: "marketplace.json yazın, bir source tipi seçin, private bir depoda barındırın ve depoya güvenen herkes için Claude Code'un onu otomatik eklemesini sağlayın — pratikte canınızı yakan authentication ve rezerve ad kurallarıyla birlikte."
+level: 3
+module: 'm12-plugins'
+order: 5
+duration_min: 15
+difficulty: advanced
+tags: ['plugins', 'marketplace', 'team', 'distribution']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Create and distribute a plugin marketplace'
+    url: 'https://code.claude.com/docs/en/plugin-marketplaces.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Discover and install prebuilt plugins through marketplaces'
+    url: 'https://code.claude.com/docs/en/discover-plugins.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Constrain plugin dependency versions'
+    url: 'https://code.claude.com/docs/en/plugin-dependencies.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Plugins reference'
+    url: 'https://code.claude.com/docs/en/plugins-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m12-plugins/05-team-marketplace.mdx` dosyasıdır.
+
+## Özet
+
+Dahili bir marketplace, kökünde `.claude-plugin/marketplace.json` bulunan bir git deposudur; zorunlu alanlar `name`, `owner` ve `plugins`'tir, her plugin girdisi ise `name` ve `source` ister. Bir kullanıcı her ad için yalnızca **tek** marketplace kaydedebildiğinden bütün plugin'leri tek katalogda toplayın, ve Anthropic'e rezerve edilmiş adlardan (`claude-plugins-official`, `claude-community`, `first-party-plugins` ve benzerleri) kaçının — bu denetim her yüklemede yeniden çalışır. Kurum içi kullanımda en sağlam `source` seçimi, plugin klasörlerini marketplace deposuna commit'leyip `./plugins/<ad>` göreli yoluyla göstermektir; kuruluş ayarları üzerinden dağıtım zaten bunu şart koşar. Sürümleme üç seçenek sunar: `plugin.json`'da açık `version` (yalnızca siz artırınca güncelleme gelir), hiç `version` yazmamak (commit SHA'sı sürüm olur — aktif geliştirilen ekip plugin'leri için önerilen yol) ve archive source için digest. Ekibin katalogu elle eklemesini önlemek için depo `.claude/settings.json` dosyasına `extraKnownMarketplaces` ve `enabledPlugins` yazın; klasöre güvenildiği anda Claude Code marketplace'i ekler — ancak v2.1.195'ten beri harici kaynaklı bir plugin, üye onu kurana kadar yüklenmez. Son olarak private depolarda arka plan güncellemesi git credential helper'larını devre dışı bıraktığı için HTTPS ile kimlik doğrulayamaz; çözüm, yalnızca ilgili depoya kapsamlandırılmış bir git URL rewrite'ı ya da `CLAUDE_CODE_PLUGIN_KEEP_MARKETPLACE_ON_FAILURE=1` ayarıdır.

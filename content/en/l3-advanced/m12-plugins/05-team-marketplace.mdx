@@ -1,0 +1,382 @@
+---
+title: 'An internal marketplace for your team'
+description: 'Write marketplace.json, pick a source type, host it in a private repository, and have Claude Code add it for everyone who trusts the repo — with the authentication and reserved-name rules that bite in practice.'
+level: 3
+module: 'm12-plugins'
+order: 5
+duration_min: 15
+difficulty: advanced
+tags: ['plugins', 'marketplace', 'team', 'distribution']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Create and distribute a plugin marketplace'
+    url: 'https://code.claude.com/docs/en/plugin-marketplaces.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Discover and install prebuilt plugins through marketplaces'
+    url: 'https://code.claude.com/docs/en/discover-plugins.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Constrain plugin dependency versions'
+    url: 'https://code.claude.com/docs/en/plugin-dependencies.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Plugins reference'
+    url: 'https://code.claude.com/docs/en/plugins-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Write a `.claude-plugin/marketplace.json` with the required fields and a plugin entry per plugin.
+- Choose a `source` type, and know why a relative path is the right default for an internal catalog.
+- Configure a repository so Claude Code adds your marketplace for every teammate who trusts the folder, with `extraKnownMarketplaces` and `enabledPlugins`.
+- Version an internal plugin deliberately, and say what happens when you omit `version`.
+- Anticipate the three things that go wrong in practice: reserved names, private-repository authentication in background updates, and renaming a plugin.
+
+**Prerequisites.** Lessons `03-build-a-plugin` and `04-validate-and-eval`. A plugin directory you are willing to distribute, and a git host your team already uses.
+
+<WhenNotToUse>
+  A marketplace is a distribution channel with maintenance attached: a repository to keep, versions
+  to bump, and an authentication story for everyone who consumes it. It is the wrong shape for a
+  plugin only one team uses in one repository — check that plugin into the repository's own
+  `.claude/skills/` as a skills-directory plugin, and it loads for every collaborator with no
+  marketplace and no install step. It is also the wrong shape if you have exactly one plugin and no
+  plans for a second: a teammate can point `--plugin-dir` at a checkout, or you can distribute
+  through your organisation's claude.ai settings instead. Reach for a marketplace when several
+  plugins need one front door, or when installs must be versioned.
+</WhenNotToUse>
+
+## Concept
+
+### `marketplace.json`
+
+A marketplace is a git repository (or a hosted file) with `.claude-plugin/marketplace.json` at its root. Three fields are required: `name`, `owner` and `plugins`.
+
+<CodeBlock title="labtrack-marketplace/.claude-plugin/marketplace.json">
+
+```json
+{
+  "name": "labtrack-internal",
+  "owner": {
+    "name": "CodeChup Claude Code Academy"
+  },
+  "description": "Internal marketplace for the labtrack project's own Claude Code plugins.",
+  "plugins": [
+    {
+      "name": "labtrack-tools",
+      "source": "./plugins/labtrack-tools",
+      "description": "The commit-msg skill and the format-on-save hook, packaged for the labtrack project.",
+      "version": "1.0.0",
+      "category": "workflow",
+      "tags": ["git", "formatting"]
+    }
+  ]
+}
+```
+
+</CodeBlock>
+
+`name` is public-facing and kebab-case: users type it after the `@` in `/plugin install labtrack-tools@labtrack-internal`. Each user can register **one marketplace per name** — adding a second with the same name replaces the first — so publish everything under one `marketplace.json` rather than several catalogs sharing a name. `owner` needs a `name`; `email` and `url` are optional.
+
+Each entry in `plugins` needs `name` and `source`. Beyond those, an entry may carry any field from the plugin manifest schema — `description`, `version`, `author`, `commands`, `hooks` and so on — plus the marketplace-specific `category`, `tags`, `strict`, `relevance`, `headers` and `headersHelper`. Useful optional fields for an internal catalog:
+
+| Field              | Why you would set it                                                                                          |
+| ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `displayName`      | A human-readable name in the picker; may contain spaces. Never used for lookup.                               |
+| `version`          | Pins the plugin. If set here **and** in `plugin.json`, `plugin.json` wins.                                    |
+| `defaultEnabled`   | `false` ships the plugin installed but off until the user opts in. Overrides the same field in `plugin.json`. |
+| `category`, `tags` | Organisation and searchability in the Discover tab.                                                           |
+| `relevance`        | Suggestion signals — only effective for marketplaces an administrator allowlists in managed settings.         |
+
+An important naming rule: a set of marketplace names is **reserved for Anthropic** — among them `claude-plugins-official`, `claude-plugins-community`, `claude-community`, `claude-code-plugins`, `anthropic-marketplace` and `first-party-plugins` — and names that impersonate official sources, such as `official-claude-plugins`, are blocked too. Reserved names are re-checked every time a marketplace loads, not only when it is added, so a catalog registered under a name that later became reserved stops loading and reports that it is registered from an untrusted source. Pick a name that is obviously yours.
+
+### Sources, and why relative paths win internally
+
+`source` tells Claude Code where to fetch the plugin from. It can be a relative path, a GitHub repo, a git repository, a git subdirectory, an npm package, a zip archive, or a command. For an internal catalog, the simplest and most robust choice is to **commit the plugin folders into the marketplace repository** and reference them relatively:
+
+```json
+{
+  "name": "deploy-tools",
+  "source": "./plugins/deploy-tools"
+}
+```
+
+That keeps private plugins private without a second access-control story, and it is what organisation distribution requires: if you publish through **Organization settings > Plugins** on a Team or Enterprise plan, each plugin source must be `github`, `url`, `git-subdir`, or a relative path starting with `./`, and any source that sync cannot authenticate to must be public. Organisation sync packages each relative-path plugin during distribution, so users never need access to a separate repository.
+
+One constraint follows from how installs work: installing **copies the plugin directory to a cache location**, so a plugin cannot reference files outside itself with `../shared-utils` — those files are not copied. Share files across plugins in a marketplace with symlinks instead.
+
+### Versioning an internal plugin
+
+Claude Code uses the plugin's version as the cache key that decides whether an update exists. It resolves the version from the first of these that is set: `plugin.json`'s `version`; the marketplace entry's `version`; the git commit SHA of the source; the SHA-256 digest for archive sources; otherwise `unknown`.
+
+That gives internal teams a real choice:
+
+| Approach               | How                                                  | Update behaviour                                                  | Best for                                          |
+| ---------------------- | ---------------------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------- |
+| **Explicit version**   | Set `"version"` in `plugin.json`                     | Users update only when you bump it                                | Published plugins with stable release cycles      |
+| **Commit-SHA version** | Omit `version` from both `plugin.json` and the entry | Users update whenever the source's resolved commit changes        | Internal or team plugins under active development |
+| **Digest version**     | Archive source, no `version` anywhere                | Updates when the `sha256` pin, or the hosted file's bytes, change | Plugins published as zip files                    |
+
+For a plugin your own team is iterating on daily, omitting `version` is often right: every merge is the new version. Once outsiders depend on it, set one and follow semver.
+
+`claude plugin tag [path]` creates a `{name}--v{version}` git tag for a release and validates that `plugin.json` and any enclosing marketplace entry agree — a cheap way to catch the two drifting apart.
+
+### Making it automatic for the team
+
+Adding a marketplace by hand once per engineer does not scale. Put it in the repository instead: once a team member **trusts the project folder**, Claude Code adds these marketplaces without a further prompt.
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "labtrack-internal": {
+      "source": {
+        "source": "github",
+        "repo": "your-org/claude-plugins"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "labtrack-tools@labtrack-internal": true
+  }
+}
+```
+
+</CodeBlock>
+
+One caveat that surprises people: since v2.1.195, adding the marketplace does **not** install a plugin that comes from an external source. A plugin that only the project's `.claude/settings.json` enables, and whose source is a GitHub repository or npm package, does not load until the team member installs it — Claude Code reports it as not installed and prints the `claude plugin install` command to run.
+
+Administrators can set `"autoUpdate": true` on an `extraKnownMarketplaces` entry to enable background updates for the whole organisation without each user toggling it. By default, third-party and local development marketplaces have auto-update **off**, while `claude-plugins-official` and most other official Anthropic marketplaces have it on.
+
+### Private repositories
+
+Commands you run — `marketplace add`, `install`, `update`, `marketplace update` — use your existing git credential helpers, so `gh auth login`, macOS Keychain or `git-credential-store` all work as they do in your terminal. SSH works provided the host is already in `known_hosts` and the key is loaded in `ssh-agent`, because Claude Code suppresses interactive SSH prompts. GitHub `owner/repo` shorthand clones over SSH by default; set `CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1` for HTTPS.
+
+**Background auto-updates are the trap.** By default the background refresh disables git credential helpers for its `git pull`, so it cannot authenticate to a private repository over HTTPS even when a helper is configured; it falls back to re-cloning the marketplace, which does use your stored credentials but can time out on a large repository. Two settings make this predictable:
+
+- `CLAUDE_CODE_PLUGIN_KEEP_MARKETPLACE_ON_FAILURE=1` keeps the existing clone when the background pull fails instead of deleting and re-cloning.
+- A **scoped** global git URL rewrite lets the background pull authenticate directly, because the token is embedded in the remote URL rather than supplied by a helper.
+
+<CodeBlock title="scope the rewrite to the marketplace repository, never to the bare host">
+
+```bash
+git config --global url."https://x-access-token:YOUR_TOKEN@github.com/acme-corp/plugins".insteadOf "https://github.com/acme-corp/plugins"
+```
+
+</CodeBlock>
+
+Scope it to the repository or organisation path. A rewrite whose base is only the host applies to every fetch and push to that host on the machine, overriding your normal credentials — including pushes to your own repositories. The token is stored in plaintext in your gitconfig, so use one with read-only access. GitLab expects `oauth2:` as the username and Bitbucket `x-token-auth:`. Note that setting `GITHUB_TOKEN` in your environment does **not** by itself enable background authentication: tokens take effect only through a configured credential helper.
+
+This lesson's example prompt is the review you should run before anyone else adds your catalog:
+
+```text
+Read .claude-plugin/marketplace.json and every plugin directory it references.
+For each entry, tell me: the resolved source, whether the version is pinned or
+follows the commit SHA, and anything the plugin runs at load time. Do not
+install anything.
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · build an internal marketplace around the plugin from lesson 03"
+  lessonId="en/l3-advanced/m12-plugins/team-marketplace"
+  repoTag="none"
+  steps={[
+    'Create a marketplace directory next to your lab clone: `labtrack-marketplace/` with `.claude-plugin/` and `plugins/` inside it.',
+    'Copy the `labtrack-tools` plugin from lesson `03` to `labtrack-marketplace/plugins/labtrack-tools/`.',
+    'Write `labtrack-marketplace/.claude-plugin/marketplace.json` with `name`, `owner`, `description` and one plugin entry whose `source` is the relative path `./plugins/labtrack-tools`.',
+    'Pick a name that is obviously yours — check it against the reserved list before you commit to it.',
+    'Validate the catalog: `claude plugin validate .` from inside the marketplace directory. Note that the output says "marketplace manifest", not "plugin manifest".',
+    'Add it and install from it, as in lesson `02`: `claude plugin marketplace add ../labtrack-marketplace`, then `claude plugin install labtrack-tools@labtrack-internal --scope local`.',
+    'Write the `extraKnownMarketplaces` and `enabledPlugins` block you would commit to a real team repository’s `.claude/settings.json`. Do not commit it here — this marketplace is local-only.',
+    'Clean up: `claude plugin uninstall labtrack-tools@labtrack-internal --scope local`, then `claude plugin marketplace remove labtrack-internal`, then confirm with `claude plugin marketplace list`.',
+  ]}
+  expected="`claude plugin validate .` reports `Validating marketplace manifest: …/.claude-plugin/marketplace.json` followed by `✔ Validation passed`, exit 0. After cleanup, `claude plugin marketplace list` shows only `claude-plugins-official` again."
+  checklist={[
+    'The marketplace manifest is at `.claude-plugin/marketplace.json`, and the plugin at `plugins/<name>/`',
+    'The plugin entry’s `source` is a relative path starting with `./`',
+    'The name you chose is not on the reserved list',
+    '`claude plugin validate .` identified the file as a marketplace manifest, not a plugin manifest',
+    'You drafted the `extraKnownMarketplaces` block you would commit to a real team repo',
+    'Both the plugin and the marketplace are removed again at the end',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/05-team-marketplace/01-validate-marketplace.txt"
+    range="2-6"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/05-team-marketplace/02-cleanup.txt"
+    range="2-13"
+  />
+</Lab>
+
+Nothing here was published anywhere. The catalog is a local directory, added by path, and removed again at the end — which is also the honest way to rehearse a marketplace before you put it in front of a team.
+
+The cleanup transcript makes one thing explicit that is easy to forget: **removing a marketplace uninstalls the plugins you installed from it**, so the uninstall step above is belt-and-braces rather than strictly necessary. Marketplace registration is stored once per user, in `~/.claude/plugins/known_marketplaces.json`, not per project — so if you are working across git worktrees, they all share the same marketplace state, and a local `directory` source with a relative path resolves against the repository's main checkout.
+
+### Renaming or removing a plugin later
+
+When you rename an entry, existing users' `enabledPlugins` keys still point at the old name. The `renames` field on the marketplace maps a former plugin `name` to its current one, or to `null` if the plugin was removed, so existing users migrate automatically (v2.1.193 or later):
+
+<CodeBlock title=".claude-plugin/marketplace.json">
+
+```json
+{
+  "name": "labtrack-internal",
+  "owner": { "name": "Platform Team" },
+  "renames": {
+    "labtrack-helpers": "labtrack-tools",
+    "labtrack-legacy": null
+  },
+  "plugins": []
+}
+```
+
+</CodeBlock>
+
+## Anti-patterns
+
+**Picking a name that sounds official.** `anthropic-plugins-v2`, `official-claude-plugins` and the reserved list are blocked, and the check runs on every load — so a name that becomes reserved later breaks your catalog for everyone. _Fix:_ prefix with your organisation.
+
+**Publishing several catalogs under one name.** Each user registers one marketplace per name; adding a second replaces the first, silently taking the previous plugins with it. _Fix:_ one `marketplace.json`, many entries.
+
+**Referencing plugins from a separate private repository.** Every consumer now needs credentials for a second repository, and organisation sync will reject a source it cannot authenticate to. _Fix:_ commit the plugin folders into the marketplace repository and use `./` relative paths.
+
+**A host-wide git URL rewrite.** `insteadOf` scoped to `https://github.com` applies to every fetch and push on the machine and overrides your normal credentials. _Fix:_ scope the rewrite to the marketplace repository or organisation path, with a read-only token.
+
+**Expecting `enabledPlugins` alone to deliver a plugin.** Since v2.1.195 a project-enabled plugin from an external source does not load until the member installs it. _Fix:_ tell the team the `claude plugin install` line, or use relative-path sources inside the marketplace repository.
+
+**Bumping nothing and wondering why nobody got the fix.** With an explicit `version` in `plugin.json`, pushing commits changes nothing — `/plugin update` reports "already at the latest version". _Fix:_ bump the field, or omit it and let the commit SHA be the version.
+
+**Shipping a top-level `bin/` through organisation settings.** claude.ai rejects a plugin with a top-level `bin/` directory, whether it arrives by marketplace sync or direct upload. _Fix:_ put executables in `scripts/` and reference them as `${CLAUDE_PLUGIN_ROOT}/scripts/<name>`.
+
+<Callout variant="changed">
+  Two behaviours changed recently enough to catch out anyone following an older guide: since
+  v2.1.195, adding a team marketplace no longer installs plugins that come from an external source,
+  and `renames` — the field that migrates users across a plugin rename — requires v2.1.193 or later.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/team-marketplace"
+  questionId="q1"
+  lang="en"
+  prompt="Which three fields does a `marketplace.json` require?"
+  options={[
+    {
+      text: '`name`, `version`, `plugins`',
+      explanation: '`version` is optional — it describes the manifest, not a requirement.',
+    },
+    {
+      text: '`name`, `owner`, `plugins`',
+      correct: true,
+      explanation: 'And each plugin entry in turn requires `name` and `source`.',
+    },
+    {
+      text: '`name`, `description`, `source`',
+      explanation: '`source` belongs to a plugin entry, not to the marketplace itself.',
+    },
+    {
+      text: '`owner`, `plugins`, `extraKnownMarketplaces`',
+      explanation: '`extraKnownMarketplaces` is a settings key on the consuming side.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/team-marketplace"
+  questionId="q2"
+  lang="en"
+  prompt="Your internal plugin is under active development and you want every merge to reach the team. What do you do with `version`?"
+  options={[
+    {
+      text: 'Set it in `plugin.json` and bump it on every merge.',
+      explanation:
+        'An explicit version pins the plugin, so a merge where you forget to bump reaches nobody — the opposite of what the question asks for.',
+    },
+    {
+      text: 'Omit it from both `plugin.json` and the marketplace entry, so the git commit SHA becomes the version.',
+      correct: true,
+      explanation:
+        'The docs name this the commit-SHA approach and recommend it for internal plugins under active development.',
+    },
+    {
+      text: 'Set it in the marketplace entry only, so `plugin.json` stays clean.',
+      explanation:
+        'That still pins the plugin — and if `plugin.json` also sets one, `plugin.json` wins.',
+    },
+    {
+      text: 'Set it to `"latest"`.',
+      explanation: 'The field is a version string used as a cache key, not a tag to resolve.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/team-marketplace"
+  questionId="q3"
+  lang="en"
+  prompt="Your private marketplace's background auto-update keeps failing, though `claude plugin marketplace update` works fine by hand. Why?"
+  options={[
+    {
+      text: 'Private repositories cannot be used as marketplaces.',
+      explanation: 'They can; the commands you run authenticate normally.',
+    },
+    {
+      text: 'The background refresh disables git credential helpers for its pull, so HTTPS auth fails and it falls back to re-cloning.',
+      correct: true,
+      explanation:
+        'SSH remotes are unaffected. A scoped URL rewrite, or `CLAUDE_CODE_PLUGIN_KEEP_MARKETPLACE_ON_FAILURE=1`, makes it predictable.',
+    },
+    {
+      text: '`GITHUB_TOKEN` is not exported in your shell.',
+      explanation:
+        'Setting a provider token does not by itself enable background auth — it works only through a configured helper.',
+    },
+    {
+      text: 'Auto-update is on by default for third-party marketplaces and rate-limits.',
+      explanation: 'Auto-update is off by default for third-party and local marketplaces.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/team-marketplace"
+  questionId="q4"
+  lang="en"
+  prompt="You rename a plugin entry from `labtrack-helpers` to `labtrack-tools`. What keeps existing users working?"
+  options={[
+    {
+      text: 'Nothing is needed — Claude Code matches on `source`, not `name`.',
+      explanation: '`enabledPlugins` is keyed by the marketplace entry name.',
+    },
+    {
+      text: 'A `renames` map on the marketplace, from the old name to the new one.',
+      correct: true,
+      explanation: 'Map to `null` instead when a plugin is removed. Requires v2.1.193 or later.',
+    },
+    {
+      text: 'Keeping both entries in `plugins` forever.',
+      explanation:
+        'Two entries are two plugins, so users stay on the old one and see a duplicate in Discover — nothing migrates.',
+    },
+    {
+      text: 'A `displayName` set to the old name.',
+      explanation: '`displayName` is cosmetic and never used for lookup.',
+    },
+  ]}
+/>
+
+**Next:** `m13-headless-ci` takes the plugin you just distributed and puts it to work in a pipeline — `claude -p`, GitHub Actions, and the Agent SDK.

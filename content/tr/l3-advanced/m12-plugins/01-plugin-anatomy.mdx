@@ -1,0 +1,34 @@
+---
+title: 'Plugin anatomisi: manifest ve dizinler'
+description: "Bir plugin, isteğe bağlı bir .claude-plugin/plugin.json manifest dosyası ve kökünde bileşen klasörleri bulunan bir dizindir. Yerleşimi, manifest alanlarını, yol kurallarını ve plugin'inizin yarısını sessizce düşüren tek hatayı öğrenin."
+level: 3
+module: 'm12-plugins'
+order: 1
+duration_min: 15
+difficulty: core
+tags: ['plugins', 'plugin.json', 'packaging']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Create plugins'
+    url: 'https://code.claude.com/docs/en/plugins.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Plugins reference'
+    url: 'https://code.claude.com/docs/en/plugins-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Discover and install prebuilt plugins through marketplaces'
+    url: 'https://code.claude.com/docs/en/discover-plugins.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m12-plugins/01-plugin-anatomy.mdx` dosyasıdır.
+
+## Özet
+
+Bir plugin (Claude Code'u skill, agent ve hook'larla genişleten paylaşılabilir paket), skill'leri, agent'ları, hook'ları veya MCP server'ları bir arada tutan, kendi kendine yeten bir dizindir. `.claude-plugin/plugin.json` manifest dosyası isteğe bağlıdır; yazdığınızda yalnızca `name` alanı zorunludur ve bu ad aynı zamanda skill'lerin namespace'i olur — `hello/` klasörü `/my-first-plugin:hello` hâline gelir. En sık yapılan hata yerleşimle ilgilidir: `.claude-plugin/` dizinine yalnızca `plugin.json` girer; `skills/`, `agents/`, `hooks/`, `.mcp.json`, `.lsp.json`, `monitors/`, `bin/` ve `settings.json` plugin kökünde durur. Bileşenler yanlış yere konduğunda manifest yine de geçerli sayılır, plugin yüklenir ve hiçbir bileşeni görünmez. Ders ayrıca manifest alanlarını, özel yol kurallarını (`skills` varsayılana eklenir, `commands` ve `agents` varsayılanın yerine geçer) ve kurulumdan sonra da çalışan `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}`, `${CLAUDE_PROJECT_DIR}` değişkenlerini anlatır; laboratuvarda en küçük plugin'i kurup `claude plugin validate` ile hem geçen hem başarısız olan bir çalıştırma görürsünüz.

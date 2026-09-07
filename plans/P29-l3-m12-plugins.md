@@ -2,7 +2,7 @@
 id: P29
 title: "L3 Advanced module: Plugins (m12-plugins)"
 milestone: M2
-status: in_progress
+status: review
 owner: opus-p29-2026-09-07
 branch: plan/29-l3-m12-plugins
 model_hint: opus
@@ -15,8 +15,13 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T10:55:13Z
-open_questions: []
+updated_at: 2026-09-07T19:02:29Z
+open_questions:
+  - 'content/tr/playbook/glossary.mdx has no `plugin` or `marketplace` entry, so the TR stubs keep both terms in plain text with an inline Turkish gloss rather than linking a dead anchor. The TR translation plan (P25/P26/P40/P41) should add both entries and propose their EN twins.'
+  - '`research/feature-inventory.md` line 39 attributes the `claude plugin eval` flag surface to `plugins-reference`. That page has no eval section (verified 2026-09-07); the surface comes from `claude plugin eval --help`. P03 owns the inventory, so this plan did not edit it.'
+  - '`claude plugin eval` is early access and is not enabled on the authoring machine, so no eval suite was run. Lesson 04 says so and sources the eval surface to the captured `--help` only. A future plan with early access should add a real eval-run transcript.'
+  - 'The lab repo has no `lesson/m12-01-*`, `m12-04-*` or `m12-05-*` tags, so those three lessons ship `repo_tag: none` with self-contained scratch-folder labs. P22 or its successor may want to add them.'
+  - 'The `lesson/m12-03-solution` plugin bundles a skill and a hook but no agent, so lesson 03 teaches skill+hook packaging rather than the skill+agent+hook this plan Goal describes. Following the tag, not the plan.'
 ---
 
 ## Goal
@@ -98,5 +103,18 @@ A reviewer opens `npm run dev`, visits each of the 5 lessons at `/en/l3-advanced
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+**Written.** 5 EN lessons under `content/en/l3-advanced/m12-plugins/` plus 5 TR `draft: true` stubs, and 14 real transcripts under `content/_shared/transcripts/m12-plugins/`. No changes to `content/_shared/sources.json`: all seven plugin doc pages plus `repo-awesome-claude-code` were already registered against `m12-plugins` (P23), and every lesson's `sources[]` reuses those exact URLs.
+
+**Slug drift (followed CURRICULUM, not this plan).** `docs/CURRICULUM.md` §2 is authoritative per the brief, so the delivered slugs are `01-plugin-anatomy`, `02-marketplaces`, `03-build-a-plugin`, `04-validate-and-eval`, `05-team-marketplace` — not this plan's Deliverables list (`02-marketplaces-and-plugin-command`, `03-building-a-plugin`, `04-plugin-validate-and-eval`).
+
+**Lab tags.** Only `lesson/m12-02-start|solution` and `lesson/m12-03-start|solution` exist. `m12-02` is process-only (start == solution). `m12-03`'s solution ships `plugins/labtrack-tools/` with `plugin.json`, one skill (`commit-msg`) and one hook (`format-on-save.mjs` + `hooks.json`) — **no agent**, so lesson 03 teaches a skill+hook plugin, not the skill+agent+hook this plan's Goal describes. Lessons 01, 04 and 05 use `repo_tag: 'none'` with self-contained scratch-folder labs.
+
+**Transcripts (14, all real).** Captured against a private clone of the lab repo: the shared `../claude-code-lab` checkout was being moved between tags by sibling sessions mid-run, so this session cloned its own copy rather than fight over it. The home directory and clone path are redacted in every file; `node scripts/check-public-hygiene.mjs` is clean. Lab 03's tree was verified byte-identical to `lesson/m12-03-solution` with `git diff --cached --stat`. All machine state created for the captures (one local marketplace registration and one `--scope local` install) was removed again; that cleanup is itself transcript `05-team-marketplace/02-cleanup.txt`.
+
+**`claude plugin eval` was NOT run.** It is early access and prints `` `plugin eval` is currently in early access `` on this machine. Lesson 04 shows that capture plus the full `--help` output, and states plainly that the eval surface is read from `--help` because no public docs page exists.
+
+**Review counts (D071).** fact-checker: 0 WRONG, 0 contradicted claims across all 5 lessons; 6 items flagged UNVERIFIABLE (validate exit codes, the `--json` envelope, the `--json` v2.1.259 gate, `plugin tag --force`/`--message`, the single-skill-at-root rule, the per-finding JSON shape). Five of the six were re-verified by hand against the raw `plugins-reference.md` fetched this session — they are verbatim in its "CLI commands reference" section (lines 1215, 1230, 1233–1239, 1259–1266) and its path-behaviour section (line 670); the agent's WebFetch summariser did not surface that section. Those claims were kept. The sixth (the `path`/`message`/`code` shape of an individual finding) is genuinely undocumented, and lesson 04 now attributes it to the transcript rather than to a doc. reviewer: 0 blockers, 3 major + 6 minor; 8 fixed (wrong module reference `m03-context` → `m03-memory`; a self-contradicting objective in lesson 01; lesson 02's lab now states its forward dependency on the lesson-03 plugin explicitly, with `hello-plugin` as the in-order substitute; an unevidenced checklist item reworded; both `Changed` callouts now cite 2.1.3 for the commands→skills merge; `awesome-claude-code` now cited in lesson 02's body; two conceding quiz distractors reworded; two dead TR glossary anchors dropped) and 1 routed to `open_questions` (the missing TR glossary entries).
+
+**Verification.** `npm run gate` OK (168 files) · `npm run typecheck` 0 errors · `npm run lint` clean · `npm test` pass · `npm run build` ends `check-no-inline-script (dist): OK (118 files scanned)` with 5 lesson pages plus the index under `dist/en/l3-advanced/m12-plugins/` and only the index under `dist/tr/...` (TR lessons are drafts) · `check-raw-colors` OK · `check-public-hygiene` OK · `node tools/plan/cli.ts check` OK · Playwright on port 4429 via a temporary `playwright.p29.config.ts` and `e2e/p29-m12.spec.ts` (both deleted afterwards): 28/28 passed at 390 px and 1280 px with 0 serious/critical axe violations. Port 4429 was initially occupied by a stray `python -m http.server 4429` left behind by another process; it was stopped so the assigned port could be used.
+
 

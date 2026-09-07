@@ -1,0 +1,339 @@
+---
+title: 'Marketplaces and the /plugin command'
+description: 'Add a marketplace, browse the Discover tab, install at the right scope, and read what a plugin costs before you take it. Plus dependencies, CLI hints and org relevance suggestions.'
+level: 3
+module: 'm12-plugins'
+order: 2
+duration_min: 15
+difficulty: core
+tags: ['plugins', 'marketplace', 'install']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Discover and install prebuilt plugins through marketplaces'
+    url: 'https://code.claude.com/docs/en/discover-plugins.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Create and distribute a plugin marketplace'
+    url: 'https://code.claude.com/docs/en/plugin-marketplaces.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Constrain plugin dependency versions'
+    url: 'https://code.claude.com/docs/en/plugin-dependencies.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Recommend your plugin from your CLI'
+    url: 'https://code.claude.com/docs/en/plugin-hints.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Recommend plugins for your org'
+    url: 'https://code.claude.com/docs/en/plugin-relevance.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'awesome-claude-code'
+    url: 'https://github.com/hesreallyhim/awesome-claude-code'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m12-02-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Explain the two steps of using a marketplace — add the catalog, then install individual plugins — and why adding one installs nothing.
+- Add a marketplace from a GitHub repo, a git URL, a local path or a remote URL, and pick the right form for each host.
+- Install a plugin at user, project or local scope, and say which settings file each writes to.
+- Read a plugin's context cost and component inventory before installing it, with `/plugin` or `claude plugin details`.
+- Recognise where plugin suggestions come from: declared dependencies, a CLI's `<claude-code-hint />` marker, and a marketplace `relevance` block.
+
+**Prerequisites.** Lesson `01-plugin-anatomy`, and a clone of the lab repository. Claude Code 2.1.263 or later.
+
+<WhenNotToUse>
+  Do not add a marketplace you have not read. Plugins and marketplaces are highly trusted components
+  that execute arbitrary code on your machine with your user privileges, and Anthropic does not
+  control what MCP servers, files or other software a third-party plugin contains. Do not install a
+  plugin to solve a problem one project has — a project-local skill costs nothing to create and
+  nothing to remove. And do not reach for `/plugin` in an environment where it is not available:
+  cloud sessions declare plugins under `enabledPlugins` in `.claude/settings.json` instead, and the
+  Claude desktop app has its own plugin browser.
+</WhenNotToUse>
+
+## Concept
+
+### Two steps, not one
+
+A marketplace is a catalog someone else maintains. Using one is deliberately two steps:
+
+1. **Add the marketplace.** This registers the catalog so you can browse it. **No plugins are installed yet.**
+2. **Install individual plugins.** You choose what you want from the catalog.
+
+The separation matters because the two actions carry different trust. Adding a catalog says "I want to see this list"; installing says "I will run this code."
+
+### Where marketplaces come from
+
+`/plugin marketplace add` (or `claude plugin marketplace add` in your shell) accepts four source forms:
+
+| Source            | Form                                      | Example                                  |
+| ----------------- | ----------------------------------------- | ---------------------------------------- |
+| GitHub repository | `owner/repo`                              | `anthropics/claude-code`                 |
+| Git URL           | any git repository URL                    | `https://gitlab.com/company/plugins.git` |
+| Local path        | a directory, or a `marketplace.json` file | `./my-marketplace`                       |
+| Remote URL        | a hosted `marketplace.json`               | `https://example.com/marketplace.json`   |
+
+Whether to append `.git` depends on the host, and getting it wrong is the most common "why won't it clone" bug:
+
+- **github.com and gitlab.com**: recognized with or without the suffix.
+- **Azure DevOps**: omit the suffix. Claude Code clones any URL whose path contains `/_git/`; appending `.git` makes the clone fail.
+- **Every other host, including self-managed GitLab**: include `.git`, or Claude Code treats the URL as a direct link to a hosted `marketplace.json`.
+
+Always include the `https://` prefix. Since v2.1.196, a host typed without it — `gitlab.com/company/plugins.git` — is rejected as an invalid GitHub `owner/repo` shorthand. Append `#<ref>` to pin a branch or tag: `https://gitlab.com/company/plugins.git#v1.0.0`.
+
+Community lists are the fourth way plugins reach you, and they are not a marketplace: [`hesreallyhim/awesome-claude-code`](https://github.com/hesreallyhim/awesome-claude-code) is a curated index of plugins, skills and hooks that points at the repositories behind them. Treat it as a place to start reading, not a place to install from — you still add the marketplace and read the entry yourself.
+
+Two Anthropic marketplaces are worth knowing. **`claude-plugins-official`** is curated by Anthropic and registered automatically the first time you start Claude Code interactively; if that failed, add it with `claude plugin marketplace add anthropics/claude-plugins-official`. **`claude-community`** is the public third-party catalog: add it as `anthropics/claude-plugins-community` and install from it as `<name>@claude-community`.
+
+### The `/plugin` manager
+
+`/plugin` opens a tabbed panel in the terminal CLI; **Tab** cycles forward, **Shift+Tab** back:
+
+- **Discover** — browse plugins from all your marketplaces
+- **Installed** — view and manage what you have
+- **Marketplaces** — add, remove or update catalogs
+- **Errors** — plugin loading errors, including a language server that failed to start
+- **Stats** — what each skill costs in context and how often it is used, in sessions where `/skill-doctor` is available
+
+Selecting a plugin in **Discover** opens a details pane that answers the question you should always ask before installing: what does this cost, and what does it add? You get a **Context cost** estimate in tokens per turn, a **Last updated** date, and a **Will install** list of the plugin's commands, agents, skills, hooks and MCP and LSP servers. Not every plugin supplies that data — plugins from local or custom marketplaces may show **Components will be discovered at installation** instead.
+
+### Scopes
+
+Installing asks where the plugin should live. The three scopes map onto the same settings files as everything else in Claude Code:
+
+| Scope     | Settings file                 | Meaning                                                    |
+| --------- | ----------------------------- | ---------------------------------------------------------- |
+| `user`    | `~/.claude/settings.json`     | For you, in every project (the default)                    |
+| `project` | `.claude/settings.json`       | For everyone who clones this repository                    |
+| `local`   | `.claude/settings.local.json` | For you, in this repository only, not shared with the team |
+
+You may also see **managed** scope: installed by administrators through managed settings, read-only to you.
+
+`claude plugin install` in your shell skips the interactive step and installs to user scope unless you pass `--scope`. Because it does not run inside a session, the plugin loads on your next launch — or immediately if you run `/reload-plugins` in an open session.
+
+### Activation, and the reload
+
+Since v2.1.221 an install can take effect in the current session. Read the install summary:
+
+- `Plugin is now active.` — Claude Code activated it as part of the install; nothing more to do.
+- `Run /reload-plugins to activate.` — activation would invalidate the prompt cache, or it failed. Run the command. If it warns that the reload will re-read the conversation, rerun it as `/reload-plugins --force`.
+
+Reloading is not free: newly loaded components announce themselves in content appended to the conversation, and a plugin that provides MCP servers costs more because the cache invalidation makes the next request re-read the whole conversation.
+
+### Three ways a plugin gets suggested to you
+
+Claude Code **never installs a plugin automatically** — you always confirm — but three mechanisms can put one in front of you, and it is worth knowing which is which:
+
+- **Dependencies.** A plugin can list other plugins in its `dependencies` array, optionally with a semver range like `{ "name": "secrets-vault", "version": "~2.1.0" }`. Installing it resolves and installs those too, and the install output lists which were auto-installed. A dependency in a _different_ marketplace is blocked unless the root marketplace's `marketplace.json` names that marketplace in `allowCrossMarketplaceDependenciesOn`.
+- **CLI hints.** A third-party CLI that has a plugin in the official Anthropic marketplace can write a one-line `<claude-code-hint />` marker to stderr when it detects `CLAUDECODE=1`. Claude Code strips the line before the model sees it, checks the plugin is official and not already installed, and shows you a one-time install prompt.
+- **Relevance.** A marketplace entry can carry a `relevance` block with signals — `cwd`, `cli`, `hosts`, `filesRead`, `manifestDeps` — that Claude Code matches **locally**, with no network traffic and nothing reported to Anthropic or the marketplace operator. A match pins the plugin at the top of **Discover** with a "suggested for this directory" label. These suggestions are opt-in per marketplace: an administrator must allowlist it in managed settings first, including for the official marketplace.
+
+This lesson's example prompt asks Claude to do the reading you would otherwise skip:
+
+```text
+Read the details of every plugin currently listed under my Installed tab
+(claude plugin list, then claude plugin details for each). Tell me which ones
+add always-on context cost, and which I have not invoked recently.
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · discover, install from a local marketplace, and read the cost"
+  lessonId="en/l3-advanced/m12-plugins/marketplaces"
+  repoTag="lesson/m12-02-start"
+  steps={[
+    'Check out the tag above in your clone of the lab repository and run `npm ci`.',
+    'Run `claude plugin --help` in your shell and read the subcommand list — every `/plugin` action has a non-interactive twin here, which is what makes plugins scriptable.',
+    'Run `claude plugin marketplace list` to see what you already have. A fresh install shows `claude-plugins-official`.',
+    'Build a one-plugin local marketplace next to your lab clone: a directory `labtrack-marketplace/` with `.claude-plugin/marketplace.json` and a copy of one plugin under `plugins/`. Any plugin directory works — use `hello-plugin` from lesson `01` if you are following in order, and substitute its name below. The recording used `labtrack-tools`, which lesson `03` builds; lesson `05` covers the marketplace file field by field.',
+    'Add it with `claude plugin marketplace add ../labtrack-marketplace` and read the confirmation — note that it says "declared in user settings", not "installed".',
+    'Install one plugin from it at the least invasive scope: `claude plugin install <plugin>@<marketplace> --scope local`. In the recording that is `claude plugin install labtrack-tools@labtrack-internal --scope local`.',
+    'Run `claude plugin list` to confirm the version, scope and enabled state.',
+    'Run `claude plugin details labtrack-tools` and read the component inventory and projected token cost.',
+    'Inside a session, run `/plugin` and cycle the tabs with **Tab** — Discover, Installed, Marketplaces, Errors — to see the same data in its interactive form.',
+    'Clean up when you are done: `claude plugin uninstall labtrack-tools@labtrack-internal --scope local` and `claude plugin marketplace remove labtrack-internal`.',
+  ]}
+  expected="`claude plugin marketplace add` reports the marketplace was added and declared in user settings without installing anything; the install reports scope `local`; `claude plugin list` shows `labtrack-tools@labtrack-internal` version 1.0.0, enabled; `claude plugin details` prints 1 skill, 0 agents, 1 PostToolUse hook and an always-on cost of roughly 110 tokens."
+  checklist={[
+    'Adding the marketplace reported only that it was declared in user settings — no plugin was installed by that step',
+    'The install named a scope, and you chose `local` deliberately',
+    '`claude plugin details` showed the component inventory before you trusted the plugin',
+    'You saw the hook listed as "harness-only — no model context cost"',
+    'The marketplace and the plugin are both removed again at the end',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/02-marketplaces/01-plugin-help.txt"
+    range="2-8"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/02-marketplaces/02-add-and-install.txt"
+    range="2-22"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/02-marketplaces/03-plugin-details.txt"
+    range="2-22"
+  />
+</Lab>
+
+Two details in the third recording repay a second look. The hook is listed as **harness-only — no model context cost**: hooks run in the harness, so they never spend tokens, while a skill costs tokens both always-on (its description, so Claude knows it exists) and on invoke (its body). And the two numbers are broken out per component, which is what lets you decide whether a plugin is worth its permanent share of your context window.
+
+`/plugin` itself is an interactive panel and has no honest transcript form. These are its exact non-interactive equivalents:
+
+<CodeBlock title="the /plugin panel, as shell commands">
+
+```bash
+claude plugin marketplace list
+claude plugin list --enabled
+claude plugin details <name>
+claude plugin disable <name>@<marketplace>
+claude plugin enable  <name>@<marketplace>
+claude plugin uninstall <name>@<marketplace> --scope local
+```
+
+</CodeBlock>
+
+## Anti-patterns
+
+**Adding a marketplace you have not read.** A marketplace can point its entries at any git repository, archive or command. _Fix:_ open `.claude-plugin/marketplace.json` and follow each `source` before you add the catalog.
+
+**Installing everything at user scope.** User scope means every project, every session, paying that plugin's always-on context cost forever. _Fix:_ default to `local` while you evaluate; promote to `project` only when the team needs it.
+
+**Ignoring the "Not used recently" list.** Claude Code lists marketplace plugins you installed yourself but have not used in at least two weeks across at least ten sessions, with a **Last used** line per plugin. Those still cost startup time and context. _Fix:_ read the list monthly and uninstall what you no longer use.
+
+**Assuming `/plugin marketplace remove` is harmless.** Removing a marketplace **uninstalls every plugin you installed from it**. _Fix:_ know what you installed from a catalog before you drop it.
+
+**Expecting an install to be live immediately.** Read the install summary. `Run /reload-plugins to activate.` means the components are not loaded yet. _Fix:_ run the command, and rerun with `--force` if it warns about re-reading the conversation.
+
+**Treating a spinner-tip suggestion as an endorsement.** A `relevance` match means a marketplace operator declared this plugin relevant to your directory or your commands. It is not a safety review. _Fix:_ open the details pane and read **Will install** first.
+
+<Callout variant="changed">
+  Since v2.1.221 an install can activate in the current session and the summary tells you which
+  happened; before that, no install took effect until you ran `/reload-plugins` or restarted. And
+  since v2.1.246, `/reload-plugins` counts a plugin's `SKILL.md` skills as well as its `commands/`
+  entries — earlier versions could reload a plugin's skills and still report `0 skills`.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/marketplaces"
+  questionId="q1"
+  lang="en"
+  prompt="You run `/plugin marketplace add anthropics/claude-code`. What is now installed?"
+  options={[
+    {
+      text: 'Every plugin in that marketplace.',
+      explanation: 'Adding a catalog never installs anything — that is the point of the two steps.',
+    },
+    {
+      text: 'Nothing. The catalog is registered so you can browse it.',
+      correct: true,
+      explanation: 'Right — installing individual plugins is a separate, explicit second step.',
+    },
+    {
+      text: 'The marketplace’s default plugin only.',
+      explanation: 'There is no such concept; a marketplace has no default plugin.',
+    },
+    {
+      text: 'Whatever your project’s `enabledPlugins` names.',
+      explanation:
+        '`enabledPlugins` controls enablement of installed plugins, and an externally-sourced plugin it names still has to be installed first.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/marketplaces"
+  questionId="q2"
+  lang="en"
+  prompt="You want to try a plugin in one repository without your teammates picking it up. Which scope?"
+  options={[
+    {
+      text: 'user — it writes to ~/.claude/settings.json',
+      explanation:
+        'That enables it in every project you open, which is broader than you asked for.',
+    },
+    {
+      text: 'project — it writes to .claude/settings.json',
+      explanation: 'That file is committed, so everyone who clones the repo gets the plugin.',
+    },
+    {
+      text: 'local — it writes to .claude/settings.local.json',
+      correct: true,
+      explanation: 'This repository only, for you only, and not shared with collaborators.',
+    },
+    {
+      text: 'managed — it writes to managed settings',
+      explanation: 'Managed scope is installed by administrators and is read-only to you.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/marketplaces"
+  questionId="q3"
+  lang="en"
+  prompt="A plugin appears at the top of your Discover tab labelled 'suggested for this directory'. Why?"
+  options={[
+    {
+      text: 'Anthropic reviewed it and recommends it for your project type.',
+      explanation:
+        'The official marketplace is curated, but the pin comes from a marketplace-declared relevance signal, not a per-project review.',
+    },
+    {
+      text: 'A `relevance` signal in its marketplace entry matched your session locally, and an administrator allowlisted that marketplace.',
+      correct: true,
+      explanation:
+        'Matching happens on your machine; nothing about the match is reported to Anthropic or the operator.',
+    },
+    {
+      text: 'Claude Code sent your working directory to the marketplace operator, who returned a match.',
+      explanation:
+        'The docs are explicit: signal matching adds no network traffic and reports nothing.',
+    },
+    {
+      text: 'The plugin was installed automatically and needs a reload.',
+      explanation: 'Claude Code never installs a plugin automatically; you always confirm.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m12-plugins/marketplaces"
+  questionId="q4"
+  lang="en"
+  prompt="Which statement about `/plugin marketplace remove` is true?"
+  options={[
+    {
+      text: 'It removes the catalog and leaves installed plugins alone.',
+      explanation: 'It uninstalls the plugins you installed from that marketplace.',
+    },
+    {
+      text: 'It removes the catalog and uninstalls any plugins you installed from it.',
+      correct: true,
+      explanation: 'The docs carry this as an explicit warning — check before you remove.',
+    },
+    {
+      text: 'It is blocked while any plugin from the marketplace is enabled.',
+      explanation: 'It is not blocked; it removes them.',
+    },
+    {
+      text: 'It only works on marketplaces added from a local path.',
+      explanation: 'It works on any registered marketplace.',
+    },
+  ]}
+/>
+
+**Next:** `03-build-a-plugin` turns the skill from `m06` and the hook from `m07` into the plugin you just installed.
