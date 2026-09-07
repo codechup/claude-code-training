@@ -19,6 +19,9 @@ Lesson rule (D044): a removed or changed behaviour appears only as a short **Cha
 | `#` quick-note shortcut (append a line to CLAUDE.md/memory from the prompt) | Removed in 2.0.70 (2025-12-15, per the changelog); use `/memory` or edit the memory files directly — found by P15 against the live `memory.md` | Memory lesson (m03-05) |
 | `/fullscreen` command | Not a command in the live `commands.md`; the fullscreen TUI is `/tui fullscreen` (P16, 2026-09-07) | Commands reference (m04-04) |
 | `claude config` subcommand | Does not exist in `claude --help` (2.1.263); configuration is edited with `/config key=value` or the settings files (P16, 2026-09-07) | Subcommands lesson (m04-05) |
+| Model alias resolution (`opus`, `sonnet`, `best` …) | Alias→model mapping moved in 2.1.219 and 2.1.255 (version notes on the live `model-config.md`, P17) — teach aliases as "latest of that family", never a pinned id | Models lesson (m05-01) |
+| `--effort ultracode` | Requires Claude Code ≥ 2.1.203 (P17) | Effort lesson (m05-03) |
+| Fast mode on Opus 4.7 | Removed 2026-07-24; fast mode now targets the current Opus (P17, `fast-mode.md`) | Fast mode lesson (m05-05) |
 | `TodoWrite` tool as the session checklist | Disabled by default; superseded by the `Task*` tools (`TaskCreate`, `TaskUpdate`, `TaskList`, …) — verified against `tools-reference.md` 2026-09-07 | Tools lesson (L1 m02), m01 lesson 1 |
 
 Recent additions worth a "New" badge (last ~6 months): Fable 5.1 (1M context), `/diff` panel, per-session cache analytics in `/cost`, `/design` canvas, `/skill-doctor`, spend limits in `/usage`, artifact MCP connectors, cross-session messaging on Bedrock/Vertex/Foundry, keyless sign-in, `modelPicker`, `--permission-prompts none`, `claude plugin eval`.
