@@ -1,0 +1,17 @@
+# Captured 2026-09-07, Claude Code 2.1.263, throwaway clone of codechup/claude-code-lab, branch one commit ahead of lesson/m08-01-start.
+# Verbatim stdout. No pull request was created: the prompt tells Claude to print the command, not run gh.
+$ claude -p "This branch (lab-m08-01) is one commit ahead of the tag lesson/m08-01-start. Read the commit and its diff with git. I already ran 'npm test' myself: 4 files, 16 tests, all passed. Do not run any test command. Print, in a single fenced bash code block and with no other text, the exact 'gh pr create' command to open this PR: --base main, --title as a Conventional Commits line, and --body containing a Summary section, a Testing section quoting the npm test result above, and a Risk line. Do not run gh." --allowedTools "Read,Bash(git *)" --model sonnet --max-turns 12 --output-format text
+```bash
+gh pr create --base main --title "fix(store): reject non-positive or non-integer page in paginate" --body "$(cat <<'EOF'
+## Summary
+- `paginate()` in `src/store.ts` now throws `InvalidTaskError` when `page` is not an integer or is less than 1, instead of silently returning a nonsensical slice.
+- Adds a regression test in `test/store.test.ts` covering `page = 0`.
+
+## Testing
+- `npm test`: 4 files, 16 tests, all passed.
+
+## Risk
+Low — the change only adds input validation to `paginate()`, narrowing previously-undefined behavior; no existing call sites pass invalid page values.
+EOF
+)"
+```

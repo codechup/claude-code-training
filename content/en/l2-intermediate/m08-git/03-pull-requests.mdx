@@ -1,0 +1,297 @@
+---
+title: 'Pull requests with evidence'
+description: 'Turn a branch into a pull request Claude drafts and you check: `gh pr create`, a PR template that asks for proof, `--dry-run` before you open anything, and finding the session again with `--from-pr`.'
+level: 2
+module: 'm08-git'
+order: 3
+duration_min: 20
+difficulty: core
+tags: ['git', 'pull-requests', 'gh', 'evidence']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Common workflows'
+    url: 'https://code.claude.com/docs/en/common-workflows.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage sessions'
+    url: 'https://code.claude.com/docs/en/sessions.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'codechup/claude-code-training — this site’s own repository and PR template'
+    url: 'https://github.com/codechup/claude-code-training'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m08-03-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Ask Claude to draft a pull request from a branch's commits, and get back a command rather than an opened PR.
+- Write a PR body that carries evidence — the command you ran and what it printed — instead of a claim.
+- Check a pull request before it exists with `gh pr create --dry-run`.
+- Use a repository's `.github/PULL_REQUEST_TEMPLATE.md` as the shape Claude fills in.
+- Find the session that created a PR again with `claude --from-pr <number>`.
+- Say what `attribution.pr` controls.
+
+**Prerequisites.** Lessons `01-commits-and-conventions` and `02-worktrees-branches`, the [GitHub CLI](https://cli.github.com) installed and authenticated (`gh auth login`), and a branch with at least one commit on it.
+
+<WhenNotToUse>
+  Do not let an agent open pull requests on a repository where a PR is a notification to other
+  people — an open-source project you are not a maintainer of, a shared lab or fixture repository,
+  anything where a stray PR costs someone else's attention. Draft locally and open it yourself. Skip
+  the whole flow when the change belongs in the branch it is already on, when your team reviews by
+  stacked patches or a queue rather than PRs, or when the PR would be so large that no reviewer can
+  hold it — the fix for that is a smaller branch, not a better description. And never open a PR
+  whose evidence section you have not personally reproduced.
+</WhenNotToUse>
+
+## Concept
+
+### Ask for the command, not the pull request
+
+You can create pull requests by asking Claude directly ("create a pr for my changes"). That is the fast path, and it is the right one on a repository you own once you trust the flow.
+
+The safer default while you are learning it — and the only acceptable one on a repository you do not own — is to ask for the **command**. This lesson's example prompt does exactly that:
+
+```text
+This branch is one commit ahead of main. Read the commit and its diff, then print,
+in a single fenced bash code block, the exact `gh pr create` command I should run:
+--base with the right base, --title as a Conventional Commits line, and --body
+containing a Summary section, a Testing section naming the exact command I ran and
+its result, and a Risk line. Do not run gh.
+```
+
+You get a reviewable artefact. If the title is wrong or the risk assessment is optimistic, you edit a string instead of a live pull request.
+
+### Evidence is a command and its output
+
+A PR body that says "tests pass" is a claim. A PR body that says `npm test`: 4 files, 16 tests, all passed is evidence, because a reviewer can run the same command and compare. The difference costs one sentence and saves a round trip.
+
+Three sections carry almost all of the value:
+
+| Section     | What belongs in it                                                                 |
+| ----------- | ---------------------------------------------------------------------------------- |
+| **Summary** | What changed and why, in the reviewer's vocabulary — not a restatement of the diff |
+| **Testing** | The exact commands you ran and what they printed                                   |
+| **Risk**    | What could break, and what you checked to convince yourself it will not            |
+
+Claude can write all three, but only the Summary and Risk from the diff alone. The Testing section has to come from a command **you** ran — which is why the lab's prompt hands Claude the test result rather than letting it guess or run one.
+
+### Templates are the shape
+
+A repository's `.github/PULL_REQUEST_TEMPLATE.md` is what GitHub pre-fills into the body box. It is also the best thing to hand Claude: instead of describing the sections you want, point at the file.
+
+This training repository's own template is a worked example. It asks for the plan id and milestone, what changed, commands a reviewer can run locally, an evidence checklist that names the two viewport widths for screenshots, a Definition-of-Done checklist covering CI and scope, and handoff notes. Nothing in it is decorative — each box is a thing a reviewer would otherwise have to ask for.
+
+The convention that goes with it: **`main` is PR-only, and every PR is squash-merged** with a Conventional Commits title carrying the plan id, such as `feat(content): m01-start lesson (P13)`. Squash-merging is what makes the branch's messy intermediate commits harmless — the title of the PR becomes the title of the single commit on `main`, which is why the PR title is worth the same care as a commit subject in lesson 01.
+
+### Check it before it exists
+
+`gh pr create --dry-run` prints exactly what would be created and creates nothing:
+
+<CodeBlock title="dry-run against a template">
+
+```bash
+gh pr create --base main \
+  --title "[P20] L2 Intermediate module: Git flows (m08-git)" \
+  --body-file .github/PULL_REQUEST_TEMPLATE.md \
+  --dry-run
+```
+
+</CodeBlock>
+
+Read the `base:` and `head:` lines first — a PR opened against the wrong base is the most common and most annoying mistake this catches. One caveat, quoted from the GitHub CLI's own help text (captured from gh 2.96.0 in the lab below): `--dry-run` prints details instead of creating the PR, but **may still push git changes**. On a repository you do not have push access to, that push simply fails; on one you do, make sure the branch you are on is the branch you mean to publish.
+
+### Finding the session again
+
+Claude Code links a session to a pull request when Claude creates it with `gh pr create` or `glab mr create`. Later, from anywhere:
+
+<CodeBlock title="reopen the session behind a PR">
+
+```bash
+claude --from-pr 1234
+```
+
+</CodeBlock>
+
+That opens the session picker filtered to sessions linked to that pull request. Pasting the PR URL into the `/resume` picker's search does the same thing. This is the payoff for letting Claude run `gh pr create` on your own repositories: a month later, the reasoning behind the PR is still one command away.
+
+Finally, the attribution line Claude Code adds to pull request descriptions is controlled by `attribution.pr` in settings — the PR-side sibling of `attribution.commit` from lesson 01.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · draft a PR, check it, open nothing"
+  lessonId="en/l2-intermediate/m08-git/pull-requests"
+  repoTag="lesson/m08-03-start"
+  steps={[
+    'In your throwaway clone of the lab repository, branch from this lesson’s tag: `git checkout lesson/m08-03-start && git checkout -b lab-m08-03`. This is a process-only tag — the lab repository’s README lists it as pointing at the same commit as `lesson/m08-01-start` — so you can redo the `paginate` validation change from lesson 01 here and commit it.',
+    'Run `npm test` yourself and note the exact result. You will hand it to Claude — it is the one thing Claude cannot read off the diff.',
+    'Ask for the command, not the PR: `claude -p "This branch (lab-m08-03) is one commit ahead of the tag lesson/m08-03-start. Read the commit and its diff with git. I already ran \'npm test\' myself: 4 files, 16 tests, all passed. Do not run any test command. Print, in a single fenced bash code block and with no other text, the exact \'gh pr create\' command to open this PR: --base main, --title as a Conventional Commits line, and --body containing a Summary section, a Testing section quoting the npm test result above, and a Risk line. Do not run gh." --allowedTools "Read,Bash(git *)" --model sonnet --max-turns 12 --output-format text`',
+    'Read the drafted command. Check three things: the `--base`, the title’s type and scope, and whether the Testing section quotes your result rather than inventing one.',
+    'Do NOT run it against the lab repository. Instead, practise the check in a repository you own: on a branch of your own project, run `gh pr create --base main --title "<your title>" --body-file .github/PULL_REQUEST_TEMPLATE.md --dry-run` and read the `base:` and `head:` lines.',
+    'Confirm nothing was created: `gh pr list --head lab-m08-03` prints no rows.',
+  ]}
+  expected="Claude prints a `gh pr create` command with a Conventional Commits title and a body whose Testing section quotes the npm test result you supplied. `--dry-run` prints a `Would have created a Pull Request with:` block and opens nothing."
+  checklist={[
+    'The drafted command targets the right base branch',
+    'The title is `type(scope): subject`, not a sentence',
+    'The Testing section quotes a command you actually ran',
+    'The Risk line says something specific, not “low risk”',
+    '`--dry-run` printed `Would have created a Pull Request with:`',
+    'No pull request exists on the lab repository',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m08-git/03-pull-requests/01-draft-pr-command.txt"
+    range="3-17"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m08-git/03-pull-requests/02-gh-pr-create-dry-run.txt"
+    range="4-11"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m08-git/03-pull-requests/03-gh-dry-run-help.txt"
+    range="2-7"
+  />
+</Lab>
+
+The second capture is from this training repository, not the lab repository — a real `--dry-run` against the real template shown above. Two lines in it earn their place. `Warning: 1 uncommitted change` is `gh` telling you that what you are about to publish is not what is on your disk; that warning has saved more PRs than any checklist. And `head: plan/20-l2-m08-git` confirms which branch would be pushed — the answer to "wait, which branch am I on" before it becomes a question for a reviewer.
+
+The first capture was recorded on a branch named `lab-m08-01`, off the same commit these three process-only tags share; only the branch name differs from the steps above.
+
+Note what the first capture did **not** do. It printed a heredoc-quoted `--body` and stopped. No `gh` process ran, no branch was pushed, nothing on GitHub changed. That is the whole point of asking for the command.
+
+## Anti-patterns
+
+**Letting Claude open the PR on a repository you do not own.** A pull request is a notification to a maintainer. _Fix:_ ask for the command; open it yourself, if at all.
+
+**A Testing section Claude wrote from the diff.** If Claude did not run the command, the section is a guess with a monospace font. _Fix:_ run it, paste the real result into the prompt, and tell Claude not to run tests itself.
+
+**Ignoring the template.** Filling in your own headings when the repository ships `.github/PULL_REQUEST_TEMPLATE.md` makes every PR shaped differently and hides the checklist the reviewers rely on. _Fix:_ `--body-file .github/PULL_REQUEST_TEMPLATE.md`, then fill it in.
+
+**A PR title that is not the commit you want on `main`.** Under squash-merge the PR title becomes the commit message on the default branch. "Fixes" is then permanent. _Fix:_ write the title as a Conventional Commits subject, exactly as in lesson 01.
+
+**Assuming `--dry-run` is read-only.** It prints instead of creating, but it may still push git changes. _Fix:_ know which branch you are on before running it.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m08-git/pull-requests"
+  questionId="q1"
+  lang="en"
+  prompt="Which Testing section is evidence?"
+  options={[
+    {
+      text: '“All tests pass and the change is safe.”',
+      explanation: 'A claim with no command a reviewer can repeat.',
+    },
+    {
+      text: '“`npm test`: 4 files, 16 tests, all passed.”',
+      correct: true,
+      explanation: 'It names the command and its result, so a reviewer can reproduce it.',
+    },
+    {
+      text: '“Tested locally.”',
+      explanation: 'Neither the command nor the result is recoverable from that.',
+    },
+    {
+      text: '“Claude verified the change.”',
+      explanation: 'Verification is a command and its output, not an attribution.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m08-git/pull-requests"
+  questionId="q2"
+  lang="en"
+  prompt="What does `gh pr create --dry-run` guarantee?"
+  options={[
+    {
+      text: 'Nothing at all happens — it is entirely read-only.',
+      explanation:
+        '`gh pr create --help` says it prints details instead of creating the PR, but may still push git changes.',
+    },
+    {
+      text: 'No pull request is created; it prints what would have been created, though it may still push git changes.',
+      correct: true,
+      explanation: 'Exactly what the flag’s own help text says.',
+    },
+    {
+      text: 'It creates a draft PR you can delete later.',
+      explanation: 'A draft PR is `--draft`, and it is a real PR.',
+    },
+    {
+      text: 'It validates the body against the repository’s template.',
+      explanation: 'It prints the body you passed; it does not check it against a template.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m08-git/pull-requests"
+  questionId="q3"
+  lang="en"
+  prompt="Three weeks later you want the session that produced PR 1234. What do you run?"
+  options={[
+    {
+      text: 'claude --from-pr 1234',
+      correct: true,
+      explanation:
+        'It opens the session picker filtered to sessions linked to that pull request; pasting the PR URL into the /resume search also works.',
+    },
+    {
+      text: 'claude --resume 1234',
+      explanation: '`--resume` takes a session id or name, not a PR number.',
+    },
+    {
+      text: 'claude --worktree "#1234"',
+      explanation:
+        'That branches a worktree from the PR’s head commit — useful, but not the session.',
+    },
+    {
+      text: 'gh pr view 1234 --json sessionId',
+      explanation: 'The link lives in Claude Code’s local session store, not in GitHub’s API.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m08-git/pull-requests"
+  questionId="q4"
+  lang="en"
+  prompt="Why does a squash-merge workflow make the PR title as important as a commit subject?"
+  options={[
+    {
+      text: 'Because GitHub rejects PR titles that are not Conventional Commits.',
+      explanation:
+        'GitHub imposes no such rule; a repository’s CI might, but that is a separate check.',
+    },
+    {
+      text: 'Because the PR title becomes the message of the single commit that lands on the default branch.',
+      correct: true,
+      explanation:
+        'The branch’s intermediate commits disappear; the title is what survives in `git log`.',
+    },
+    {
+      text: 'Because squash-merge deletes the PR description.',
+      explanation: 'The description is preserved in the PR and usually in the commit body.',
+    },
+    {
+      text: 'Because reviewers only read titles.',
+      explanation: 'Some do, but that is a habit, not the mechanism.',
+    },
+  ]}
+/>
+
+**Next:** `04-code-review-commands` runs the review before a human ever sees the diff — and shows what changes between effort levels.

@@ -1,0 +1,326 @@
+---
+title: 'Commits and conventions'
+description: 'Let Claude write the commit message from the diff it just made: Conventional Commits, the attribution trailer Claude Code adds, and the settings that change or remove it.'
+level: 2
+module: 'm08-git'
+order: 1
+duration_min: 15
+difficulty: core
+tags: ['git', 'commits', 'conventional-commits', 'attribution']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Common workflows'
+    url: 'https://code.claude.com/docs/en/common-workflows.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Slash command reference'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'codechup/claude-code-lab — the course lab repository'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m08-01-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Ask Claude to write a commit message from a diff instead of writing one yourself, and judge whether the result is good enough to keep.
+- Write a Conventional Commits subject line — `type(scope): subject` — and pick the right type for a change.
+- Recognise the attribution trailer Claude Code adds to a commit it makes, and say where it comes from.
+- Change or remove that trailer with `attribution` in a settings file, and remove the built-in commit instructions entirely with `includeGitInstructions`.
+- Decide when Claude should commit and when it should stop at the message.
+
+**Prerequisites.** Claude Code installed and authenticated, `git` on your PATH, and a clone of the lab repository. You should be comfortable with `git add`, `git diff --cached` and `git log`.
+
+<WhenNotToUse>
+  Don't hand Claude the commit when the message carries information that is not in the diff — a
+  ticket number only you know, a decision made in a meeting, a deliberate compromise you want the
+  next reader to understand. Claude writes from what it can see, so a message it derives from the
+  diff alone will be accurate and shallow. Don't let it commit at all while your working tree holds
+  unrelated work you have not looked at: a `git add -A` you did not audit is how three changes
+  become one commit. And skip the whole pattern for a repository whose history is the product — a
+  release-notes-generated changelog, a signed-commit compliance trail — until you have checked what
+  the attribution trailer does to your tooling.
+</WhenNotToUse>
+
+## Concept
+
+### Why the diff should write the message
+
+A commit message answers two questions: what changed, and why. The "what" is already in the diff, mechanically and completely — which is exactly the part humans summarise badly when they are tired. The "why" is in your head. Delegating the first half to Claude and keeping the second half is the whole technique.
+
+That is what this lesson's example prompt does. It gives the shape, not the content:
+
+```text
+Read the staged diff with git diff --cached and write a Conventional Commits
+message for it: a type(scope): subject line under 72 characters, a blank line,
+and a short body saying why. Print only the message, nothing else.
+```
+
+Two things make it work headlessly. `--allowedTools "Read,Bash(git *)"` limits Claude to reading files and running git, so it cannot edit anything while it is writing about the change. "Print only the message" makes the output usable by a script — a `-p` run's stdout is text you can pipe.
+
+### Conventional Commits in one table
+
+Conventional Commits is a convention, not a Claude Code feature: a structured subject line that tools and humans can both parse. This repository's own contribution rules require it, and the types below are the ones it accepts.
+
+| Type       | Use it for                                             |
+| ---------- | ------------------------------------------------------ |
+| `feat`     | A new capability a user can observe                    |
+| `fix`      | A defect corrected                                     |
+| `docs`     | Documentation only                                     |
+| `chore`    | Housekeeping with no behaviour change                  |
+| `test`     | Tests added or changed, with no production-code change |
+| `refactor` | Behaviour-preserving restructuring                     |
+| `ci`       | Pipeline and workflow configuration                    |
+| `build`    | Build system, dependencies, packaging                  |
+
+The scope in parentheses names the area — `fix(store):`, `docs(m08-git):`. Keep the subject in the imperative mood and under about 72 characters so `git log --oneline` stays readable.
+
+### The attribution trailer
+
+When Claude Code makes a commit itself, it appends an attribution trailer to the message. In the capture below the trailer is:
+
+```text
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+```
+
+The trailer is not something the model invents each time; it comes from the built-in git instructions Claude Code loads at startup, and settings control it:
+
+| Setting                  | What it does                                                          |
+| ------------------------ | --------------------------------------------------------------------- |
+| `attribution.commit`     | Change or hide the trailer Claude Code adds to commits                |
+| `attribution.pr`         | Change or hide the attribution line in pull request descriptions      |
+| `attribution.sessionUrl` | Omit the claude.ai session link from cloud and Remote Control commits |
+| `includeGitInstructions` | Remove the built-in commit and PR instructions from the system prompt |
+
+All four live in a settings file (`~/.claude/settings.json`, a project `.claude/settings.json`, or managed settings). Reach for `attribution` when you want the commits attributed differently; reach for `includeGitInstructions` when you want Claude to follow only your project's own commit rules, with none of the built-in ones.
+
+### When Claude should commit, and when it should stop
+
+Two prompts, two different levels of trust:
+
+- **"Write the message"** — Claude reads the staged diff and prints a message. You paste it into `git commit`. Nothing in the repository changes if the message is wrong. This is the default for work you have not reviewed yet.
+- **"Commit the staged changes"** — Claude runs `git commit` itself. Faster, and the right choice once you have read the diff and only the message is left. It is also the point at which the attribution trailer appears.
+
+Note the word **staged** in both. Staging is your review step: `git add -p` the hunks you mean to ship, and Claude's message describes exactly those. Asking Claude to "commit everything" moves the review to after the fact.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · let Claude name a real change"
+  lessonId="en/l2-intermediate/m08-git/commits-and-conventions"
+  repoTag="lesson/m08-01-start"
+  steps={[
+    'Clone the lab repository somewhere throwaway and check out the start tag: `git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && git checkout lesson/m08-01-start && npm ci`. Never push to this repository — the lab is read-only for readers.',
+    'Make one real change: in `src/store.ts`, make `paginate()` throw `InvalidTaskError` when `page` is not an integer or is below 1, and add a test for `page = 0` in `test/store.test.ts`.',
+    'Run `npm test` and confirm it is green — 4 files, 16 tests.',
+    'Stage the change with `git add -A`, then look at what you staged with `git diff --cached`.',
+    'Ask Claude for the message only: `claude -p "Read the staged diff with git diff --cached and write a Conventional Commits message for it: a type(scope): subject line under 72 characters, a blank line, and a short body saying why. Print only the message, nothing else. Do not run git commit." --allowedTools "Read,Bash(git *)" --model sonnet --max-turns 6 --output-format text`',
+    'Now let Claude do the commit: `claude -p "Commit the staged changes with the Conventional Commits message you consider right for them. Do not push. Then show the result with: git log -1 --format=%B" --allowedTools "Read,Bash(git *)" --model sonnet --max-turns 8 --output-format text`',
+    'Read the committed message with `git log -1 --format=%B` and find the attribution trailer.',
+  ]}
+  expected="The first run prints a `fix(store): …` message and changes nothing. The second run creates one commit whose message ends with a `Co-Authored-By: Claude … <noreply@anthropic.com>` trailer, and `git status` is clean afterwards."
+  checklist={[
+    '`npm test` printed “4 passed (4) … 16 passed (16)” before the commit was made',
+    'The first run printed a message and left `git status` showing the change still staged',
+    'The subject line is `type(scope): subject` and under 72 characters',
+    'The committed message has a body explaining why, not only what',
+    'The commit message ends with an attribution trailer',
+    'Nothing was pushed to the lab repository',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m08-git/01-commits-and-conventions/03-npm-test.txt"
+    range="3-10"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m08-git/01-commits-and-conventions/01-commit-message.txt"
+    range="4-7"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m08-git/01-commits-and-conventions/02-commit-and-trailer.txt"
+    range="5-24"
+  />
+</Lab>
+
+Three details in that recording are worth stopping on.
+
+The first line of the first capture is a real notice, not noise: the throwaway clone had never been opened interactively, so Claude Code refused to apply the `permissions.allow` entries in its `.claude/settings.json`. Workspace trust is a separate gate from `--allowedTools`, and a headless run in a fresh clone will tell you so.
+
+The second capture answers in Turkish. That is not a defect in the recording — the machine that produced it has global Claude Code preferences asking for Turkish answers, and those preferences reach every session including `-p` ones. The commit message itself stayed in English because the prompt asked for a Conventional Commits message; the prose around it followed the standing preference.
+
+The last block of the second capture uses `git log -1 --format='%H%n%an <%ae>%n%B'` rather than the plain `--format=%B` in step 7 — the longer format was run in the same shell to show the commit hash and author alongside the message, so you can see that the trailer is part of the message and not the author field.
+
+And the two runs chose different subject lines for the same diff — `fix(store): validate page number in paginate` and `fix(store): reject non-positive or non-integer page in paginate`. Both are correct. A commit message is a summary, and summaries are not unique; the useful test is whether it names the right type, the right scope and a real reason, not whether it matches a specific string.
+
+### Reading the message back, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git log -1 --format=%B
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git log -1 --format=%B
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git log -1 --format=%B
+```
+
+  </Fragment>
+</OSTabs>
+
+The command is identical on all three; what differs is quoting once you start passing format strings with `%n` or spaces. In PowerShell, wrap the format in single quotes (`--format='%H%n%B'`) so the shell does not try to expand anything inside it.
+
+## Anti-patterns
+
+**Letting Claude stage as well as commit.** "Commit my changes" with a dirty tree bundles whatever else is lying around into one commit. _Fix:_ stage deliberately (`git add -p`), then ask Claude to commit **the staged changes**.
+
+**Accepting a message that only restates the diff.** "Update store.ts" passes review and helps nobody. _Fix:_ ask for a body that says why, and reject the message when the body is a paraphrase of the subject.
+
+**Inventing a scope per commit.** `fix(pagination):`, `fix(paginate):` and `fix(store):` for the same file makes the history unsearchable. _Fix:_ write the scopes your project uses into `CLAUDE.md` once; Claude reads it on every run.
+
+**Hiding the trailer by editing messages afterwards.** Rewriting history to strip attribution is work you will repeat forever. _Fix:_ set `attribution.commit` once, in the settings scope that applies to everyone who needs it.
+
+**Trusting "the tests pass" from the commit message.** The message is prose; the test run is evidence. _Fix:_ run the tests yourself before staging, as the lab does.
+
+<Callout variant="changed">
+  The `includeCoAuthoredBy` setting is deprecated. Use `attribution` — `attribution.commit`,
+  `attribution.pr` and `attribution.sessionUrl` — to hide or change commit and pull request
+  attribution instead. The settings reference marks it deprecated as of Claude Code 2.1.263 without
+  naming the release that changed it, so treat `attribution` as the current setting and do not read
+  a version into the deprecation.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m08-git/commits-and-conventions"
+  questionId="q1"
+  lang="en"
+  prompt="You want Claude to describe a change without touching the repository. Which run shape is right?"
+  options={[
+    {
+      text: 'claude -p "…write a Conventional Commits message…" --allowedTools "Read,Bash(git *)"',
+      correct: true,
+      explanation:
+        'Read plus git only: Claude can inspect the diff and print a message, with no Edit or Write tool. The prompt still has to say “do not run git commit”, since `Bash(git *)` would allow one.',
+    },
+    {
+      text: 'claude -p "…" --permission-mode acceptEdits',
+      explanation: 'That pre-approves edits, which is the opposite of what you want here.',
+    },
+    {
+      text: 'claude -p "…" --allowedTools "Edit,Write"',
+      explanation: 'Those are the tools that change files, and neither can read a diff.',
+    },
+    {
+      text: 'claude --worktree message-only',
+      explanation:
+        'A worktree isolates edits from your main checkout; it does not stop Claude editing.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m08-git/commits-and-conventions"
+  questionId="q2"
+  lang="en"
+  prompt="Your team wants Claude Code's commits attributed to a shared bot address instead of the default trailer. What do you set?"
+  options={[
+    {
+      text: 'includeCoAuthoredBy',
+      explanation: 'Deprecated — the settings reference points you at `attribution` instead.',
+    },
+    {
+      text: 'attribution.commit',
+      correct: true,
+      explanation: 'It changes or hides the trailer Claude Code adds to commits.',
+    },
+    {
+      text: 'attribution.pr',
+      explanation: 'That controls the attribution line in pull request descriptions, not commits.',
+    },
+    {
+      text: 'includeGitInstructions',
+      explanation:
+        'That removes the built-in commit and PR instructions entirely — a bigger hammer than changing the trailer.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m08-git/commits-and-conventions"
+  questionId="q3"
+  lang="en"
+  prompt="Two headless runs on the same staged diff produced two different subject lines. What does that tell you?"
+  options={[
+    {
+      text: 'One of the runs read the wrong diff.',
+      explanation: 'Both read `git diff --cached`; the capture shows the same change in both.',
+    },
+    {
+      text: 'A summary of a diff is not unique — judge the type, scope and stated reason, not the exact wording.',
+      correct: true,
+      explanation:
+        'Right. Both messages were `fix(store): …` with an accurate body; only the phrasing differed.',
+    },
+    {
+      text: 'Conventional Commits was not applied.',
+      explanation: 'Both subject lines are `type(scope): subject`.',
+    },
+    {
+      text: '`--max-turns` was too low in one run.',
+      explanation: 'Both runs completed and printed a full message.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m08-git/commits-and-conventions"
+  questionId="q4"
+  lang="en"
+  prompt="A headless run in a fresh clone prints “this workspace has not been trusted”. What is it telling you?"
+  options={[
+    {
+      text: 'The `--allowedTools` flag was rejected.',
+      explanation: '`--allowedTools` still applies; the notice is about a different gate.',
+    },
+    {
+      text: 'The `permissions.allow` entries in that project’s settings were ignored because the workspace has not been trusted.',
+      correct: true,
+      explanation:
+        'Workspace trust is separate from the tool allowlist — run Claude interactively there once to accept the dialog.',
+    },
+    {
+      text: 'The repository has no commits yet.',
+      explanation: 'That produces a different error, and only for worktree creation.',
+    },
+    {
+      text: 'Git is not installed.',
+      explanation: 'The run went on to read the diff with git.',
+    },
+  ]}
+/>
+
+**Next:** `02-worktrees-branches` gives each parallel session its own checkout, so two agents can work on the same repository without overwriting each other.

@@ -1,0 +1,284 @@
+---
+title: 'The GitHub app'
+description: 'What `/install-github-app` actually does — the Claude GitHub App, the authentication secret, the workflow pull request — and what `@claude` gives you once it is merged.'
+level: 2
+module: 'm08-git'
+order: 5
+duration_min: 10
+difficulty: advanced
+tags: ['git', 'github', 'github-actions', 'automation']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Claude Code GitHub Actions'
+    url: 'https://code.claude.com/docs/en/github-actions.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Code Review'
+    url: 'https://code.claude.com/docs/en/code-review.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Slash command reference'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say what `/install-github-app` installs, what secret it stores, and what it leaves you to merge.
+- List the prerequisites it checks, and what it does when one is missing.
+- Read the Claude GitHub App's permission table and explain why it is larger than the Claude Code GitHub Action needs.
+- Choose between the quick setup, the manual setup, and a custom GitHub App.
+- Distinguish the three products that share the "Claude Code" name on GitHub: the GitHub Action, managed Code Review, and Claude Code on the web.
+- Uninstall the integration cleanly.
+
+**Prerequisites.** Lessons 01–04, **admin access** to the repository you are connecting, and the [GitHub CLI](https://cli.github.com) installed and authenticated with `gh auth login`. Claude Code checks for `gh` and warns you if it is missing.
+
+<WhenNotToUse>
+  This is a change to a repository other people share, so it is the one lesson in this module you
+  should not practise on someone else's project — including this course's lab repository. Skip the
+  quick setup entirely when you do not run Claude Code locally, when you need full control of the
+  workflow files, or when your organisation will not accept the app's full permission set: GitHub
+  does not let you accept a subset, so the answer there is a custom GitHub App with only Contents,
+  Issues and Pull requests. Skip it too when what you actually wanted was a review before you push —
+  that is `/code-review` from lesson 04, and it needs no app at all.
+</WhenNotToUse>
+
+## Concept
+
+### What the command does
+
+Run `/install-github-app` inside `claude`, in the repository you want to connect, and follow the prompts. It performs four steps:
+
+1. **Installs the Claude GitHub App** on the repository you pick.
+2. **Sets up an authentication secret.** If Claude Code already has an API key it reuses that key, and offers to keep the repository's existing `ANTHROPIC_API_KEY` secret if one is set. Otherwise you choose between creating a long-lived token with your Claude subscription and pasting in an API key. It is saved as a repository secret — `ANTHROPIC_API_KEY` for an API key, `CLAUDE_CODE_OAUTH_TOKEN` for a subscription token.
+3. **Pushes a branch** with the workflow files you select, already wired to that secret.
+4. **Opens GitHub in your browser** with a pull request ready to create.
+
+You create and merge that pull request. Then `@claude` works in the repository.
+
+After the app is installed, Claude Code asks whether to continue with GitHub Actions setup. Choosing **Skip for now** stops with only the app installed; run `/install-github-app` again later to finish the workflow and secret steps.
+
+### What you get
+
+With the interactive workflow merged, mentioning `@claude` in an issue or pull request comment — or in the body or title of a newly opened issue — starts a run. Progress and results appear as a comment on the triggering issue or PR. This lesson's example prompt is the middle line: a question asked in a PR comment, answered in the same thread.
+
+<CodeBlock title="what a trigger comment looks like">
+
+```text
+@claude implement this feature based on the issue description
+@claude how should I implement user authentication for this endpoint?
+@claude fix the TypeError in the user dashboard component
+```
+
+</CodeBlock>
+
+If you also select the review workflow, Claude posts each review on the pull request itself — an inline comment on each issue it finds, or one summary comment when it finds none. It skips some pull requests, such as drafts.
+
+Two checks run on the triggering actor before Claude starts, and the run fails if either rejects it. On issue and pull request events the triggering user must have **write access** to the repository. And on every event a **bot actor** is rejected unless you list it in `allowed_bots`, which keeps bots from triggering Claude in a loop.
+
+### The permission set
+
+The Claude GitHub App is shared by every Claude feature that integrates with GitHub, so its single permission set is larger than the Claude Code GitHub Action alone uses:
+
+| Permission       | Access         |
+| ---------------- | -------------- |
+| Actions          | Read and write |
+| Checks           | Read and write |
+| Contents         | Read and write |
+| Discussions      | Read and write |
+| Issues           | Read and write |
+| Members          | Read           |
+| Metadata         | Read           |
+| Pull requests    | Read and write |
+| Repository hooks | Read and write |
+| Statuses         | Read           |
+| Workflows        | Read and write |
+
+The Claude Code GitHub Action itself relies on three of them: **Contents** (modify repository files), **Issues** (respond to issues) and **Pull requests** (create PRs and push changes). The rest belong to other features sharing the app. When the app requests a permission it did not have before, GitHub prompts the account owner to approve it and the installation keeps its old permissions until they do.
+
+### Quick setup versus manual setup
+
+| Path         | Use it when                                                                                                    |
+| ------------ | -------------------------------------------------------------------------------------------------------------- |
+| Quick setup  | You run Claude Code locally and want the app, the secret and the workflow PR prepared for you                  |
+| Manual setup | You do not run Claude Code locally, the command fails, or you want full control of the workflow files          |
+| Custom app   | Your organisation will only grant Contents, Issues and Pull requests — covers the Action only, not Code Review |
+
+Manual setup is three steps you do yourself: install the [Claude GitHub App](https://github.com/apps/claude), add an `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` secret, and copy `examples/claude.yml` from the action's repository into `.github/workflows/`. Generate a subscription token with `claude setup-token`.
+
+Both paths configure one repository at a time. To roll out across an organisation, install the app once at the organisation level, store the secret as an organisation-level Actions secret, and add the workflow to each repository or call a reusable workflow. For a shared secret prefer an API key over an OAuth token, since an OAuth token is tied to the subscription of whoever ran `claude setup-token`.
+
+### Three products, one name
+
+This is where people get lost, so it is worth stating plainly:
+
+| Product                    | What it is                                                                                                     |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Claude Code GitHub Actions | `anthropics/claude-code-action@v1`, configured with workflow files you own. `/install-github-app` sets this up |
+| Code Review                | A managed service that reviews PRs with no workflow file — research preview, Team and Enterprise plans         |
+| Claude Code on the web     | Claude Code sessions from a browser or phone                                                                   |
+
+All three install the same GitHub App. Only the first is what `/install-github-app` writes workflow files for.
+
+### Uninstalling
+
+Undo each piece that applies: delete the workflows using `anthropics/claude-code-action` from `.github/workflows/` (quick setup writes `claude.yml`, and `claude-code-review.yml` if you selected the review workflow); delete the `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` secret from the repository and from organisation secrets; and uninstall the Claude GitHub App **only** if you do not use it for another Claude feature such as Code Review or web auto-fix. Deleting a secret does not invalidate the credential it held — retire an API key in the Console as well.
+
+## Hands-on lab
+
+There is no lab-repository tag for this lesson, and deliberately so: `/install-github-app` installs an app, writes a secret and opens a pull request on a real GitHub repository, which is not something a reader should practise on a shared repository they do not own. `lab.repo_tag` is `none`, and the steps below run against a repository of your own.
+
+The setup itself is an interactive TUI flow — a series of prompts in `claude` and a hand-off to your browser — so it is described here in prose and exact commands. There is no transcript for it, because a fabricated recording of a dialog is exactly what D070 forbids and a real one would contain a repository name and a secret.
+
+<Lab
+  title="Lab · connect one repository you own"
+  lessonId="en/l2-intermediate/m08-git/github-app"
+  repoTag="none"
+  steps={[
+    'Check the prerequisites: `gh --version` prints a version, and `gh auth login` leaves you authenticated. Claude Code checks for `gh` and warns you if it is missing.',
+    'Confirm you are an admin of the repository you are about to change: `gh repo view --json nameWithOwner,viewerPermission`. Stop here unless `viewerPermission` reads `ADMIN` — the docs require admin access to the repository for either setup path.',
+    'From inside that repository, run `claude`, then `/install-github-app`, and follow the prompts: pick the repository, choose the authentication route, and select which workflow files you want.',
+    'Read the branch Claude Code pushed before you merge it. Open the pull request it prepared in your browser, create it, and read the workflow file in the diff.',
+    'Merge that pull request. Until it is merged, `@claude` does nothing.',
+    'Test it: comment `@claude how should I implement user authentication for this endpoint?` on an issue or pull request in that repository, and watch the run report back as a comment.',
+    'Confirm what landed: `gh secret list` shows `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN`, and `ls .github/workflows` shows `claude.yml` (plus `claude-code-review.yml` if you selected the review workflow).',
+  ]}
+  expected="`/install-github-app` installs the app, stores one secret, pushes a workflow branch and opens a pull request in your browser. After you merge it, an `@claude` comment on that repository produces a reply comment from Claude on the same issue or PR."
+  checklist={[
+    '`gh --version` printed a version and `gh auth status` shows you logged in',
+    '`viewerPermission` was `ADMIN` before you ran the command',
+    'You read the workflow file in the diff before merging',
+    'The workflow pull request is merged',
+    '`gh secret list` shows exactly one Claude credential',
+    'An `@claude` comment produced a reply on the same issue or PR',
+  ]}
+/>
+
+To update a review workflow an earlier version generated, run `/install-github-app` again and choose **Update workflow file with latest version**; Claude Code pushes fresh copies to a new branch and opens the pull request, the same as a first install.
+
+## Anti-patterns
+
+**Running it on a repository you do not own.** The command installs an app and stores a secret. _Fix:_ check `viewerPermission` is `ADMIN` first, and never point it at a shared lab or fixture repository.
+
+**Approving the permission set without reading it.** The app grants eleven permissions because it is shared by several Claude features, not because the Action needs them all. _Fix:_ read the table; if your organisation objects, create a custom app with Contents, Issues and Pull requests.
+
+**Expecting CI to run on Claude's commits.** GitHub does not trigger workflows on commits made with the default `GITHUB_TOKEN`. _Fix:_ remove `github_token: ${{ secrets.GITHUB_TOKEN }}` so the action authenticates as the Claude GitHub App, or pass a custom app token.
+
+**Committing the credential.** _Fix:_ it belongs in a repository or organisation secret, referenced as `${{ secrets.ANTHROPIC_API_KEY }}`.
+
+**Uninstalling the app to turn off the Action.** If you also use Code Review or web auto-fix, removing the app breaks those too. _Fix:_ delete the workflow files; leave the app installed.
+
+<Callout variant="changed">
+  Workflows still on `anthropics/claude-code-action@beta` need four edits: `@beta` → `@v1`, remove
+  `mode` (the action detects it now), `direct_prompt` → `prompt`, and move CLI options such as
+  `max_turns` and `model` into `claude_args`.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m08-git/github-app"
+  questionId="q1"
+  lang="en"
+  prompt="After `/install-github-app` finishes, is `@claude` working in the repository?"
+  options={[
+    {
+      text: 'Yes — the command completes the whole setup.',
+      explanation:
+        'It prepares a pull request; the workflow is not active until that PR is merged.',
+    },
+    {
+      text: 'Not yet — you still have to create and merge the workflow pull request it opened.',
+      correct: true,
+      explanation: 'Claude Code pushes the branch and opens GitHub with the PR ready to create.',
+    },
+    {
+      text: 'Only after you also enable Code Review in admin settings.',
+      explanation: 'Code Review is a separate managed product.',
+    },
+    {
+      text: 'Only on repositories with branch protection disabled.',
+      explanation: 'Branch protection is unrelated to the trigger.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m08-git/github-app"
+  questionId="q2"
+  lang="en"
+  prompt="Which three of the app’s permissions does the Claude Code GitHub Action actually rely on?"
+  options={[
+    {
+      text: 'Contents, Issues, Pull requests',
+      correct: true,
+      explanation: 'Modify files, respond to issues, and create PRs and push changes.',
+    },
+    {
+      text: 'Actions, Checks, Statuses',
+      explanation: 'Those belong to other features sharing the app.',
+    },
+    {
+      text: 'Members, Metadata, Discussions',
+      explanation: 'Also part of the shared set, not the Action’s three.',
+    },
+    { text: 'Workflows, Repository hooks, Metadata', explanation: 'Not the documented three.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m08-git/github-app"
+  questionId="q3"
+  lang="en"
+  prompt="Your organisation shares one secret across many repositories. Which credential should it be?"
+  options={[
+    {
+      text: 'An API key from the Claude Console',
+      correct: true,
+      explanation:
+        'An OAuth token is tied to the subscription of whoever ran `claude setup-token`.',
+    },
+    {
+      text: 'A CLAUDE_CODE_OAUTH_TOKEN generated by any team member',
+      explanation: 'That ties every repository to one person’s subscription.',
+    },
+    {
+      text: 'The default GITHUB_TOKEN',
+      explanation: 'That authenticates to GitHub, not to Claude.',
+    },
+    {
+      text: 'No secret — OIDC is mandatory',
+      explanation: 'Workload identity federation is an option, not a requirement.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m08-git/github-app"
+  questionId="q4"
+  lang="en"
+  prompt="You want to stop the Action but keep using managed Code Review. What do you remove?"
+  options={[
+    {
+      text: 'The workflow files that use anthropics/claude-code-action, and the secret',
+      correct: true,
+      explanation: 'Leave the GitHub App installed — Code Review and web auto-fix need it.',
+    },
+    {
+      text: 'The Claude GitHub App',
+      explanation: 'That breaks Code Review and web auto-fix as well.',
+    },
+    { text: 'Your Claude subscription', explanation: 'Unrelated to the integration.' },
+    {
+      text: 'Nothing — the two are the same product',
+      explanation: 'They are different products that share one app.',
+    },
+  ]}
+/>

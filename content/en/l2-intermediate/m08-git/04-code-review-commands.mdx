@@ -1,0 +1,373 @@
+---
+title: 'Code review commands'
+description: '`/code-review` levels and targets, `/simplify` for cleanup-only passes, `/security-review` for vulnerabilities, and `/diff` for a look at the working tree — run against a real diff, headlessly.'
+level: 2
+module: 'm08-git'
+order: 4
+duration_min: 20
+difficulty: core
+tags: ['git', 'code-review', 'review', 'effort']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Code Review'
+    url: 'https://code.claude.com/docs/en/code-review.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Slash command reference'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Find bugs with ultrareview'
+    url: 'https://code.claude.com/docs/en/ultrareview.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'codechup/claude-code-lab — the course lab repository'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m08-04-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Run `/code-review` against your working tree, a PR number, a branch, a path or a ref range.
+- Choose an effort level deliberately, and predict what changes between `low` and `high`.
+- Say what `--fix` and `--comment` do, and why `--fix` edits are not covered by `/rewind`.
+- Pick between `/code-review`, `/simplify` and `/security-review` for a given goal.
+- Use `/diff` to look at the working tree without leaving the session.
+- Run a review headlessly with `claude -p "/code-review …"` and read the result.
+
+**Prerequisites.** Lessons 01–03 and a clone of the lab repository. The local `/code-review` command needs no GitHub App and no Team or Enterprise plan.
+
+<WhenNotToUse>
+  These commands review a diff; they are not a substitute for the checks that already run on every
+  commit. Do not use a review pass to find what a type checker, linter or test suite would find in a
+  second — configure those instead. Do not run one on a branch with nothing on it: `/code-review`
+  reviews your branch's commits ahead of its upstream plus uncommitted changes, so an empty tree has
+  nothing to report. Do not treat a clean review as proof of correctness — at `low` and `medium` it
+  reports only the findings it is most confident in, and a clean result at `low` means exactly that
+  and nothing more. And do not use it as your only security control: `/security-review` looks at a
+  diff, not at your threat model.
+</WhenNotToUse>
+
+## Concept
+
+### `/code-review` and what it looks at
+
+`/code-review` reviews a diff in your terminal without installing the GitHub App. It reports correctness bugs and reuse, simplification and efficiency cleanups. With no argument it reviews **your branch's commits ahead of its upstream plus any uncommitted changes** — so it needs work on the branch or in the working tree to have something to say.
+
+To review something else, pass a target: a file path, a PR number, a branch name, or a ref range such as `main...my-feature`.
+
+<CodeBlock title="targets">
+
+```bash
+/code-review
+/code-review src/store.ts
+/code-review 1234
+/code-review main...my-feature
+```
+
+</CodeBlock>
+
+The review runs as a background subagent with its own context window, so it does not fill your conversation; the findings arrive when it completes. `/review` is an alias for `/code-review`.
+
+### Effort is the coverage/confidence dial
+
+Pass an effort level to trade coverage for confidence:
+
+| Level           | What you get                                                                                    |
+| --------------- | ----------------------------------------------------------------------------------------------- |
+| `low`, `medium` | Only the findings the review is most confident in — fewer false positives                       |
+| `high` … `max`  | Broader coverage, and it may include findings it is less sure about                             |
+| `ultra`         | The deep multi-agent [ultrareview](https://code.claude.com/docs/en/ultrareview.md) in the cloud |
+
+When you do not type a level, the review reuses the last level from `low` through `max` you typed — even in an earlier session — and shows a notice such as `Reusing high effort, the level you typed last time`. Type a level to change what later runs reuse; a level passed in a non-interactive `-p` run does not update it, and `ultra` neither updates nor uses the remembered level.
+
+This is not an abstract dial. The lab below runs the same one-line diff at `low` and at `high` and gets a clean result and two findings respectively.
+
+### Flags
+
+| Flag        | What it does                                                                                           |
+| ----------- | ------------------------------------------------------------------------------------------------------ |
+| `--fix`     | Applies the findings to your working tree after the review                                             |
+| `--comment` | Posts the findings as inline pull request comments                                                     |
+| `--post`    | On an `ultra` cloud review of a `github.com` PR, preselects posting the findings to the PR (v2.1.227+) |
+
+One consequence worth memorising: a **background** review applies its `--fix` edits outside your session's checkpoints, so `/rewind` does not undo them — use git to revert. When the review runs in the foreground, its edits happen during your own turn and `/rewind` restores them as usual. The review follows your `CLAUDE.md` like any session, but it does not read `REVIEW.md` (that file is for the managed GitHub Code Review product).
+
+### Three commands, three jobs
+
+| Command            | Job                                                                                                                           |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `/code-review`     | Correctness bugs plus reuse, simplification and efficiency cleanups; takes an effort level, `--fix`, `--comment` and a target |
+| `/simplify`        | Cleanup only — readability and maintainability, without hunting for bugs; takes an effort level, `--fix` and a path           |
+| `/security-review` | Security vulnerabilities; like `/code-review` it takes a target and can apply its fixes or post them as comments              |
+
+The split matters because it changes what you get back. `/simplify` runs a cleanup-only review and never sets out to find bugs; if you have scripted `/simplify` expecting bug-finding, the replacement is `/code-review --fix`.
+
+And `/diff` is the fourth, smallest one: it shows you the changes in your working tree, including the edits Claude has made so far. Reach for it before any of the other three — reviewing a diff you have not looked at is how a review becomes a rubber stamp.
+
+This lesson's example prompt is the plain-language route to the same thing — Claude can start the review itself when you ask for one:
+
+```text
+Review the change I have in the working tree before I open a PR. Be strict: I would
+rather see a finding you are unsure about than miss a real one.
+```
+
+### Headless reviews
+
+`/code-review` is a bundled skill, and skills are invocable from `-p`:
+
+<CodeBlock title="review from a script">
+
+```bash
+claude -p "/code-review high" --model sonnet --max-turns 30 --output-format text
+```
+
+</CodeBlock>
+
+In a `-p` run the review runs in the **foreground**: Claude Code waits for it and includes the findings in the response — with one exception, `ultra`, which launches the cloud review without waiting and prints a link. To start a cloud review from a script or CI, run `claude -p '/code-review ultra'`.
+
+Claude can also start `/code-review` on its own when you ask for a review in plain language, and a scheduled task with `/code-review` as its prompt runs one. To keep the command available for you to type while stopping Claude and scheduled tasks from starting it, add a `skillOverrides` entry to a settings file:
+
+<CodeBlock title="~/.claude/settings.json">
+
+```json
+{
+  "skillOverrides": {
+    "code-review": "user-invocable-only"
+  }
+}
+```
+
+</CodeBlock>
+
+## Hands-on lab
+
+<Lab
+  title="Lab · the same diff at two effort levels"
+  lessonId="en/l2-intermediate/m08-git/code-review-commands"
+  repoTag="lesson/m08-04-start"
+  steps={[
+    'In your throwaway clone, check out the tag that carries bug B1 and branch from it: `git checkout lesson/m08-04-start && git checkout -B lab-m08-04 && npm ci`. Run `npm test`: four tests fail — two in `test/store.test.ts` on `paginate` itself and two in `test/api.test.ts` that go through it.',
+    'Fix it by hand, leaving the change uncommitted: in `src/store.ts`, change `const start = page * pageSize;` to `const start = (page - 1) * pageSize;`. Run `npm test` again — 4 files, 15 tests, green.',
+    'Look at what you are about to have reviewed: `git diff`. In an interactive session, `/diff` shows the same thing plus anything Claude has edited.',
+    'Review it at low effort: `claude -p "/code-review low" --model sonnet --max-turns 30 --output-format text`',
+    'Review the identical diff at high effort: `claude -p "/code-review high" --model sonnet --max-turns 30 --output-format text`',
+    'Run the security pass on the same diff: `claude -p "/security-review" --model sonnet --max-turns 30 --output-format text`',
+    'Compare the three results and decide which findings you would act on before opening the PR from lesson 03.',
+  ]}
+  expected="`low` reports no findings on this one-line diff. `high` reports the same fix as correct but flags that `page` and `pageSize` are still unvalidated. `/security-review` reports no vulnerabilities and explains why the change adds no attack surface."
+  checklist={[
+    '`npm test` reported four failures before the fix and “15 passed (15)” after it',
+    'The diff under review is one line in `src/store.ts`',
+    'The `low` run returned no findings',
+    'The `high` run returned at least one finding the `low` run did not',
+    '`/security-review` returned a reasoned “no vulnerabilities”, not a bare pass',
+    'Nothing was committed or pushed to the lab repository',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m08-git/04-code-review-commands/03-npm-test-before-after.txt"
+    range="3-20"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m08-git/04-code-review-commands/01-code-review-low-and-high.txt"
+    range="4-14"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m08-git/04-code-review-commands/02-security-review.txt"
+    range="3-8"
+  />
+</Lab>
+
+The first capture is the lesson in one screen. At `low`, the review of a correct one-line arithmetic fix returned nothing — the effort level is doing exactly what the docs say it does, reporting only high-confidence findings. At `high`, on the byte-for-byte identical diff, it confirmed the fix and then flagged two things the diff exposes but does not introduce: `page` is still unvalidated (and the fix quietly changes what `page = 0` does — previously the first page, now an empty array), and `pageSize` is unvalidated too. It also noticed that the codebase already maps `InvalidTaskError` to HTTP 400, so the validation pattern exists and was simply not applied here.
+
+That is the finding lesson 01's change implements. The two lessons were captured from the same repository on the same day, and the review found the gap on its own.
+
+The prose in the first capture is Turkish because the recording machine's global Claude Code preferences ask for Turkish answers — the same standing-preferences effect the lab in lesson 01 shows. The findings themselves are language-independent: file, line, and what is wrong.
+
+The `/security-review` capture is worth reading for its shape rather than its verdict. It says no vulnerabilities **and** why: an in-memory array slice with no user-controlled paths, queries, commands or auth logic. A security pass that returns "looks fine" with no reasoning is not a result you can act on.
+
+### Watching a review from the terminal
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+claude -p "/code-review high" --model sonnet --max-turns 30 --output-format text
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+claude -p "/code-review high" --model sonnet --max-turns 30 --output-format text
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+claude -p "/code-review high" --model sonnet --max-turns 30 --output-format text
+```
+
+  </Fragment>
+</OSTabs>
+
+The command is the same on every platform; only the quoting rules differ, and the double quotes above work in all three shells. Inside an interactive session you type `/code-review high` with no flags at all.
+
+## Anti-patterns
+
+**Reading a clean `low` review as "no bugs".** `low` and `medium` deliberately withhold anything they are not confident about. _Fix:_ if the answer matters, run `high` — as the lab shows, the same diff produced nothing and then two findings.
+
+**`--fix` on a diff you have not read.** Background `--fix` edits sit outside your checkpoints, so `/rewind` will not take them back. _Fix:_ read the findings first, or use git to revert.
+
+**Using `/simplify` to hunt for bugs.** It is a cleanup-only review by design. _Fix:_ `/code-review --fix` when you want bugs found and fixed.
+
+**Reviewing the wrong thing.** With no target, the review covers commits ahead of the upstream plus uncommitted changes — which on a freshly branched, freshly committed tree can be more or less than you think. _Fix:_ pass an explicit target, such as `main...my-feature`.
+
+**Letting the remembered effort level surprise you.** A bare `/code-review` reuses the last level you typed, possibly from another session weeks ago. _Fix:_ type the level when it matters, and read the `Reusing … effort` notice when it appears.
+
+<Callout variant="changed">
+  `/simplify` was the name of today's `/code-review` before v2.1.147, when it applied fixes by
+  default. It is now a separate cleanup-only review that applies fixes without hunting for bugs; if
+  you scripted `/simplify` for bug-finding, switch to `/code-review --fix`.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m08-git/code-review-commands"
+  questionId="q1"
+  lang="en"
+  prompt="You run `/code-review` with no arguments on a feature branch. What gets reviewed?"
+  options={[
+    {
+      text: 'Every file in the repository.',
+      explanation: 'It reviews a diff, not the whole tree.',
+    },
+    {
+      text: 'The branch’s commits ahead of its upstream, plus any uncommitted changes.',
+      correct: true,
+      explanation: 'Which is why an empty branch and clean tree give it nothing to report.',
+    },
+    {
+      text: 'Only the staged changes.',
+      explanation: 'Staged and unstaged working-tree changes are both included.',
+    },
+    {
+      text: 'The most recent commit only.',
+      explanation: 'All commits ahead of the upstream are in scope.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m08-git/code-review-commands"
+  questionId="q2"
+  lang="en"
+  prompt="A background `/code-review --fix` changed three files and you want them back. What works?"
+  options={[
+    {
+      text: '/rewind',
+      explanation:
+        'A background review applies its --fix edits outside the session’s checkpoints, so /rewind does not undo them.',
+    },
+    {
+      text: 'git checkout / git restore on those files',
+      correct: true,
+      explanation: 'The docs say to use git to revert a background review’s fixes.',
+    },
+    {
+      text: '/code-review --undo',
+      explanation: 'No such flag.',
+    },
+    {
+      text: 'Nothing — the edits are permanent.',
+      explanation: 'They are ordinary working-tree edits; git can revert them.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m08-git/code-review-commands"
+  questionId="q3"
+  lang="en"
+  prompt="You want a readability and maintainability pass, with no bug hunting. Which command?"
+  options={[
+    {
+      text: '/simplify',
+      correct: true,
+      explanation: 'A cleanup-only review — it applies fixes without hunting for bugs.',
+    },
+    {
+      text: '/code-review low',
+      explanation: 'Still a bug-finding review, just a conservative one.',
+    },
+    { text: '/security-review', explanation: 'That looks for vulnerabilities.' },
+    { text: '/diff', explanation: 'That only shows you the working-tree changes.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m08-git/code-review-commands"
+  questionId="q4"
+  lang="en"
+  prompt="In a headless `claude -p '/code-review high'` run, where does the review run?"
+  options={[
+    {
+      text: 'In the foreground — Claude Code waits for it and includes the findings in the response.',
+      correct: true,
+      explanation:
+        'Non-interactive runs are one of the documented foreground cases; `ultra` is the exception.',
+    },
+    {
+      text: 'In the background, so the run exits before the findings arrive.',
+      explanation: 'Background is the interactive default, not the `-p` behaviour.',
+    },
+    {
+      text: 'In the cloud, always.',
+      explanation: 'Only `ultra` launches the cloud review.',
+    },
+    {
+      text: 'It refuses to run headlessly.',
+      explanation: 'Bundled skills are invocable from `-p`.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m08-git/code-review-commands"
+  questionId="q5"
+  lang="en"
+  prompt="You type `/code-review` with no level and see `Reusing high effort, the level you typed last time`. Why?"
+  options={[
+    {
+      text: 'The session’s current effort is high.',
+      explanation:
+        'The session effort is only used when you have never typed a level; otherwise the remembered one wins.',
+    },
+    {
+      text: 'A bare `/code-review` reuses the last level from low through max that you typed, even in an earlier session.',
+      correct: true,
+      explanation: 'Type a level to change what later runs reuse.',
+    },
+    {
+      text: 'The repository’s CLAUDE.md sets a default level.',
+      explanation: 'CLAUDE.md guides the review’s content, not its effort level.',
+    },
+    {
+      text: 'high is the built-in default.',
+      explanation:
+        'There is no fixed built-in default; the remembered level or the session effort applies.',
+    },
+  ]}
+/>
+
+**Next:** `05-github-app` moves the review off your machine — what `/install-github-app` sets up, and what changes once `@claude` works in the repository.

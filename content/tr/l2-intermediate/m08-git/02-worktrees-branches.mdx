@@ -1,0 +1,38 @@
+---
+title: 'Worktree’ler ve branch’ler'
+description: 'Çarpışmadan paralel Claude Code oturumları: `claude --worktree`, EnterWorktree tool’u, subagent’lar için `isolation: worktree` — ve `/branch`’in neden kodu değil konuşmayı dalladığı.'
+level: 2
+module: 'm08-git'
+order: 2
+duration_min: 20
+difficulty: core
+tags: ['git', 'worktrees', 'parallel', 'sessions']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Run parallel sessions with worktrees'
+    url: 'https://code.claude.com/docs/en/worktrees.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage sessions'
+    url: 'https://code.claude.com/docs/en/sessions.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Common workflows'
+    url: 'https://code.claude.com/docs/en/common-workflows.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Subagents'
+    url: 'https://code.claude.com/docs/en/sub-agents.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m08-02-start'
+---
+
+> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l2-intermediate/m08-git/02-worktrees-branches.mdx` dosyasıdır.
+
+## Özet
+
+Bu ders paralel çalışmayı izole eder. `claude --worktree <ad>` varsayılan olarak `.claude/worktrees/<ad>/` altında, `worktree-<ad>` adlı yeni bir branch üzerinde bir worktree oluşturur; `worktree.baseRef` ayarı `"fresh"` (varsayılan) veya `"head"` değerini alır ve `.worktreeinclude` gitignore’lanmış dosyaları her yeni worktree’ye kopyalar. Claude oturum sırasında `EnterWorktree` tool’uyla bir worktree’ye geçebilir, `ExitWorktree` ile çıkabilir; bir subagent’ı kalıcı olarak izole etmek için frontmatter’a `isolation: worktree` eklenir. Ders ayrıca izolasyon sırasında Claude Code’un uyguladığı dört kontrolü ve `/branch`’in kodu değil konuşmayı kopyaladığını açıkça ayırır. Laboratuvar `git worktree list` çıktısını önce ve sonra karşılaştırır.

@@ -1,0 +1,38 @@
+---
+title: 'Kod inceleme komutları'
+description: '`/code-review` seviyeleri ve hedefleri, yalnızca temizlik yapan `/simplify`, güvenlik açığı arayan `/security-review` ve çalışma ağacına bakmak için `/diff` — gerçek bir diff üzerinde, headless çalıştırıldı.'
+level: 2
+module: 'm08-git'
+order: 4
+duration_min: 20
+difficulty: core
+tags: ['git', 'code-review', 'review', 'effort']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Code Review'
+    url: 'https://code.claude.com/docs/en/code-review.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Slash command reference'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Find bugs with ultrareview'
+    url: 'https://code.claude.com/docs/en/ultrareview.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'codechup/claude-code-lab — the course lab repository'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m08-04-start'
+---
+
+> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l2-intermediate/m08-git/04-code-review-commands.mdx` dosyasıdır.
+
+## Özet
+
+Bu ders yerel inceleme komutlarını kapsar. Argümansız `/code-review`, branch’inizin upstream’inin önündeki commit’leri ve çalışma ağacındaki değişiklikleri inceler; hedef olarak bir dosya yolu, PR numarası, branch adı veya `main...my-feature` gibi bir ref aralığı verebilirsiniz. Efor seviyesi kapsam ile güven arasında bir kadran: `low` ve `medium` yalnızca en emin olduğu bulguları, `high`–`max` daha geniş bir kapsamı raporlar; `ultra` bulutta çalışır. `--fix` bulguları çalışma ağacına uygular (arka planda çalışan bir inceleme için `/rewind` bunları geri almaz), `--comment` bunları PR’a inline yorum olarak bırakır. `/simplify` yalnızca temizlik yapar, `/security-review` güvenlik açıklarına bakar, `/diff` çalışma ağacını gösterir. Laboratuvar aynı tek satırlık diff’i `low` ve `high` ile inceler: `low` hiçbir şey bulmaz, `high` iki bulgu raporlar.

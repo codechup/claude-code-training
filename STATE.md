@@ -26,7 +26,7 @@ _None._
 |---|---|---|---|---|---|
 | `P17` | L2 Intermediate module: Models and effort (m05-models-effort) | opus-p17-2026-09-07 | `plan/17-l2-m05-models-effort` | 2026-09-07T08:56:12Z | — |
 | `P18` | L2 Intermediate module: Skills (m06-skills) | opus-p18-2026-09-07 | `plan/18-l2-m06-skills` | 2026-09-07T08:56:13Z | — |
-| `P20` | L2 Intermediate module: Git flows (m08-git) | opus-p20-2026-09-07 | `plan/20-l2-m08-git` | 2026-09-07T08:56:14Z | — |
+| `P19` | L2 Intermediate module: Hooks (m07-hooks) | opus-p19-2026-09-07 | `plan/19-l2-m07-hooks` | 2026-09-07T08:56:13Z | — |
 | `P21` | L2 Intermediate module: Prompting (m09-prompting) | opus-p21-2026-09-07 | `plan/21-l2-m09-prompting` | 2026-09-07T08:56:15Z | — |
 
 Stale plans (no refresh for 24 h) may be reclaimed with `node tools/plan/cli.ts claim PNN --owner <name> --force`.
@@ -43,7 +43,7 @@ _None._
 | `P14` | L1 Beginner module: Interact (m02-interact) | opus-p14-2026-09-07 | `plan/14-l1-m02-interact` |
 | `P15` | L1 Beginner module: Memory (m03-memory) | opus-p15-2026-09-07 | `plan/15-l1-m03-memory` |
 | `P16` | L1 Beginner module: Commands (m04-commands) | opus-p16-2026-09-07 | `plan/16-l1-m04-commands` |
-| `P19` | L2 Intermediate module: Hooks (m07-hooks) | opus-p19-2026-09-07 | `plan/19-l2-m07-hooks` |
+| `P20` | L2 Intermediate module: Git flows (m08-git) | opus-p20-2026-09-07 | `plan/20-l2-m08-git` |
 
 ## Done
 
@@ -54,11 +54,11 @@ _None._
 
 | Plan | Status | Updated | Owner |
 |---|---|---|---|
-| `P19` | review | 2026-09-07T10:01:36Z | opus-p19-2026-09-07 |
+| `P20` | review | 2026-09-07T10:05:06Z | opus-p20-2026-09-07 |
 | `P14` | review | 2026-09-07T09:08:45Z | opus-p14-2026-09-07 |
 | `P21` | in_progress | 2026-09-07T08:56:15Z | opus-p21-2026-09-07 |
-| `P20` | in_progress | 2026-09-07T08:56:14Z | opus-p20-2026-09-07 |
 | `P18` | in_progress | 2026-09-07T08:56:13Z | opus-p18-2026-09-07 |
+| `P19` | in_progress | 2026-09-07T08:56:13Z | opus-p19-2026-09-07 |
 | `P17` | in_progress | 2026-09-07T08:56:12Z | opus-p17-2026-09-07 |
 | `P13` | review | 2026-09-07T08:48:02Z | opus-p13-2026-09-07 |
 | `P16` | review | 2026-09-07T08:46:11Z | opus-p16-2026-09-07 |
@@ -93,9 +93,9 @@ _None._
 - **P16** — research/deprecations.md says `/btw` history moved to `Shift+←/→`. The live interactive-mode.md says `Left`/`Right` (v2.1.187+). That row is wrong and needs correcting by its owner.
 - **P16** — The `/new-lesson` scaffold emits `{/* … */}` MDX comments into TR stubs; `prettier --write` rewrites them to `{/_ … _/}`, which is not a valid MDX comment. P11 should change the scaffold.
 - **P16** — Shiki's `github-light` keyword red (#D73A49) fails axe `color-contrast` (serious) on code backgrounds — hit by a PowerShell `function` keyword. Worked around in content; P05 should fix the theme.
-- **P19** — research/feature-inventory.md line 35 lists 32 hook events and omits SessionEnd; the live hooks.md lifecycle table has 33. docs/CURRICULUM.md line 80 also says "All 32 events". P03 owns both files - the lessons teach 33, with the SessionEnd firing captured in content/_shared/transcripts/m07-hooks/06-event-catalogue/01-which-events-fire.txt.
-- **P19** — research/feature-inventory.md line 35 and research/deprecations.md line 17 both give permissionDecision as allow|deny|block. Current docs: allow|deny|ask|defer, with block/approve as deprecated aliases for deny/allow. P03 owns research/.
-- **P19** — Lab repo (P22): BUGS.md is missing from the lesson/m07-05-start tree, so the lab hook reports "unknown entries in BUGS.md".
-- **P19** — e2e/lesson.spec.ts (P04/P12) is hardcoded to the M0 lesson and cannot be pointed at another module, so this plan verified accessibility with a temporary spec that was deleted afterwards. Generalising that spec would let future content plans satisfy their acceptance criteria without touching e2e/.
+- **P20** — research/deprecations.md (owned by P03) has no row for `includeCoAuthoredBy` -> `attribution`, for `/simplify` becoming a cleanup-only review at v2.1.147, or for `/review` becoming a true alias of `/code-review` at v2.1.223. All three are live in the official docs and are used in m08-git lessons 01 and 04; the inventory owner should add them.
+- **P20** — The settings reference marks `includeCoAuthoredBy` deprecated but does not name the release that deprecated it, so lesson 01's Changed callout states the deprecation without a version.
+- **P20** — https://code.claude.com/docs/en/simplify.md returns 404 although commands.md links /docs/en/simplify, and the page is absent from llms.txt. /simplify is therefore sourced from commands.md and code-review.md only.
+- **P20** — The lab repo (P22) has no lesson/m08-05-* tag pair; CURRICULUM does not mark lesson 05 as a Lab, so it ships with repo_tag: none and a Lab block the reader runs against a repository they own.
 - **P22** — Tag coverage is M1-only (m01-m09, 23 lesson pairs / 46 tags), not every hands-on lesson in docs/CURRICULUM.md as the plan Scope literally asks (nearly every module through m21). A follow-up plan must tag m10-m21 (L3/L4) before those content plans can build real `Lab` blocks; two structural surfaces m14 will need (prompt-injection-shaped, secrets-shaped) are already seeded in the lab repo (src/api/server.ts, catalogued as B6/B7 in its BUGS.md) but not yet wired to a tag.
 - **P22** — m03-01-claude-md's lesson teaches `/init`, which writes a project's *root* `./CLAUDE.md`; this plan's m03-01 tag pair instead adds `.claude/CLAUDE.md` (matching the outer task's 'its own minimal .claude/ (a short CLAUDE.md, ...)' wording and this training repo's own layout convention). The m03-01 lesson writer should decide whether to point the lesson at `.claude/CLAUDE.md` as-is or ask for a root-level file instead - flagging rather than guessing which the lesson intends.

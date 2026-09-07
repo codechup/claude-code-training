@@ -2,7 +2,7 @@
 id: P19
 title: "L2 Intermediate module: Hooks (m07-hooks)"
 milestone: M1
-status: review
+status: in_progress
 owner: opus-p19-2026-09-07
 branch: plan/19-l2-m07-hooks
 model_hint: opus
@@ -15,12 +15,8 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T10:01:36Z
-open_questions:
-  - 'research/feature-inventory.md line 35 lists 32 hook events and omits SessionEnd; the live hooks.md lifecycle table has 33. docs/CURRICULUM.md line 80 also says "All 32 events". P03 owns both files - the lessons teach 33, with the SessionEnd firing captured in content/_shared/transcripts/m07-hooks/06-event-catalogue/01-which-events-fire.txt.'
-  - 'research/feature-inventory.md line 35 and research/deprecations.md line 17 both give permissionDecision as allow|deny|block. Current docs: allow|deny|ask|defer, with block/approve as deprecated aliases for deny/allow. P03 owns research/.'
-  - 'Lab repo (P22): BUGS.md is missing from the lesson/m07-05-start tree, so the lab hook reports "unknown entries in BUGS.md".'
-  - 'e2e/lesson.spec.ts (P04/P12) is hardcoded to the M0 lesson and cannot be pointed at another module, so this plan verified accessibility with a temporary spec that was deleted afterwards. Generalising that spec would let future content plans satisfy their acceptance criteria without touching e2e/.'
+updated_at: 2026-09-07T08:56:13Z
+open_questions: []
 ---
 
 ## Goal
@@ -104,105 +100,5 @@ A reviewer opens `npm run dev`, visits each of the 7 lessons at `/en/l2-intermed
 
 ## Handoff notes
 
-### What was written
-
-Seven EN lessons under `content/en/l2-intermediate/m07-hooks/`, using the slugs from
-`docs/CURRICULUM.md` §2 (which differ from the deliverable names in this plan's Scope —
-CURRICULUM wins, per step 1): `01-hook-anatomy`, `02-block-dangerous-commands`,
-`03-format-on-save`, `04-notify-when-done`, `05-session-start-context`, `06-event-catalogue`,
-`07-debugging-hooks`. Seven matching TR twins as `draft: true` stubs with translated
-title/description and a one-paragraph Turkish summary.
-
-Nine transcripts under `content/_shared/transcripts/m07-hooks/<NN-slug>/`, all captured this
-session against Claude Code 2.1.263, each with a `# ` provenance first line and a per-folder
-`README.md`. Labs 02–05 ran in detached worktrees of `codechup/claude-code-lab` at
-`lesson/m07-02-start` … `lesson/m07-05-start`; labs 01, 06 and 07 ran in a scratch project
-(`lab.repo_tag: 'none'`) because they register throwaway hooks on many events at once.
-
-`content/_shared/sources.json`: appended `docs-settings` and `docs-debug-your-config`; tagged
-`m07-hooks` onto the existing `docs-permissions`, `docs-memory` and `repo-claude-code-lab`
-entries. `docs-hooks` and `docs-hooks-guide` were already tagged for this module.
-
-Both module `index.mdx` files (EN and TR) had their numbered lesson lists deleted, per the lead's
-mid-plan correction: the module page renders the lesson list from the collection, so a list in
-the MDX shows every lesson twice. Only the intro paragraph remains.
-
-### Drift found (docs win, D093)
-
-1. **33 hook events, not 32.** `research/feature-inventory.md` line 35 lists 32 and omits
-   `SessionEnd`; the live `hooks.md` lifecycle table has 33 rows including it. Lesson 06 teaches
-   33. `docs/CURRICULUM.md` §2's `06-event-catalogue` line still says "All 32 events" (P03 owns
-   that file).
-2. **`permissionDecision` values are `allow | deny | ask | defer`.** Both
-   `research/feature-inventory.md` (line 35) and `research/deprecations.md` (line 17) say
-   `allow|deny|block`. `block` is a deprecated alias mapping to `deny`, alongside `approve` →
-   `allow`; `ask` and `defer` are current values the inventory is missing. Lessons 01 and 02
-   carry a `<Callout variant="changed">` for this.
-3. **Blocking is not one list.** The reference's per-event exit-code table names ten blocking
-   events; `PreCompact` and `PreModelSwitch` block on exit 2 from their own sections, and
-   `WorktreeCreate` aborts on any non-zero exit. Lessons 01 and 06 say so explicitly.
-
-### Lab-repo observations (P22 owns the repo — nothing changed there)
-
-- `BUGS.md` is absent from the `lesson/m07-05-start` tree, so the lab's `session-context.mjs`
-  reports "unknown entries in BUGS.md". The capture is kept as-is: it proves the hook's
-  `additionalContext` reached the model (Claude quotes the word "unknown"), which is stronger
-  evidence than a clean count would have been. Worth adding `BUGS.md` to that tag.
-- `guard-dangerous-commands.mjs` does not match a plain `rm -rf build` — its regex requires `/`,
-  `~`, `..` or a wildcard after the flags. That is a defensible design line and lesson 02 teaches
-  it as one (the offline capture proves both halves), but it means a "delete the build folder"
-  prompt produces no hook block. The lab prompt sweeps the directory contents instead, which the
-  guard does match.
-
-### Evidence
-
-Every command shown in a lab was run. Lesson 03's step 7 (formatter path pointed at a missing
-file → the edit still lands, unformatted) and lesson 06's step 6 (`disableAllHooks` passed on the
-command line → `events.log` is never created) were both verified after the lessons were written.
-Lesson 04's step 6 is interactive-only by nature: a `Notification` of type `permission_prompt` is
-gated on the user being away from the keyboard, so it cannot be captured headlessly — the lesson
-says so in prose and the transcript shows the `Stop` half. `/hooks` is an interactive TUI and is
-described in prose with no invented transcript.
-
-### Review pipeline (D071)
-
-**reviewer** — CHANGES REQUESTED: 1 blocker, 3 major, 1 minor, 1 nit. All six addressed.
-The blocker was the temporary Playwright config and spec, which live in P04's `e2e/**`; they were
-deleted after the final run and the underlying limitation (`e2e/lesson.spec.ts` is hardcoded to
-the M0 lesson) is now an open question. Three lab steps that asserted an outcome with no recording
-were captured and embedded (`01/02-matcher-does-not-match.txt`,
-`03/02-broken-hook-path.txt`, `06/02-hooks-disabled.txt`); lesson 04's interactive
-`Notification` step is now labelled documentation-sourced rather than lab-proven. Clean on its
-side: template order, `<WhenNotToUse>`, the D027 worked prompt, frontmatter schema, sources,
-transcript paths and ranges, anti-pattern fixes, quiz shape, hygiene, Turkish diacritics.
-
-**fact-checker** — FAIL as delivered: 1 wrong, 16 unverifiable, 3 inventory-drift rows, over
-82 checked claims. The 16 unverifiable items are a tooling ceiling, not a content problem: WebFetch
-truncated `hooks.md` at the same point (~line 892 of the fetched form) on every attempt, including
-a raw-dump attempt, so everything past the `Exit code 2 behavior per event` table could not be
-quoted. This session had fetched the complete page with `curl` before writing, and re-checked all
-16 against that file — every one is present verbatim: `preferredNotifChannel`; Notification
-discarding `systemMessage`/`continue`; `Stop hook feedback`; the `terminalSequence` OSC allowlist
-and its interactive-only limit; `WorktreeCreate` reading stdout as a path; "Only `type: "command"`
-and `type: "mcp_tool"` hooks are supported" for `SessionStart`; prompt-injection defences on
-imperative `additionalContext`; resume replaying saved text while `SessionStart` re-runs with
-`source: "resume"`; `--debug` not printing to the terminal; `CLAUDE_CODE_DEBUG_LOG_LEVEL=verbose`;
-the working-directory fallback chain; and the deprecated `approve`/`block` mapping (hooks.md
-line 1778). The one WRONG was real and is fixed: lesson 06 now says `Elicitation` and
-`ElicitationResult` block through exit 2 (denying the elicitation, declining the response) as well
-as `hookSpecificOutput.action`. All three inventory-drift rows the agent found match the drift
-recorded above and are in `open_questions`.
-
-Counts: 82 claims checked, 1 wrong fixed, 16 unverifiable re-verified from the raw page, 3 drift
-rows filed against P03's files, 6 reviewer findings resolved.
-
-### Infrastructure note
-
-The session scratchpad directory is shared between concurrently running sessions: a helper file
-written there by this session was overwritten by cct-wt-17 mid-run. Prefix scratch filenames with
-the plan id.
-
-### Open questions
-
-None blocking. The two lab-repo observations above are for P22 to consider.
+- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
 

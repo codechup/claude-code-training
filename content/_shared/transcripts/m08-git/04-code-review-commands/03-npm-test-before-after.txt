@@ -1,0 +1,20 @@
+# Captured 2026-09-07, Node 24 / vitest 5.0.0, throwaway clone of codechup/claude-code-lab at tag lesson/m08-04-start (bug B1 present),
+# then again after the one-line fix. Verbatim stdout, filtered to the failure and summary lines with grep; the middle line is a note, not output.
+$ npm test
+   ❯ paginate (2)
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  test/api.test.ts > labtrack API > POST /tasks then GET /tasks returns it
+AssertionError: expected [] to include 'write docs'
+ FAIL  test/api.test.ts > labtrack API > GET /tasks?page=1&pageSize=2 returns the first two items, in order
+AssertionError: expected [ 'c', 'd' ] to deeply equal [ 'a', 'b' ]
+ FAIL  test/store.test.ts > paginate > page 1 returns the first page, not the second
+AssertionError: expected [ 'task 3', 'task 4' ] to deeply equal [ 'task 1', 'task 2' ]
+     29|     const page1 = paginate(all, 1, 2);
+ FAIL  test/store.test.ts > paginate > page 2 continues right after page 1
+AssertionError: expected [ 'task 5' ] to deeply equal [ 'task 3', 'task 4' ]
+     36|     const page2 = paginate(all, 2, 2);
+
+# after changing src/store.ts line 57 to: const start = (page - 1) * pageSize;
+$ npm test
+ Test Files  4 passed (4)
+      Tests  15 passed (15)
