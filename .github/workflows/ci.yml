@@ -126,7 +126,7 @@ jobs:
         id: changed
         run: |
           git fetch --no-tags --depth=1 origin "${{ github.event.pull_request.base.sha }}"
-          files=$(git diff --name-only --diff-filter=ACMR "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" -- content docs research | tr '\n' ' ')
+          files=$(git diff --name-only --diff-filter=ACMR "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" -- content docs research | grep -E '\.mdx?$' | grep -v '^content/_shared/transcripts/' | tr '\n' ' ' || true)
           echo "files=${files}" >> "$GITHUB_OUTPUT"
 
       - name: lychee (changed files only)
