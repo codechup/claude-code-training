@@ -2,7 +2,7 @@
 id: P28
 title: "L3 Advanced module: MCP (m11-mcp)"
 milestone: M2
-status: review
+status: done
 owner: opus-p28-2026-09-07
 branch: plan/28-l3-m11-mcp
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T19:09:00Z
+updated_at: 2026-09-07T19:40:32Z
 open_questions:
   - "Lab repo (P22 owns it): the `.mcp.json` shipped at tags lesson/m11-03-start..m11-06-start launches `@modelcontextprotocol/server-github`, which npm marks deprecated ('Package no longer supported', version 2025.4.8). The live docs teach the remote HTTP server at https://api.githubcopilot.com/mcp/ with a PAT header. Suggest re-tagging with an HTTP `github` entry using `${GITHUB_TOKEN}` in a header."
   - "Lab repo (P22 owns it): `node src/cli.ts done <id>` rejects the 8-character id prefix that `node src/cli.ts list` prints, and exits with an unhandled InvalidTaskError stack trace rather than a message. Not listed in BUGS.md as a seeded defect; if unintended, worth a fix or a BUGS.md entry."

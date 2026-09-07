@@ -2,7 +2,7 @@
 id: P30
 title: "L3 Advanced module: Headless and CI (m13-headless-ci)"
 milestone: M2
-status: review
+status: done
 owner: opus-p30-2026-09-07
 branch: plan/30-l3-m13-headless-ci
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T19:06:56Z
+updated_at: 2026-09-07T19:40:34Z
 open_questions: []
 ---
 

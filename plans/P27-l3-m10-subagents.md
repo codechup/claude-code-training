@@ -2,7 +2,7 @@
 id: P27
 title: "L3 Advanced module: Subagents (m10-subagents)"
 milestone: M2
-status: review
+status: done
 owner: opus-p27-2026-09-07
 branch: plan/27-l3-m10-subagents
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T19:02:03Z
+updated_at: 2026-09-07T19:40:31Z
 open_questions: []
 ---
 

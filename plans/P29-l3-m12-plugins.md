@@ -2,7 +2,7 @@
 id: P29
 title: "L3 Advanced module: Plugins (m12-plugins)"
 milestone: M2
-status: review
+status: done
 owner: opus-p29-2026-09-07
 branch: plan/29-l3-m12-plugins
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T19:02:29Z
+updated_at: 2026-09-07T19:40:33Z
 open_questions:
   - 'content/tr/playbook/glossary.mdx has no `plugin` or `marketplace` entry, so the TR stubs keep both terms in plain text with an inline Turkish gloss rather than linking a dead anchor. The TR translation plan (P25/P26/P40/P41) should add both entries and propose their EN twins.'
   - '`research/feature-inventory.md` line 39 attributes the `claude plugin eval` flag surface to `plugins-reference`. That page has no eval section (verified 2026-09-07); the surface comes from `claude plugin eval --help`. P03 owns the inventory, so this plan did not edit it.'

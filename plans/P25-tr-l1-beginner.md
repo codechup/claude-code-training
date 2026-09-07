@@ -2,7 +2,7 @@
 id: P25
 title: "TR translation: L1 Beginner"
 milestone: M2
-status: review
+status: done
 owner: sonnet-p25-2026-09-07
 branch: plan/25-tr-l1-beginner
 model_hint: sonnet
@@ -16,7 +16,7 @@ owned_paths:
 shared_paths:
   - content/tr/playbook/glossary.mdx
 estimate: L
-updated_at: 2026-09-07T19:17:03Z
+updated_at: 2026-09-07T19:40:29Z
 open_questions: []
 ---
 

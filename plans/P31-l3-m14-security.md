@@ -2,7 +2,7 @@
 id: P31
 title: "L3 Advanced module: Security (m14-security)"
 milestone: M2
-status: review
+status: done
 owner: opus-p31-2026-09-07
 branch: plan/31-l3-m14-security
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T19:21:19Z
+updated_at: 2026-09-07T19:40:35Z
 open_questions:
   - 'No sandbox transcript: the capture machine is native Windows, where the docs say the Bash sandbox is unsupported. A session on macOS/Linux/WSL2 should capture a real sandbox denial (a write outside the working directory, and a host outside `sandbox.network.allowedDomains`) and add it to lesson 01.'
   - 'research/deprecations.md line 17 is stale: it gives the PreToolUse shape as `permissionDecision: allow|deny|block`. The live `hooks.md` (fetched 2026-09-07) gives `allow|deny|ask|defer`, with `block` only via exit code 2. Its owning plan should correct it.'

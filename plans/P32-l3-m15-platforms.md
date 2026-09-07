@@ -2,7 +2,7 @@
 id: P32
 title: "L3 Advanced module: Platforms (m15-platforms)"
 milestone: M2
-status: review
+status: done
 owner: opus-p32-2026-09-07
 branch: plan/32-l3-m15-platforms
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T18:56:10Z
+updated_at: 2026-09-07T19:40:36Z
 open_questions:
   - 'research/feature-inventory.md is missing Dispatch, the --tmux flag, /web-setup, /autofix-pr and /ios|/android, and does not record that `claude remote-control` is a real subcommand absent from the `Commands:` list in `claude --help` for 2.1.263 — P03 owns that file, so the drift is recorded here rather than edited in.'
   - 'The fact-checker asked for three inventory rows to be enriched, because each was too thin to have caught an error this module made: the IDE row does not record that VS Code exposes two model-visible `ide` tools (getDiagnostics plus the non-read-only executeCode) while JetBrains exposes one; the Desktop/web row does not record Desktop''s third-party-provider matrix, permission-mode set or worktree default path; the Claude Tag row does not record Access bundles, the ephemeral sandbox, the DM billing exception, routines, or that the claude.com Claude Tag docs carry a Public Beta label.'
