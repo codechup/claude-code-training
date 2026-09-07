@@ -47,10 +47,10 @@ Format: `NN-slug` — objective (duration, difficulty). "Lab" names the lab-repo
 
 **m04-commands — Built-in commands and the terminal** (D021, D075)
 1. `01-slash-command-reference` — The full built-in slash command table with one-line meanings (20 min, core)
-2. `02-cli-flags` — `claude`, `-p`, `-c`/`-r`, `--model`, `--effort`, `--permission-mode`, `--settings`, `--add-dir` (15 min, core) Lab
+2. `02-cli-flags` — `claude`, `-p`, `-c`/`-r`, `--model`, `--permission-mode`, `--settings`, `--add-dir` and the flags the live `cli-reference.md` lists (15 min, core) Lab
 3. `03-sessions` — `/resume`, `/branch`, `/fork`, `--teleport`; naming and finding past sessions (15 min, core) Lab
-4. `04-keybindings-statusline-theme` — Keyboard shortcuts, `/keybindings`, `/statusline`, `/theme`, `/fullscreen`, output styles (15 min, core)
-5. `05-subcommands` — `claude mcp`, `claude plugin`, `claude config`, environment variables that matter (15 min, core)
+4. `04-keybindings-statusline-theme` — Keyboard shortcuts, `/keybindings`, `/statusline`, `/theme`, `/tui fullscreen`, output styles (15 min, core)
+5. `05-subcommands` — `claude mcp`, `claude plugin`, `/config` (there is no `claude config` subcommand), environment variables that matter (15 min, core)
 
 ### Level 2 — Intermediate
 
