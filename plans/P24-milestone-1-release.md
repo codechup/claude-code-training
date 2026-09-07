@@ -2,7 +2,7 @@
 id: P24
 title: Milestone M1 release
 milestone: M1
-status: in_progress
+status: review
 owner: sonnet-p24-2026-09-07
 branch: plan/24-milestone-1-release
 model_hint: sonnet
@@ -12,8 +12,10 @@ owned_paths:
   - docs/release/M1-release.md
 shared_paths: []
 estimate: S
-updated_at: 2026-09-07T10:22:19Z
-open_questions: []
+updated_at: 2026-09-07T10:46:43Z
+open_questions:
+  - "P17/P19/P20/P21's plan-file Handoff notes were wiped back to the unfilled placeholder by later sibling squash merges (each L2 branch carried a stale copy of the 'claim P17-P21' commit); status is correctly 'done' (fixed on main by commit a62ab3c/PR #42) but the notes bodies are not. Real text survives at commits f909a64 (P17), cc9e27b (P19), 7df3ff8 (P20), 96eb711 (P21) and is quoted in docs/release/M1-release.md sec 8. Recommend a small chore(plans) follow-up PR to restore them in place."
+  - "One apt-repository base URL (https://downloads.claude.ai/claude-code/apt/stable, content/en/l1-beginner/m01-start/02-install.mdx) 404s on a bare curl GET; confirmed byte-identical to the official setup.md and not a browsable page, so this is a link-checker false positive, not a real defect. No action needed unless a future lychee run wants it added to lychee.toml's exclude list."
 ---
 
 ## Goal
@@ -75,4 +77,48 @@ A reviewer reads `docs/release/M1-release.md`, opens the live site's L1 and L2 i
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+**Session:** `sonnet-p24-2026-09-07`, worktree `../cct-wt-24`, branch `plan/24-milestone-1-release`.
+
+**Precondition fix, before any verification work.** This branch started 1 commit behind `main`;
+fast-forwarding picked up `a62ab3c` (`chore(plans): P13–P21 done; claim P24`, PR #42, merged
+independently by the repo owner) which flips P13–P21 to `done` and claims P24 for this session — a
+`git cherry-pick` of the equivalent local commit (`b4ee7ab`) came back empty for exactly that reason.
+See `docs/release/M1-release.md` §9 for a second, real finding made while confirming this: P17,
+P19, P20 and P21's Handoff-notes bodies were separately wiped back to the unfilled placeholder by
+later sibling squash merges (each L2 branch carried a stale copy of the "claim P17–P21" commit).
+That commit did not restore them, and this plan's `owned_paths` is only
+`docs/release/M1-release.md` — restoring another plan's Handoff notes in place is out of scope
+here, so the real text (recovered from the merge-commit shas) is quoted in the release doc's §8
+instead, and a small `chore(plans)` follow-up is recommended in §9 to fix the plan files themselves.
+
+**What was run (all real, D093 — full output pasted in `docs/release/M1-release.md`).**
+`node scripts/content-gate.ts` (158 files OK), `npm run typecheck` (0 errors), `npm run lint`
+(clean), `node scripts/check-raw-colors.mjs` / `check-public-hygiene.mjs` (both OK), `npm test`
+(184/184), `npm run build` (113 pages, `check-no-inline-script (dist): OK`). Lesson inventory: all
+nine L1/L2 modules ship exactly their `docs/CURRICULUM.md` §2 floor (51 EN lessons total, 51 TR
+twins, 50 correctly `draft: true`). Playwright: a temporary `playwright.p24.config.ts` (port 4424)
+plus a temporary `e2e/p24-m1-release.spec.ts` — 78 passed, 0 axe serious/critical, including an
+explicit LangSwitch-on-a-TR-draft check (`m02-interact/prompting-basics`); both temporary files
+deleted afterward. Full lychee sweep: the npm `lychee` package is not the Rust link checker (a
+different, unrelated tool — confirmed with `npm view lychee`); fell back to the plan's own
+permitted `curl` loop over 127 URLs extracted from `content/en/{l1-beginner,l2-intermediate}/**`
+and `content/_shared/sources.json` — 126×200, 1×404 on an `apt` repository base URL that is
+byte-identical to the official `setup.md` and isn't a browsable page (triaged as a false positive,
+not a real dead link; `content/_shared/sources.json` needed no fix). LHCI: all budgets met
+(perf ≥0.92, a11y/best-practices/seo all 1.00 across `/en/`, `/tr/`, `/design/`). Live: `edge.sh`
+14/14 PASS against `https://cc.codechup.com`; one lesson route per module curled live (all 200);
+the TR draft route independently 404s live and the EN twin's HTML contains "hazırlanıyor" —
+confirmed the Turkish-visitor experience end to end, not just locally.
+
+**Decisions.** Did not merge this PR to `main` (per the outer task's explicit instruction, which
+overrides this plan's own Steps §6 wording about merging and watching `deploy.yml`) — all L1–L2
+content is already deployed by the module plans' own merges, confirmed live in §7 of the release
+doc, so there is nothing this plan's own merge would add to the live site; `DEPLOY_ENABLED` was not
+touched. Did not restore P17/P19/P20/P21's wiped Handoff notes in place (out of `owned_paths`; see
+above). Did not edit `content/_shared/sources.json` (no dead entries found there).
+
+**Follow-ups / open questions raised.** See `open_questions` below and `docs/release/M1-release.md`
+§9 for the plan-bookkeeping restore; §8 lists each module's own content-level follow-ups
+(unchanged from their original Handoff notes, none release-blocking).
+
+**No blockers.**
