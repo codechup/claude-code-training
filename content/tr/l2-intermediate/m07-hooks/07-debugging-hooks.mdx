@@ -1,15 +1,15 @@
 ---
-title: "Hook'larda hata ayıklama"
-description: 'Yazdığınız hook hiçbir şey yapmıyor. Sırayla ilerleyin: `/hooks`, borulu test, hata ayıklama günlüğü — sonra neredeyse her şeyi açıklayan dört hata: yanlış yol, engellemeyen çıkış kodu, kirli stdout ve hiç eşleşmeyen bir matcher.'
+title: 'Hook’ları hata ayıklamak'
+description: 'Az önce yazdığınız hook hiçbir şey yapmıyor. Sırayla ilerleyin: /hooks, borulu bir test, debug log, sonra neredeyse her şeyi açıklayan dört hata — kötü bir yol, engellemeyen bir exit, kirli stdout ve hiç eşleşmeyen bir matcher.'
 level: 2
 module: 'm07-hooks'
 order: 7
 duration_min: 15
 difficulty: advanced
-tags: ['hooks', 'debugging', 'troubleshooting']
+tags: ['hooks', 'hata ayıklama', 'sorun giderme']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Hooks reference'
@@ -27,7 +27,312 @@ lab:
   repo_tag: 'none'
 ---
 
-Bu ders bir [hook](/tr/playbook/glossary/#hook) yanlış davrandığında izlenecek sabit sırayı verir: önce `/hooks` ile kayıtlı mı diye bakmak, sonra betiği elle JSON borulayarak çalıştırmak, sonra `claude --debug-file <yol>` ile hata ayıklama günlüğünü okumak. Bir hook çalıştırmasının üç sonucunu (sessiz başarı, engelleyen hata, engellemeyen hata) ayırt etmeyi ve dört klasik hatayı tanımayı öğretir. Laboratuvarda bir hook'un yolunu kasıtlı olarak bozar, oturumun hiçbir uyarı vermeden başarıyla tamamlandığını, tek kanıtın günlükteki bir satır olduğunu görür, sonra düzeltip doğrularsınız.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l2-intermediate/m07-hooks/07-debugging-hooks.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Bir [hook](/tr/playbook/glossary/#hook) yanlış davrandığında tahmin etmek yerine sabit bir sıra izlemek.
+- `--debug-file` ya da `/debug` ile hook debug loglamasını açmak ve önemli satırları okumak.
+- Bir hook koşusunun sahip olabileceği üç sonucu — sessiz başarı, engelleyen hata, engellemeyen hata — tanımak ve hangisine baktığınızı bilmek.
+- Çoğu hook hatasına neden olan dört hatayı teşhis etmek: kötü bir betik yolu, `exit 2` demek isterken `exit 1`, saf JSON olmayan stdout ve hiç eşleşmeyen bir matcher.
+- Etkileşimli olarak çalışan bir hook’un `-p`’de neden farklı davranabileceğini, ve tersini, açıklamak.
+
+**Ön koşullar.** `01`–`06` dersleri. Laboratuvar bir geçici klasörde çalışır.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bu ders, yapılandırılmış olup yanlış davranan hook’lar içindir. Hiçbir şey yapılandırılmamışsa,
+  `/hooks` size bunu tek bir tuş vuruşuyla söyler ve hata ayıklanacak bir şey yoktur. Sorun hook’un
+  değil Claude’un davranışıysa — hook ateşleniyor, amaçladığınızı döndürüyor ve oturum yine de
+  hoşlanmadığınız bir şey yapıyorsa — bu bir prompt ya da izin sorusudur, bir hook sorusu değil. Ve
+  bir hook’u `console.log` çağrıları ekleyerek hata ayıklamayın: çoğu event’ta stdout görünmezdir ve
+  görünür olduğu event’larda JSON’unuzu bozar.
+</WhenNotToUse>
+
+## Kavram
+
+### Sıra
+
+1. **`/hooks`.** Hiç kayıtlı mı, düşündüğünüz event’ta mı, düşündüğünüz dosyadan mı? Kaynaklar `User Settings`, `Project Settings`, `Local Settings`, `Plugin Hooks`, `Session Hooks` olarak etiketlenir. Eksikse, JSON’unuz muhtemelen geçersizdir — sondaki virgüllere ve yorumlara izin verilmez — ya da dosya izleyici düzenlemeyi kaçırmıştır, bu durumda oturumu yeniden başlatın.
+2. **Elle çalıştırın.** Bir hook, stdin okuyan bir programdır. Ona örnek bir event’ı borulayın ve exit kodunu kontrol edin. Bu saniyeler sürer ve her şeyin yarısını eler.
+3. **Debug log’u okuyun.** Hangi hook’ların eşleştiği, exit kodları ve tam stdout ile stderr’leri orada ve başka hiçbir yerde yazılıdır.
+4. **Ancak o zaman** matcher’dan, event’tan ya da Claude’dan şüphelenin.
+
+### Log’u açmak
+
+Log’u bilinen bir konuma yazmak için Claude Code’u `claude --debug-file <yol>` ile başlatın, ya da `claude --debug` çalıştırıp `~/.claude/debug/<oturum-kimliği>.txt`’yi okuyun. `--debug`’in terminale yazdırmadığını unutmayın. Oturum ortasında, `/debug` loglamayı açar ve size yolu söyler. Matcher düzeyinde ayrıntı için — hangi matcher’ların test edildiği ve kaç hook bulunduğu — `CLAUDE_CODE_DEBUG_LOG_LEVEL=verbose` ayarlayın.
+
+Aradığınız satırlar şöyle görünür:
+
+```text
+2026-07-19T02:03:24.382Z [DEBUG] Hook output does not start with {, treating as plain text
+2026-07-19T02:03:24.382Z [DEBUG] Hook PostToolUse:Write (PostToolUse) success:
+hook-ran
+```
+
+Bir `success:` satırı, çalıştığı ve 0 çıktığı anlamına gelir. Bir `error:` satırı yorumlayıcının mesajını taşır. `does not start with {` satırı, sayfadaki en yararlı tek tanı aracıdır — JSON’unuzun düz metin olarak okunduğu ve içindeki her kararın yok sayıldığı anlamına gelir.
+
+### Üç sonuç
+
+Sorun giderme kılavuzu bunları adlandırır ve onları birbirinden ayırt etmek işin çoğudur:
+
+- **Sessiz başarı.** Hiçbir şey görmezsiniz. Hook’un çalıştığını etkisiyle — yeniden biçimlendirilmiş bir dosya, bir log’daki bir satır — ya da debug log ile doğrulayın.
+- **Engelleyen hata.** Çoğu event’ta geri bildirimi görürsünüz: JSON’unuzun engelleyen kararı bir tane yaptıysa nedeni, yoksa hook’un stderr’i.
+- **Engellemeyen hata.** Eylem devam eder ve transcript bir `<hook adı> hook error` bildirimi gösterir — stderr’in ilk satırı `Failed with non-blocking status code:` önekiyle, ya da bir JSON doğrulama ya da ayrıştırma mesajı.
+
+### Dört hata
+
+**1. Betik yolu yanlış.** Kabuk 127 gibi bir şeyle çıkar ve engellemeyen bir bildirim alırsınız: `Failed with non-blocking status code: /bin/sh: /path/to/hook.sh: No such file or directory`. **Eylem devam eder.** Bir politika hook’u için bu, olabilecek en kötü hata modudur — `settings.json`’da yanlış yazılmış bir yol, kapıyı sessizce devre dışı bırakır, bu yüzden bir korumanın ilk çalışmasında o bildirime dikkat edin. Düzeltmeler: `${CLAUDE_PROJECT_DIR}` ya da mutlak bir yol kullanın, betiğe `chmod +x` yapın ve yanlış gidecek hiçbir kabuk tırnaklaması olmadan betiği doğrudan başlatan exec biçimine geçmek için `"args": []` ekleyin.
+
+**2. `exit 2` demek isterken `exit 1`.** Çoğu event’ta engellemez: politika hook’unuz bir uyarıya dönüşür ve komut çalışır. Exit 2, yalnızca kod aracılığıyla engelleyen tek koddur (sıfır olmayan herhangi bir exit’in iptal ettiği `WorktreeCreate` hariç).
+
+**3. Stdout saf JSON değil.** Claude Code, stdout’u yalnızca `{` ile başlayıp `}` ile bittiğinde JSON olarak ayrıştırır. Klasik neden, bir banner yazdıran bir kabuk profilidir: Git Bash ve `BASH_ENV`’in `~/.bashrc`’ye işaret ettiği kurulumlar, etkileşimsiz bir kabukta bile profilinizi kaynaklamaya devam eder ve banner öne eklenir:
+
+```text
+Shell ready on arm64
+{"decision": "block", "reason": "Not allowed"}
+```
+
+Şimdi stdout `S` ile başlıyor, her şey düz metin ve exit 0’da **transcript’te hiçbir şey hiç raporlanmıyor** — yalnızca debug log denemeyi kaydediyor. Profilinizi düzeltin:
+
+<CodeBlock title="kabuk profilinizi koruyun">
+
+```bash
+# In ~/.zshrc or ~/.bashrc
+if [[ $- == *i* ]]; then
+  echo "Shell ready"
+fi
+```
+
+</CodeBlock>
+
+Diğer neden, JSON’u dize birleştirmeyle oluşturmaktır, dolayısıyla bir değerdeki bir tırnak ya da ters eğik çizgi onu bozar. `jq -n --arg`, `JSON.stringify` ya da Python’un `json.dumps`’ını kullanın — asla `echo "{...$var...}"` değil.
+
+**4. Matcher hiç eşleşmiyor.** Matcher’lar büyük/küçük harfe duyarlıdır. Yalnızca harf, rakam, `_`, `-`, boşluk, `,` ya da `|` içeren bir matcher tam bir listedir; başka her şey sabitlenmemiş bir düzenli ifadedir. Ve event’ın kendisini kontrol edin: `PreToolUse`, çağrıdan önce ateşlenir ve `PostToolUse` sonrasında, `PermissionRequest` yalnızca bir izin isteminin var olduğu yerde var olur.
+
+### İki ortam tuzağı
+
+**Etkileşimli ile `-p`.** Çalışma alanı güveni, dialoğu kabul edene kadar etkileşimli bir oturumda ayar-dosyası hook’larını geri tutar, `-p` oturumu ise klasörü güvenilir sayar. Yani "headless çalışıyor ama terminalimde çalışmıyor" genellikle hook değil güven meselesidir. Diğer yönde, `terminalSequence`, `-p` altında yok sayılır ve `PermissionRequest`’in ateşleyeceği bir istem yoktur.
+
+**Çalışma dizini.** Handler’lar geçerli dizinde çalışır. O dizin silinmişse — başka bir kabuğun kaldırdığı bir worktree ya da geçici dizin — Claude Code, oturumun başlangıç dizinine, proje köküne, ev dizininize ya da sistem geçici dizinine geri döner ve debug log’da geri düşüşü adlandıran bir uyarı kaydeder. `./node_modules`’ın var olduğunu varsayan bir hook, o satırı okuyana kadar hiçbir anlam ifade etmeyen şekillerde başarısız olur.
+
+### Stop-hook döngüsü
+
+Bir hatanın kendi belirtisi vardır: Claude durmak yerine çalışmaya devam eder, sonra tur, `Stop` hook’unun art arda çok fazla engellediğine dair bir uyarıyla biter. Claude Code, art arda **sekiz** engellemeden sonra bir `Stop` hook’unu geçersiz kılar. Girdiden `stop_hook_active`’i okuyun ve `true` olduğunda erken çıkın:
+
+<CodeBlock title="Stop-hook koruma cümlesi">
+
+```bash
+#!/bin/bash
+INPUT=$(cat)
+if [ "$(echo "$INPUT" | jq -r '.stop_hook_active')" = "true" ]; then
+  exit 0  # Allow Claude to stop
+fi
+# ... rest of your hook logic
+```
+
+</CodeBlock>
+
+`CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`’ı yalnızca döngü gerçekten yakınsıyorsa yükseltin.
+
+Bu dersin işlenmiş örnek prompt’u, kanıtı Claude’la birlikte okumayı tercih ettiğiniz zamanlar için:
+
+```text
+My PreToolUse hook is not firing. Read .claude/settings.json and .claude/hooks/, then read
+debug.txt and tell me which of these is true: it is not registered, it is not matching, it
+failed to start, or it ran and its output was ignored. Quote the log line you used.
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · bir hook’u bilerek bozun, sonra log’da bulun"
+  lessonId="tr/l2-intermediate/m07-hooks/debugging-hooks"
+  repoTag="none"
+  steps={[
+    '6. dersteki geçici klasörü, `record-event.mjs` ve `"matcher": "Read"` ile kayıtlı bir `PreToolUse` hook’uyla kullanın.',
+    'Onu bozun: `command`’ı `.claude/hooks/recordevent.mjs`’e işaret edecek şekilde değiştirin — bir yazım hatası, eksik bir tire. Başka hiçbir şey yok.',
+    'Loglama açıkken bir oturum çalıştırın: `claude -p "Read notes.txt and reply with one sentence." --model sonnet --max-turns 3 --output-format text --allowedTools "Read" --debug-file hooks-debug.txt`. Cevabın normal geldiğini not edin — hata hiçbir şeyi engellemedi.',
+    'Bulun: `grep -o "Hook PreToolUse:Read (PreToolUse) error:.\\{0,90\\}" hooks-debug.txt`. Mesaj, Node’un kendi `Cannot find module`’üdür.',
+    'Yolu düzeltin, `hooks-debug.txt` ve `events.log`’u silin ve aynı komutu yeniden çalıştırın.',
+    'Düzeltmeyi iki kez doğrulayın: `error:` grep’i artık hiçbir şey döndürmüyor ve `events.log`, hook’un yazdığı `PreToolUse Read` satırını içeriyor.',
+    'Bonus, üçüncü hata modu için: betiğin JSON’undan önce `ok` yazdırmasını sağlayın, yeniden çalıştırın ve log’da `Hook output does not start with {, treating as plain text` satırını bulun.',
+  ]}
+  expected="Yazım hatasıyla, oturum başarılı olur ve tek iz debug log’da bir hata satırıdır. Düzeltmeden sonra, hata satırı gider ve events.log kaydedilen satıra sahiptir."
+  checklist={[
+    'Bozuk koşu yine de prompt’u cevaplıyor — hata engellemeyen bir hataydı',
+    'Debug log bir `Hook PreToolUse:Read (PreToolUse) error:` satırı içeriyor',
+    'Hata mesajı eksik modülü adlandırıyor',
+    'Düzeltmeden sonra hata grep’i hiçbir şey döndürmüyor',
+    '`events.log`, hook’un çalıştığını kanıtlıyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/07-debugging-hooks/01-broken-then-fixed.txt"
+    range="2-15"
+  />
+</Lab>
+
+Hook hata ayıklaması hakkında öğrenmeye değer her şey o kayıtta.
+
+Oturum soruyu mükemmel şekilde cevapladı. Terminaldeki hiçbir şey bir sorun olduğunu öne sürmedi. `settings.json`’da bir karakter yanlıştı, kapı tamamen kapalıydı ve **her yerdeki tek kanıt kimsenin sormadığı bir log’daki tek satırdı**. Şimdi o hook’un bir kaydedici değil 2. dersin koruması olduğunu hayal edin.
+
+Bu yüzden alışkanlık teknikten daha önemlidir: bir politika hook’unu yazdıktan ya da taşıdıktan sonra, onu bir kez `--debug-file` ile çalıştırın ve `error:` için grep yapın. Yirmi saniye sürer ve bir koruma ile bir koruma sahibi olduğunuza dair bir inanç arasındaki farktır.
+
+Düzeltilmiş koşu tam tersi şekilde sessizdir — hata satırı yok ve hook’un etkisi `events.log`’da görünüyor. Başarılı bir hook hiçbir şey söylemez, bu yüzden "çıktı yok" hiçbir zaman ne yönde olursa olsun kanıt değildir. Etkiyi kontrol edin.
+
+### Komutlar, işletim sistemine göre
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+claude --debug-file /tmp/claude.log
+tail -f /tmp/claude.log
+echo '{"tool_name":"Bash","tool_input":{"command":"ls"}}' | ./my-hook.sh; echo $?
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+claude --debug-file /tmp/claude.log
+tail -f /tmp/claude.log
+echo '{"tool_name":"Bash","tool_input":{"command":"ls"}}' | ./my-hook.sh; echo $?
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+claude --debug-file $env:TEMP\claude.log
+Get-Content $env:TEMP\claude.log -Wait -Tail 20
+'{"tool_name":"Bash","tool_input":{"command":"ls"}}' | node .\my-hook.mjs; $LASTEXITCODE
+```
+
+  </Fragment>
+</OSTabs>
+
+Etkileşimli bir oturumda, `Ctrl+O`, engelleyen bir hatanın geri bildiriminin ve engellemeyen bir hatanın bildiriminin göründüğü transcript görünümünü açar. Daha geniş bir yapılandırma sorunu için — ayarlar yüklenmiyor, yanlış dosya kazanıyor — dokümanlar `/context`, `/doctor`’a ve _Debug your config_’teki ayar-önceliği turuna işaret eder.
+
+## Anti-pattern’ler
+
+**`console.log` ile hata ayıklamak.** Çoğu event’ta stdout görünmezdir ve görünür olduğu yerde JSON’unuzu yok eder. _Düzeltme:_ bir dosyaya ya da stderr’e yazın ve debug log’u okuyun.
+
+**Çıktı olmamasının sorun olmadığını varsaymak.** Başarılı bir hook sessizdir, başarısız bir hook neredeyse sessizdir ve JSON’u yok sayılan bir hook exit 0’da tamamen sessizdir. _Düzeltme:_ önce etkiyi, sonra log’u kontrol edin.
+
+**Borulu testi atlamak.** Hook hatalarının yarısı sıradan betik hatalarıdır ve bir oturum bir yazım hatası bulmanın pahalı bir yoludur. _Düzeltme:_ başka her şeyden önce `echo '{…}' | ./my-hook.sh; echo $?`.
+
+**Matcher yanlışken hook’u düzeltmek.** Betik hiç çalışmadıysa, içeriği hata olamaz. _Düzeltme:_ önce `/hooks` — kayıtlı mı, doğru event mi, doğru kaynak dosya mı — ve ancak o zaman betiği okuyun.
+
+**Bir yeniden adlandırma ya da taşımadan sonra bir politika hook’unu doğrulanmamış bırakmak.** Yollar sessizce bozulur ve ilk koşudaki engellemeyen bir bildirim kaçırılması kolaydır. _Düzeltme:_ yola her dokunduğunuzda `--debug-file` ile yeniden çalıştırın ve `error:` için grep yapın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/debugging-hooks"
+  questionId="q1"
+  lang="tr"
+  prompt="Ayarlarınız bir PreToolUse korumasını var olmayan bir betik yoluna işaret ediyor. Bir sonraki eşleşen tool çağrısında ne olur?"
+  options={[
+    {
+      text: 'Tool çağrısı engellenir, çünkü hook başarısız oldu.',
+      explanation: 'Başlayamayan bir hook çoğu event’ta engellemeyen bir hatadır.',
+    },
+    {
+      text: 'Tool çağrısı devam eder; engellemeyen bir bildirim görünür ve debug log yorumlayıcı hatasını tutar.',
+      correct: true,
+      explanation:
+        'Bu, bir yazım hatasının kapınızı sessizce devre dışı bıraktığı anlamına gelir — bir politika hook’unu ilk çalışmasında kontrol edin.',
+    },
+    {
+      text: 'Claude Code oturumu başlatmayı reddeder.',
+      explanation: 'Ayarlar sorunsuz yüklenir; hata hook-çalışma zamanındadır.',
+    },
+    {
+      text: 'Hook doğru yolla yeniden denenir.',
+      explanation: 'Bir yol düzeltmesi yoktur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/debugging-hooks"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir hook geçerli JSON yazdırıyor, kararın hiçbir etkisi yok ve transcript’te hiçbir şey görünmüyor. En olası neden nedir?"
+  options={[
+    {
+      text: 'JSON’dan önce bir şey yazdırıldı, dolayısıyla stdout artık `{` ile başlamıyor ve düz metin olarak okunuyor.',
+      correct: true,
+      explanation:
+        'Genellikle bir kabuk profili banner’ı. Exit 0’da tek iz debug log’daki bir satırdır.',
+    },
+    {
+      text: 'Event JSON çıktısını desteklemiyor.',
+      explanation: 'Mümkün, ama o zaman transcript genellikle bir doğrulama mesajı taşırdı.',
+    },
+    {
+      text: 'Hook 1 ile çıktı.',
+      explanation: 'Bu görünür, engellemeyen bir bildirim üretirdi.',
+    },
+    {
+      text: 'JSON çıktısı yalnızca PreToolUse’da çalışır.',
+      explanation: 'Çoğu event JSON çıktısı okur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/debugging-hooks"
+  questionId="q3"
+  lang="tr"
+  prompt="Hook’unuz aynı klasördeki `claude -p`’de çalışıyor ama etkileşimli bir oturumda çalışmıyor. Önce neyi kontrol etmelisiniz?"
+  options={[
+    {
+      text: 'Çalışma alanı güveni — etkileşimli bir oturum, dialoğu kabul edene kadar ayar-dosyası hook’larını geri tutar.',
+      correct: true,
+      explanation: 'Bir `-p` oturumu klasörü güvenilir sayar; etkileşimli bir oturum saymaz.',
+    },
+    {
+      text: 'Matcher — matcher’lar etkileşimli modda farklı davranır.',
+      explanation: 'Matcher değerlendirmesi ikisinde de aynıdır.',
+    },
+    {
+      text: 'Model — hook’lar hangi modelin seçildiğine bağlıdır.',
+      explanation: 'Değildir.',
+    },
+    {
+      text: 'Hiçbir şey; hook’lar hiçbir zaman etkileşimli çalışmaz.',
+      explanation: 'Çalışırlar, klasör güvenildikten sonra.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/debugging-hooks"
+  questionId="q4"
+  lang="tr"
+  prompt="Claude çalışmaya devam ediyor ve tur, tekrar tekrar engelleyen bir Stop hook’u hakkında bir uyarıyla bitiyor. Düzeltme nedir?"
+  options={[
+    {
+      text: 'Modelin maksimum turunu yükseltin.',
+      explanation: 'Tavan, art arda Stop-hook engellemelerinde, turlarda değil.',
+    },
+    {
+      text: 'Hook girdisinden `stop_hook_active`’i okuyun ve doğru olduğunda 0 ile çıkın.',
+      correct: true,
+      explanation:
+        'Bu belgelenmiş koruma cümlesidir; CLAUDE_CODE_STOP_HOOK_BLOCK_CAP’ı yalnızca döngü gerçekten yakınsıyorsa yükseltin.',
+    },
+    {
+      text: 'Hook’u `PostToolUse`’a geçirin.',
+      explanation: 'Farklı bir event "henüz durma" ifade etmez.',
+    },
+    {
+      text: 'Transcript dosyasını silin.',
+      explanation: 'Tavan tur başına izlenir, transcript’te değil.',
+    },
+  ]}
+/>
+
+Bu, modülü kapatıyor: sözleşmeyi okuyabilir, bir koruma, bir biçimlendirici, bir bildirimci ve bir bağlam yükleyici yazabilir, katalogdaki herhangi bir event’ı bulabilir ve ateşlenmeyeni hata ayıklayabilirsiniz. Sırada `m08-git` var — bu hook’ların koruduğu commit’ler, branch’ler ve pull request’ler.

@@ -1,15 +1,15 @@
 ---
 title: 'Worktree’ler ve branch’ler'
-description: 'Çarpışmadan paralel Claude Code oturumları: `claude --worktree`, EnterWorktree tool’u, subagent’lar için `isolation: worktree` — ve `/branch`’in neden kodu değil konuşmayı dalladığı.'
+description: 'Çakışma olmadan paralel Claude Code oturumları çalıştırın: claude --worktree, EnterWorktree tool’u, subagent’lar için isolation: worktree — ve /branch neden kodu değil konuşmayı dallandırıyor.'
 level: 2
 module: 'm08-git'
 order: 2
 duration_min: 20
 difficulty: core
-tags: ['git', 'worktrees', 'parallel', 'sessions']
+tags: ['git', 'worktree’ler', 'paralel', 'oturumlar']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Run parallel sessions with worktrees'
@@ -31,8 +31,338 @@ lab:
   repo_tag: 'lesson/m08-02-start'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l2-intermediate/m08-git/02-worktrees-branches.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders paralel çalışmayı izole eder. `claude --worktree <ad>` varsayılan olarak `.claude/worktrees/<ad>/` altında, `worktree-<ad>` adlı yeni bir branch üzerinde bir worktree oluşturur; `worktree.baseRef` ayarı `"fresh"` (varsayılan) veya `"head"` değerini alır ve `.worktreeinclude` gitignore’lanmış dosyaları her yeni worktree’ye kopyalar. Claude oturum sırasında `EnterWorktree` tool’uyla bir worktree’ye geçebilir, `ExitWorktree` ile çıkabilir; bir subagent’ı kalıcı olarak izole etmek için frontmatter’a `isolation: worktree` eklenir. Ders ayrıca izolasyon sırasında Claude Code’un uyguladığı dört kontrolü ve `/branch`’in kodu değil konuşmayı kopyaladığını açıkça ayırır. Laboratuvar `git worktree list` çıktısını önce ve sonra karşılaştırır.
+- `claude --worktree <ad>` ile izole bir paralel oturum başlatmak ve [worktree](/tr/playbook/glossary/#worktree)'nin (aynı deponun farklı bir dalını ayrı bir dizinde çalışır durumda tutan ek bir çalışma ağacı) ve branch'inin nerede oluşturulduğunu söylemek.
+- Claude'dan oturum ortasında bir worktree'ye geçmesini istemek ve `EnterWorktree` tool'unun oturumda neyi değiştirdiğini açıklamak.
+- Frontmatter'ında `isolation: worktree` ile bir subagent'ın her zaman kendi checkout'unda çalışmasını sağlamak.
+- Bir oturum izole olduğunda Claude Code'un neyi engellediğini ve reddedilen bir komutun neden bir güvenlik özelliği olduğunu söylemek.
+- `/branch`'i (konuşmanın bir kopyası) bir git branch'inden (kodun bir kopyası) ayırt etmek ve doğrusunu seçmek.
+- Worktree'leri `git worktree` ile elle oluşturmak, listelemek ve kaldırmak.
+
+**Ön koşullar.** `01-commits-and-conventions` dersi, en az bir commit'i olan bir git deposu ve lab deposunun bir klonu. Worktree'ler git gerektirir; diğer sürüm kontrol sistemleri bunun yerine `WorktreeCreate`/`WorktreeRemove` hook'larına ihtiyaç duyar.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bir worktree, diskte ikinci bir tam checkout'tur. İş, ikinci bir oturum işe yaramadan biteceği
+  kadar küçükse, projenizin kurulumu pahalıysa — taze bir checkout'un `node_modules`'ı, `.env`'i,
+  derleme önbelleği yoktur ve bunun bedelini her seferinde ödersiniz — ya da iki görev gerçekten
+  aynı dosyalara dokunuyorsa (izolasyon yalnızca birleştirme çakışmasını erteler) atlayın. Hiç
+  commit'i olmayan bir depo için tamamen atlayın: worktree'ler var olan bir commit'ten dallanır, bu
+  yüzden komut `Failed to resolve base branch "HEAD": git rev-parse failed` ile başarısız olur. Ve
+  gerçekte istediğiniz şey aynı kod hakkında ikinci bir konuşma hattıysa bir worktree'ye uzanmayın —
+  o `/branch`'tir.
+</WhenNotToUse>
+
+## Kavram
+
+### Bir worktree nedir
+
+Bir git worktree'si, ana checkout'unuzla aynı depo tarihçesini ve uzak sunucuyu paylaşan, kendi dosyaları ve branch'i olan ayrı bir çalışma dizinidir. Her Claude Code oturumunu kendi worktree'sinde çalıştırmak, bir oturumdaki düzenlemelerin başka birindeki dosyalara hiç dokunmaması demektir, dolayısıyla bir oturum bir özellik oluştururken ikincisi bir hatayı düzeltebilir.
+
+Claude Code bunu tek bayraklı bir işlem yapar:
+
+<CodeBlock title="izole bir oturum başlatın">
+
+```bash
+claude --worktree feature-auth
+```
+
+</CodeBlock>
+
+Varsayılan olarak worktree, depo kökünüzdeki `.claude/worktrees/<ad>/` altında, `worktree-<ad>` adlı yeni bir branch üzerinde oluşturulur. `-w`, kısa biçimdir. İkinci bir terminalde farklı bir adla aynı komutu çalıştırın ve iki izole oturumunuz olur. Adı atlarsanız, Claude Code `bright-running-fox` gibi bir tane üretir. Worktree içeriğinin ana checkout'unuzda izlenmeyen dosyalar olarak görünmemesi için `.gitignore`'unuza `.claude/worktrees/` ekleyin.
+
+Dokümanlardan iki pratik not. Etkileşimli bir koşu çalışma alanı güveni gerektirir — o dizinde hiç `claude` çalıştırmadıysanız, `--worktree` bir hatayla çıkar ve önce güven dialoğunu kabul etmenizi söyler; bir `-p` koşusu kontrolü atlar. Ve bir worktree taze bir checkout'tur, dolayısıyla gitignore'lanmış hiçbir şey onunla gelmez: ihtiyacınız olan dosyaları (`.env`, `.env.local`, `config/secrets.json`) proje kökünüzdeki bir `.worktreeinclude` dosyasında listeleyin, Claude Code eşleşen **ve** gitignore'lanmış olanları her yeni worktree'ye kopyalar.
+
+Bu dersin örnek prompt'u aynı şeyin sade dil biçimidir — başlangıçta karar vermek zorunda değilsiniz ve bayrağı bilmek zorunda değilsiniz:
+
+```text
+Work in a worktree from here on: create one for this task, move into it, and tell me
+which branch you are on before you change anything.
+```
+
+### Temel branch
+
+Yeni worktree'ler deponun varsayılan branch'inden dallanır. `worktree.baseRef` ayarı tam olarak iki değer alır:
+
+| Değer                  | Worktree'nin başladığı yer                                                                    |
+| ---------------------- | --------------------------------------------------------------------------------------------- |
+| `"fresh"` (varsayılan) | Uzak sunucudaki deponun varsayılan branch'i, genellikle `main` — temiz bir ağaç               |
+| `"head"`               | Geçerli yerel `HEAD`'iniz, yayınlanmamış commit'lerinizi ve özellik-branch'i durumunuzu taşır |
+
+`worktree.baseRef`'i bir branch adına ayarlayamazsınız. Belirli bir mevcut branch'ten başlamak için, worktree'yi doğrudan git ile oluşturun. Bunun yerine bir pull request'ten dallanmak için, numarasını `#` önekiyle geçirin — kabuğunuzun `#`'ı bir yorum olarak okumaması için tırnaklayın:
+
+<CodeBlock title="PR 1234'ten bir worktree dallandırın">
+
+```bash
+claude --worktree "#1234"
+```
+
+</CodeBlock>
+
+Claude Code, o değişikliğin head commit'ini `origin`'den getirir ve worktree'yi `.claude/worktrees/pr-<numara>`'da oluşturur.
+
+### Claude'dan taşınmasını istemek
+
+Başlangıçta karar vermek zorunda değilsiniz. Bir oturum sırasında Claude'dan "bir worktree'de çalış" isteyin, **`EnterWorktree`** tool'uyla bir tane oluşturur; eşleşen **`ExitWorktree`** tool'u oturumu geri çıkarır. İçeri girdikten sonra, Claude hedef yolla `EnterWorktree`'yi çağırarak `.claude/worktrees/` altındaki başka bir worktree'ye doğrudan geçebilir, öncekini diskte dokunulmamış bırakarak.
+
+Deponun `.claude/worktrees/` dizini **dışındaki** bir yola girmek her zaman önce onayınızı ister, çünkü taşınma, oturumun çalışma dizinini, yazma erişimini ve proje yapılandırmasını — `CLAUDE.md`, ayarlar — o konuma taşır. Bir `EnterWorktree` izin kuralı ya da "tekrar sorma" seçimi o istemi bastırmaz; yalnızca `bypassPermissions` modu atlar.
+
+Ezberlenmeye değer bir tuzak: **hook yolları worktree'yi takip etmez**. `${CLAUDE_PROJECT_DIR}` hâlâ oturumun başladığı proje köküne işaret eder, dolayısıyla `${CLAUDE_PROJECT_DIR}/.claude/hooks/check-style.sh`, betiği ana checkout'ta çalıştırır. Worktree yolu farklı bir şekilde gelir — hook'un girdi JSON'undaki `cwd` alanı olarak.
+
+### İzolasyonun gerçekte neyi zorladığı
+
+İzolasyon bir onur sistemi değildir. Bir oturum bir worktree'deyken — ister `--worktree` ile başlatmış olun, ister Claude `EnterWorktree` ile birine girmiş olsun, ister bir worktree oturumunu devam ettirmiş olun — Claude Code dört kontrol uygular ve bunları geçemeyen tool çağrılarını engeller:
+
+| Kontrol              | Ne engelleniyor                                                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Dosya düzenlemeleri  | Ana checkout'ta bir yolu hedefleyen bir `Edit`, `Write` ya da `NotebookEdit`                                             |
+| Komut çalışma dizini | Çalışma dizini ana checkout'a çözülen ya da doğrulanamayan bir Bash, PowerShell ya da Monitor komutu                     |
+| Git yönlendirmeleri  | `git -C`, `--git-dir`, `GIT_DIR`, `GIT_WORK_TREE` ile ya da önce bir `cd` ile git'i ana checkout'a yönlendiren bir komut |
+| Komut şekli          | Claude Code'un metinden git'in worktree içinde kaldığını doğrulayamadığı bir komut — bunu kapatamazsınız                 |
+
+Aynı zorlama, izole bir oturumdan başlatılan her subagent'ı da kapsar. Windows okuyucuları için önemli bir istisna var: **PowerShell komutları için, Claude Code yalnızca çalışma-dizini kontrolünü uygular** — git-yönlendirme ve komut-şekli kontrolleri çalışmaz. Kontroller ayrıca bağlı bir worktree'nin bağlı olduğu ana checkout'u da kapsar, yalnızca başlattığınız depoyu değil.
+
+Claude her reddi, worktree'yi adlandıran ve nasıl ilerleyeceğini söyleyen bir tool hatası olarak görür, dolayısıyla reddedilen bir komut genellikle sıkışmış bir oturum yerine yeniden yazılmış bir komuta dönüşür.
+
+### Kendi worktree'lerindeki subagent'lar
+
+Subagent'lar, paralel düzenlemeler çakışmasın diye kendi worktree'lerinde çalışabilir. Bir oturum için Claude'dan "agent'ların için worktree kullan" isteyin, ya da özel bir subagent için tek bir frontmatter alanıyla kalıcı hâle getirin:
+
+<CodeBlock title=".claude/agents/refactorer.md">
+
+```markdown
+---
+name: refactorer
+description: Applies mechanical refactors across many files
+isolation: worktree
+---
+
+Apply the requested refactor across every affected file, then run the tests
+and report the results.
+```
+
+</CodeBlock>
+
+Böyle her subagent geçici bir worktree alır, değişiklik yapmadan bittiğinde otomatik olarak kaldırılır. Değişikliği olan biri, periyodik bir tarama iş kaybetmeden onu kaldırabilene kadar diskte kalır — o tarama `cleanupPeriodDays` ayarınıza uyar ve hâlâ değişmiş ya da izlenmeyen dosyalar ya da push edilmemiş commit'ler tutarken bir worktree'yi olduğu gibi bırakır.
+
+### `/branch` bir git branch'i değildir
+
+Bu, bu modüldeki en yaygın tek karışıklıktır. `/branch`, şimdiye kadarki **konuşmanın** bir kopyasını oluşturur ve sizi ona geçirir, orijinali sağlam bırakarak. Kodunuza, dosyalarınıza ya da git branch'inize hiçbir şey olmaz.
+
+<CodeBlock title="konuşmayı dallandırın">
+
+```text
+/branch try-streaming-approach
+```
+
+</CodeBlock>
+
+Onay, iki oturum kimliği yazdırır — şimdi içinde olduğunuz yeni branch ve diskte ve oturum seçicisinde kalan orijinal. `/resume <orijinal-ad>` ile ona dönün. Komut satırından, `claude --continue --fork-session` aynı şeyi yapar.
+
+| İstediğiniz şey                                    | Uzanacağınız şey                                  |
+| -------------------------------------------------- | ------------------------------------------------- |
+| Aynı kod hakkında ikinci bir konuşma hattı         | `/branch`                                         |
+| İki oturumun çakışamaması için ikinci bir checkout | `claude --worktree <ad>` ya da `git worktree add` |
+| Arka planda çalışmaya devam eden bir kopya         | `/fork`                                           |
+
+`/branch`, transcript'i kopyalar ve çalışan süreci ona yazacak şekilde değiştirir, bu yüzden "bu oturum için izin ver" izin onayları taşınır — aynı süreç — `--fork-session` ise onları yeniden onaylaması gereken ayrı bir süreç başlatır.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · Claude'un oluşturduğu ikinci bir checkout"
+  lessonId="tr/l2-intermediate/m08-git/worktrees-branches"
+  repoTag="lesson/m08-02-start"
+  steps={[
+    'Lab deposunun atılabilir klonunuzda, başlangıç tag’ini checkout edin: `git checkout lesson/m08-02-start`. Worktree’nin dallanacak bir şeyi olsun diye kendinizi bir branch’e koyun: `git checkout -B lab-m08-02`.',
+    'Başlangıç durumunu kaydedin: `git worktree list`. Bir satır, ana checkout’unuz.',
+    'Claude’un ikinci checkout’u oluşturmasına izin verin: `claude -p "Create a git worktree at ../claude-code-lab-overdue on a new branch named fix-overdue, then run \'git worktree list\'. Reply with only the raw output of that final git worktree list command, in a fenced code block, and no other text." --allowedTools "Bash(git *)" --model sonnet --max-turns 20 --output-format text`',
+    'Bunu Claude’un raporundan değil kendi kabuğunuzdan doğrulayın: yeniden `git worktree list`, sonra `git -C ../claude-code-lab-overdue branch --show-current`.',
+    'Yeni worktree’de ikinci bir terminal açın ve orada `claude` çalıştırın. Ona hangi branch’te olduğunu sorun. Bu paralel oturumdur.',
+    'Temizleyin: ana checkout’tan `git worktree remove ../claude-code-lab-overdue`, sonra `git branch -D fix-overdue`. Worktree’nin commit’lenmemiş değişiklikleri ya da izlenmeyen dosyaları varsa remove’a `--force` ekleyin.',
+  ]}
+  expected="`git worktree list` bir satırdan iki satıra çıkar; ikinci satır, [fix-overdue] branch'inde aynı commit'teki yeni dizindir. Temizlikten sonra tekrar bir satıra döner."
+  checklist={[
+    '`git worktree list` öncesinde tam olarak bir girdi gösteriyordu',
+    'Claude worktree’yi git ile oluşturdu ve listelemeyi bildirdi',
+    'Kendi `git worktree list`’iniz Claude’un raporuyla aynı fikirde',
+    '`git -C ../claude-code-lab-overdue branch --show-current`, `fix-overdue` yazdırıyor',
+    'Temizlik bir worktree bıraktı ve `fix-overdue` branch’i kalmadı',
+    'Lab deposuna hiçbir şey push edilmedi',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m08-git/02-worktrees-branches/01-worktree-add.txt"
+    range="4-18"
+  />
+</Lab>
+
+4. adım laboratuvarın asıl noktasıdır. Claude bir listeleme bildirdi; siz sonra aynı komutu kendiniz çalıştırdınız ve aynı fikirdeydi. O alışkanlık — durumu agent'ın özetinden değil kendi kabuğunuzdan doğrulamak — paralel işi güvenli kılan şeydir ve tek bir komuta mal olur.
+
+Burada hangi tool'un işi yaptığına da dikkat edin. Prompt, `.claude/worktrees/` dışındaki bir yolda düz bir `git worktree add` istedi, dolayısıyla Claude `EnterWorktree`'yi değil Bash tool'unu kullandı: oturumun kendisi hiç taşınmadı. `EnterWorktree`, Claude'dan bir worktree _oluşturmasını_ değil onun içinde _çalışmasını_ istediğinizde aldığınız şeydir.
+
+### Worktree'leri elle yönetmek
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git worktree add ../project-feature-a -b feature-a
+git worktree list
+git worktree remove ../project-feature-a
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git worktree add ../project-feature-a -b feature-a
+git worktree list
+git worktree remove ../project-feature-a
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git worktree add ..\project-feature-a -b feature-a
+git worktree list
+git worktree remove ..\project-feature-a
+```
+
+  </Fragment>
+</OSTabs>
+
+Zaten var olan bir branch'i checkout etmek için `git worktree add ../project-bugfix fix-issue-456`'ı (`-b` olmadan) kullanın. Windows'ta bilinmeye değer bir davranış var: bir worktree'yi kaldırmak onun dışındaki dosyaları silmez ve worktree içindeki bir klasör bir NTFS junction'ı ya da dizin sembolik bağlantısıysa, Claude Code yalnızca bağlantıyı siler ve işaret ettiği klasörü korur.
+
+## Anti-pattern'ler
+
+**`/branch`'i bir git branch'i gibi görmek.** `/branch fix-auth` çalıştırıp düzenlemeye devam edersiniz ve dosyalarınızın hâlâ eski branch'te olmasına şaşırırsınız. `/branch`, konuşmayı kopyalar, başka hiçbir şeyi değil. _Düzeltme:_ ayrı kod istediğinizde `claude --worktree` ya da `git worktree add` kullanın.
+
+**Worktree'nin içinden bir resume başlatmak.** Claude Code, `.claude/worktrees/` altında oluşturduğu bir worktree'ye onun içinden bile yeniden girer, ama `git worktree add` ile kendinizin oluşturduğu bir worktree için reddeder ve size `launch from the parent checkout` der. _Düzeltme:_ ana checkout'tan devam edin.
+
+**Bir worktree'nin çalışmaya hazır olmasını beklemek.** `node_modules` yok, `.env` yok, derleme çıktısı yok — yeni bir worktree'deki ilk `npm test`, değişikliğinizle hiçbir ilgisi olmayan nedenlerle başarısız olur. _Düzeltme:_ bağımlılıkları worktree'de kurun ve gitignore'lanmış yapılandırmayı `.worktreeinclude`'a koyun.
+
+**Reddedilen bir worktree dizinini silmek.** Claude Code `Refusing to use <path> as an isolation worktree` dediğinde, dizin diskte kalır çünkü iş tutuyor olabilir — ve bazı retler worktree'nin değil **ana** checkout'un git metadata'sı hakkındadır. _Düzeltme:_ bir şeyi silmeden önce mesajın sonunu okuyun ve kurtarma yöntemiyle eşleştirin.
+
+**`-p`'nin kendi arkasını temizlediğini varsaymak.** Etkileşimsiz koşuların çıkış istemi yoktur, dolayısıyla Claude worktree'lerini temizlemez ve oluşturmada alınan kilit, sonraki bir tarama serbest bırakana kadar kalır. _Düzeltme:_ git reddederse önce `git worktree unlock` ile, `git worktree remove`'u kendiniz yapın.
+
+<Callout variant="changed" label="Değişti">
+  v2.1.206'dan önce, Claude sormadan var olan herhangi bir worktree yoluna girebiliyordu. Şimdi,
+  deponun `.claude/worktrees/` dizini dışındaki bir yola girmek her zaman onay istiyor ve yalnızca
+  `bypassPermissions` modu bunu atlıyor.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/worktrees-branches"
+  questionId="q1"
+  lang="tr"
+  prompt="Oturum ortasında `/branch fix-auth` çalıştırıyorsunuz. Az önce ne oldu?"
+  options={[
+    {
+      text: 'fix-auth adlı bir git branch’i oluşturuldu ve checkout edildi.',
+      explanation: '`/branch` hiçbir zaman git’e dokunmaz; konuşmayı kopyalar.',
+    },
+    {
+      text: 'Konuşmanın bir kopyası oluşturuldu ve siz ona geçirildiniz; orijinal değişmedi.',
+      correct: true,
+      explanation:
+        'Doğru — onay her iki oturum kimliğini de yazdırır ve orijinal oturum seçicisinde kalır.',
+    },
+    {
+      text: '.claude/worktrees/fix-auth altında bir worktree oluşturuldu.',
+      explanation: 'Bu, farklı bir komut olan `claude --worktree fix-auth`’tır.',
+    },
+    {
+      text: 'Arka planda bir oturum fix-auth üzerinde çalışmaya başladı.',
+      explanation: 'Bu, oturumu kopyalayan ve orada çalışmaya devam eden `/fork`’tur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/worktrees-branches"
+  questionId="q2"
+  lang="tr"
+  prompt="`claude --worktree feature-auth`, worktree'yi nereye koyar ve hangi branch'te?"
+  options={[
+    {
+      text: '`../feature-auth`’te, `feature-auth` branch’inde',
+      explanation:
+        'Bu, elle yapılan bir `git worktree add`’in şeklidir, bayrağın varsayılanı değil.',
+    },
+    {
+      text: '`.claude/worktrees/feature-auth/` altında, `worktree-feature-auth` adlı yeni bir branch’te',
+      correct: true,
+      explanation:
+        'Bunlar belgelenmiş varsayılanlar; `worktree.baseRef`, nereden dallandığını kontrol eder.',
+    },
+    {
+      text: 'Depo dışında geçici bir dizinde, ayrılmış (detached) bir HEAD’de',
+      explanation:
+        'Claude Code’un oluşturduğu worktree’ler varsayılan olarak depo kökünün altında yaşar.',
+    },
+    {
+      text: 'Aynı dizinde, `feature-auth` branch’inde',
+      explanation: 'Bir worktree, tanımı gereği ayrı bir çalışma dizinidir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/worktrees-branches"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir subagent her zaman kendi checkout'unda çalışmalı. .claude/agents/*.md frontmatter'ına ne eklersiniz?"
+  options={[
+    {
+      text: 'isolation: worktree',
+      correct: true,
+      explanation:
+        'Subagent daha sonra geçici bir worktree alır, değişiklik yapmadan bittiğinde otomatik olarak kaldırılır.',
+    },
+    { text: 'worktree: true', explanation: 'Bir frontmatter alanı değil.' },
+    {
+      text: 'permissionMode: worktree',
+      explanation: '`permissionMode`, izolasyon ayarlarını değil izin modlarını alır.',
+    },
+    {
+      text: 'baseRef: head',
+      explanation:
+        '`worktree.baseRef`, worktree’lerin nereden dallandığı hakkında bir ayar anahtarıdır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/worktrees-branches"
+  questionId="q4"
+  lang="tr"
+  prompt="İzole bir oturum içinde, Claude bir komut deniyor ve Claude Code onu reddediyor. Bunlardan hangisi dört izolasyon kontrolünden BİRİ DEĞİLDİR?"
+  options={[
+    {
+      text: 'Komut ana checkout’ta bir dosyayı düzenliyor',
+      explanation: 'Bu, dosya-düzenleme kontrolüdür.',
+    },
+    {
+      text: 'Komut, git’i `git -C` ile ana checkout’a yönlendiriyor',
+      explanation: 'Bu, git-yönlendirme kontrolüdür.',
+    },
+    {
+      text: 'Komut, oturumun zaman sınırından daha uzun sürüyor',
+      correct: true,
+      explanation:
+        'Süre bir izolasyon kontrolü değildir — dört kontrol dosya düzenlemeleri, çalışma dizini, git yönlendirmeleri ve komut şeklidir.',
+    },
+    {
+      text: 'Claude Code, komut metninden git’in worktree içinde kaldığını doğrulayamıyor',
+      explanation: 'Bu, komut-şekli kontrolüdür ve kapatılamaz.',
+    },
+  ]}
+/>
+
+**Sırada:** `03-pull-requests`, bir worktree'deki işi kendi kanıtını taşıyan bir pull request'e dönüştürür.

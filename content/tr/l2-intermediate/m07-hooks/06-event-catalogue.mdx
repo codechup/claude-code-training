@@ -1,15 +1,15 @@
 ---
-title: 'Tam olay kataloğu ve /hooks'
-description: '33 hook olayının tamamı, ne işe yaradıklarına göre gruplanmış, her birinin kabul ettiği karar biçimiyle birlikte — artı `/hooks` menüsü, ayar kapsamları arasında hook önceliği ve hepsini tek bir çalıştırma için kapatma.'
+title: 'Tam event kataloğu ve /hooks'
+description: '33 hook event’ının tümü, ne için oldukları gruplandırılmış, her birinin kabul ettiği kararla birlikte — artı /hooks menüsü, ayar kapsamları arasında hook önceliği ve tek bir koşu için her şeyi nasıl kapatacağınız.'
 level: 2
 module: 'm07-hooks'
 order: 6
 duration_min: 20
 difficulty: advanced
-tags: ['hooks', 'events', 'reference', 'settings']
+tags: ['hooks', 'event’lar', 'referans', 'ayarlar']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Hooks reference'
@@ -27,7 +27,324 @@ lab:
   repo_tag: 'none'
 ---
 
-Bu ders, [hook](/tr/playbook/glossary/#hook) (kanca) yazarken kullanabileceğiniz ve Claude Code'un tetiklediği bütün olayları beş grupta toplar (yaşam döngüsü/oturum, prompt ve görüntüleme, araçlar ve izinler, ajanlar/görevler/takımlar, worktree ve MCP elicitation), her biri için engelleyip engelleyemediğini ve hangi karar alanlarını kabul ettiğini verir. `/hooks` menüsünün salt okunur olduğunu ve her hook'un hangi ayar dosyasından geldiğini gösterdiğini; hook girdilerinin kapsamlar arasında birbirini ezmeyip birleştiğini; `disableAllHooks` ayarının neyi kapatıp neyi kapatamadığını anlatır. Laboratuvarda on üç olaya birden bir kaydedici hook takıp kısa bir oturumda hangilerinin gerçekten tetiklendiğini ölçersiniz.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l2-intermediate/m07-hooks/06-event-catalogue.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Claude Code’un ateşlediği her [hook](/tr/playbook/glossary/#hook) (Claude Code’un yaşam döngüsündeki belirli anlarda otomatik çalışan komut) event’ını, oturumun hangi parçasına ait olduğuna göre gruplandırarak adlandırmak.
+- Belirli bir event için, engelleyip engelleyemediğini ve hangi karar biçimini kabul ettiğini aramak.
+- Hangi hook’ların kayıtlı olduğunu ve her birinin hangi ayar dosyasından geldiğini görmek için `/hooks`’ı kullanmak.
+- Hook’ların kullanıcı, proje, yerel, plugin, skill ve yönetilen kapsamlar arasında nasıl birleştiğini ve `disableAllHooks`’ın neyi kapatıp kapatamayacağını açıklamak.
+- Kısa bir oturumun gerçekte hangi event’ları ateşleyeceğini tahmin etmek — ve çoğunun ateşlemediğinde şaşırmamak.
+
+**Ön koşullar.** `01`–`05` dersleri. Lab-repo tag’i yok: buradaki laboratuvar bir düzineden fazla event’ta aynı anda bir hook kaydettiği için bir geçici klasörde çalışır, bunu önemsediğiniz bir çalışma deposunda istemezsiniz.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bu kataloğu üzerinden geçilecek bir menü gibi görmeyin. Çoğu oturum iki ya da üç hook’a ihtiyaç
+  duyar; listenin geri kalanı, belirli bir ihtiyaç ortaya çıktığında doğru event’ı tanıyabilmeniz
+  için vardır. Özellikle, egzotik event’lara — `Elicitation`, `WorktreeCreate`, `TeammateIdle`,
+  `PostToolBatch` — ait oldukları özelliği çalıştırana kadar uzanmayın ve önemsediğiniz bir depoda
+  "ne olacağını görmek için" her event’a bir hook kaydetmeyin: her biri bir süreç başlatmadır ve
+  gürültülü olanlar (`MessageDisplay`, `PreToolUse`) sürekli ateşlenir.
+</WhenNotToUse>
+
+## Kavram
+
+### Oturum, üç ritimde
+
+Tablodan önce, şekil. Dokümanlar temel event’ları ne sıklıkta çalıştıklarına göre gruplandırır:
+
+- **Oturum başına bir kez:** `SessionStart` ve `SessionEnd`.
+- **Tur başına bir kez:** `UserPromptSubmit`, `Stop` ve `StopFailure`.
+- **Agentic loop içindeki her tool çağrısında:** `PreToolUse` ve `PostToolUse`.
+
+Geri kalan her şey bu iskeletten sarkar — tool çağrısının yanındaki izin kararları, döngü içindeki subagent ve task event’ları, bağımsız kesintiler olarak sıkıştırma ve model değişimleri.
+
+### Yaşam döngüsü ve oturum
+
+| Event                | Ne zaman ateşlenir                                                                      | Engelleyebilir mi? |
+| -------------------- | --------------------------------------------------------------------------------------- | ------------------ |
+| `SessionStart`       | Bir oturum başlar ya da devam eder                                                      | Hayır              |
+| `SessionEnd`         | Bir oturum sona erer                                                                    | Hayır              |
+| `Setup`              | `--init-only`, ya da `-p` modunda `--init` / `--maintenance`; tek seferlik CI hazırlığı | Hayır              |
+| `InstructionsLoaded` | Bir `CLAUDE.md` ya da `.claude/rules/*.md` dosyası bağlama yüklenir                     | Hayır              |
+| `ConfigChange`       | Bir oturum sırasında bir yapılandırma dosyası değişir                                   | Evet               |
+| `CwdChanged`         | Çalışma dizini değişir, örn. Claude `cd` çalıştırır                                     | Hayır              |
+| `DirectoryAdded`     | Oturum ortasında `/add-dir` ile bir dizin eklenir                                       | Hayır              |
+| `FileChanged`        | İzlenen bir dosya diskte değişir (matcher dosya adlarını adlandırır)                    | Hayır              |
+| `PreCompact`         | Bağlam sıkıştırmadan önce                                                               | Evet               |
+| `PostCompact`        | Sıkıştırma tamamlandıktan sonra                                                         | Hayır              |
+| `PreModelSwitch`     | İstenen bir model değişimi uygulanmadan önce                                            | Evet               |
+| `PostModelSwitch`    | Oturumun modeli değiştikten sonra                                                       | Hayır              |
+
+Kullanımlar: bağlam için `SessionStart` (5. ders); temizlik için `SessionEnd` — ama tüm hook’ları arasında **1,5 saniyelik bir bütçe** paylaştığını unutmayın; bir oturumun gerçekte hangi memory dosyalarını çektiğini denetlemek için `InstructionsLoaded`; onaylamadığınız bir ayar değişikliğini reddetmek için `ConfigChange`; direnv tarzı ortam yeniden yüklemesi için `CwdChanged`; pencere sıkıştırılmadan önce durumu kaydetmek için `PreCompact`.
+
+### Prompt ve görüntüleme
+
+| Event                 | Ne zaman ateşlenir                                               | Engelleyebilir mi? |
+| --------------------- | ---------------------------------------------------------------- | ------------------ |
+| `UserPromptSubmit`    | Bir prompt gönderirsiniz, Claude işlemeden önce                  | Evet               |
+| `UserPromptExpansion` | Yazılan bir komut, Claude’a ulaşmadan önce bir prompt’a genişler | Evet               |
+| `MessageDisplay`      | Asistan mesaj metni gösterilirken                                | Hayır              |
+| `Notification`        | Claude Code bir bildirim gönderir                                | Hayır              |
+
+Bilinmesi gereken `UserPromptSubmit`’tir: exit 2 prompt’u engeller **ve siler**, ve düz stdout’u Claude’un bağlamına eklenir — yani hem prompt filtresi hem de `SessionStart`’tan sonra bağlam enjekte etmek için ikinci en iyi yerdir. `MessageDisplay` yalnızca görüntülemedir: `displayContent`’i ekranda olanı değiştirir, transcript ve Claude’un gördüğü ise orijinali korur.
+
+### Tool’lar ve izinler
+
+| Event                | Ne zaman ateşlenir                                           | Engelleyebilir mi?                                         |
+| -------------------- | ------------------------------------------------------------ | ---------------------------------------------------------- |
+| `PreToolUse`         | Bir tool çağrısı çalışmadan önce                             | Evet                                                       |
+| `PermissionRequest`  | Bir tool çağrısı bir izin kararı gerektirir                  | Hayır (`decision` nesnesi üzerinden reddedilir)            |
+| `PermissionDenied`   | Auto mode bir tool çağrısını reddeder                        | Hayır                                                      |
+| `PostToolUse`        | Bir tool çağrısı başarılı olduktan sonra                     | Hayır (exit 2’de stderr Claude’a ulaşır)                   |
+| `PostToolUseFailure` | Bir tool çağrısı başarısız olduktan sonra                    | Hayır (aynı)                                               |
+| `PostToolBatch`      | Paralel tool çağrılarından oluşan bir grup çözüldükten sonra | Evet (bir sonraki model çağrısından önce döngüyü durdurur) |
+
+`PreToolUse`, dört yollu `permissionDecision`’a sahip tek olandır. `PermissionRequest`, Claude Code’un size sormak üzere olduğu anda ateşlenir — düz bir `-p` koşusunda bu asla olmaz, dolayısıyla headless modda otomatik kararlar için `PreToolUse` kullanın. `PermissionDenied`, modele reddedilen çağrıyı yeniden deneyebileceğini söylemek için `retry: true` döndürebilir.
+
+### Agent’lar, task’lar ve takımlar
+
+| Event           | Ne zaman ateşlenir                        | Engelleyebilir mi? |
+| --------------- | ----------------------------------------- | ------------------ |
+| `SubagentStart` | Bir subagent başlatılır                   | Hayır              |
+| `SubagentStop`  | Bir subagent biter                        | Evet               |
+| `TaskCreated`   | `TaskCreate` ile bir task oluşturuluyor   | Evet               |
+| `TaskCompleted` | Bir task tamamlandı olarak işaretleniyor  | Evet               |
+| `TeammateIdle`  | Bir agent takımı üyesi boşta kalmak üzere | Evet               |
+| `Stop`          | Claude cevap vermeyi bitirir              | Evet               |
+| `StopFailure`   | Tur bir API hatası nedeniyle biter        | Hayır              |
+
+`TaskCompleted`’ı engellemek "bitti tanımı" hook’udur: kontrolü çalıştırın ve başarısız olduğunda tamamlanmayı reddedin. `TeammateIdle`, bir takım üyesini çalışır tutar. `StopFailure`, `terminalSequence` dışında çıktınızı ve exit kodunuzu tamamen yok sayar.
+
+### Worktree’ler ve MCP elicitation
+
+| Event               | Ne zaman ateşlenir                                                | Engelleyebilir mi?                                    |
+| ------------------- | ----------------------------------------------------------------- | ----------------------------------------------------- |
+| `WorktreeCreate`    | Bir worktree oluşturulur (`--worktree`, `isolation`, …)           | Evet — **herhangi** bir sıfır olmayan exit iptal eder |
+| `WorktreeRemove`    | Oturum çıkışında bir worktree kaldırılır                          | Hayır                                                 |
+| `Elicitation`       | Bir MCP server bir tool çağrısı sırasında kullanıcı girdisi ister | Evet (exit 2 reddeder)                                |
+| `ElicitationResult` | Kullanıcı cevap verdikten sonra, cevap geri gitmeden önce         | Evet (exit 2 reddeder)                                |
+
+`WorktreeCreate`, 1. derste öğrendiğiniz exit-kodu kuralını bozan tek event’tır: Claude Code’un varsayılan git davranışının yerini alır, komut hook’unun **stdout’u worktree yolu olarak okunur** (yani hiç JSON döndüremez) ve sıfır olmayan herhangi bir exit oluşturmayı başarısız kılar.
+
+Bu 33 event. Dördünü kullanacaksınız.
+
+### Bir event hangi karar biçimini alır?
+
+Ezberlemek yerine, dört aileyi hatırlayın:
+
+| Aile                                                                                                                                                       | Alanlar                                                              |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `UserPromptSubmit`, `UserPromptExpansion`, `PostToolUse`, `PostToolUseFailure`, `PostToolBatch`, `Stop`, `SubagentStop`, `ConfigChange`, `PreCompact`      | Üst düzey `decision: "block"` + `reason`                             |
+| `PreToolUse`, `PreModelSwitch`                                                                                                                             | `hookSpecificOutput.permissionDecision` + `permissionDecisionReason` |
+| `SessionStart`, `SubagentStart`, `PostModelSwitch`                                                                                                         | Yalnızca bağlam — `hookSpecificOutput.additionalContext`             |
+| `Setup`, `WorktreeRemove`, `Notification`, `SessionEnd`, `PostCompact`, `InstructionsLoaded`, `StopFailure`, `CwdChanged`, `DirectoryAdded`, `FileChanged` | Karar kontrolü yok — yalnızca yan etkiler                            |
+
+`TeammateIdle` ve `TaskCompleted`, exit 2 ya da `continue: false` kullanır; `TaskCreated`, exit 2 ya da `decision: "block"` kullanır; `PermissionRequest`, `hookSpecificOutput.decision.behavior` kullanır; `Elicitation` ve `ElicitationResult`, `hookSpecificOutput.action` (`accept`, `decline`, `cancel`) kullanır ve exit 2, elicitation’ı reddeder ya da cevabı reddeder.
+
+Birkaç event yalnızca izin vermek ya da engellemek yerine yeniden yazabilir: `updatedInput` ile `PreToolUse`, `decision`’ının içinde `updatedInput` ile `PermissionRequest`, `updatedToolOutput` ile `PostToolUse` ve `displayContent` ile `MessageDisplay`. Redaksiyon için, giden girdiyi `PreToolUse`’da ve gelen sonuçları `PostToolUse`’da yakalayın.
+
+### `/hooks`
+
+Etkileşimli bir oturumda **salt-okunur** bir yapılandırılmış hook’lar tarayıcısı açmak için `/hooks` yazın. Her event’ı bir sayaçla listeler, matcher’lara inmenize izin verir ve her handler’ın tam ayrıntılarını gösterir. Her girdi türüyle — `command`, `prompt`, `agent`, `http`, `mcp_tool` — ve kaynağıyla etiketlenir:
+
+- `User Settings` — `~/.claude/settings.json`
+- `Project Settings` — `.claude/settings.json`
+- `Local Settings` — `.claude/settings.local.json`
+- `Plugin Hooks` — bir plugin’in `hooks/hooks.json`’ı
+- `Session Hooks` — bu oturum için bellekte kayıtlı
+
+Birini seçmek, event’ını, matcher’ını, türünü, kaynak dosyasını ve tam komutunu gösteren bir ayrıntı görünümü açar. Salt-okunurdur: bir hook’u değiştirmek için, JSON’u düzenleyin (ya da Claude’dan isteyin).
+
+`/hooks` etkileşimli bir TUI olduğundan, bu derste onun dürüst bir transcript’i yok — açar ve bakarsınız. Bir hook hiç ateşlenmediğinde denenecek ilk şey budur ve 07. ders bunu bir alışkanlık hâline getirir.
+
+### Öncelik, birleştirme ve her şeyi kapatmak
+
+Hook girdileri, birbirinin yerini almak yerine ayar seviyeleri arasında **birleşir**: kullanıcı, proje ve yerel ayarların her biri kendi hook’larını ekler ve eşleşen tüm hook’lar paralel çalışır. İki ayar dosyasında aynı şekilde tanımlanan bir handler bir kez çalışır; bir plugin’in ya da skill’in aynı handler’ın kopyası ayrı kalır.
+
+Hook’ları kapatmak için:
+
+- Bir ayar dosyasında `"disableAllHooks": true`, tüm hook’ları devre dışı bırakır — ama Claude Code, ayar önceliği uygulandıktan sonra kalan değeri okur, dolayısıyla bir projenin `false`’u kullanıcı ayarlarınızdaki bir `true`’yu geçersiz kılar.
+- `--settings '{"disableAllHooks": true}'`, proje ne derse desin tek bir koşu için onları kapatır. Bu, okumadığınız bir depoda `claude -p` çalıştırmadan önce uzanılacak bayraktır.
+- Yönetilen hook’lar istisnadır: kullanıcı, proje ya da yerel ayarlarda ayarlanan `disableAllHooks` onları devre dışı bırakamaz. Yalnızca yönetilen seviye bırakabilir. Yöneticiler ayrıca, kullanıcı, proje, yerel ve plugin hook’larınızı tamamen engelleyen `allowManagedHooksOnly`’i de ayarlayabilir.
+
+Yapılandırmada tutarken tek bir hook’u devre dışı bırakmanın bir yolu yok — girdisini silin.
+
+Bu dersin işlenmiş örnek prompt’u, katalog soyut olmaktan çıktığında kullandığınızdır:
+
+```text
+Read .claude/settings.json and list every hook event we register, what each handler does,
+and whether that event can block. Flag anything registered on an event that cannot block
+but whose script tries to block.
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · gerçek bir oturumun hangi event’ları ateşlediğini bulun"
+  lessonId="tr/l2-intermediate/m07-hooks/event-catalogue"
+  repoTag="none"
+  steps={[
+    'Önemsediğiniz bir depo olmayan bir geçici klasörde, `.claude/hooks/record-event.mjs` oluşturun: stdin’i ayrıştırın, `hook_event_name`’i — mevcutsa `tool_name`’i de ekleyerek — `events.log`’a ekleyin, exit 0.',
+    'O tek betiği matcher’sız on üç event’a kaydeden bir `.claude/settings.json` yazın: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolBatch, MessageDisplay, Notification, Stop, SessionEnd, PreCompact, InstructionsLoaded, TaskCreated, SubagentStart.',
+    '`events.log`’u silin, sonra kısa bir oturum çalıştırın: `claude -p "Read notes.txt and reply with one sentence." --model sonnet --max-turns 3 --output-format text --allowedTools "Read"`',
+    'Sayımı okuyun: `sort events.log | uniq -c | sort -rn`. On üçünden hangilerinin ateşlendiğini yazın ve diğerlerinin neden ateşlenmediğini tahmin edin.',
+    'Aynı klasörde etkileşimli bir oturum açın ve `/hooks` çalıştırın. On üç event’ın sayaçlarıyla göründüğünü ve her handler’ın `Project Settings` olarak etiketlendiğini doğrulayın.',
+    'Headless komutu tek tırnaklı `--settings \'{"disableAllHooks": true}\'` bayrağıyla yeniden çalıştırın ve `events.log`’un büyümediğini doğrulayın.',
+  ]}
+  expected="Tek-tool’lu bir oturumda on üç event’tan sekizi ateşleniyor: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolBatch, MessageDisplay, Stop ve SessionEnd. Notification, PreCompact, InstructionsLoaded, TaskCreated ve SubagentStart ateşlenmiyor."
+  checklist={[
+    'On üç event de `.claude/settings.json`’da kayıtlı',
+    '`events.log`, kısa bir oturumdan sonra sekiz farklı event listeliyor',
+    '`PreToolUse` ve `PostToolUse` satırları `Read` tool’unu adlandırıyor',
+    '`SubagentStart` ve `TaskCreated`’ın neden ateşlenmediğini tek cümlede söyleyebiliyorsunuz',
+    '`/hooks`, hook’ları `Project Settings` kaynağıyla gösteriyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/06-event-catalogue/01-which-events-fire.txt"
+    range="2-14"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/06-event-catalogue/02-hooks-disabled.txt"
+    range="2-7"
+  />
+</Lab>
+
+Yoklukları okuyun, ders onlar. `Notification` ateşlenmedi çünkü hiçbir şey bir insanı beklemiyordu (4. ders). `PreCompact` ateşlenmedi çünkü üç turluk bir oturum bağlam penceresini hiç doldurmuyor. `TaskCreated` ve `SubagentStart` ateşlenmedi çünkü bu oturum hiçbir task oluşturmadı ve hiçbir subagent başlatmadı. `InstructionsLoaded` ateşlenmedi çünkü geçici klasörde yüklenecek bir `CLAUDE.md` ya da rules dosyası yok.
+
+Bu kayıttaki bir satır, tutulmaya değer gerçek bir uyarıdır:
+
+```text
+SessionEnd hook [node .claude/hooks/record-event.mjs] failed: Hook cancelled
+```
+
+`SessionEnd` hook’ları aralarında **1,5 saniyelik bir bütçe** paylaşır. Bir Node süreç başlatması bunun çoğunu tek başına alabilir ve burada iptal edildi — kendi satırını yazdıktan sonra, bu yüzden `SessionEnd` yine de sayımda görünüyor. Oturum sonunda gerçek bir işe ihtiyacınız varsa, hook başına `timeout`’u yükseltin (Claude Code, paylaşılan bütçeyi de 60 saniyeye kadar buna uyacak şekilde yükseltir) ya da işi yer olan bir yere taşıyın.
+
+## Anti-pattern’ler
+
+**"Ne olur ne olmaz" diye event’lara hook kaydetmek.** Kaydettiğiniz her event, sıcak bir yolda bir süreç başlatmadır. `MessageDisplay`, metin akarken ateşlenir; `PreToolUse` her çağrıda ateşlenir. _Düzeltme:_ kullandığınızı kaydedin ve keşfetmek istediğinizde laboratuvarın kaydediciyi bir geçici klasörde kullanın.
+
+**`PermissionRequest`’in `-p`’de çalışmasını beklemek.** Düz bir headless koşuda yakalanacak bir izin istemi yoktur — event yalnızca bir host onu sağladığında var olur. _Düzeltme:_ headless modda izin kararlarını `PreToolUse` ile otomatikleştirin.
+
+**Bir `WorktreeCreate` komut hook’undan JSON döndürmek.** Onun stdout’u worktree yoludur. Bir nesne yazdırmak worktree oluşturmayı bozar ve sıfır olmayan herhangi bir exit onu iptal eder. _Düzeltme:_ bir yol yazdırın ya da `hookSpecificOutput.worktreePath` döndürebilen bir HTTP hook’u kullanın.
+
+**`disableAllHooks`’unuzun kazandığını varsaymak.** Bir projenin `false`’u, kullanıcı seviyenizdeki bir `true`’yu geçersiz kılar ve yönetilen hook’lar ikisini de yok sayar. _Düzeltme:_ tek bir koşu için `--settings '{"disableAllHooks": true}'` kullanın ve gerçekte neyin yüklendiğini görmek için `/hooks`’ı okuyun.
+
+**Bir `SessionEnd` hook’unda gerçek iş yapmak.** Paylaşılan bütçe 1,5 saniyedir. _Düzeltme:_ zaman aşımını bilinçli olarak yükseltin ya da bir işaretçi dosya yazıp oturumun dışındaki bir şeyin ona göre hareket etmesine izin verin.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/event-catalogue"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir bitti tanımını hangi event uygulamalı — bir kontrol geçene kadar bir task’ı tamamlanmış olarak işaretlemeyi reddetmeli?"
+  options={[
+    {
+      text: '`Stop`',
+      explanation:
+        'Stop, task tamamlanmasında değil her turun sonunda ateşlenir ve onu engellemek sekiz-engel tavanına çarpar.',
+    },
+    {
+      text: '`TaskCompleted`',
+      correct: true,
+      explanation:
+        'Bir task tamamlandı olarak işaretlenirken ateşlenir ve engelleyerek mesajınızı Claude’a döndürebilir.',
+    },
+    {
+      text: '`PostToolBatch`',
+      explanation: 'Bu, paralel tool çağrılarından oluşan bir gruptan sonra ateşlenir.',
+    },
+    {
+      text: '`SessionEnd`',
+      explanation: 'Hiçbir karar kontrolü ve 1,5 saniyelik bir bütçesi var.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/event-catalogue"
+  questionId="q2"
+  lang="tr"
+  prompt="/hooks menüsü size ne yapmanıza izin verir?"
+  options={[
+    {
+      text: 'Hook’ları etkileşimli olarak eklemek, düzenlemek ve silmek.',
+      explanation: 'Salt-okunurdur; ayarlar JSON’unu siz düzenlersiniz.',
+    },
+    {
+      text: 'Yapılandırılmış hook’lara event’a göre, her handler’ın türü ve kaynak ayar dosyasıyla göz atmak.',
+      correct: true,
+      explanation:
+        'Bu da onu "bu hook yüklü mü, ve nereden?" sorusuna cevap vermenin en hızlı yolu yapar.',
+    },
+    {
+      text: 'Her hook’un son koşusunu çıktısıyla birlikte yeniden oynatmak.',
+      explanation: 'Koşu ayrıntıları debug log’unda yaşar.',
+    },
+    {
+      text: 'Tek tek hook’ları geçici olarak devre dışı bırakmak.',
+      explanation:
+        'Hook başına bir devre dışı bırakma yoktur — yalnızca `disableAllHooks` ya da girdiyi silmek.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/event-catalogue"
+  questionId="q3"
+  lang="tr"
+  prompt="Kullanıcı ayarlarınız disableAllHooks: true olarak ayarlanmış. Bir projenin .claude/settings.json’ı bunu false olarak ayarlıyor. Ne çalışır?"
+  options={[
+    {
+      text: 'Hiçbir şey — daha katı ayar kazanır.',
+      explanation: 'Ayar önceliği önce uygulanır ve proje değeri daha spesifiktir.',
+    },
+    {
+      text: 'Hook’lar çalışır: Claude Code, ayar önceliği uygulandıktan sonra kalan değeri okur, dolayısıyla projenin false’u kazanır.',
+      correct: true,
+      explanation:
+        'Ne olursa olsun hook’ların kapalı olduğu tek bir koşu istediğinizde disableAllHooks bayrağını komut satırında geçirin.',
+    },
+    {
+      text: 'Yalnızca yönetilen hook’lar çalışır.',
+      explanation:
+        'Yönetilen hook’lar yönetilmeyen disableAllHooks’tan etkilenmez, ama diğerleri de burada çalışır.',
+    },
+    {
+      text: 'Claude Code bir ayar çakışması bildirir.',
+      explanation: 'Öncelik bunu sessizce çözer.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/event-catalogue"
+  questionId="q4"
+  lang="tr"
+  prompt="Tek-tool’lu, tek-turlu bir headless oturum bunlardan hangisini ateşler?"
+  options={[
+    {
+      text: 'Kaydettiğiniz her event.',
+      explanation: 'Çoğu event, kısa bir oturumun hiç yaratmadığı koşullara ihtiyaç duyar.',
+    },
+    {
+      text: 'SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolBatch, MessageDisplay, Stop ve SessionEnd.',
+      correct: true,
+      explanation:
+        'Tam olarak laboratuvar kaydındaki sekizi — bildirim, sıkıştırma, task ya da subagent yok.',
+    },
+    {
+      text: 'Yalnızca SessionStart ve Stop.',
+      explanation: 'Tool çağrısı tool event’larını da ateşler.',
+    },
+    {
+      text: 'Hiçbiri — headless oturumlar hook ateşlemez.',
+      explanation: 'Ateşlerler; `-p` klasörü güvenilir olarak bile görür.',
+    },
+  ]}
+/>
+
+**Sırada:** `07-debugging-hooks`, az önce yazdığınız hook hiçbir şey yapmadığında ne yapılacağını anlatır.

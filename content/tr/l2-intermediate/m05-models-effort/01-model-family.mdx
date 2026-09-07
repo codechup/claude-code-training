@@ -6,10 +6,10 @@ module: 'm05-models-effort'
 order: 1
 duration_min: 15
 difficulty: core
-tags: ['models', 'aliases', 'context-window']
+tags: ['modeller', 'alias’lar', 'context-window']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Model configuration'
@@ -31,8 +31,271 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l2-intermediate/m05-models-effort/01-model-family.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders, Claude Code'un dört güncel modelini ve bunları seçmek için kullandığınız takma adları (alias) tanıtır. Fable 5.1, Opus 5 ve Sonnet 5'in 1M token'lık bağlam penceresi varken Haiku 4.5'in penceresi 200K token'dır; fiyatlar milyon token başına 10/50 dolardan 1/5 dolara kadar iner. `default` bir model değildir: hesap tipinize göre çözülen özel bir değerdir. Bir takma adın hangi model kimliğine çözüldüğünü tahmin etmek yerine kanıtla görürsünüz — `claude --output-format json` çıktısındaki `modelUsage` alanı, çalışan modelin tam kimliğini ve `contextWindow` değerini bildirir. Ders ayrıca modelin nereden ayarlandığını (`/model`, `--model`, `ANTHROPIC_MODEL`, `model` ayarı, `ANTHROPIC_DEFAULT_MODEL`) ve hangisinin öncelikli olduğunu gösterir.
+- Dört güncel Claude modelini adlandırmak ve her birinin ne için olduğunu tek cümlede söylemek.
+- Takma ad (alias) tablosunu okumak: `best`, `fable`, `opus`, `sonnet`, `haiku`, `sonnet[1m]`, `opus[1m]` ve `opusplan` neyi seçer, `default` neden hiç model olmadığı.
+- Aynı takma adın farklı bir sağlayıcıda neden farklı bir modele çözülebileceğini açıklamak.
+- Bir modeli dört yoldan ayarlamak — `/model`, `--model`, `ANTHROPIC_MODEL`, `model` ayarı — ve hangisinin kazandığını söylemek.
+- Bir takma adın gerçekte hangi model kimliğine çözüldüğünü, seçiciden değil gerçek bir sonuç zarfından kanıtlamak.
+
+**Ön koşullar.** Çalışan bir Claude Code kurulumu (`m01-start`) ve arkanızda bir ilk oturum (`m02-interact`). Modeli daha önce hiç değiştirmiş olmanıza gerek yok — bunu bilinçli olarak ilk kez bu derste yapacaksınız.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Elinizde gerçekten başarısız olan bir görev yokken alias’tan alias’a atlamayın. Varsayılan model
+  iyi bir varsayılandır ve oturum ortasında model değiştirmek prompt cache’i (istem önbelleği) çöpe
+  atar — bir sonraki istek tüm konuşmanızı tam fiyattan yeniden okur. Sorununuz Claude’un sürekli
+  yer tükenmesiyse çözüm daha büyük bir model değil, bağlam hijyenidir (`/context`, `/compact`,
+  `/clear`). Ve Amazon Bedrock, Google Cloud’un Agent Platform’u ya da Microsoft Foundry üzerinden
+  çalışıyorsanız, aşağıdaki alias tablosunu yalnızca bir başlangıç noktası sayın: hangi sürümlere
+  erişebileceğinize sağlayıcınız karar verir.
+</WhenNotToUse>
+
+## Kavram
+
+### Dört model
+
+Dört güncel model de metin ve görsel girdi alır, metin döndürür ve tool kullanır. Farklı olan; ne kadar sıkı düşündükleri, ne kadar hızlı cevap verdikleri, ne kadara mal oldukları ve ne kadar tutabildikleridir.
+
+|                                 | Fable 5.1                                        | Opus 5                                     | Sonnet 5                       | Haiku 4.5                                           |
+| ------------------------------- | ------------------------------------------------ | ------------------------------------------ | ------------------------------ | --------------------------------------------------- |
+| Ne için                         | Zorlu akıl yürütme ve uzun soluklu agentic işler | Karmaşık agentic kodlama ve kurumsal işler | Hız ve zekânın en iyi bileşimi | Neredeyse öncü seviyede zekâya sahip en hızlı model |
+| Göreli gecikme                  | Daha yavaş                                       | Orta                                       | Hızlı                          | En hızlı                                            |
+| MTok başına fiyat (girdi/çıktı) | 10 $ / 50 $                                      | 5 $ / 25 $                                 | 2 $ / 10 $                     | 1 $ / 5 $                                           |
+| Claude API kimliği              | `claude-fable-5-1`                               | `claude-opus-5`                            | `claude-sonnet-5`              | `claude-haiku-4-5-20251001`                         |
+| Bağlam penceresi                | 1M token                                         | 1M token                                   | 1M token                       | 200K token                                          |
+| Maks. çıktı                     | 128K token                                       | 128K token                                 | 128K token                     | 64K token                                           |
+| Varsayılan effort               | `high`                                           | `high`                                     | `high`                         | Effort desteklenmiyor                               |
+
+Platform dokümantasyonunun kendi tavsiyesi, çoğu iş yükü için Opus 5 ile başlamak, zorlu akıl yürütme ve uzun soluklu agentic işler için — ya da değerlendirmeleriniz Opus 5’te daha yüksek bir [effort](/tr/playbook/glossary/#effort) (modelin bir yanıt için harcadığı düşünme çabası seviyesi) düzeyinde bile yetersiz kalıyorsa — Fable 5.1’e uzanmaktır.
+
+Bu tablodaki iki sayı, bir oturumu nasıl planladığınızı değiştirdiği için akılda tutulmaya değer. Haiku 4.5, girdi token’ı başına Fable 5.1’in onda birine, çıktı token’ı başına da onda birine mal oluyor — yani Haiku’ya devredebileceğiniz bir görev, bir büyüklük mertebesi daha ucuza gelen bir görevdir. Ve Haiku’nun 200K’lık bağlam penceresi diğerlerinin beşte biri kadar, dolayısıyla Sonnet’e rahatça sığan uzun bir araştırma Haiku’ya hiç sığmayabilir.
+
+### Alias’lar ve gizledikleri
+
+Nadiren bir model kimliği yazarsınız. Bir alias yazarsınız ve Claude Code onu bir sürüme çözer:
+
+| Alias        | Neyi seçer                                                                                                                      |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| `default`    | Bir model alias’ı değildir. Herhangi bir model geçersiz kılmasını temizler ve hesabınız için çalışma zamanı varsayılanına döner |
+| `best`       | Size açıksa en güncel Fable modeli, değilse `opus` ile aynı model                                                               |
+| `fable`      | En zor ve en uzun süren görevleriniz için en güncel Fable modeli                                                                |
+| `opus`       | Karmaşık akıl yürütme görevleri için en güncel Opus modeli                                                                      |
+| `sonnet`     | Günlük kodlama görevleri için en güncel Sonnet modeli                                                                           |
+| `haiku`      | Basit görevler için hızlı, verimli Haiku modeli                                                                                 |
+| `sonnet[1m]` | 1M token’lık bağlam penceresine sahip Sonnet. `sonnet` zaten kendi doğal 1M penceresiyle Sonnet 5’e çözülüyorsa etkisizdir      |
+| `opus[1m]`   | 1M token’lık bağlam penceresine sahip Opus                                                                                      |
+| `opusplan`   | Bir melez: plan mode sırasında `opus`, sonra yürütme için `sonnet`                                                              |
+
+Bir alias, _sağlayıcınız için_ önerilen sürümü işaret eder ve bu zamanla değişir. Anthropic API’sinde `opus`, Opus 5’tir ve `sonnet`, Sonnet 5’tir. AWS üzerindeki Claude Platform’da `opus` Opus 5’tir ama `sonnet` Sonnet 4.6’dır. Amazon Bedrock ve Google Cloud’un Agent Platform’unda `sonnet`, Sonnet 4.5’tir. Microsoft Foundry’de `opus` Opus 4.6’dır ve `sonnet` Sonnet 4.5’tir. `ANTHROPIC_DEFAULT_FABLE_MODEL`’i ayarlamadığınız sürece `fable`, Fable 5.1’e çözülür.
+
+`default` kendi satırını hak ediyor, çünkü çoğu insanın bilmeden çalıştırdığı şey tam olarak bu. Neye çözüleceği hesap tipinize bağlıdır: Max, Team Premium, Enterprise ve Anthropic API’sinde (ayrıca AWS üzerindeki Claude Platform, Amazon Bedrock ve Google Cloud’un Agent Platform’unda) Opus 5; Pro ve Team Standard’da Sonnet 5; Microsoft Foundry’de Sonnet 4.5.
+
+Altınızda hareket etmeyecek bir sürüme ihtiyacınız varsa, tam model adını kullanın — `claude-opus-5` — ya da aileyi `ANTHROPIC_DEFAULT_OPUS_MODEL` / `ANTHROPIC_DEFAULT_SONNET_MODEL` / `ANTHROPIC_DEFAULT_FABLE_MODEL` ile sabitleyin.
+
+### `opusplan`, bir strateji olan tek alias
+
+`opusplan` bir model değildir. [Plan mode](/tr/playbook/glossary/#plan-mode)’da akıl yürütme ve mimari için `opus` kullanır; plan mode’dan çıktığınızda uygulama için `sonnet`’e geçer. "Önce sıkı düşün, sonra çok yaz" tarzı işler için gerçekten iyi bir varsayılandır — bilmeniz gereken bir bedelle birlikte: her plan mode geçişi bir model değişimidir ve her model değişimi taze bir prompt cache başlatır.
+
+### Bir model ayarı nereden gelir
+
+Modelinizi beş yer ayarlayabilir. Öncelik sırasına göre, en yüksekten başlayarak:
+
+1. Oturum sırasında `/model <alias|ad>`.
+2. Başlangıçta `claude --model <alias|ad>`.
+3. Ortamda `ANTHROPIC_MODEL=<alias|ad>`.
+4. Bir ayar dosyasındaki `model` alanı.
+5. Yeni oturumlar için varsayılan olan `ANTHROPIC_DEFAULT_MODEL=<alias|ad>`.
+
+İki davranış insanları şaşırtır. Birincisi, `/model` seçiminizi **kaydeder**: `model` alanını kullanıcı ayarlarınıza yazar, böylece bir sonraki oturum da oradan başlar. Yalnızca bu oturum için geçiş yapmak için seçicide `s`’ye basın. İkincisi, etkileşimsiz modda (`claude -p`), prompt içindeki bir `/model` yalnızca o oturuma uygulanır ve asla kaydedilmez.
+
+Şu anda hangi modelde olduğunuzu görmek için `/status` çalıştırın ya da modeli status line’ınıza koyun.
+
+### Subagent başına bir model
+
+Seçim oturum başına bir tane değildir. Bir [subagent](/tr/playbook/glossary/#subagent) (ana oturumdan ayrı, kendi bağlam penceresi ve tool izinleri olan yardımcı agent), `.claude/agents/*.md` frontmatter’ında kendi `model` alanını taşıyabilir — `sonnet`, `opus`, `haiku`, `fable`, tam bir model kimliği ya da `inherit` — ve `CLAUDE_CODE_SUBAGENT_MODEL`, bunu belirtmeyen subagent’lar için bir varsayılan ayarlar. Bu, bu kurstaki en ucuz yapısal maliyet kaldıracıdır: maliyet dokümanının kendi tavsiyesi, basit subagent görevleri için `model: haiku` belirtmektir, böylece ayrıntılı, mekanik bir arama mimari için seçtiğiniz modelde çalışmaz. Subagent’lar için model çözümleme sırası ve bununla ilgili strateji `m10-subagents`’ta ele alınır; burada önemli olan, kadranın oturumun bir seviye altında var olduğunu bilmektir.
+
+İşte bu dersin örnek [prompt](/tr/playbook/glossary/#prompt)’u (Claude’a verilen istek metni) — bir model seçiminin önemli olmasını sağlayan biçim, çünkü tek satırlık değil uzun soluklu:
+
+```text
+Read src/store.ts and test/, then tell me which functions have no test coverage
+at all. Give me the list and a one-line risk note for each. Do not write any code.
+```
+
+## Uygulamalı laboratuvar
+
+Bu dersin bir lab-repo tag’i yok. Alıştırma boş herhangi bir dizinde çalışır, çünkü görmek istediğimiz bir kod değişikliği değil — bir alias’ın gerçekte hangi model kimliğine çözüldüğü. `claude --output-format json`, tam olarak bunu adlandıran bir `modelUsage` nesnesi yazdırır; bu yetkili cevaptır, model seçici bir menüdür, kanıt değil.
+
+<Lab
+  title="Laboratuvar · bir alias’ın neye çözüldüğünü kanıtlayın"
+  lessonId="tr/l2-intermediate/m05-models-effort/model-family"
+  repoTag="none"
+  steps={[
+    'Boş bir geçici dizin oluşturun ve içine girin. Burada bir depoya ihtiyaç yok.',
+    'Haiku üzerinde mümkün olan en ucuz tek turlu oturumu çalıştırın: `claude -p "Reply with exactly: OK" --model haiku --output-format json --max-turns 1`',
+    'Zarfta `modelUsage`’ı bulun. Anahtarı (çözülen model kimliği) okuyun, sonra içindeki `canonicalModel` ve `contextWindow`’u okuyun.',
+    'Aynı komutu `--model sonnet` ile çalıştırın ve iki `modelUsage` bloğunu karşılaştırın.',
+    'Etkileşimli bir oturumda `/status` çalıştırın ve ayarlarınızın çözdüğü modelle aynı adı verdiğini doğrulayın.',
+  ]}
+  expected="Haiku çalıştırması contextWindow 200000 ile claude-haiku-4-5-20251001 modelini bildirir. Sonnet çalıştırması contextWindow 1000000 ile claude-sonnet-5’i bildirir — artı çok daha küçük ikinci bir claude-haiku-4-5-20251001 girdisi."
+  checklist={[
+    '`modelUsage` anahtarı yazdığınız alias değil, tam bir model kimliği',
+    'Haiku `contextWindow: 200000` bildiriyor; Sonnet `contextWindow: 1000000` bildiriyor',
+    '`canonicalModel` tarihli soneki düşürüyor (`claude-haiku-4-5`)',
+    'Model başına `costUSD`, zarfın `total_cost_usd`’ından ayrı raporlanıyor',
+    '`/status`, zarfla aynı fikirde',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/01-model-family/01-alias-haiku.txt"
+    range="2-2"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/01-model-family/01-alias-haiku.txt"
+    range="41-56"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/01-model-family/02-alias-sonnet.txt"
+    range="41-70"
+  />
+</Lab>
+
+Bu kayıtta durup düşünmeye değer üç şey var.
+
+`haiku` alias’ı, tarihli bir kimlik olan `claude-haiku-4-5-20251001`’e çözüldü — `canonicalModel` ise tarihsiz `claude-haiku-4-5`. Akılda tutulacak eşleşme bu: alias’lar hareket eder, tarihli kimlikler etmez, ve `canonicalModel` ikisinin arasındaki aile adıdır.
+
+`contextWindow`, model başına raporlanır ve yukarıdaki tabloyla eşleşir: Haiku 4.5 için 200.000, Sonnet 5 için 1.000.000. Bir oturumda ne kadar yer olduğunu tahmin etmenize hiç gerek yok.
+
+Ve Sonnet çalıştırması **iki** model bildiriyor: işi yapan `claude-sonnet-5` ve yanında çok daha ucuz bir `claude-haiku-4-5-20251001` girdisi. `modelUsage`, yalnızca seçtiğiniz modeli değil, bir oturumun faturalandırdığı her modeli raporlar, dolayısıyla model başına maliyet dökümü beklediğinizden daha fazla satır içerebilir. Ayrıca, maliyet dokümanı Claude Code’un arka plan işlevleri için bazı token’lar kullandığını belirtir — `--resume` için önceki konuşmaları özetlemek, bazı komutları işlemek — ve bunu oturum başına genellikle 0,04 dolardan az olarak koyar.
+
+## Anti-pattern’ler
+
+**Bir alias’ı bir sürüm sanmak.** Bir runbook’a "opus çalıştırıyoruz" yazmak kalıcı hiçbir şey söylemez: `opus`, bugün Anthropic API’sinde Opus 5, Microsoft Foundry’de Opus 4.6’dır. _Düzeltme:_ tekrarlanabilirlik önemli olduğunda tam model adını (`claude-opus-5`) kaydedin ya da aile değişkenini sabitleyin.
+
+**Önce en büyük modele uzanmak.** Fable 5.1, Haiku 4.5’in token başına on katına mal olur ve daha yavaş cevap verir. Beş dosyada bir yeniden adlandırma buna ihtiyaç duymaz. _Düzeltme:_ makul şekilde uyan modelden başlayın ve kanıta göre yükseltin — bir sonraki ders bu karşılaştırmayı gerçekten yapıyor.
+
+**"Daha iyi yapıyor mu diye bakmak" için görev ortasında model değiştirmek.** Her modelin kendi cache’i vardır; bir geçiş tüm konuşmayı hiç cache isabeti olmadan yeniden okur. _Düzeltme:_ modeli oturumun başında seçin; karşılaştırmanız gerekiyorsa aynı başlangıç durumundan iki ayrı oturumda karşılaştırın.
+
+**Haiku’nun penceresinin diğerleri gibi olduğunu varsaymak.** Haiku 4.5, diğerlerinin beşte biri kadar olan 200K token tutar. Sonnet’e rahatça sığan bir oturum Haiku’da duvara çarpabilir. _Düzeltme:_ uzun bir işi Haiku’ya devretmeden önce zarftaki `contextWindow`’a ya da bir oturumda `/context`’e bakın.
+
+**`/model` seçicisinin kanıt olduğuna inanmak.** Seçici, seçebileceklerinizi ve Anthropic API’sinde bir fiyat etiketini gösterir — bu bir gösterimdir, neyin cevap verdiğinin kaydı değil. _Düzeltme:_ bir JSON zarfında `modelUsage`’ı okuyun.
+
+<Callout variant="changed" label="Değişti">
+  Alias çözümlemesi yakın zamanda değişti: `fable`, Claude Code v2.1.255’ten itibaren Fable 5.1’e
+  çözülüyor (öncesinde Fable 5’ti) ve `opus` ile `default`, v2.1.219’dan itibaren Opus 5’e çözülüyor
+  (öncesinde Anthropic API’sinde Opus 4.8’di). Claude Code 2.1.263 için `model-config.md` üzerinden
+  doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/model-family"
+  questionId="q1"
+  lang="tr"
+  prompt="`default` model ayarı neyi seçer?"
+  options={[
+    {
+      text: 'Hesabınıza açık olan en ucuz modeli.',
+      explanation: '`default`’ın neye çözüldüğü maliyete değil, hesap tipine bağlıdır.',
+    },
+    {
+      text: 'Hiçbir şeyi — herhangi bir model geçersiz kılmasını temizler ve hesabınız için çalışma zamanı varsayılanına döner; bu Max/Team Premium/Enterprise/Anthropic API’sinde Opus 5, Pro ve Team Standard’da Sonnet 5’tir.',
+      correct: true,
+      explanation:
+        'Doğru — dokümantasyon, `default`’ın kendisi bir model alias’ı olmayan özel bir değer olduğu konusunda açık.',
+    },
+    {
+      text: 'Proje `.claude/settings.json`’ının adlandırdığı hangi modelse o.',
+      explanation: 'Bu `model` ayarıdır, ayrı (ve daha düşük öncelikli) bir mekanizma.',
+    },
+    {
+      text: 'Her planda ve sağlayıcıda Sonnet 5.',
+      explanation: 'Sonnet 5 yalnızca Pro ve Team Standard’da varsayılandır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/model-family"
+  questionId="q2"
+  lang="tr"
+  prompt="Sonradan, headless bir çalıştırmaya tam olarak hangi model sürümünün cevap verdiğini bilmeniz gerekiyor. Nereye bakarsınız?"
+  options={[
+    {
+      text: '`/model` seçicisine.',
+      explanation: 'Seçici neyi seçebileceğinizi gösterir, neyin çalıştığını değil.',
+    },
+    {
+      text: 'JSON sonuç zarfındaki `modelUsage` nesnesine.',
+      correct: true,
+      explanation:
+        'Anahtarı olarak çözülen model kimliğini adlandırır, artı `canonicalModel`, `contextWindow` ve o modelin kendi `costUSD`’ını.',
+    },
+    {
+      text: 'Yazdığınız `--model` bayrağına.',
+      explanation: 'Bu, tam olarak hareket edebilen şey olan istediğiniz alias’tır.',
+    },
+    {
+      text: 'Kabuk çıkış koduna.',
+      explanation: 'Çıkış kodu modeli değil, başarı ya da başarısızlığı raporlar.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/model-family"
+  questionId="q3"
+  lang="tr"
+  prompt="`opusplan` hakkında hangi ifade doğrudur?"
+  options={[
+    {
+      text: 'Harekete geçmeden önce planlayan bir modeldir.',
+      explanation: 'Bir model değil, bir geçiş stratejisinin alias’ıdır.',
+    },
+    {
+      text: 'Plan mode’da `opus`, yürütme için `sonnet` kullanır — ve her geçiş bir model değişimidir, dolayısıyla taze bir prompt cache başlatır.',
+      correct: true,
+      explanation: 'İki yarı da önemli: strateji yararlıdır ve cache maliyeti gerçektir.',
+    },
+    {
+      text: 'Opus ve Sonnet’i aynı anda çalıştırır ve daha iyi cevabı seçer.',
+      explanation: 'Claude Code’da hiçbir şey bir turda iki modeli paralel çalıştırmaz.',
+    },
+    {
+      text: 'Yalnızca Amazon Bedrock’ta kullanılabilir.',
+      explanation: 'Genel bir alias’tır; bazı sağlayıcılarda plan mode ikamesi farklıdır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/model-family"
+  questionId="q4"
+  lang="tr"
+  prompt="Aynı anda birkaçı ayarlandığında bunlardan hangisi kazanır?"
+  options={[
+    {
+      text: '`ANTHROPIC_DEFAULT_MODEL`',
+      explanation: 'Bu beşinin en düşük öncelikli olanı — yeni oturumlar için varsayılan.',
+    },
+    {
+      text: 'Bir ayar dosyasındaki `model` alanı',
+      explanation: '`ANTHROPIC_DEFAULT_MODEL`’i yener, ama bayrak ve ortam değişkeni onu yener.',
+    },
+    {
+      text: 'Oturum sırasında yazılan `/model`',
+      correct: true,
+      explanation:
+        'Oturum içi komut, öncelik listesinin en tepesindedir — ve kendi makinenizde seçimi varsayılanınız olarak da kaydeder.',
+    },
+    {
+      text: '`ANTHROPIC_MODEL`',
+      explanation: 'Beşte üçüncü: hem `--model` hem de oturum içi `/model` onu yener.',
+    },
+  ]}
+/>
+
+**Sırada:** `02-choosing-a-model`, gerçek bir hatayı Haiku, Sonnet ve Opus üzerinden çalıştırır ve süreleri, maliyetleri ve sonuçları yan yana koyar.

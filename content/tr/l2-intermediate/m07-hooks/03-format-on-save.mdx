@@ -1,15 +1,15 @@
 ---
-title: "PostToolUse hook'u ile kaydettikçe biçimlendirme"
-description: "Claude'un yazdığı her dosyada Prettier — ya da gofmt, ya da ruff — çalıştıran, asla engellemeyen bir PostToolUse hook. Hook modelin işini yeniden yazdığında ne olduğu dahil."
+title: 'Bir PostToolUse hook’uyla kaydederken biçimlendirme'
+description: 'Claude’ın yazdığı her dosyada Prettier’ı — ya da gofmt’ı, ruff’ı — hiç engellemeyen bir PostToolUse hook’u kullanarak çalıştırın. Hook, Claude’ın işini yeniden yazdığında Claude’ın ne yaptığını da içerir.'
 level: 2
 module: 'm07-hooks'
 order: 3
 duration_min: 15
 difficulty: core
-tags: ['hooks', 'posttooluse', 'formatting', 'automation']
+tags: ['hooks', 'posttooluse', 'biçimlendirme', 'otomasyon']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Hooks reference'
@@ -27,7 +27,296 @@ lab:
   repo_tag: 'lesson/m07-03-start'
 ---
 
-Bu ders, bir [hook](/tr/playbook/glossary/#hook) (kanca) açısından `PostToolUse` olayını anlatır: araç çağrısı zaten çalıştığı için bu olay hiçbir şeyi geri alamaz, ama `tool_input.file_path` üzerinden düzenlenen dosyayı bulup biçimlendirebilir. Betiğin her yolda `exit 0` ile bitmesi gerektiğini, stdout'un yalnızca hata ayıklama günlüğüne (debug log) gittiğini ve bu yüzden hook'un etkisine bakarak doğrulandığını gösterir. Laboratuvarda kasıtlı olarak bozuk biçimlendirilmiş bir dosyayı Claude'a düzenletir ve hook'un tüm dosyayı yeniden biçimlendirdiğini — Claude'un bunu fark edip söylediğini — görürsünüz.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l2-intermediate/m07-hooks/03-format-on-save.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Claude'un az önce yazdığı ya da düzenlediği dosyada bir biçimlendirici çalıştıran bir `PostToolUse` hook'u yazmak.
+- Düzenlenen yolu `tool_input.file_path`'ten çıkarmak ve dokunmamanız gereken her şeyi atlamak.
+- Bir biçimlendirici hook'unun neden her yolda, hata yolları dahil, exit 0 ile bitmesi gerektiğini açıklamak.
+- Stdout'unu hiç görmediğiniz bir hook'u, çıktısını değil etkisini kontrol ederek doğrulamak.
+- Ne zaman sessizce biçimlendirileceğine ve ne zaman Claude'a ne değiştirdiğinizi söyleyeceğinize karar vermek.
+
+**Ön koşullar.** `01-hook-anatomy` ve `02-block-dangerous-commands` dersleri ve bu dersin tag'indeki lab deposu:
+
+<CodeBlock title="laboratuvarı alın">
+
+```bash
+git checkout lesson/m07-03-start
+npm ci
+```
+
+</CodeBlock>
+
+`-start` tag'i, 2. derste yazdığınız koruma hook'unu zaten içeriyor, dolayısıyla `.claude/settings.json` zaten var ve dosyayı oluşturmak yerine ona ikinci bir event ekliyorsunuz.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Editörünüz zaten kaydederken biçimlendiriyorsa ve Claude'un düzenlemeleri aynı dosyalardan
+  geçiyorsa biçimlendirici hook'unu atlayın — zaten yapılmış bir iş için düzenleme başına bir süreç
+  başlatmasına para ödüyor olursunuz. Depoda kabul edilmiş bir biçim yoksa atlayın, çünkü Claude'un
+  dokunduğu her dosyayı yeniden biçimlendiren bir hook, iki satırlık bir değişikliği kimsenin
+  inceleyemeyeceği 200 satırlık bir diff'e çevirir. Ve kötü bir düzenlemeyi _önlemesi_ gereken
+  hiçbir şey için `PostToolUse` kullanmayın: tool o zamana kadar zaten çalışmıştır ve dokümanlar
+  `PostToolUse` hook'larının eylemleri geri alamayacağı konusunda açıktır. Doğrulama `PreToolUse`'a
+  aittir.
+</WhenNotToUse>
+
+## Kavram
+
+### Tek paragrafta PostToolUse
+
+`PostToolUse`, **bir tool çağrısı başarılı olduktan sonra** ateşlenir (kardeşi `PostToolUseFailure`, biri başarısız olduğunda ateşlenir). Girdi, olağan ortak alanlara ek olarak `tool_name`, `tool_input`, `tool_use_id` ve `tool_response` taşır. Engelleyemez: exit 2 tool çağrısını geri almaz, ama stderr'inizi Claude'a gösterir — bu, olay bittikten sonra modelin önüne bir uyarı koymanın desteklenen yoludur. Event'ın kendi karar alanları, üst düzey `decision: "block"` / `reason` çifti (geri alma değil geri bildirim) ve `hookSpecificOutput.additionalContext`'tir.
+
+Bir biçimlendirici için bunların hiçbiri önemli değil. Hook'un görünmez olmasını istersiniz: dosyayı biçimlendirin, exit 0, hiçbir şey söylemeyin.
+
+### Yolu almak
+
+`Write` ve `Edit` için, dosya `tool_input.file_path`'tedir ve mutlaktır. Laboratuvar hook'u onu çözer, sonra Prettier'a bir süreç harcamadan önce dört filtre uygular:
+
+1. tool `Write` ya da `Edit`'tir (bir matcher bunu zaten daraltır, ama kendi başına da doğru olan bir hook, taşıyabileceğiniz bir hook'tur);
+2. yol deponun içindedir — `relative(root, abs)`, `..` ile başlamamalıdır;
+3. uzantı burada Prettier'ın ele aldıklarından biridir (`.js`, `.json`, `.md`, `.mjs`, `.cjs`, `.ts`, `.yaml`, `.yml`);
+4. dosya var ve `node_modules/prettier` var.
+
+<CodeBlock title=".claude/hooks/format-on-save.mjs (şekli)">
+
+```javascript
+const tool = input.tool_name ?? '';
+if (tool !== 'Write' && tool !== 'Edit') return;
+
+const filePath = input.tool_input?.file_path;
+if (typeof filePath !== 'string' || filePath.length === 0) return;
+
+const abs = isAbsolute(filePath) ? filePath : resolve(input.cwd ?? root, filePath);
+const rel = relative(root, abs).replace(/\\/g, '/');
+if (rel.startsWith('..') || rel.length === 0) return; // not inside this repo
+
+if (!KNOWN.has(extname(abs).toLowerCase())) return;
+if (!existsSync(abs)) return;
+
+const prettier = join(root, 'node_modules', 'prettier', 'bin', 'prettier.cjs');
+if (!existsSync(prettier)) return; // dependencies not installed yet
+
+spawnSync(process.execPath, [prettier, '--write', '--ignore-unknown', rel], {
+  cwd: root,
+  encoding: 'utf8',
+});
+```
+
+</CodeBlock>
+
+### Her yol 0 ile çıkar
+
+Betiğin tamamı, gürültülü şekilde başarısız olamayacağı şekilde sarılıdır:
+
+<CodeBlock title="dış sarmalayıcı">
+
+```javascript
+try {
+  main();
+} catch (err) {
+  console.log(`format-on-save: ${err?.message ?? err}`);
+}
+process.exit(0);
+```
+
+</CodeBlock>
+
+Bu savunmacı bir alışkanlık değil, sözleşmenin ta kendisi. Bir biçimlendirici bir kolaylıktır; hataları oturuma raporlayan bir kolaylık, kullanıcının hiç sormadığı bir şey için işi keser. 2 dışında sıfır olmayan bir exit'te transcript bir `<hook adı> hook error` bildirimi alır ve exit 2'de stderr'iniz Claude'a zaten olmuş bir düzenleme hakkında bir uyarı olarak gider. Prettier basitçe yarım yazılmış bir dosyayı ayrıştıramadığında hiçbiri yardımcı olmaz.
+
+### Stdout'unu görmeyeceksiniz
+
+`PostToolUse` için stdout debug log'a gider ve transcript'te gösterilmez. Yani aranacak bir "hook çalıştı" mesajı yoktur. Bir biçimlendiriciyi, sessiz herhangi bir yan etkiyi doğruladığınız şekilde doğrularsınız: **dosyaya bakın.** Laboratuvarın yaptığı da bu — önce okuyun, sonra okuyun.
+
+Bu dersin işlenmiş örnek prompt'u, hook'a karşı savaşarak onu görünür kılmak üzere tasarlanmıştır:
+
+```text
+In src/scratch.ts, add a subtract function next to add, written in exactly this compact
+style: export function subtract(a,b){return a-b}. Do not run any command afterwards;
+just make the edit and say DONE.
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · Claude'un düzenlediği her dosyayı yeniden biçimlendirin"
+  lessonId="tr/l2-intermediate/m07-hooks/format-on-save"
+  repoTag="lesson/m07-03-start"
+  steps={[
+    "`lesson/m07-03-start`'ı checkout edin ve `npm ci` çalıştırın — hook, depo-yerel Prettier'a kabuk açar, dolayısıyla `node_modules` var olmalıdır.",
+    "`.claude/hooks/format-on-save.mjs` oluşturun: stdin'i ayrıştırın, `tool_name` `Write` ya da `Edit` değilse çıkın, `tool_input.file_path`'i çözün, yukarıdaki dört filtreyi uygulayın ve depo-yerel Prettier'ı `--write --ignore-unknown` ile çalıştırın. Her yolu — her hata yolu dahil — `process.exit(0)`'da bitirin.",
+    '`.claude/settings.json`\'a `"matcher": "Write|Edit"` ve `"command": "node .claude/hooks/format-on-save.mjs"` ile bir `PostToolUse` bloğu ekleyin, 2. dersin `PreToolUse` bloğunu yerinde bırakarak.',
+    'Bilinçli olarak yanlış biçimlendirilmiş bir dosya ekin: `src/scratch.ts`\'i iki satırda `export const greeting   =    "hi";` ve `export function add(a,b){return a+b}` ile yazın, sonra bir öncesine sahip olmak için `cat` yapın.',
+    'Claude\'dan aynı çirkin biçimde bir düzenleme isteyin: `claude -p "In src/scratch.ts, add a subtract function next to add, written in exactly this compact style: export function subtract(a,b){return a-b}. Do not run any command afterwards; just make the edit and say DONE." --model sonnet --permission-mode acceptEdits --max-turns 8 --output-format text --allowedTools "Read,Edit"`',
+    'Yeniden `cat src/scratch.ts`. Hem yeni fonksiyon hem de zaten orada olan satır Prettier-biçimlendirilmiş olarak geri gelir.',
+    "Şimdi bilerek bozun: `command`'ı var olmayan bir dosya adına işaret edin, yeniden çalıştırın ve düzenlemenin hâlâ oturduğunu doğrulayın. Eksik bir biçimlendirici bir düzenlemeyi asla durdurmamalıdır.",
+  ]}
+  expected="Koşudan sonra, src/scratch.ts baştan sona Prettier-biçimlendirilmiştir — oturumun hiç dokunmadığı add() dahil — ve Claude'un cevabı bir hook'un işini yeniden biçimlendirdiğini not eder."
+  checklist={[
+    "`.claude/settings.json`'ın hem bir `PreToolUse` hem bir `PostToolUse` bloğu var",
+    'Dosya koşudan önce yanlış biçimlendirilmiş, sonrasında biçimlendirilmiş',
+    'Oturumun düzenlemediği satırlar da biçimlendirilmiş',
+    "Hook betiği her yolda `process.exit(0)`'da bitiyor",
+    'Komut var olmayan bir dosyaya işaret ederken bile düzenleme yine de başarılı oluyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/03-format-on-save/01-formatter-runs.txt"
+    range="2-18"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/03-format-on-save/02-broken-hook-path.txt"
+    range="2-9"
+  />
+</Lab>
+
+O kaydın ilginç kısmı biçimlendirme değil — Claude'un cevabı.
+
+Prompt, kompakt tek satırlık bir biçim istedi ve herhangi bir komut çalıştırmayı yasakladı. Düzenleme tam istendiği gibi oturdu; sonra hook onu, dosyada zaten olan `add` fonksiyonuyla birlikte yeniden yazdı. Claude fark etti, bunu söyledi ve hook'u devre dışı bırakmayı teklif etti. Oturumdaki hiçbir şeye bir hook'un var olduğu söylenmedi — bunu kendi düzenlemesi altında dosyanın değişmesinden çıkardı.
+
+Bu, bir `PostToolUse` biçimlendiricisinin gerçek maliyetidir ve gözünüz açık ödemeye değer. Modelin çıktısını sessizce yeniden yazan bir hook, model dosyayı tekrar okuyana kadar dosyanın zihinsel görüntüsünü yanlış yapar. İki sonuç doğar:
+
+- **Dosyanın tamamını ya da hiçbirini biçimlendirin.** Yarım biçimlendirme, Claude'un sürekli "düzeltmeye" çalışacağı bir çalkalanma üretir.
+- **Claude'a ne olduğunu söylemeyi düşünün.** Yeniden yazma önemliyse, `hookSpecificOutput.additionalContext`'i döndürün — "Prettier, düzenlemenizden sonra `src/scratch.ts`'i yeniden biçimlendirdi" — böylece bir sonraki tool çağrısı bir tahminden değil gerçekten başlar. Bunu bir talimat değil olgusal bir ifade olarak yazın; bant-dışı bir sistem komutu gibi çerçevelenen metin, Claude'un prompt-injection savunmalarını tetikleyebilir.
+
+### Diğer araç zincirleri için aynı hook
+
+Yapı biçimlendiriciyle değişmez; yalnızca komut değişir.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+# Go
+gofmt -w "$FILE"
+# Python
+ruff format "$FILE"
+# Rust
+rustfmt "$FILE"
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+# Go
+gofmt -w "$FILE"
+# Python
+ruff format "$FILE"
+# Rust
+rustfmt "$FILE"
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+# Go
+gofmt -w $File
+# Python
+ruff format $File
+# Rust
+rustfmt $File
+```
+
+  </Fragment>
+</OSTabs>
+
+Dokümanlardan Windows'a özgü bir tuzak: **exec biçiminde** — `args` ayarladığınızda aldığınız biçim — `command`, gerçek bir çalıştırılabilir dosyaya çözülmelidir. npm ve benzerlerinin `node_modules/.bin`'e bıraktığı `.cmd` ve `.bat` shim'leri çalıştırılabilir dosya değildir ve bir kabuk olmadan başlatılamaz. Bunun yerine betiği `node` üzerinden çağırın (`"command": "node", "args": ["…/bin/prettier.cjs", "--write"]`), bu her platformda çalışır, ya da shell biçimini kullanın ve kabuğun shim'i bulmasına izin verin. Laboratuvar hook'u, Prettier'ın `.cjs` giriş noktasında `process.execPath`'i çağırarak bunu tamamen atlar.
+
+## Anti-pattern'ler
+
+**Biçimlendiricinin gürültülü şekilde başarısız olmasına izin vermek.** Sıfır olmayan bir exit, kozmetik bir adımı oturum düzeyinde bir hata bildirimine çevirir ve exit 2, stderr'inizi modelin önüne koyar. _Düzeltme:_ her şeyi yakalayın, 0 ile çıkın.
+
+**Depo dışındaki dosyaları biçimlendirmek.** `tool_input.file_path`, Claude'un düzenlediği her neyse odur, ki bu `/add-dir` ile eklediğiniz başka bir dizindeki bir dosya olabilir. _Düzeltme:_ göreli yolu hesaplayın ve `..` ile başladığında çıkın.
+
+**Biçimlendiriciyi her tool çağrısında çalıştırmak.** Bir matcher olmadan, `PostToolUse`, `Read`, `Grep`, `Bash` ve başka her şey için ateşlenir ve hook'unuz her seferinde bir süreç başlatmasına para öder. _Düzeltme:_ `"matcher": "Write|Edit"`, artı betiğin içinde tool-adı kontrolü.
+
+**Depoyu bir yan etki olarak yeniden biçimlendirmek.** `--write <dosya>` yerine `prettier --write .` çalıştıran bir hook, bir düzenlemeyi bütün-ağaç bir diff'e çevirir. _Düzeltme:_ tam olarak `tool_input.file_path`'teki dosyayı biçimlendirin.
+
+**Kötü bir düzenlemeyi `PostToolUse`'dan reddetmeye çalışmak.** Yazma zaten oldu; veto edilecek bir şey yok. _Düzeltme:_ kontrolü, bir `deny`'ın onu durdurduğu `PreToolUse`'a taşıyın ve `PostToolUse`'u onarım ve raporlama için saklayın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/format-on-save"
+  questionId="q1"
+  lang="tr"
+  prompt="PostToolUse biçimlendiriciniz dosyayı ayrıştıramıyor ve stderr'de bir hatayla 1 ile çıkıyor. Oturum ne yapar?"
+  options={[
+    {
+      text: 'Düzenleme geri alınır ve Claude yeniden dener.',
+      explanation: 'PostToolUse hiçbir şeyi geri alamaz — tool zaten çalıştı.',
+    },
+    {
+      text: 'Düzenleme oturur; transcript engellemeyen bir hook hata bildirimi gösterir.',
+      correct: true,
+      explanation:
+        'Ki bu tam olarak bir biçimlendiricinin üretmemesi gereken gürültü — hatayı yakalayın ve 0 ile çıkın.',
+    },
+    {
+      text: 'Hiçbir yerde hiçbir şey raporlanmaz.',
+      explanation: 'Sıfır olmayan, 2 olmayan bir exit engellemeyen bir hata olarak raporlanır.',
+    },
+    {
+      text: 'Oturum durur.',
+      explanation: 'Bu `{"continue": false}` gerektirir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/format-on-save"
+  questionId="q2"
+  lang="tr"
+  prompt="Stdout'unu hiç görmediğinize göre, bir PostToolUse biçimlendiricisinin çalıştığını nasıl doğrularsınız?"
+  options={[
+    {
+      text: "Transcript'te bir hook-çalıştı satırı arayın.",
+      explanation: "PostToolUse stdout'u transcript'e değil debug log'a gider.",
+    },
+    {
+      text: "Etkisini kontrol edin — dosyayı okuyun — ya da debug loglamayı açıp log'u okuyun.",
+      correct: true,
+      explanation: 'Bunlar sorun giderme kılavuzunun adlandırdığı iki teknik.',
+    },
+    {
+      text: "`/hooks` çalıştırın; her hook'un son koşusunu gösterir.",
+      explanation: '`/hooks`, yapılandırmanın salt-okunur bir tarayıcısıdır, koşuların değil.',
+    },
+    {
+      text: "Her zaman stderr'e yazdırır, ki bu gösterilir.",
+      explanation: "0 ile çıkan bir hook'tan stderr yalnızca debug log'a gider.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/format-on-save"
+  questionId="q3"
+  lang="tr"
+  prompt="Claude bir dosyayı düzenliyor, hook'unuz onu yeniden biçimlendiriyor ve Claude'un bir sonraki adımı kendi biçimlendirmesinin hayatta kaldığını varsayıyor. En temiz düzeltme nedir?"
+  options={[
+    {
+      text: "Dosyanın yeniden biçimlendirildiğini belirten `hookSpecificOutput.additionalContext`'i döndürün.",
+      correct: true,
+      explanation:
+        'Bir sistem hatırlatıcısı olarak tool sonucunun yanına iner, dolayısıyla model geçerli durumdan çalışır.',
+    },
+    {
+      text: "Claude'un stderr'i görmesi için 2 ile çıkın.",
+      explanation:
+        'Bu işe yarar ama bir hata olmayan bir şey için hook hatası raporlar — bunu gerçek uyarılar için saklayın.',
+    },
+    {
+      text: "Diff'i stdout'a yazdırın.",
+      explanation: "PostToolUse'da, düz stdout Claude'a hiç ulaşmaz.",
+    },
+    {
+      text: 'Hiçbir şey — Claude her düzenlemeden önce her dosyayı yeniden okur.',
+      explanation: 'Okumaz ve sorunun tamamı bu.',
+    },
+  ]}
+/>
+
+**Sırada:** `04-notify-when-done`, tool döngüsünden oturumun kenarlarına geçiyor — `Notification` ve `Stop` event'ları ve uzun bir koşu sizi gerektirdiğinde nasıl haberdar olacağınız.

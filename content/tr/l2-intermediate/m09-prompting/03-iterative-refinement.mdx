@@ -1,15 +1,15 @@
 ---
 title: 'Sürüklenmeden iteratif iyileştirme'
-description: 'İkinci prompt, birincisinden daha önemlidir. İşe yarayan bir düzeltmenin ne içerdiğini, "olmadı, tekrar dene" demenin neden koca bir tur bütçesini boşa harcadığını ve iyileştirmeyi bırakıp temiz bir context ile yeniden başlama anını öğrenin.'
+description: 'İkinci prompt, birincisinden daha önemlidir. İşe yarayan bir düzeltmenin ne içerdiğini, "olmadı, tekrar dene" demenin neden koca bir tur bütçesini boşa harcadığını ve iyileştirmeyi bırakıp temiz bir bağlamla yeniden başlama anını öğrenin.'
 level: 2
 module: 'm09-prompting'
 order: 3
 duration_min: 15
 difficulty: core
-tags: ['prompting', 'refinement', 'course-correction', 'context']
+tags: ['prompting', 'iyileştirme', 'rota-düzeltme', 'bağlam']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Best practices for Claude Code'
@@ -27,7 +27,279 @@ lab:
   repo_tag: 'none'
 ---
 
-Bu ders, bir düzeltmenin kusur, gereksinim ve kontrol taşıması gerektiğini; iki başarısız düzeltmeden sonra `/clear` ile yeniden başlamanın belgelenmiş tavsiye olduğunu anlatır. Laboratuvarda aynı ilk turdan `--resume … --fork-session` ile çatallanan iki farklı ikinci tur karşılaştırılır.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l2-intermediate/m09-prompting/03-iterative-refinement.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Bir hüküm yerine kusuru, gereksinimi ve kontrolü taşıyan bir düzeltme yazmak.
+- İyileştirmenin yeniden başlamaktan daha pahalıya mal olduğu noktayı tanımak ve `/clear` ile buna göre davranmak.
+- `Esc`, `Esc Esc` / `/rewind` ve "bunu geri al"ı, bir oturumun işe yarayan kısmını kaybetmeden yön vermek için kullanmak.
+- Bir iyileştirme döngüsünü `--resume` ve `--fork-session` ile headless olarak yeniden üretmek, böylece iki farklı ikinci tur tam olarak aynı ilk turdan başlasın.
+
+**Ön koşullar.** Bu modüldeki `01-task-decomposition` ve `02-constraints-and-evidence` dersleri. Laboratuvar bir oturumu id'sinden devam ettiriyor, dolayısıyla `session_id`'sini yakalayabileceğiniz bir `claude -p --output-format json` çalıştırmasına ihtiyacınız var.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  İyileştirme, ilk denemenin saklanmaya değer bir şey bıraktığını varsayar. Agent tamamen yanlış bir
+  sorunu çözdüğünde, ya da aynı sorunu zaten iki kez düzeltmişseniz, bağlam artık başarısız
+  yaklaşımlarla dolu demektir ve her yeni düzeltme onlarla yarışmak zorunda kalır. Dokümanlar
+  açıktır: iki başarısız düzeltmeden sonra <code>/clear</code> çalıştırın ve öğrendiklerinizi içeren
+  daha iyi bir başlangıç prompt'u yazın. Birikmiş düzeltmeleri olan uzun bir oturumdan, daha iyi bir
+  prompt'a sahip temiz bir oturum neredeyse her zaman üstün gelir.
+</WhenNotToUse>
+
+## Kavram
+
+### Bir düzeltme bir prompt'tur, bir hüküm değil
+
+"Bu doğru değil" agent'a, çıktısının göremediği bir testte başarısız olduğunu söyler. Elinde sizin yargınız vardır ama gerekçelerinizden hiçbiri yoktur, dolayısıyla tek makul hamlesi tahmin etmek ya da sormaktır — ve gözetimsiz bir çalıştırmada sormak, hiçbir şey yapılmadan turu bitirir.
+
+İşe yarayan bir düzeltme, iyi bir ilk prompt'la aynı şekle sahiptir, yalnızca zaten belirlenmiş kısımlar eksiktir:
+
+| Parça          | Ne taşıyor                             |
+| -------------- | -------------------------------------- |
+| **Kusur**      | Ürettiği şeyde gerçekte yanlış olan ne |
+| **Gereksinim** | Bunun yerine doğru olması gereken ne   |
+| **Kontrol**    | Çıktısı bunu çözecek komut             |
+
+Kusuru her zaman bilmezsiniz — sorun değil. Yine de gereksinimi ve kontrolü belirtebilir, boşluğu agent'ın kendisinin bulmasına izin verebilirsiniz. Aşağıdaki laboratuvar tam olarak bunu yapıyor.
+
+### Ucuz yönlendirme
+
+Etkileşimli çalışırken headless bir çalıştırmanın sahip olmadığı kontrollere sahipsiniz ve dokümanlar bunlara erken uzanmayı tavsiye ediyor: en iyi sonuçlar sıkı geri bildirim döngülerinden gelir, ve hızlı düzeltmek genellikle daha iyi çözümleri daha hızlı üretir.
+
+- **`Esc`** Claude'u eylem ortasında durdurur. Bağlam korunur, dolayısıyla yön değiştirebilirsiniz.
+- **`Esc Esc` ya da `/rewind`** geri sarma menüsünü açar: önceki konuşmayı ve kod durumunu geri yükleyin, ya da seçilen bir mesajdan özetleyin.
+- **"Bunu geri al"** Claude'a kendi değişikliklerini geri aldırır.
+- **`/clear`** ilgisiz görevler arasında bağlamı sıfırlar.
+
+Çalışan tool'u durdurmadan bir düzeltme yazıp `Enter`'a basmak da işe yarar — Claude bunu geçerli eylem tamamlanır tamamlanmaz okur ve bir sonraki adımına karar vermeden önce ayarlar.
+
+### Batık maliyet sürüklenmesi
+
+Bu dersin adını aldığı başarısızlık şudur: yirmi tur yatırdınız, dolayısıyla yeniden başlamak yerine iyileştirmeye devam edersiniz ve her düzeltme, bir sonraki düzeltmenin yarışmak zorunda kalacağı başarısız bir yaklaşımı daha bağlama ekler. Dokümanlar hem belirtiyi hem eşiği tarif ediyor — Claude'u aynı oturumda aynı konuda ikiden fazla düzelttiyseniz, bağlam başarısız yaklaşımlarla dağınık demektir. Akılda tutulacak sayı iki.
+
+### Bu dersin örnek prompt'u
+
+```text
+Not done yet. Two requirements: (1) 'labtrack list --json' must print valid JSON
+and nothing else on stdout. (2) Prove it: run the command and pipe stdout through
+node -e "JSON.parse(require('fs').readFileSync(0,'utf8'));console.log('parsed ok')",
+then quote the exact output you got.
+```
+
+Dikkat edin, neyin yanlış olduğunu hiç söylemiyor. Gereksinimi belirtiyor ve çalıştırılabilir bir kontrol teslim ediyor — ki bu yeterli, çünkü kontrol sizin adlandıramadığınız kusuru bulabilir.
+
+## Uygulamalı laboratuvar
+
+<Callout label="Not">
+  Aşağıdaki iki ikinci tur, **aynı** ilk turun çatalıdır (`--resume &lt;oturum id&gt;
+  --fork-session`), ilk turun durumuna sıfırlanmış bir çalışma ağacına karşı çalıştırılmış. Yalnızca
+  takip cümlesinin ifadesi farklı. Bu modülün henüz lab-repo tag'i yok, dolayısıyla laboratuvar lab
+  deposunun `main`'inin taze bir klonunda çalışır.
+</Callout>
+
+<Lab
+  title="Laboratuvar · bir ilk turdan iki ikinci tur"
+  lessonId="tr/l2-intermediate/m09-prompting/iterative-refinement"
+  repoTag="none"
+  steps={[
+    'Lab deposunun `main`’deki geçici bir klonunda (`npm ci` çalıştırılmış), ilk geçişi yapın ve oturum id’sini saklayın: `claude -p "In src/cli.ts, add a --json option to the existing \'list\' command: when it is set, print JSON.stringify of the task array instead of the formatted lines. Edit src/cli.ts only." --model sonnet --max-turns 6 --output-format json --permission-mode acceptEdits --allowedTools "Read,Grep,Glob,Edit,Write,Bash"` — zarftan `session_id`’yi okuyun.',
+    'Her iki takibin de ondan başlayabilmesi için ortaya çıkan ağacın anlık görüntüsünü alın (`git add -A && git commit -m "first pass"`).',
+    'Oturumu belirsiz düzeltmeyle çatallayın: `claude -p "that\'s not right, try again" --resume "$session_id" --fork-session` artı aynı model, tur, biçim ve izin bayrakları.',
+    'Ağacı anlık görüntüye sıfırlayın, sonra Kavram bölümündeki belirli düzeltmeyle, aynı bayraklarla yeniden çatallayın.',
+    'İki zarfı karşılaştırın. Sonra belirli düzeltmeyi `--max-turns 10` ile bir kez daha çalıştırın ve bunu kendi altı-turluk çalıştırmasıyla karşılaştırın.',
+  ]}
+  expected="İlk geçiş 4 turda başarılı olur. Belirsiz düzeltme de 4 turda success bildirir ama hiçbir şeyi değiştirmez — sonucu üç açıklayıcı sorudur. Belirli düzeltme --max-turns 6'da tavana çarpar (subtype error_max_turns) ve --max-turns 10 verildiğinde 7 turda, borulanmış JSON.parse çıktısını aynen alıntılayarak biter."
+  checklist={[
+    'Her iki takip de aynı oturum id’sinden ve aynı ağaç durumundan çatallandı',
+    'Belirsiz düzeltme hiçbir düzenleme ve hiçbir hüküm üretmedi — yalnızca sorular',
+    'Belirli düzeltme bir sonuç döndürmeden önce altı-turluk bütçesini tüketti',
+    'On-turluk çalıştırmanın sonucu `parsed ok`’ı ve ayrıştırdığı ham JSON satırını alıntılıyor',
+    'Bir oturumun "yer tükendi" ile "başarısız oldu" arasındaki farkı gösteren tam alanı (`subtype`) işaret edebiliyorsunuz',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/03-iterative-refinement/01-first-pass.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/03-iterative-refinement/01-first-pass.txt"
+    range="87-94"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/03-iterative-refinement/02-weak-refinement.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/03-iterative-refinement/02-weak-refinement.txt"
+    range="124-131"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/03-iterative-refinement/03-strong-refinement.txt"
+    range="87-94"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/03-iterative-refinement/04-strong-refinement-10-turns.txt"
+    range="87-94"
+  />
+</Lab>
+
+O kayıtlarda durup düşünmeye değer üç şey var.
+
+**Belirsiz düzeltme kod değil, sorular döndürdü.** `result`'ı, "bu doğru değil"in üç okumasını listeliyor — hangi dizi, hangi biçim, hangi boş-durum davranışı — ve tahmin edip yanlış şeyi yeniden çalışmak istemediğini söylüyor. Bu doğru davranış ve boşa giden bir tur: headless bir çalıştırmada cevap verecek kimse yoktur, ve dört tur size prompt'ta cevaplayabileceğiniz bir açıklayıcı soru satın aldı.
+
+**Kayıt, agent'a ait olmayan bir commit'ten bahsediyor.** Belirsiz çalıştırmanın sonucu, `tmp first pass` commit'inin kendisininki olmadığını, çünkü hiç `git commit` çalıştırmadığını belirterek başlıyor. O commit, laboratuvarın 2. adımından gelen anlık görüntü — her iki takibin de aynı durumdan başlamasını sağlayan iskele. Transcript'te bırakılmış, çünkü kaydedilmiş bir oturum daha derli toplu görünsün diye asla düzenlenmez (D070, D093); aynı zamanda bir agent'ın ortamınızın ne kadarını fark ettiğine dair gerçek bir ders.
+
+**Tur tükenmesi başarısızlık değildir.** Belirli düzeltme, `--max-turns 6`'da `error_max_turns`'e çarptı: bir sonuç döndürmeden önce bütçeyi tüketti, dolayısıyla zarfı bir `errors` dizisi taşıyor ve `result`'ı yok. Aynı çatal `--max-turns 10` ile yedi turda bitti — onu durduran tavandan iki fazla — ve kontrolün çıktısını alıntıladı:
+
+```text
+parsed ok
+```
+
+artı ayrıştırdığı ham `list --json` satırı. Bir düzeltmenin yanlış olduğu sonucuna varmadan önce, basitçe yer tükenip tükenmediğini kontrol edin: `subtype` hangisinin olduğunu söyler.
+
+### Laboratuvarı kurmak, işletim sistemine göre
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```text
+# PowerShell 5.1 — statements separated with ; instead of &&
+git clone https://github.com/codechup/claude-code-lab.git; cd claude-code-lab; npm ci
+git checkout -- .; git clean -fd
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1'in `&&` operatörü yoktur, bu yüzden orada aynı adımlar `;` ile ayrılır. WSL içinde, Linux komutlarını kullanın.
+
+## Anti-pattern'ler
+
+Aşağıda bir dokümantasyon sayfası adlandıran öğeler ondan kaynaklanır; geri kalanı bu sitenin kendi gözlemleridir (D080).
+
+**Bir hükümle düzeltmek.** "Yok", "hâlâ yanlış", "tekrar dene" sonucunuzu aktarır, kanıtınızın hiçbirini aktarmaz. _Düzeltme:_ kusuru adlandıramasanız bile gereksinimi ve kontrolü belirtin.
+
+**İkinci düzeltmenin ötesinde iyileştirmek.** Aynı konuda üç düzeltme, bağlamın artık üç başarısız yaklaşım içerdiği ve her birinin bir sonraki talimatınızla yarıştığı anlamına gelir. _Düzeltme:_ `/clear` çalıştırın ve öğrendiklerinizle ilk prompt'u yeniden yazın.
+
+**Her takipte tüm dosyayı yeniden okumak.** Geçerli durumu bir takibe geri yapıştırmak, oturumun zaten tuttuğu bilgi için bağlamı ikiye katlar. _Düzeltme:_ neyin değiştiğine değinin; gerisini oturum hatırlar.
+
+**`error_max_turns`'ü kötü bir cevap saymak.** Kendi tavanı tarafından durdurulan bir çalıştırma, başarısız bir prompt gibi görünür ve öyle değildir. _Düzeltme:_ `subtype`'ı okuyun, `--max-turns`'ü yükseltin ve herhangi bir şeyi yeniden yazmadan önce yeniden çalıştırın.
+
+**Yeniden başlatılması gereken bir görevi iyileştirmek.** İlk deneme başka bir sorunu çözdüyse, hiçbir düzeltme çerçevelemeyi onarmaz. _Düzeltme:_ `/rewind` ya da `/clear` çalıştırın ve yazmanız gereken prompt'u yazın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/iterative-refinement"
+  questionId="q1"
+  lang="tr"
+  prompt="Aynı konuda kaç başarısız düzeltmeden sonra dokümanlar bağlamı temizleyip yeniden başlamayı tavsiye ediyor?"
+  options={[
+    { text: 'Bir.', explanation: 'Tek bir düzeltme normaldir ve genellikle üretkendir.' },
+    {
+      text: 'İki.',
+      correct: true,
+      explanation:
+        'İki başarısız düzeltmeden sonra /clear çalıştırın ve öğrendiklerinizi içeren daha iyi bir başlangıç prompt’u yazın.',
+    },
+    { text: 'Beş.', explanation: 'O zamana kadar bağlama başarısız yaklaşımlar hâkim olmuştur.' },
+    {
+      text: 'Asla — iyileştirme her zaman yeniden başlamayı yener.',
+      explanation:
+        'Dokümanlar tam tersini söylüyor: daha iyi bir prompt’a sahip temiz bir oturum neredeyse her zaman kazanır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/iterative-refinement"
+  questionId="q2"
+  lang="tr"
+  prompt="Laboratuvarda, belirsiz düzeltme subtype: success bildirdi. Bu neden iyi bir sonuç değil?"
+  options={[
+    {
+      text: 'Çünkü success her zaman testlerin başarısız olduğu anlamına gelir.',
+      explanation:
+        'subtype: success yalnızca çalıştırmanın nihai bir cevaba ulaştığı anlamına gelir.',
+    },
+    {
+      text: 'Çünkü çalıştırma hiçbir değişiklik üretmeden temiz bir şekilde bitti — cevap, cevaplayacak kimsenin olmadığı bir dizi açıklayıcı sorudan ibaretti.',
+      correct: true,
+      explanation: 'Temiz bir çıkış ile işe yarar bir sonuç farklı şeylerdir.',
+    },
+    {
+      text: 'Çünkü oturumu çatalladı.',
+      explanation: 'Her iki takip de çatallandı; deneyin kontrollü kısmı buydu.',
+    },
+    {
+      text: 'Çünkü belirli düzeltmeden daha fazla tur kullandı.',
+      explanation: 'Daha azını kullandı — yediye karşı dört.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/iterative-refinement"
+  questionId="q3"
+  lang="tr"
+  prompt="İki farklı ikinci turun tam olarak aynı ilk turdan başlamasını istiyorsunuz. Hangi bayraklar bunu yapar?"
+  options={[
+    {
+      text: '--resume <oturum id> --fork-session',
+      correct: true,
+      explanation:
+        'Çatallamak geçmişi yeni bir oturum id’sine kopyalar, orijinali değişmeden bırakır, dolayısıyla her iki dal da tek bir başlangıç noktasını paylaşır.',
+    },
+    {
+      text: '--continue iki kez',
+      explanation: '--continue aynı konuşmaya ekler, dolayısıyla ikinci takip birinciyi görürdü.',
+    },
+    {
+      text: '--output-format stream-json',
+      explanation: 'Bir çıktı biçimi, bir oturum kontrolü değil.',
+    },
+    { text: '--max-turns 10', explanation: 'Bir tur bütçesi, oturum dallanmasıyla ilgisiz.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/iterative-refinement"
+  questionId="q4"
+  lang="tr"
+  prompt="Kusuru bilmeden ilerleme kaydetme olasılığı en yüksek düzeltme hangisidir?"
+  options={[
+    { text: '"O çıktı yanlış."', explanation: 'Ne gereksinimi ne kontrolü olan bir hüküm.' },
+    {
+      text: '"list --json geçerli JSON basmalı ve stdout’ta başka hiçbir şey olmamalı; stdout’u JSON.parse’tan geçirip çıktıyı alıntılayarak kanıtlayın."',
+      correct: true,
+      explanation: 'Kontrol, kusuru sizin yerinize bulur.',
+    },
+    {
+      text: '"Lütfen bu sefer daha dikkatli ol."',
+      explanation: 'Agent’ın harekete geçebileceği hiçbir bilgi taşımıyor.',
+    },
+    {
+      text: '"Tüm depoyu tekrar oku ve daha çok düşün."',
+      explanation: 'Sınırsız keşif — sonsuz-keşif başarısızlık kalıbı.',
+    },
+  ]}
+/>
+
+**Sırada:** `04-prompt-library` — başkalarının çoktan yazdığı kalıplar ve onları projenize nasıl uyarlayacağınız.

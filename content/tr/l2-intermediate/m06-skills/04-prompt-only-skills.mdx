@@ -1,15 +1,15 @@
 ---
-title: "Yalnızca prompt tabanlı skill'ler"
-description: 'En ucuz işe yarar skill hiçbir betik çalıştırmaz ve hiçbir dosyayı değiştirmez: okuma listesi olan bir kontrol listesidir. Lab deposunda /review-security kurun.'
+title: 'Yalnızca prompt tabanlı skill’ler'
+description: 'En ucuz işe yarayan skill hiçbir betik çalıştırmaz ve hiçbir şeyi değiştirmez: okuma listesi olan bir checklist’tir. Lab deposuna karşı /review-security’yi kurun ve gerçek bir raporu geri okuyun.'
 level: 2
 module: 'm06-skills'
 order: 4
 duration_min: 15
 difficulty: core
-tags: ['skills', 'review', 'lab']
+tags: ['skills', 'inceleme', 'laboratuvar']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Extend Claude with skills'
@@ -27,6 +27,294 @@ lab:
   repo_tag: 'lesson/m06-04-start'
 ---
 
-**Not:** Bu dersin Türkçe çevirisi henüz yapılmadı; `draft: true` kaldığı sürece sayfa gezinmede görünmez. Çeviri `content/en/l2-intermediate/m06-skills/04-prompt-only-skills.mdx` dosyasından üretilir (kurallar: `.claude/rules/i18n.md`, D016, D018).
+## Hedefler ve ön koşullar
 
-Bu ders, hiçbir betik çalıştırmayan ve hiçbir dosyayı değiştirmeyen bir skill kurar: `/review-security`. Reference content (başvuru içeriği) ile task content (görev içeriği) ayrımını, salt okunur bir `allowed-tools` listesinin ne yapıp ne yapmadığını ve bir kontrol listesinin “hiçbir şey bulunamadı” durumunu neden açıkça söylemesi gerektiğini kapsar.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Referans içeriği (reference content) görev içeriğinden (task content) ayırt etmek ve her birine uyan çağırma biçimini seçmek.
+- Yalnızca prompt tabanlı bir [skill](/tr/playbook/glossary/#skill) (`SKILL.md` ile tanımlanan, `/ad` ile çağrılan ya da Claude'un kendisinin yüklediği yeniden kullanılabilir talimat paketi) yazmak: salt okunur `allowed-tools`, açık bir çıktı biçimi ve bulgu yokluğunu da açıkça bildirme talimatı.
+- Bir skill'in gövdesinin yüklendikten sonra neye mal olduğunu ve "gövdeyi kısa tutun" ilkesinin bir stil tercihi değil bir token argümanı olduğunu açıklamak.
+- Lab deposuna karşı `/review-security`'yi çalıştırmak ve hiçbir şey bulamayan [checklist](/tr/playbook/glossary/#checklist) (adım adım kontrol edilecek maddelerin sırayla işaretlendiği liste) öğeleri dahil gerçek bir bulgu listesini okumak.
+
+**Ön koşullar.** `01`–`03` dersleri. `lesson/m06-04-start` etiketinde bir `claude-code-lab` klonu.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Cevabın kesin (deterministik) olması gerektiğinde yalnızca prompt tabanlı bir skill yanlış
+  biçimdir. Bir checklist skill'i, modelin fark ettiğini rapor eder; art arda iki kez aynı kümeyi
+  fark etmeyecektir ve bir build'i başarısız kılmanın hiçbir yolu yoktur. "Bu asla merge edilmemeli"
+  gerekiyorsa, aradığınız şey bir linter, bir test ya da bir hook'tur — çıkış koduna sahip bir şey.
+  Yalnızca prompt tabanlı bir skill'e, değer tutarlı uygulanan bir yargı olduğunda başvurun, değer
+  bir garanti olduğunda değil.
+</WhenNotToUse>
+
+## Kavram
+
+### Referans içerik ile görev içeriği
+
+Dokümanlar, skill gövdeleri arasından yararlı bir çizgi çekiyor.
+
+**Referans içerik (reference content)**, Claude'un zaten yapmakta olduğunuz her şeye uyguladığı bilgiyi ekler: kurallar, kalıplar, stil kılavuzları, alan bilgisi. Konuşma bağlamınızın yanında, satır içinde çalışır. Böyle bir skill genellikle model tarafından çağrılabilir bırakılır, böylece Claude ilgili olduğunda onu kendisi çeker. Kendi alışkanlığımız — belgelenmiş bir kural değil — birine `paths` eklemektir, böylece yalnızca Claude bahsettiği dosyalarla çalışırken etkinleşir.
+
+**Görev içeriği (task content)**, belirli bir eylem için adım adım talimatlar verir — bir deploy, bir commit, bir inceleme geçişi. Bunlar genellikle `/skill-adı` ile kendinizin tetiklemek istediği skill'lerdir, ki `disable-model-invocation: true` tam olarak bunun içindir.
+
+`/review-security` görev içeriğidir: numaralandırılmış bir checklist, bir çıktı biçimi ve bir kontrolün hiçbir şey bulamadığında ne söyleneceğine dair açık bir talimat.
+
+### Yalnızca prompt tabanlı olmak, salt okunur olmak demektir
+
+`read-only` diye bir alan yoktur. Yalnızca prompt tabanlı bir skill, `allowed-tools`'u yazan hiçbir şey vermeyen ve gövdesi de bunu söyleyen bir skill'dir:
+
+<CodeBlock title="salt okunur allowed-tools">
+
+```yaml
+allowed-tools: Read, Grep, Glob
+```
+
+</CodeBlock>
+
+Bu satırın ne yaptığı hakkında iki dürüst uyarı var. Birincisi, `allowed-tools` **önceden onaylar**; kısıtlamaz. Diğer her [tool](/tr/playbook/glossary/#tool) (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç), normal permission ayarlarınız altında çağrılabilir kalır — dolayısıyla niyeti gövde taşımak zorundadır ("bu yalnızca bir checklist skill'idir — okur ve rapor eder, düzenlemez"). Süre boyunca gerçekten kaldırılmış tool'lar istiyorsanız, aradığınız şey `disallowed-tools`'tur. İkincisi, verilen izin, skill'i çağıran tur boyunca sürer ve bir sonraki mesajınızı gönderdiğinizde temizlenir; skill'i yeniden çağırmak izni yeniden uygular.
+
+### Gövde, tekrar eden bir maliyettir
+
+Bir skill çağrıldığında, render edilmiş `SKILL.md`, konuşmaya tek bir mesaj olarak girer ve **sonraki turlar boyunca orada kalır**. Claude Code, sonraki turlarda dosyayı yeniden okumaz, dolayısıyla bir görev boyunca geçerli olması gereken her şey, tek seferlik bir adım değil, kalıcı bir talimat olarak yazılmalıdır.
+
+Bu kalıcılığın bilmeniz gereken bir şekli var. Otomatik sıkıştırma, özetten sonra her skill'in en son çağrılışını yeniden ekler, her birinin ilk 5.000 token'ını tutarak, tüm skill'ler arasında toplam 25.000 token'lık bir bütçeyle — en son çağrılandan başlayarak doldurulur. Bir oturumda birçok skill çağırırsanız, en erken çağrılanlar bir sıkıştırmadan sonra tamamen düşer. Bir skill önemini yitiriyor gibi görünüyorsa, onu yeniden çağırın.
+
+Aynı render edilmiş içerikle yeniden çağırmak onu çoğaltmaz: Claude Code, skill'in zaten yüklü olduğuna dair kısa bir not ekler. Farklı olan içerik — argümanlar değiştiği ya da dinamik bir bağlam komutu yeni bir çıktı ürettiği için — tam olarak eklenir.
+
+### Yokluğu rapor eden bir checklist yazmak
+
+Bir inceleme skill'indeki en yararlı tek cümle, olumsuz bir sonucun belirtilmesini zorunlu kılan cümledir. Bu olmadan "kontrol 2 hiçbir şey bulmadı" ile "model kontrol 2'yi unuttu" arasını ayıramazsınız. Lab'ın skill'i bunu tek bir cümlecikte yapar: _"bir checklist öğesi hiçbir şey bulamadığında bunu açıkça söyle."_ Etkisini kayıtta göreceksiniz — öğe 2, gerekçesiyle birlikte "bulunamadı" olarak geri döner.
+
+Size bir ilk taslak veren [prompt](/tr/playbook/glossary/#prompt) (Claude'a verdiğiniz istek metni):
+
+```text
+Write .claude/skills/review-security/SKILL.md: a four-item checklist for reviewing
+src/ in this repo. Read-only — Read, Grep and Glob, nothing else. Each finding as
+`file:line — issue — fix`, and it must say explicitly when an item found nothing.
+Only I should invoke it.
+```
+
+## Uygulamalı laboratuvar
+
+<Callout label="Not">
+  Kaydedilen komutlar `--settings '&#123;"language":"English"&#125;'` taşıyor çünkü onları kaydeden
+  makinenin genel `language` tercihi Türkçe olarak ayarlı. Bu bayrağı kaldırın; çalıştırmayla ilgili
+  başka hiçbir şey değişmiyor.
+</Callout>
+
+<Lab
+  title="Laboratuvar · yalnızca okuyan ve rapor eden bir checklist skill'i"
+  lessonId="tr/l2-intermediate/m06-skills/prompt-only-skills"
+  repoTag="lesson/m06-04-start"
+  steps={[
+    'Lab deposu klonunuzda: `git checkout lesson/m06-04-start && npm ci`.',
+    '`.claude/skills/review-security/` dizinini oluşturun ve transcript’in altında gösterilen SKILL.md’yi yazın. `allowed-tools: Read, Grep, Glob` ve `disable-model-invocation: true`’ya dikkat edin.',
+    '`src/api/server.ts`’i önce kendiniz okuyun — sonraki modüllerin kullandığı, açıkça yorumlanmış iki "öğretim yüzeyi" bloğu taşıyor. Hangi checklist öğelerinin bunlara çarpacağını tahmin edin.',
+    '`claude -p "/review-security src/api/server.ts" --output-format text --max-turns 12` çalıştırın.',
+    '`git status --short` çalıştırın. Çalışma ağacı değişmeden kalmalı — skill okur ve rapor eder.',
+    'Hiç argüman olmadan yeniden çalıştırın, böylece `$ARGUMENTS` boş kalır ve skill tüm `src/`’e geri döner. Raporun ne kadar uzadığını karşılaştırın.',
+  ]}
+  expected="Her checklist öğesi için bir girdi içeren, `file:line — issue — fix` biçimini kullanan, en azından doğrulanmamış page/pageSize query parametrelerini adlandıran, ele alınmamış promise kontrolünün hiçbir şey bulamadığını açıkça belirten ve çalışma ağacını dokunulmamış bırakan bir rapor."
+  checklist={[
+    'Rapor, dört checklist öğesinin her biri için bir girdi içeriyor',
+    'En az bir öğe atlanmak yerine "bulunamadı" olarak rapor ediliyor',
+    'Bulgular bir dosya ve bir satır numarası taşıyor',
+    '`git status --short` değiştirilmiş hiçbir dosya göstermiyor',
+    'Çalıştırma, Read ya da Grep için hiçbir permission isteminde bulunmadı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/04-prompt-only-skills/01-review-security.txt"
+    range="2-15"
+  />
+</Lab>
+
+### Yazdığınız skill
+
+<CodeBlock title=".claude/skills/review-security/SKILL.md">
+
+```markdown
+---
+name: review-security
+description: Prompt-only checklist for reviewing this repo's src/ for the common mistakes it is seeded with — unvalidated input, unhandled promise rejections, secrets in logs, unsanitised string interpolation.
+when_to_use: Before merging a change to src/, or when asked to "review this for security issues."
+argument-hint: '[optional path to focus on, e.g. src/api/server.ts]'
+allowed-tools: Read, Grep, Glob
+disable-model-invocation: true
+model: sonnet
+effort: low
+---
+
+# /review-security
+
+Review `$ARGUMENTS` (default: all of `src/`) against this checklist. Report each finding as
+`file:line — issue — fix`, and say explicitly when a checklist item found nothing.
+
+1. **Input validation** — does every function that accepts external input (CLI args, HTTP
+   request bodies) reject empty/negative/malformed values before using them?
+2. **Unhandled promises** — is every `async` call either `await`ed or has a `.catch`? A
+   fire-and-forget call whose rejection is never observed is a bug, not a style nit.
+3. **Secrets in logs** — does anything `console.log` a token, key, or password value, even a
+   placeholder one, in a code path that would run against a real credential?
+4. **Unsanitised interpolation** — does any handler splice untrusted input directly into a
+   string that is later trusted as an instruction or template (the shape of a prompt-injection
+   bug, even where there is no LLM call involved)?
+
+This is a checklist skill only — it reads and reports, it does not edit `src/`.
+```
+
+</CodeBlock>
+
+### Laboratuvarı işletim sistemine göre kurmak
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git checkout lesson/m06-04-start && npm ci
+mkdir -p .claude/skills/review-security
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git checkout lesson/m06-04-start && npm ci
+mkdir -p .claude/skills/review-security
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git checkout lesson/m06-04-start; npm ci
+New-Item -ItemType Directory -Force .claude\skills\review-security
+```
+
+  </Fragment>
+</OSTabs>
+
+Kaydı checklist yanınızdayken yeniden okuyun. Öğe 1, iki file:line referansıyla eyleme geçirilebilir bir bulgu üretti. Öğe 2, ekli gerekçesiyle açık bir "bulunamadı" üretti — işini yapan, skill gövdesindeki o cümledir. Öğe 3 ve 4, deponun bilerek yerleştirilmiş öğretim yüzeylerine çarpıyor ve rapor bunu söylüyor, onları "düzeltmeyi" reddediyor: skill, `BUGS.md` ve `CLAUDE.md`'yi okudu, ki bu tam olarak salt okunur bir checklist'in sahip olması gereken davranış. Raporda _olmayan_ şeye de dikkat edin — diff yok, düzenleme yok, patch yok. Çalıştırmadan sonra `git status --short` boş.
+
+## Anti-pattern'ler
+
+**Çıktı biçimi olmayan bir checklist.** "Bunu güvenlik sorunları için incele" her seferinde farklı biçimde bir düz yazı döndürür, ki bunu diff'leyemez, triyaj edemez ya da bir PR'a yapıştıramazsınız. _Düzeltme:_ lab skill'inin `file:line — issue — fix` ile yaptığı gibi satır biçimini belirtin.
+
+**Yokluğu rapor etme talimatı olmaması.** Sessizlik belirsizdir. _Düzeltme:_ tek bir cümlecik — "bir checklist öğesi hiçbir şey bulamadığında bunu açıkça söyle".
+
+**Bir inceleme skill'ini model tarafından çağrılabilir bırakmak.** Konuşma "güvenlik"e her yaklaştığında ateşlenen bir inceleme, bunu hiç istemeyen prompt'larda token yakar. _Düzeltme:_ `disable-model-invocation: true`, bu da onun description'ını bağlamdan tamamen kaldırır.
+
+**`allowed-tools: Read, Grep, Glob`'un skill'i salt okunur yaptığına inanmak.** Üç tool'u önceden onaylar; hiçbir şeyi kaldırmaz. _Düzeltme:_ gövdede "düzenlemez" deyin ve zorlanmasını istediğinizde `disallowed-tools` ya da permission deny kuralları kullanın.
+
+**Bir belgeye dönüşen gövde.** Çağrıldıktan sonra, her satır oturumun geri kalanı için bağlamdadır ve bir sıkıştırmadan sonraki 25.000 token'lık yeniden ekleme bütçesi için rekabet eder. _Düzeltme:_ ayrıntıyı `SKILL.md`'nin yanındaki destekleyici bir dosyaya taşıyın ve ona bağlantı verin; Claude onu yalnızca gerektiğinde yükler.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/prompt-only-skills"
+  questionId="q1"
+  lang="tr"
+  prompt="`allowed-tools: Read, Grep, Glob` ne yapar?"
+  options={[
+    {
+      text: 'Bu üç tool’u çağıran tur için önceden onaylar; diğer her tool normal permission ayarları altında çağrılabilir kalır',
+      correct: true,
+      explanation: 'Bir sonraki mesajınızı gönderdiğinizde verilen izin temizlenir.',
+    },
+    {
+      text: 'Skill’i yalnızca bu üç tool’la sınırlar',
+      explanation: '`disallowed-tools` tool’ları kaldırır; `allowed-tools` yalnızca verir.',
+    },
+    {
+      text: 'Tüm oturum boyunca diğer her tool’u reddeder',
+      explanation: 'Ne kapsam ne de yön doğru.',
+    },
+    {
+      text: 'Workspace güvenilmediği sürece hiçbir etkisi yoktur',
+      explanation:
+        'Workspace güveni `allowed-tools`’u kapı bekçiliği yapmaz — güvenilmeyen bir klasördeki bir -p çalıştırmasında bile geçerlidir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/prompt-only-skills"
+  questionId="q2"
+  lang="tr"
+  prompt="Aynı skill'i aynı oturumda aynı argümanlarla iki kez çağırıyorsunuz. Claude Code ikinci seferinde ne yapar?"
+  options={[
+    {
+      text: 'İçeriğin ikinci bir kopyası yerine, skill’in zaten yüklü olduğuna dair kısa bir not ekler',
+      correct: true,
+      explanation:
+        'Farklı olan içerik — değişen argümanlar, yeni bir dinamik bağlam çıktısı — bunun yerine tam olarak eklenir.',
+    },
+    {
+      text: 'Tüm gövdeyi yeniden ekler',
+      explanation: 'Yalnızca render edilmiş içerik farklıysa.',
+    },
+    {
+      text: 'SKILL.md’yi diskten yeniden okur ve varsa düzenlemeleri uygular',
+      explanation: 'Claude Code sonraki turlarda dosyayı yeniden okumaz.',
+    },
+    {
+      text: 'Reddeder, çünkü skill zaten etkin',
+      explanation: 'Yeniden çağırmak sorunsuzdur ve `allowed-tools` iznini yeniden uygular.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/prompt-only-skills"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir inceleme checklist'inin, hiçbir şey bulamayan öğeleri rapor etmesi için neden açık bir talimata ihtiyacı vardır?"
+  options={[
+    {
+      text: 'Aksi halde temiz bir kontrolü atlanmış bir kontrolden ayıramazsınız',
+      correct: true,
+      explanation:
+        'Sessizlik belirsizdir ve bu belirsizlik tam olarak bir kaçırmanın saklandığı yerdir.',
+    },
+    {
+      text: 'Çünkü Claude Code çıktıdan boş bölümleri düşürür',
+      explanation: 'Harness’ta raporu düzenleyen hiçbir şey yok.',
+    },
+    {
+      text: 'Çünkü `allowed-tools`, tool başına bir satır çıktı gerektirir',
+      explanation: 'Böyle bir kural yok.',
+    },
+    {
+      text: 'Skill’i 1.536 karakterlik description sınırının altında tutmak için',
+      explanation: 'O sınır `description` artı `when_to_use`’a uygulanır, çıktıya değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/prompt-only-skills"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir otomatik sıkıştırmadan sonra hangi çağrılmış skill'ler geri gelir?"
+  options={[
+    {
+      text: 'Her skill’in en son çağrılışı, her biri ilk 5.000 token, en son çağrılandan doldurulan toplam 25.000 token’lık bir bütçe içinde',
+      correct: true,
+      explanation: 'Böylece en erken çağırdığınız skill’ler tamamen düşebilir.',
+    },
+    {
+      text: 'Hepsi, tam olarak',
+      explanation: 'Bir bütçe var ve en yeniden başlayarak doldurulur.',
+    },
+    {
+      text: 'Hiçbiri — bir sıkıştırmadan sonra her skill’i yeniden çağırmalısınız',
+      explanation: 'Yeniden ekleme, bütçe dahilinde otomatik gerçekleşir.',
+    },
+    {
+      text: 'Yalnızca `disable-model-invocation: true` olan skill’ler',
+      explanation: 'O alan çağırmayı kontrol eder, yeniden eklemeyi değil.',
+    },
+  ]}
+/>
+
+**Sırada:** `05-tool-running-skills`, bir skill'e bir betik, bir tool bütçesi ve `context: fork` ile kendi bağlamını verir — ve `allowed-tools` listesi işten daha dar olduğunda ne olduğunu gösterir.

@@ -1,15 +1,15 @@
 ---
 title: 'Kanıtlı pull request’ler'
-description: 'Bir branch’i, taslağını Claude’un yazdığı ve sizin denetlediğiniz bir pull request’e çevirin: `gh pr create`, kanıt isteyen bir PR şablonu, hiçbir şey açmadan `--dry-run` ve `--from-pr` ile oturumu yeniden bulmak.'
+description: 'Bir branch’i Claude’un taslağını çıkardığı, sizin kontrol ettiğiniz bir pull request’e dönüştürün: `gh pr create`, kanıt isteyen bir PR şablonu, herhangi bir şey açmadan önce `--dry-run` ve `--from-pr` ile oturumu yeniden bulmak.'
 level: 2
 module: 'm08-git'
 order: 3
 duration_min: 20
 difficulty: core
-tags: ['git', 'pull-requests', 'gh', 'evidence']
+tags: ['git', 'pull-request’ler', 'gh', 'kanıt']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Common workflows'
@@ -31,8 +31,270 @@ lab:
   repo_tag: 'lesson/m08-03-start'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l2-intermediate/m08-git/03-pull-requests.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders bir branch’i kanıt taşıyan bir pull request’e çevirir. Güvenli varsayılan, PR’ı açtırmak değil `gh pr create` komutunu yazdırmaktır: geri dönen şey düzenlenebilir bir metindir. İyi bir PR gövdesi üç bölüm taşır — Summary, Testing (çalıştırdığınız komut ve çıktısı) ve Risk — ve Testing bölümü Claude’un diff’ten üretebileceği bir şey değildir, sizin çalıştırdığınız komuttan gelir. Ders bu deponun kendi `.github/PULL_REQUEST_TEMPLATE.md` şablonunu ve squash-merge kuralını işlenmiş örnek olarak kullanır, `gh pr create --dry-run` ile PR’ı var olmadan denetlemeyi gösterir (bu bayrak PR oluşturmaz ama git değişikliklerini yine de push edebilir) ve `claude --from-pr <numara>` ile PR’ı üreten oturumu yeniden bulmayı anlatır.
+- Claude'dan bir branch'in commit'lerinden bir [pull request](/tr/playbook/glossary/#pull-request) (bir branch'teki değişikliklerin gözden geçirilip ana koda alınması için açılan istek) taslağı çıkarmasını istemek ve açılmış bir PR yerine bir komut geri almak.
+- Bir iddia yerine kanıt taşıyan bir PR gövdesi yazmak — çalıştırdığınız komut ve yazdırdığı şey.
+- Bir pull request'i var olmadan önce `gh pr create --dry-run` ile kontrol etmek.
+- Bir deponun `.github/PULL_REQUEST_TEMPLATE.md`'sini, Claude'un doldurduğu şekil olarak kullanmak.
+- Bir PR'ı oluşturan oturumu `claude --from-pr <numara>` ile yeniden bulmak.
+- `attribution.pr`'ın neyi kontrol ettiğini söylemek.
+
+**Ön koşullar.** `01-commits-and-conventions` ve `02-worktrees-branches` dersleri, kurulu ve kimliği doğrulanmış [GitHub CLI](https://cli.github.com) (`gh auth login`) ve üzerinde en az bir commit'i olan bir branch.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bir PR'ın başka insanlara bir bildirim olduğu bir depoda bir
+  [agent](/tr/playbook/glossary/#agent)'ın (bir hedefi kendi başına adım adım yürüten yapay zekâ
+  süreci) pull request açmasına izin vermeyin — bakıcısı olmadığınız bir açık kaynak projesi,
+  paylaşılan bir lab ya da fixture deposu, başıboş bir PR'ın başka birinin dikkatine mal olduğu
+  herhangi bir şey. Yerel olarak taslak hazırlayın ve onu kendiniz açın. Değişiklik zaten üzerinde
+  olduğu branch'e aitse, takımınız PR yerine yığılmış patch'lerle ya da bir kuyrukla inceleme
+  yapıyorsa ya da PR hiçbir incelemecinin tutamayacağı kadar büyük olacaksa — bunun düzeltmesi daha
+  iyi bir açıklama değil daha küçük bir branch'tir — akışın tamamını atlayın. Ve kanıt bölümünü
+  kişisel olarak yeniden üretmediğiniz bir PR'ı asla açmayın.
+</WhenNotToUse>
+
+## Kavram
+
+### Pull request'i değil komutu isteyin
+
+Claude'dan doğrudan isteyerek ("değişikliklerim için bir pr oluştur") pull request oluşturabilirsiniz. Bu hızlı yoldur ve akışa güvendiğinizde sahip olduğunuz bir depoda doğru olandır.
+
+Onu öğrenirken daha güvenli varsayılan — ve sahip olmadığınız bir depoda kabul edilebilir tek olan — **komutu** istemektir. Bu dersin örnek prompt'u tam olarak bunu yapar:
+
+```text
+This branch is one commit ahead of main. Read the commit and its diff, then print,
+in a single fenced bash code block, the exact `gh pr create` command I should run:
+--base with the right base, --title as a Conventional Commits line, and --body
+containing a Summary section, a Testing section naming the exact command I ran and
+its result, and a Risk line. Do not run gh.
+```
+
+İncelenebilir bir eser alırsınız. Başlık yanlışsa ya da risk değerlendirmesi iyimserse, canlı bir pull request yerine bir dizeyi düzenlersiniz.
+
+### Kanıt bir komut ve onun çıktısıdır
+
+"Testler geçiyor" diyen bir PR gövdesi bir iddiadır. `npm test`: 4 dosya, 16 test, hepsi geçti diyen bir PR gövdesi kanıttır, çünkü bir incelemeci aynı komutu çalıştırıp karşılaştırabilir. Fark bir cümleye mal olur ve bir gidiş-dönüşü kurtarır.
+
+Üç bölüm değerin neredeyse tamamını taşır:
+
+| Bölüm       | İçinde ne olması gerekir                                                               |
+| ----------- | -------------------------------------------------------------------------------------- |
+| **Summary** | Ne değişti ve neden, incelemecinin sözcük dağarcığıyla — diff'in yeniden ifadesi değil |
+| **Testing** | Çalıştırdığınız tam komutlar ve ne yazdırdıkları                                       |
+| **Risk**    | Neyin bozulabileceği ve bozulmayacağına ikna olmak için neyi kontrol ettiğiniz         |
+
+Claude üçünü de yazabilir, ama yalnızca diff'ten Summary ve Risk'i. Testing bölümü **sizin** çalıştırdığınız bir komuttan gelmek zorundadır — bu yüzden laboratuvarın prompt'u, Claude'un tahmin etmesine ya da bir tane çalıştırmasına izin vermek yerine test sonucunu ona teslim eder.
+
+### Şablonlar şekildir
+
+Bir deponun `.github/PULL_REQUEST_TEMPLATE.md`'si, GitHub'ın gövde kutusuna önceden doldurduğu şeydir. Aynı zamanda Claude'a teslim edilecek en iyi şeydir: istediğiniz bölümleri tarif etmek yerine, dosyayı işaret edin.
+
+Bu eğitim deposunun kendi şablonu işlenmiş bir örnektir. Plan kimliğini ve kilometre taşını, neyin değiştiğini, bir incelemecinin yerel olarak çalıştırabileceği komutları, ekran görüntüleri için iki görünüm alanı genişliğini adlandıran bir kanıt kontrol listesini, CI ve kapsamı kapsayan bir Bitti-Tanımı kontrol listesini ve devir notlarını ister. İçindeki hiçbir şey süs değildir — her kutu, aksi hâlde bir incelemecinin isteyeceği bir şeydir.
+
+Onunla giden konvansiyon: **`main` yalnızca PR ile değişir ve her PR squash-merge edilir**, plan kimliğini taşıyan bir Conventional Commits başlığıyla, örneğin `feat(content): m01-start lesson (P13)`. Squash-merge, branch'in dağınık ara commit'lerini zararsız kılan şeydir — PR'ın başlığı `main`'deki tek commit'in başlığı olur, bu yüzden PR başlığı 1. derste bir commit konusuyla aynı özeni hak eder.
+
+### Var olmadan önce kontrol edin
+
+`gh pr create --dry-run`, tam olarak ne oluşturulacağını yazdırır ve hiçbir şey oluşturmaz:
+
+<CodeBlock title="bir şablona karşı dry-run">
+
+```bash
+gh pr create --base main \
+  --title "[P20] L2 Intermediate module: Git flows (m08-git)" \
+  --body-file .github/PULL_REQUEST_TEMPLATE.md \
+  --dry-run
+```
+
+</CodeBlock>
+
+Önce `base:` ve `head:` satırlarını okuyun — yanlış bir temele karşı açılan bir PR, bunun yakaladığı en yaygın ve en can sıkıcı hatadır. Bir uyarı, GitHub CLI'ın kendi yardım metninden alıntılanmış (aşağıdaki laboratuvarda gh 2.96.0'dan yakalandı): `--dry-run`, PR'ı oluşturmak yerine ayrıntıları yazdırır, ama **yine de git değişikliklerini push edebilir**. Push erişiminiz olmayan bir depoda, bu push basitçe başarısız olur; olan bir depoda, üzerinde olduğunuz branch'in yayınlamak istediğiniz branch olduğundan emin olun.
+
+### Oturumu yeniden bulmak
+
+Claude Code, Claude onu `gh pr create` ya da `glab mr create` ile oluşturduğunda bir oturumu bir pull request'e bağlar. Sonrasında, herhangi bir yerden:
+
+<CodeBlock title="bir PR'ın arkasındaki oturumu yeniden açın">
+
+```bash
+claude --from-pr 1234
+```
+
+</CodeBlock>
+
+Bu, o pull request'e bağlı oturumlara filtrelenmiş oturum seçicisini açar. PR URL'sini `/resume` seçicisinin aramasına yapıştırmak aynı şeyi yapar. Bu, Claude'un kendi depolarınızda `gh pr create` çalıştırmasına izin vermenin ödülüdür: bir ay sonra, PR'ın arkasındaki akıl yürütme hâlâ bir komut uzaktadır.
+
+Son olarak, Claude Code'un pull request açıklamalarına eklediği atıf satırı, ayarlardaki `attribution.pr` tarafından kontrol edilir — 1. dersteki `attribution.commit`'in PR tarafındaki kardeşi.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · bir PR taslağı çıkarın, kontrol edin, hiçbir şey açmayın"
+  lessonId="tr/l2-intermediate/m08-git/pull-requests"
+  repoTag="lesson/m08-03-start"
+  steps={[
+    'Lab deposunun atılabilir klonunuzda, bu dersin tag’inden dallanın: `git checkout lesson/m08-03-start && git checkout -b lab-m08-03`. Bu yalnızca süreç için bir tag — lab deposunun README’si onu `lesson/m08-01-start` ile aynı commit’i işaret ediyor olarak listeliyor — dolayısıyla 1. dersteki `paginate` doğrulama değişikliğini burada yeniden yapabilir ve commit’leyebilirsiniz.',
+    '`npm test`’i kendiniz çalıştırın ve tam sonucu not edin. Onu Claude’a teslim edeceksiniz — bu, Claude’un diff’ten okuyamayacağı tek şeydir.',
+    'PR’ı değil komutu isteyin: `claude -p "This branch (lab-m08-03) is one commit ahead of the tag lesson/m08-03-start. Read the commit and its diff with git. I already ran \'npm test\' myself: 4 files, 16 tests, all passed. Do not run any test command. Print, in a single fenced bash code block and with no other text, the exact \'gh pr create\' command to open this PR: --base main, --title as a Conventional Commits line, and --body containing a Summary section, a Testing section quoting the npm test result above, and a Risk line. Do not run gh." --allowedTools "Read,Bash(git *)" --model sonnet --max-turns 12 --output-format text`',
+    'Taslağı hazırlanan komutu okuyun. Üç şeyi kontrol edin: `--base`, başlığın türü ve scope’u, ve Testing bölümünün bir tane uydurmak yerine sonucunuzu alıntılayıp alıntılamadığı.',
+    'Onu lab deposuna karşı ÇALIŞTIRMAYIN. Bunun yerine, kontrolü sahip olduğunuz bir depoda uygulayın: kendi projenizin bir branch’inde, `gh pr create --base main --title "<başlığınız>" --body-file .github/PULL_REQUEST_TEMPLATE.md --dry-run` çalıştırın ve `base:` ile `head:` satırlarını okuyun.',
+    'Hiçbir şeyin oluşturulmadığını doğrulayın: `gh pr list --head lab-m08-03` hiçbir satır yazdırmaz.',
+  ]}
+  expected="Claude, bir Conventional Commits başlığı ve verdiğiniz npm test sonucunu alıntılayan bir Testing bölümü olan bir gövdeyle bir `gh pr create` komutu yazdırır. `--dry-run`, bir `Would have created a Pull Request with:` bloğu yazdırır ve hiçbir şey açmaz."
+  checklist={[
+    "Hazırlanan komut doğru temel branch'i hedefliyor",
+    'Başlık bir cümle değil `type(scope): subject`',
+    'Testing bölümü gerçekten çalıştırdığınız bir komutu alıntılıyor',
+    'Risk satırı "düşük risk" değil belirli bir şey söylüyor',
+    '`--dry-run`, `Would have created a Pull Request with:` yazdırdı',
+    'Lab deposunda hiçbir pull request yok',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m08-git/03-pull-requests/01-draft-pr-command.txt"
+    range="3-17"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m08-git/03-pull-requests/02-gh-pr-create-dry-run.txt"
+    range="4-11"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m08-git/03-pull-requests/03-gh-dry-run-help.txt"
+    range="2-7"
+  />
+</Lab>
+
+İkinci kayıt lab deposundan değil, bu eğitim deposundan — yukarıda gösterilen gerçek şablona karşı gerçek bir `--dry-run`. İçinde iki satır yerini hak ediyor. `Warning: 1 uncommitted change`, `gh`'ın size yayınlamak üzere olduğunuz şeyin diskinizdekiyle aynı olmadığını söylemesidir; o uyarı herhangi bir kontrol listesinden daha fazla PR kurtarmıştır. Ve `head: plan/20-l2-m08-git`, hangi branch'in push edileceğini doğrular — bu, bir incelemeci için bir soru hâline gelmeden önce "dur, hangi branch'teyim" sorusunun cevabıdır.
+
+İlk kayıt, bu üç yalnızca-süreç tag'inin paylaştığı aynı commit'ten, `lab-m08-01` adlı bir branch'te kaydedildi; yukarıdaki adımlardan yalnızca branch adı farklı.
+
+İlk kaydın **yapmadığı** şeye dikkat edin. Heredoc ile tırnaklanmış bir `--body` yazdırdı ve durdu. Hiçbir `gh` süreci çalışmadı, hiçbir branch push edilmedi, GitHub'da hiçbir şey değişmedi. Komutu istemenin bütün amacı bu.
+
+## Anti-pattern'ler
+
+**Sahip olmadığınız bir depoda Claude'un PR açmasına izin vermek.** Bir pull request bir bakıcı için bir bildirimdir. _Düzeltme:_ komutu isteyin; varsa onu kendiniz açın.
+
+**Claude'un diff'ten yazdığı bir Testing bölümü.** Claude komutu çalıştırmadıysa, bölüm monospace fontlu bir tahmindir. _Düzeltme:_ onu çalıştırın, gerçek sonucu prompt'a yapıştırın ve Claude'a testleri kendisinin çalıştırmamasını söyleyin.
+
+**Şablonu yok saymak.** Depo `.github/PULL_REQUEST_TEMPLATE.md`'yi gönderirken kendi başlıklarınızı doldurmak, her PR'ı farklı biçimlendirir ve incelemecilerin güvendiği kontrol listesini gizler. _Düzeltme:_ `--body-file .github/PULL_REQUEST_TEMPLATE.md`, sonra doldurun.
+
+**`main`'de istediğiniz commit olmayan bir PR başlığı.** Squash-merge altında PR başlığı, varsayılan branch'teki commit mesajı olur. "Fixes" o zaman kalıcıdır. _Düzeltme:_ başlığı, tam olarak 1. dersteki gibi bir Conventional Commits konusu olarak yazın.
+
+**`--dry-run`'ın salt-okunur olduğunu varsaymak.** Oluşturmak yerine yazdırır, ama yine de git değişikliklerini push edebilir. _Düzeltme:_ onu çalıştırmadan önce hangi branch'te olduğunuzu bilin.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/pull-requests"
+  questionId="q1"
+  lang="tr"
+  prompt="Hangi Testing bölümü kanıttır?"
+  options={[
+    {
+      text: '“Bütün testler geçiyor ve değişiklik güvenli.”',
+      explanation: 'Bir incelemecinin tekrarlayabileceği hiçbir komutu olmayan bir iddia.',
+    },
+    {
+      text: '“`npm test`: 4 dosya, 16 test, hepsi geçti.”',
+      correct: true,
+      explanation:
+        'Komutu ve sonucunu adlandırır, dolayısıyla bir incelemeci onu yeniden üretebilir.',
+    },
+    {
+      text: '“Yerel olarak test edildi.”',
+      explanation: 'Ne komut ne de sonuç bundan geri kazanılabilir.',
+    },
+    {
+      text: '“Claude değişikliği doğruladı.”',
+      explanation: 'Doğrulama bir komut ve onun çıktısıdır, bir atıf değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/pull-requests"
+  questionId="q2"
+  lang="tr"
+  prompt="`gh pr create --dry-run` neyi garanti eder?"
+  options={[
+    {
+      text: 'Hiçbir şey olmaz — tamamen salt-okunurdur.',
+      explanation:
+        "`gh pr create --help`, PR'ı oluşturmak yerine ayrıntıları yazdırdığını ama yine de git değişikliklerini push edebileceğini söyler.",
+    },
+    {
+      text: 'Hiçbir pull request oluşturulmaz; ne oluşturulacağını yazdırır, ama yine de git değişikliklerini push edebilir.',
+      correct: true,
+      explanation: 'Bayrağın kendi yardım metninin tam olarak söylediği şey.',
+    },
+    {
+      text: 'Daha sonra silebileceğiniz bir taslak PR oluşturur.',
+      explanation: "Bir taslak PR `--draft`'tır ve gerçek bir PR'dır.",
+    },
+    {
+      text: 'Gövdeyi deponun şablonuna karşı doğrular.',
+      explanation: 'Geçirdiğiniz gövdeyi yazdırır; onu bir şablona karşı kontrol etmez.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/pull-requests"
+  questionId="q3"
+  lang="tr"
+  prompt="Üç hafta sonra PR 1234'ü üreten oturumu istiyorsunuz. Ne çalıştırırsınız?"
+  options={[
+    {
+      text: 'claude --from-pr 1234',
+      correct: true,
+      explanation:
+        "O pull request'e bağlı oturumlara filtrelenmiş oturum seçicisini açar; PR URL'sini /resume aramasına yapıştırmak da işe yarar.",
+    },
+    {
+      text: 'claude --resume 1234',
+      explanation: '`--resume`, bir PR numarasını değil bir oturum kimliğini ya da adını alır.',
+    },
+    {
+      text: 'claude --worktree "#1234"',
+      explanation:
+        "Bu, PR'ın head commit'inden bir worktree dallandırır — yararlı, ama oturum değil.",
+    },
+    {
+      text: 'gh pr view 1234 --json sessionId',
+      explanation:
+        "Bağlantı, GitHub'ın API'sinde değil Claude Code'un yerel oturum deposunda yaşar.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/pull-requests"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir squash-merge iş akışı PR başlığını neden bir commit konusu kadar önemli kılar?"
+  options={[
+    {
+      text: 'Çünkü GitHub, Conventional Commits olmayan PR başlıklarını reddeder.',
+      explanation:
+        "GitHub böyle bir kural dayatmaz; bir deponun CI'ı dayatabilir, ama bu ayrı bir kontroldür.",
+    },
+    {
+      text: "Çünkü PR başlığı, varsayılan branch'e inen tek commit'in mesajı olur.",
+      correct: true,
+      explanation: "Branch'in ara commit'leri kaybolur; `git log`'da kalan şey başlıktır.",
+    },
+    {
+      text: 'Çünkü squash-merge PR açıklamasını siler.',
+      explanation: "Açıklama PR'da ve genellikle commit gövdesinde korunur.",
+    },
+    {
+      text: 'Çünkü incelemeciler yalnızca başlıkları okur.',
+      explanation: 'Bazıları okur, ama bu bir alışkanlıktır, mekanizma değil.',
+    },
+  ]}
+/>
+
+**Sırada:** `04-code-review-commands`, incelemeyi bir insan diff'i hiç görmeden çalıştırır — ve effort seviyeleri arasında nelerin değiştiğini gösterir.

@@ -1,15 +1,15 @@
 ---
-title: 'Efor seviyeleri'
-description: 'İkinci kadran: /effort low, medium, high, xhigh ve max, ayrıca ultracode ve ultrathink — her seviyenin maliyeti, seviyenin nereye kaydedildiği ve hangi modelin hangisini desteklediği.'
+title: 'Effort seviyeleri'
+description: 'İkinci kadran: /effort low, medium, high, xhigh ve max, artı ultracode ve ultrathink anahtar kelimesi — her seviye size neye mal oluyor, bir seviye nerede kaydediliyor ve hangi modeller hangi seviyeleri destekliyor.'
 level: 2
 module: 'm05-models-effort'
 order: 3
 duration_min: 15
 difficulty: core
-tags: ['effort', 'models', 'settings']
+tags: ['effort', 'modeller', 'ayarlar']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Model configuration'
@@ -27,8 +27,282 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l2-intermediate/m05-models-effort/03-effort-levels.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Efor (effort) seviyeleri, modelin her adımda ne kadar düşüneceğine karar verdiği adaptif akıl yürütmeyi kontrol eder. Ölçek model başına kalibre edilir, bu yüzden aynı seviye adı farklı modellerde aynı şeyi ifade etmez. Haiku 4.5 eforu hiç desteklemez; Opus 4.6 ve Sonnet 4.6 `xhigh` seviyesine sahip değildir ve desteklenmeyen bir seviye istediğinizde Claude Code sessizce altındaki en yüksek seviyeye düşer. Etkileşimli oturumda ayarladığınız `low`/`medium`/`high`/`xhigh` model başına `modelSettings` altında kaydedilir; `max` ise `CLAUDE_CODE_EFFORT_LEVEL` üzerinden gelmediği sürece yalnızca o oturum için geçerlidir. `ultracode` bir efor seviyesi değil, `xhigh` gönderip dinamik workflow düzenleyen bir Claude Code ayarıdır; `ultrathink` ise yalnızca o tur için derin düşünme ister ve prompt cache'i bozmaz.
+- Beş [effort](/tr/playbook/glossary/#effort) (modelin bir yanıt için harcadığı düşünme çabası seviyesi) seviyesini adlandırmak ve her birinin ne için olduğunu söylemek.
+- Hangi modellerin hangi seviyeleri desteklediğini ve bir modelin sahip olmadığı bir seviyeyi istediğinizde ne olduğunu söylemek.
+- Effort’u beş yoldan ayarlamak — `/effort`, `/model` kaydırıcısı, `--effort`, `CLAUDE_CODE_EFFORT_LEVEL`, ayarlar — ve hangisinin kalıcı olduğunu bilmek.
+- `ultracode`’un ne olduğunu (ve ne olmadığını) ve bir seviye değişikliği yerine `ultrathink`’in ne zaman doğru araç olduğunu açıklamak.
+- Oturum ortasında effort değiştirmenin prompt cache maliyetini tahmin etmek.
+
+**Ön koşullar.** `01-model-family` dersi. Önce `02` dersine ihtiyacınız yok, ama iki kadran birbiriyle etkileşir ve bir sonraki ders onları birlikte ölçer.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Effort, bir cevap hayal kırıklığı yarattığında yükselttiğiniz bir kalite kaydırıcısı değildir.
+  `max`’in azalan getirilerle aşırı düşünmeye eğilimli olduğu belgelenmiştir ve oturum ortasındaki
+  her seviye değişikliği çoğu modelde prompt cache’i çöpe atar. Bir görev prompt belirsiz olduğu
+  için ya da Claude, gerçeği söyleyecek testi çalıştıramadığı için ters gittiyse, effort’u
+  yükseltmek size aynı hatanın daha ayrıntılı bir sürümünü satın alır. Önce prompt’u ve kanıt
+  döngüsünü düzeltin. Ve Haiku 4.5’te çevrilecek hiçbir şey yoktur: effort’u hiç desteklemez.
+</WhenNotToUse>
+
+## Kavram
+
+### Effort gerçekte neyi kontrol eder
+
+Effort seviyeleri **uyarlanabilir akıl yürütmeyi** kontrol eder — modelin, adım adım, o adımın ne kadar zor olduğuna bağlı olarak düşünüp düşünmeyeceğine ve ne kadar düşüneceğine karar vermesi. Daha düşük bir seviye, basit işlerde daha hızlı ve daha ucuzdur; daha yüksek bir seviye zor problemlerde daha derin akıl yürütme satın alır. Bu bir harcama-yetenek ödünleşimidir, bir doğruluk anahtarı değil.
+
+Ölçek model başına kalibre edilmiştir, yani Sonnet 5’teki `medium` ile Opus 5’teki `medium` aynı temel değer değildir. Modeller arasında seviyeleri karşılaştırmak yalnızca sonuçlarda anlamlıdır, hiçbir zaman seviye adında değil.
+
+| Seviye      | Ne zaman kullanılır                                                                                                                               |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `low`       | Zekâya duyarlı olmayan, kısa, kapsamı belirli, gecikmeye duyarlı görevler                                                                         |
+| `medium`    | Bir miktar zekâdan ödün verebilecek, maliyete duyarlı iş                                                                                          |
+| `high`      | Token kullanımı ile zekâyı dengeler. Opus 4.7 dışında her modelde varsayılan                                                                      |
+| `xhigh`     | Daha yüksek token harcamasıyla daha derin akıl yürütme. Opus 4.7’de varsayılan                                                                    |
+| `max`       | Zorlu görevlerde performansı artırabilir, ama azalan getiriler gösterir ve aşırı düşünmeye eğilimlidir. Geniş kullanmadan önce test edin          |
+| `ultracode` | Bir model effort seviyesi değil — her önemli görev için dinamik bir workflow planlayan, mesaj başına `xhigh` akıl yürütmeli bir Claude Code ayarı |
+
+### Hangi modelde hangi seviyeler var
+
+| Model                                | Seviyeler                               |
+| ------------------------------------ | --------------------------------------- |
+| Fable 5.1, Fable 5                   | `low`, `medium`, `high`, `xhigh`, `max` |
+| Opus 5, Sonnet 5, Opus 4.8, Opus 4.7 | `low`, `medium`, `high`, `xhigh`, `max` |
+| Opus 4.6, Sonnet 4.6                 | `low`, `medium`, `high`, `max`          |
+
+Bu tabloda olmayan modeller — aralarında Haiku 4.5 de var — effort’u desteklemez. Aktif modelin sahip olmadığı bir seviye ayarlarsanız, Claude Code istediğiniz seviyeye eşit ya da ondan düşük, desteklenen en yüksek seviyeye geri döner: `xhigh`, Opus 4.6’da `high` olarak çalışır. Hiçbir şey hata vermez; yalnızca yazdığınızdan daha azını alırsınız, bu yüzden bilinmeye değer.
+
+Enterprise plandaki organizasyonlar, model ve rol başına maksimum seviyeyi sınırlayabilir. Tavanın üzerinde, seviye `/effort` seçicisinde sunulmaz ve daha yüksek birini `--effort` ya da `/effort` ile adlandırmak, onun yerine tavanda çalışır. Etkileşimli oturumlar ve düz metin `--print` koşuları sizi uyarır; `json` ya da `stream-json` çıktısıyla kelepçeleme sessizdir.
+
+### Onu ayarlamak ve ayarın nerede kaldığı
+
+Effort’u altı yer ayarlayabilir:
+
+- **`/effort`** — argümansız bir kaydırıcı açar; bir seviye adıyla doğrudan ayarlar; `/effort auto`, aktif model için kaydedilmiş seviyenizi temizler.
+- **`/model` seçicisi** — model seçerken sol/sağ oklar bir effort kaydırıcısını hareket ettirir.
+- **Başlangıçta `--effort <seviye>`**, tek bir oturum için. `claude --help`, kabul edilen değerleri `low, medium, high, xhigh, max` olarak listeler.
+- **`CLAUDE_CODE_EFFORT_LEVEL`** — bir seviye adı ya da `auto`.
+- **Ayarlar** — `modelSettings` altında model başına bir seviye, ya da seviyesi olmayan modeller için varsayılan olarak `effortLevel`. Hiçbir anahtar `max`’ı kabul etmez; `ultracode`’un kendi `ultracode` anahtarı vardır.
+- **Skill ve subagent frontmatter’ı** — o [skill](/tr/playbook/glossary/#skill) (`SKILL.md` ile tanımlanan, yeniden kullanılabilir talimat paketi) ya da subagent çalışırken uygulanan bir `effort` alanı. Oturum seviyesini geçersiz kılar ama ortam değişkenini kılmaz.
+
+Kalıcılık kuralları, insanların şaşırdığı yerdir:
+
+- Kendi makinenizde **etkileşimli** bir oturumda `low`, `medium`, `high` ya da `xhigh` ayarlamak, seviyeyi model başına kullanıcı ayarlarınızdaki `modelSettings` altında **kaydeder**. Her model kendininkini tutar.
+- `max` istisnadır: `CLAUDE_CODE_EFFORT_LEVEL` üzerinden ayarlamadığınız sürece, Claude Code `max`’ı yalnızca geçerli oturuma uygular.
+- **Etkileşimsiz** modda (`-p`) `/effort` ile ayarlanan bir seviye yalnızca o oturuma uygulanır ve asla kaydedilmez. Fable 5, Opus 4.8 ve Opus 4.7’de, modelin kendi varsayılan-effort tutması hâlâ geçerliyken, etkileşimsiz bir `/effort`, `Not applied` bildirir — bunun yerine başlangıçta `--effort` verin.
+- Yönetilen ayarlardaki `effortLevel` anahtarı bir başlangıç varsayılanıdır, bir zorlama değil: bir kullanıcı bunu bir oturum için değiştirebilir ve yönetilen değer bir sonrakinde yeniden geçerli olur.
+
+`ultracode` kapalıyken, oturum effort’unu şu sırayla çözer, ilk eşleşme kazanır: açık bir seçim (`CLAUDE_CODE_EFFORT_LEVEL`, `--effort` ya da `/effort`) → Fable 5, Opus 4.8 ya da Opus 4.7’de modelin varsayılan-effort tutması → kaydedilmiş ayarlarınız → modelin varsayılanı (Opus 4.7 dışında her yerde `high`, o da `xhigh`’a varsayılan).
+
+Aktif seviyeyi hiçbir şey açmadan görebilirsiniz: oturum başlığında model adının yanında gösterilir, örneğin "with low effort", ve alt bilgi bunu başlangıçta ve her değiştiğinde kısaca gösterir.
+
+### Bir plan dosyasında `effort_hint`
+
+Rastgele prompt’lar yerine yazılı planlardan çalışmaya başladığınızda, effort seçimi yukarı akışa taşınır. Bu sitenin kendi deposu, her planın frontmatter’ında `model_hint` ve `effort_hint` alanları taşır — planı üstlenen oturum için tavsiye, bir kapı değil: mekanik iş için `haiku`/`low`, altyapı ve çeviri için `sonnet`/`medium`, ders yazarlığı ve arayüz işi için `opus`/`high`, mimari ve müfredat tasarımı için `fable`/`xhigh` ya da `max`. Planı üstlenen oturum ipucunu okur, `--model` ve `--effort`’u buna uyacak şekilde başlatır ve planın vermediği kararları uydurduğunu fark ederse yükseltir. Bir iş yükü için bu ipuçlarını yazmak `m18-multi-session`’da ele alınır; buradaki nokta, "hangi effort seviyesi" sorusunu her oturuşunuzda değil, iş türü başına, yazılı olarak bir kez cevaplayabileceğinizdir.
+
+### `ultracode` farklı bir şeydir
+
+`ultracode`, `/effort` menüsünde görünür, bu da onu altıncı bir seviye gibi gösterir. Değildir. Bir Claude Code ayarıdır: modele `xhigh` gönderir **ve** Claude’a önemli görevler için dinamik workflow’lar (iş akışları) düzenletir. `/effort ultracode`, `claude --effort ultracode`, bir ayar dosyasında `"ultracode": true` ya da `/model` seçicisinin kaydırıcısıyla açın.
+
+Bunun bir seviye olmamasının iki sonucu var. Kalıcı `effortLevel` ayarı ve `CLAUDE_CODE_EFFORT_LEVEL`, `ultracode`’u kabul etmez — ve o değişken `xhigh` dışında herhangi bir şeye ayarlıysa, istekler o seviyede çalışır ve ultracode’un workflow düzenlemesi etkin kalmaz. Workflow’ların kapalı olduğu yerde, `--effort ultracode` yalnızca `xhigh` effort ayarlar.
+
+### `ultrathink`: bir tur için daha derin akıl yürütme
+
+Bir prompt’un herhangi bir yerine `ultrathink` kelimesini ekleyin, Claude Code o tur için daha derin akıl yürütme isteyen bağlam içi bir talimat ekler. API’ye gönderilen effort seviyesi değişmez — yani hem oturum ayarınız hem de prompt cache’iniz hayatta kalır. Bu dersin örnek prompt’u tam olarak yerini bulduğu şekilde kullanıyor:
+
+```text
+ultrathink about why test/overdue.test.ts fails only for dates in the past. Give me
+the root cause and two candidate fixes with trade-offs. Do not edit anything yet.
+```
+
+Diğer ifadeler anahtar kelime değildir. "think", "think hard" ve "think more", olağan prompt metni olarak geçirilir ve özel bir şey olarak tanınmaz.
+
+### Fikrinizi değiştirmenin cache maliyeti
+
+Çoğu modelde, oturum ortasında effort’u değiştirmek, bir sonraki isteğin tüm konuşma geçmişini hiç cache isabeti olmadan okuması demektir. Cache hâlâ sıcakken, Claude Code önce değişikliği onaylamanızı ister. İstisna, bir API anahtarı ya da Claude aboneliği ile Fable 5.1’dir; orada effort değiştirmek cache’i korur ve hiçbir onay görünmez.
+
+Caching dokümanının pratik tavsiyesi, ezberlenmeye değer tek bir cümledir: modelinizi ve effort seviyenizi bir oturumun başında seçin ve `/compact`’ı görevler arasındaki doğal aralar için saklayın.
+
+## Uygulamalı laboratuvar
+
+Bu dersin frontmatter’ı `repo_tag: 'none'` taşıyor, dolayısıyla aşağıdaki laboratuvar bloğu bir checkout afişi göstermiyor — ölçüm laboratuvarı bir sonraki ders olan `04-effort-lab`’dır ve 4. adım, karşısında gerçek bir şey çalıştırmak için yalnızca onun tag’ini (`lesson/m05-04-start`) ödünç alır. Burada iki dakikada yapabileceğiniz şey, kadranın var olduğunu, bayrağın dokümanların listelediği değerleri aldığını ve headless olarak geçirdiğiniz bir seviyenin geri aldığınız koşuda göründüğünü doğrulamaktır.
+
+<Lab
+  title="Laboratuvar · kadranı bulun ve geri okuyun"
+  lessonId="tr/l2-intermediate/m05-models-effort/effort-levels"
+  repoTag="none"
+  steps={[
+    '`claude --help` çalıştırın ve `--effort` girdisini bulun. Kabul edilen değerlerin `low, medium, high, xhigh, max` olduğunu doğrulayın.',
+    'Etkileşimli bir oturum başlatın ve model adının yanındaki başlığa bakın — aktif effort seviyesini adlandırır.',
+    'Kaydırıcıyı açmak için argümansız `/effort` çalıştırın, geçerli modeliniz için sunulan seviyeleri not edin ve hiçbir şeyi değiştirmeden Escape’e basın.',
+    'Karşısında çalıştıracak gerçek bir şey için bir sonraki dersin tag’ini ödünç alın — lab deposundaki `lesson/m05-04-start`’tan, açık bir seviyede tek bir headless görev çalıştırın: `claude -p "…" --model sonnet --effort low --output-format json --max-turns 6`. Aşağıdaki komut satırı, bir sonraki dersin laboratuvarının yakaladığı tam komuttur.',
+    'Zarfta `usage.output_tokens_details.thinking_tokens`’ı okuyun — koşunun gerçekte harcadığı düşünme token’ları. Effort’un oynattığı sayı budur.',
+  ]}
+  expected="`claude --help`, `--effort <level>`’ı `(low, medium, high, xhigh, max)` ile listeler; oturum başlığı aktif seviyeyi gösterir; `--effort low` ile headless bir koşu, başka bir seviyeyle karşılaştırabileceğiniz bir thinking-token sayısıyla normal bir başarı zarfı döndürür."
+  checklist={[
+    '`--effort`, `claude --help`’te beş değerle görünüyor',
+    'Oturum başlığı aktif effort seviyesini adlandırıyor',
+    '`/effort`, dört kaydedilebilir seviyeye ek olarak `max` ve `ultracode` sunuyor',
+    'Headless bir `--effort` koşusu, `output_tokens_details.thinking_tokens` içeren bir zarf döndürüyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/04-effort-lab/02-effort-low.txt"
+    range="2-2"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/04-effort-lab/02-effort-low.txt"
+    range="8-20"
+  />
+</Lab>
+
+Bu kayıtla ilgili iki not. `--effort` bir başlangıç bayrağıdır, dolayısıyla onunla başlattığınız oturuma uygulanır ve varsayılanınız olarak kaydedilmez — bir deney için tam olarak istediğiniz şey budur. Ve `thinking_tokens`, olağan çıktı token sayısının yanında, `usage.output_tokens_details`’in içinde yer alır: düşünme, çıktı olarak faturalandırılır, bu yüzden cevap aynı uzunlukta bile olsa effort’u yükseltmek maliyeti yükseltir.
+
+Etkileşimli kontrollerin dürüst bir transcript’i yok, çünkü bir kaydırıcı bir metin akışı değildir. Bunlar tam komutlardır:
+
+<CodeBlock title="effort kontrolleri">
+
+```text
+/effort              # open the slider
+/effort low          # set a level directly
+/effort auto         # clear the saved level for the active model
+/effort ultracode    # xhigh, plus dynamic workflow orchestration
+/model               # left/right arrows move the effort slider
+```
+
+</CodeBlock>
+
+## Anti-pattern’ler
+
+**Kötü bir prompt’u düzeltmek için effort’u yükseltmek.** Yanlış soru hakkında daha fazla düşünmek, daha uzun yanlış bir cevap üretir. _Düzeltme:_ önce kısıtı, kabul kriterini ya da başarısız komutu ekleyin; effort’u yalnızca görev iyi ifade edilmiş ve hâlâ başarısız oluyorsa değiştirin.
+
+**Görev ortasında effort’u değiştirmek.** Çoğu modelde bu, prompt cache’ini çöpe atar ve bir sonraki istek her şeyi yeniden okur. _Düzeltme:_ seviyeyi oturumun başında seçin; seviyeleri karşılaştırmanız gerekiyorsa, aynı başlangıç durumundan ayrı oturumlarda karşılaştırın.
+
+**`ultracode`’u "altıncı seviye" saymak.** Bu bir model effort seviyesi değil, bir Claude Code ayarıdır: `effortLevel` ve `CLAUDE_CODE_EFFORT_LEVEL` onu reddeder ve `xhigh` dışında bir şeye ayarlanmış bir ortam değişkeni, onun workflow düzenlemesini sessizce devre dışı bırakır. _Düzeltme:_ onu `/effort ultracode`, `--effort ultracode` ya da `ultracode` ayar anahtarı üzerinden ayarlayın.
+
+**`max`’ın kalıcı olmasını beklemek.** `CLAUDE_CODE_EFFORT_LEVEL`’den gelmediği sürece, `max` yalnızca geçerli oturuma uygulanır ve `modelSettings`/`effortLevel` onu kabul etmez. _Düzeltme:_ onu gerçekten her yerde istiyorsanız ortam değişkenini ayarlayın — ve önce aşırı düşünme uyarısını yeniden okuyun.
+
+**"Think hard" yazıp bir anahtar kelime beklemek.** Yalnızca `ultrathink` tanınır; gerisi olağan prompt metnidir. _Düzeltme:_ oturum ayarınızı ve cache’inizi bozmayan tek turlu bir yükseltme için `ultrathink`’i kullanın.
+
+<Callout variant="changed" label="Değişti">
+  `ultracode`’u `--effort`’a geçirmek Claude Code v2.1.203 ya da sonrasını gerektirir; öncesinde,
+  `--effort ultracode`, `Unknown --effort value 'ultracode'` yazdırıyordu ve oturum varsayılan
+  effort’ta başlıyordu. Claude Code 2.1.263 için `model-config.md` üzerinden doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/effort-levels"
+  questionId="q1"
+  lang="tr"
+  prompt="Opus 4.6’da `/effort xhigh` çalıştırıyorsunuz. Ne olur?"
+  options={[
+    {
+      text: 'Claude Code hata verir ve önceki seviyeyi korur.',
+      explanation: 'Hata vermez — sessizce geri döner.',
+    },
+    {
+      text: 'Oturum `high`’ta çalışır — istediğiniz seviyeye eşit ya da ondan düşük, desteklenen en yüksek seviye.',
+      correct: true,
+      explanation: 'Opus 4.6 yalnızca `low`, `medium`, `high` ve `max`’ı destekler.',
+    },
+    {
+      text: 'Oturum `max`’ta çalışır.',
+      explanation:
+        'Geri dönüş en yakın desteklenen seviyeye aşağı gider, hiçbir zaman yukarı değil.',
+    },
+    {
+      text: 'Claude Code sizi `xhigh`’ı destekleyen bir modele geçirir.',
+      explanation: 'Effort hiçbir zaman modelinizi değiştirmez.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/effort-levels"
+  questionId="q2"
+  lang="tr"
+  prompt="`max` hakkında hangi ifade doğrudur?"
+  options={[
+    {
+      text: 'Diğer seviyeler gibi `modelSettings` altında model başına kaydedilir.',
+      explanation: 'Ne `modelSettings` ne de `effortLevel` `max`’ı kabul eder.',
+    },
+    {
+      text: '`CLAUDE_CODE_EFFORT_LEVEL`’den gelmediği sürece yalnızca geçerli oturuma uygulanır — ve dokümanlar azalan getiriler gösterdiğini ve aşırı düşünmeye eğilimli olduğunu açıkça belirtir.',
+      correct: true,
+      explanation: 'Her iki yarı da model yapılandırma dokümanında açıkça belirtilir.',
+    },
+    {
+      text: 'Opus 5’te varsayılan seviyedir.',
+      explanation: 'Opus 4.7 dışında effort’u destekleyen her modelde `high` varsayılandır.',
+    },
+    {
+      text: 'Dinamik workflow’ları etkinleştirir.',
+      explanation: 'Bu, `xhigh` gönderen ve workflow düzenlemesi ekleyen `ultracode`’dur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/effort-levels"
+  questionId="q3"
+  lang="tr"
+  prompt="Oturum ayarınızı ya da prompt cache’inizi bozmadan tam olarak bir tur için daha derin akıl yürütme istiyorsunuz. Ne yaparsınız?"
+  options={[
+    {
+      text: '`/effort max` çalıştırın, soruyu sorun, sonra `/effort auto` çalıştırın.',
+      explanation:
+        'Bu, tek bir soru için iki effort değişikliği — çoğu modelde iki cache geçersizleştirmesi.',
+    },
+    {
+      text: 'Prompt’a `ultrathink` kelimesini ekleyin.',
+      correct: true,
+      explanation: 'Bağlam içi bir talimat ekler; API’ye gönderilen effort seviyesi değişmez.',
+    },
+    {
+      text: '"think really hard about this" yazın.',
+      explanation: 'Bir anahtar kelime değil — olağan prompt metni olarak geçirilir.',
+    },
+    {
+      text: 'Bir tur için Fable’a geçin.',
+      explanation:
+        'Bir model değişimi de cache’i geçersiz kılar ve çok daha büyük bir değişikliktir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/effort-levels"
+  questionId="q4"
+  lang="tr"
+  prompt="Oturum ortasında effort değiştirmek neden genellikle size yavaş, pahalı bir tura mal olur?"
+  options={[
+    {
+      text: 'Claude Code oturumu yeniden başlatır.',
+      explanation: 'Başlatmaz; konuşma devam eder.',
+    },
+    {
+      text: 'Çoğu modelde her effort seviyesinin kendi cache’i vardır, dolayısıyla bir sonraki istek tüm konuşma geçmişini hiç cache isabeti olmadan okur.',
+      correct: true,
+      explanation:
+        'İstisna, bir API anahtarı ya da Claude aboneliği ile Fable 5.1’dir; orada cache hayatta kalır.',
+    },
+    {
+      text: 'Model deponuzu diskten yeniden okumak zorundadır.',
+      explanation:
+        'Diskte hiçbir şey yeniden okunmaz; maliyet, istek önekini yeniden işlemektedir.',
+    },
+    {
+      text: 'Daha yüksek effort her zaman daha fazla çıktı token’ı demektir.',
+      explanation:
+        'Thinking token’lar effort ile gerçekten artar, ama değişiklikten sonraki turun pahalı olmasının nedeni bu değildir.',
+    },
+  ]}
+/>
+
+**Sırada:** `04-effort-lab`, üç effort seviyesini aynı hata üzerinde çalıştırır ve farkın gerçekte neye değdiğini gösterir.

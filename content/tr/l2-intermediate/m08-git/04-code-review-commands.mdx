@@ -6,10 +6,10 @@ module: 'm08-git'
 order: 4
 duration_min: 20
 difficulty: core
-tags: ['git', 'code-review', 'review', 'effort']
+tags: ['git', 'code-review', 'inceleme', 'effort']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Code Review'
@@ -31,8 +31,349 @@ lab:
   repo_tag: 'lesson/m08-04-start'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l2-intermediate/m08-git/04-code-review-commands.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders yerel inceleme komutlarını kapsar. Argümansız `/code-review`, branch’inizin upstream’inin önündeki commit’leri ve çalışma ağacındaki değişiklikleri inceler; hedef olarak bir dosya yolu, PR numarası, branch adı veya `main...my-feature` gibi bir ref aralığı verebilirsiniz. Efor seviyesi kapsam ile güven arasında bir kadran: `low` ve `medium` yalnızca en emin olduğu bulguları, `high`–`max` daha geniş bir kapsamı raporlar; `ultra` bulutta çalışır. `--fix` bulguları çalışma ağacına uygular (arka planda çalışan bir inceleme için `/rewind` bunları geri almaz), `--comment` bunları PR’a inline yorum olarak bırakır. `/simplify` yalnızca temizlik yapar, `/security-review` güvenlik açıklarına bakar, `/diff` çalışma ağacını gösterir. Laboratuvar aynı tek satırlık diff’i `low` ve `high` ile inceler: `low` hiçbir şey bulmaz, `high` iki bulgu raporlar.
+- `/code-review`'ı çalışma ağacınıza, bir [pull request](/tr/playbook/glossary/#pull-request) (bir branch'teki değişikliklerin gözden geçirilip ana koda alınması için açılan istek) numarasına, bir [branch](/tr/playbook/glossary/#branch)'e (bir deponun bağımsız bir geliştirme hattı), bir dosya yoluna ya da bir ref aralığına karşı çalıştırmak.
+- Bir [effort](/tr/playbook/glossary/#effort) seviyesini bilinçli olarak seçmek ve `low` ile `high` arasında nelerin değiştiğini öngörmek.
+- `--fix` ve `--comment`'in ne yaptığını söylemek ve `--fix` düzenlemelerinin neden `/rewind` tarafından kapsanmadığını açıklamak.
+- Belirli bir hedef için `/code-review`, `/simplify` ve `/security-review` arasında seçim yapmak.
+- Oturumdan çıkmadan çalışma ağacına bakmak için `/diff`'i kullanmak.
+- Bir incelemeyi `claude -p "/code-review …"` ile [headless](/tr/playbook/glossary/#headless) çalıştırmak ve sonucu okumak.
+
+**Ön koşullar.** 01–03. dersler ve laboratuvar deposunun bir klonu. Yerel `/code-review` komutu ne bir [GitHub App](/tr/playbook/glossary/#github-app) (bir GitHub deposuna kurulan, onun adına GitHub API'siyle konuşabilen entegrasyon) ne de bir Team veya Enterprise planı gerektirir.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bu komutlar bir [diff](/tr/playbook/glossary/#diff)'i (iki durum arasındaki değişiklikleri satır
+  satır gösteren karşılaştırma) inceler; her [commit](/tr/playbook/glossary/#commit)'te (bir
+  değişiklik kümesinin depoya kaydedilen anlık görüntüsü) zaten çalışan kontrollerin yerini tutmaz.
+  Bir tip denetleyicisinin, linter'ın ya da test takımının bir saniyede bulacağı şeyi bulmak için
+  bir inceleme geçişi kullanmayın — onun yerine bunları yapılandırın. Üzerinde hiçbir şey olmayan
+  bir branch'te çalıştırmayın: `/code-review`, argümansız çalıştığında branch'inizin upstream'inin
+  önündeki commit'leri artı commit'lenmemiş değişiklikleri inceler, bu yüzden boş bir ağacın
+  raporlayacak hiçbir şeyi yoktur. Temiz bir incelemeyi doğruluğun kanıtı saymayın — `low` ve
+  `medium` yalnızca en emin olduğu bulguları raporlar ve `low`'da temiz bir sonuç tam olarak bunu,
+  başka hiçbir şeyi ifade etmez. Ve onu tek güvenlik kontrolünüz olarak kullanmayın:
+  `/security-review` bir diff'e bakar, tehdit modelinize değil.
+</WhenNotToUse>
+
+## Kavram
+
+### `/code-review` ve neye baktığı
+
+`/code-review`, GitHub App kurmadan terminalinizde bir diff'i inceler. Doğruluk hatalarını ve yeniden kullanım, sadeleştirme ile verimlilik temizliklerini raporlar. Argüman verilmediğinde **branch'inizin upstream'inin önündeki commit'leri artı commit'lenmemiş tüm değişiklikleri** inceler — yani söyleyecek bir şeyi olması için branch'te ya da çalışma ağacında iş yapılmış olması gerekir.
+
+Başka bir şeyi incelemek için bir hedef verin: bir dosya yolu, bir PR numarası, bir branch adı ya da `main...my-feature` gibi bir ref aralığı.
+
+<CodeBlock title="hedefler">
+
+```bash
+/code-review
+/code-review src/store.ts
+/code-review 1234
+/code-review main...my-feature
+```
+
+</CodeBlock>
+
+İnceleme, kendi [context window](/tr/playbook/glossary/#context-window)'una (bir modelin aynı anda görebildiği bağlam miktarı) sahip bir arka plan (background) [subagent](/tr/playbook/glossary/#subagent)'ı olarak çalışır, bu yüzden konuşmanızı doldurmaz; bulgular tamamlandığında ulaşır. `/review`, `/code-review`'ın bir takma adıdır.
+
+### Effort, kapsam/güven kadranı
+
+Kapsamı güvenle takas etmek için bir effort seviyesi verin:
+
+| Seviye          | Ne elde edersiniz                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| `low`, `medium` | Yalnızca incelemenin en emin olduğu bulgular — daha az yanlış pozitif                            |
+| `high` … `max`  | Daha geniş kapsam, ve daha az emin olduğu bulguları da içerebilir                                |
+| `ultra`         | Bulutta çalışan derin, çoklu-agent [ultrareview](https://code.claude.com/docs/en/ultrareview.md) |
+
+Bir seviye yazmadığınızda inceleme, `low`'dan `max`'a kadar en son yazdığınız seviyeyi — önceki bir oturumda bile olsa — yeniden kullanır ve `Reusing high effort, the level you typed last time` gibi bir bildirim gösterir. Sonraki çalıştırmaların neyi yeniden kullanacağını değiştirmek için bir seviye yazın; etkileşimli olmayan bir `-p` çalıştırmasında geçilen bir seviye bunu güncellemez, ve `ultra` hatırlanan seviyeyi ne günceller ne de kullanır.
+
+Bu soyut bir kadran değil. Aşağıdaki laboratuvar aynı tek satırlık diff'i `low` ve `high` ile çalıştırır ve sırasıyla temiz bir sonuç ile iki bulgu elde eder.
+
+### Bayraklar
+
+| Bayrak      | Ne yapar                                                                                                    |
+| ----------- | ----------------------------------------------------------------------------------------------------------- |
+| `--fix`     | Bulguları incelemeden sonra çalışma ağacınıza uygular                                                       |
+| `--comment` | Bulguları pull request'e satır içi yorum olarak gönderir                                                    |
+| `--post`    | Bir `github.com` PR'ının `ultra` bulut incelemesinde, bulguları PR'a göndermeyi ön seçili yapar (v2.1.227+) |
+
+Akılda tutulmaya değer bir sonuç: **arka planda (background)** çalışan bir inceleme, `--fix` düzenlemelerini oturumunuzun [checkpoint](/tr/playbook/glossary/#checkpoint)'lerinin (Claude Code'un oturum içinde otomatik aldığı, `/rewind` ile geri dönülebilen durum kayıtları) dışında uygular, bu yüzden `/rewind` bunları geri almaz — geri almak için git kullanın. İnceleme ön planda (foreground) çalıştığında ise düzenlemeleri kendi turunuz sırasında olur ve `/rewind` bunları her zamanki gibi geri getirir. İnceleme, her oturum gibi `CLAUDE.md`'nizi izler, ama `REVIEW.md`'yi okumaz (o dosya yönetilen GitHub Code Review ürünü içindir).
+
+### Üç komut, üç iş
+
+| Komut              | İş                                                                                                                                            |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/code-review`     | Doğruluk hataları artı yeniden kullanım, sadeleştirme ve verimlilik temizlikleri; bir effort seviyesi, `--fix`, `--comment` ve bir hedef alır |
+| `/simplify`        | Yalnızca temizlik — hata aramadan okunabilirlik ve sürdürülebilirlik; bir effort seviyesi, `--fix` ve bir yol alır                            |
+| `/security-review` | Güvenlik açıkları; `/code-review` gibi bir hedef alır ve düzeltmelerini uygulayabilir ya da yorum olarak gönderebilir                         |
+
+Bu ayrım önemlidir çünkü geri aldığınız şeyi değiştirir. `/simplify` yalnızca temizlik yapan bir inceleme çalıştırır ve hiçbir zaman hata bulmaya çalışmaz; `/simplify`'ı hata bulma bekleyerek betiklediyseniz yerine geçecek olan `/code-review --fix`'tir.
+
+Ve `/diff`, dördüncü ve en küçüğüdür: çalışma ağacınızdaki değişiklikleri, Claude'un şimdiye kadar yaptığı düzenlemeler dâhil, gösterir. Diğer üçünden herhangi birine geçmeden önce ona başvurun — bakmadığınız bir diff'i incelemek, bir incelemenin kâğıt üstünde bir onaya dönüşmesinin yoludur.
+
+Bu dersin örnek prompt'u aynı şeyin gündelik dille söylenmiş hâlidir — bir inceleme istediğinizde Claude incelemeyi kendisi başlatabilir:
+
+```text
+Review the change I have in the working tree before I open a PR. Be strict: I would
+rather see a finding you are unsure about than miss a real one.
+```
+
+### Headless incelemeler
+
+`/code-review` paketlenmiş bir [skill](/tr/playbook/glossary/#skill)'dir ve skill'ler `-p`'den çağrılabilir:
+
+<CodeBlock title="betikten inceleme">
+
+```bash
+claude -p "/code-review high" --model sonnet --max-turns 30 --output-format text
+```
+
+</CodeBlock>
+
+Bir `-p` çalıştırmasında inceleme **ön planda (foreground)** çalışır: Claude Code onu bekler ve bulguları yanıta dahil eder — tek istisnası, bulut incelemesini beklemeden başlatıp bir bağlantı yazdıran `ultra`'dır. Bir betikten ya da [CI](/tr/playbook/glossary/#ci)'dan (her push'ta ya da PR'da otomatik çalışan derleme/test hattı: sürekli entegrasyon) bulut incelemesi başlatmak için `claude -p '/code-review ultra'` çalıştırın.
+
+Claude, gündelik dille bir inceleme istediğinizde `/code-review`'ı kendiliğinden de başlatabilir, ve prompt'u `/code-review` olan zamanlanmış bir görev de bir tane çalıştırır. Komutu siz yazabilirken Claude'un ve zamanlanmış görevlerin onu başlatmasını engellemek için bir ayar dosyasına bir `skillOverrides` girdisi ekleyin:
+
+<CodeBlock title="~/.claude/settings.json">
+
+```json
+{
+  "skillOverrides": {
+    "code-review": "user-invocable-only"
+  }
+}
+```
+
+</CodeBlock>
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · aynı diff, iki effort seviyesinde"
+  lessonId="tr/l2-intermediate/m08-git/code-review-commands"
+  repoTag="lesson/m08-04-start"
+  steps={[
+    'Geçici klonunuzda, B1 hatasını taşıyan tag’i checkout edin ve ondan branch açın: `git checkout lesson/m08-04-start && git checkout -B lab-m08-04 && npm ci`. `npm test` çalıştırın: dört test başarısız olur — `test/store.test.ts` içinde `paginate`’in kendisinde iki tane, `test/api.test.ts` içinde onun üzerinden geçen iki tane.',
+    'Değişikliği commit’lemeden, elle düzeltin: `src/store.ts` içinde `const start = page * pageSize;` satırını `const start = (page - 1) * pageSize;` olarak değiştirin. `npm test`’i tekrar çalıştırın — 4 dosya, 15 test, yeşil.',
+    'İncelemeye göndermek üzere olduğunuz şeye bakın: `git diff`. Etkileşimli bir oturumda `/diff` aynı şeyi, artı Claude’un düzenlediği her şeyi gösterir.',
+    'Düşük efor ile inceleyin: `claude -p "/code-review low" --model sonnet --max-turns 30 --output-format text`',
+    'Aynı diff’i yüksek efor ile inceleyin: `claude -p "/code-review high" --model sonnet --max-turns 30 --output-format text`',
+    'Aynı diff üzerinde güvenlik geçişini çalıştırın: `claude -p "/security-review" --model sonnet --max-turns 30 --output-format text`',
+    'Üç sonucu karşılaştırın ve 03. dersteki PR’ı açmadan önce hangi bulgular üzerinde işlem yapacağınıza karar verin.',
+  ]}
+  expected="`low` bu tek satırlık diff'te hiçbir bulgu raporlamaz. `high` aynı düzeltmeyi doğru bulur ama `page` ve `pageSize`'ın hâlâ doğrulanmadığını işaretler. `/security-review` hiçbir güvenlik açığı raporlamaz ve değişikliğin neden yeni bir saldırı yüzeyi eklemediğini açıklar."
+  checklist={[
+    '`npm test`, düzeltmeden önce dört başarısızlık, sonrasında “15 passed (15)” bildirdi',
+    'İncelenen diff, `src/store.ts` içinde tek bir satır',
+    '`low` çalıştırması hiçbir bulgu döndürmedi',
+    '`high` çalıştırması, `low`’un döndürmediği en az bir bulgu döndürdü',
+    '`/security-review`, çıplak bir “geçti” değil, gerekçeli bir “güvenlik açığı yok” döndürdü',
+    'Laboratuvar deposuna hiçbir şey commit’lenmedi ya da push edilmedi',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m08-git/04-code-review-commands/03-npm-test-before-after.txt"
+    range="3-20"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m08-git/04-code-review-commands/01-code-review-low-and-high.txt"
+    range="4-14"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m08-git/04-code-review-commands/02-security-review.txt"
+    range="3-8"
+  />
+</Lab>
+
+İlk kayıt, dersin tek ekranda özeti. `low`'da, doğru bir tek satırlık aritmetik düzeltmenin incelemesi hiçbir şey döndürmedi — effort seviyesi tam olarak dokümantasyonun söylediğini yapıyor, yalnızca yüksek güvenli bulguları raporluyor. `high`'da, byte'ı byte'ına aynı diff üzerinde düzeltmeyi doğruladı ve ardından diff'in ortaya çıkardığı ama getirmediği iki şeyi işaretledi: `page` hâlâ doğrulanmıyor (ve düzeltme, `page = 0` durumunda ne olacağını sessizce değiştiriyor — önceden ilk sayfaydı, şimdi boş bir dizi), ve `pageSize` de doğrulanmıyor. Ayrıca kod tabanının zaten `InvalidTaskError`'ı HTTP 400'e eşlediğini, yani doğrulama örüntüsünün zaten var olduğunu ve burada sadece uygulanmadığını fark etti.
+
+Bu, 01. dersteki değişikliğin uyguladığı bulgudur. İki ders aynı depodan aynı gün kaydedildi ve inceleme boşluğu kendi başına buldu.
+
+İlk kayıttaki metin Türkçedir çünkü kaydı yapan makinenin genel Claude Code tercihleri Türkçe cevap istiyor — 01. dersteki laboratuvarın gösterdiği aynı yerleşik tercih etkisi. Bulguların kendisi dilden bağımsızdır: dosya, satır ve neyin yanlış olduğu.
+
+`/security-review` kaydı, hükmünden çok şekli için okunmaya değer. Hiçbir güvenlik açığı olmadığını **ve** nedenini söylüyor: kullanıcı denetimli yol, sorgu, komut ya da yetkilendirme mantığı olmayan bellek içi bir dizi dilimi. Gerekçesiz "sorun yok görünüyor" diyen bir güvenlik geçişi, üzerine hareket edebileceğiniz bir sonuç değildir.
+
+### Terminalden bir incelemeyi izlemek
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+claude -p "/code-review high" --model sonnet --max-turns 30 --output-format text
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+claude -p "/code-review high" --model sonnet --max-turns 30 --output-format text
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+claude -p "/code-review high" --model sonnet --max-turns 30 --output-format text
+```
+
+  </Fragment>
+</OSTabs>
+
+Komut her platformda aynıdır; yalnızca tırnak kuralları farklıdır, ve yukarıdaki çift tırnaklar üçünde de çalışır. Etkileşimli bir oturum içinde `/code-review high`'ı hiçbir bayrak olmadan yazarsınız.
+
+## Anti-pattern'ler
+
+**Temiz bir `low` incelemesini "hata yok" diye okumak.** `low` ve `medium`, emin olmadıkları her şeyi bilerek saklar. _Düzeltme:_ cevap önemliyse `high` çalıştırın — laboratuvarın gösterdiği gibi, aynı diff önce hiçbir şey, sonra iki bulgu üretti.
+
+**Okumadığınız bir diff üzerinde `--fix`.** Arka plandaki `--fix` düzenlemeleri checkpoint'lerinizin dışında oturur, bu yüzden `/rewind` onları geri almaz. _Düzeltme:_ önce bulguları okuyun, ya da geri almak için git kullanın.
+
+**Hata aramak için `/simplify` kullanmak.** O, tasarım gereği yalnızca temizlik yapan bir incelemedir. _Düzeltme:_ hata bulunmasını ve düzeltilmesini istediğinizde `/code-review --fix`.
+
+**Yanlış şeyi incelemek.** Hedef verilmediğinde inceleme, upstream'in önündeki commit'leri artı commit'lenmemiş değişiklikleri kapsar — ki bu, yeni branch'lenmiş, yeni commit'lenmiş bir ağaçta düşündüğünüzden az ya da çok olabilir. _Düzeltme:_ `main...my-feature` gibi açık bir hedef verin.
+
+**Hatırlanan effort seviyesinin sizi şaşırtmasına izin vermek.** Çıplak bir `/code-review`, haftalar önce başka bir oturumda bile olsa en son yazdığınız seviyeyi yeniden kullanır. _Düzeltme:_ önemli olduğunda seviyeyi yazın ve göründüğünde `Reusing … effort` bildirimini okuyun.
+
+<Callout variant="changed" label="Değişti">
+  `/simplify`, v2.1.147'den önce varsayılan olarak düzeltmeleri uygulayan, bugünkü `/code-review`'ın
+  adıydı. Artık hata aramadan düzeltmeleri uygulayan, ayrı ve yalnızca temizlik yapan bir
+  incelemedir; `/simplify`'ı hata bulma için betiklediyseniz `/code-review --fix`'e geçin.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/code-review-commands"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir özellik branch'inde argümansız `/code-review` çalıştırıyorsunuz. Ne incelenir?"
+  options={[
+    {
+      text: 'Depodaki her dosya.',
+      explanation: 'Bir diff’i inceler, tüm ağacı değil.',
+    },
+    {
+      text: 'Branch’in upstream’inin önündeki commit’ler, artı commit’lenmemiş değişiklikler.',
+      correct: true,
+      explanation: 'Bu yüzden boş bir branch ve temiz bir ağaç raporlayacak hiçbir şey bulamaz.',
+    },
+    {
+      text: 'Yalnızca stage’lenmiş değişiklikler.',
+      explanation:
+        'Stage’lenmiş ve stage’lenmemiş çalışma ağacı değişikliklerinin ikisi de dahildir.',
+    },
+    {
+      text: 'Yalnızca en son commit.',
+      explanation: 'Upstream’in önündeki tüm commit’ler kapsam içindedir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/code-review-commands"
+  questionId="q2"
+  lang="tr"
+  prompt="Arka planda çalışan bir `/code-review --fix`, üç dosyayı değiştirdi ve onları geri almak istiyorsunuz. Ne işe yarar?"
+  options={[
+    {
+      text: '/rewind',
+      explanation:
+        'Arka planda çalışan bir inceleme, --fix düzenlemelerini oturumun checkpoint’lerinin dışında uygular, bu yüzden /rewind onları geri almaz.',
+    },
+    {
+      text: 'O dosyalar üzerinde git checkout / git restore',
+      correct: true,
+      explanation:
+        'Dokümantasyon, arka plan incelemesinin düzeltmelerini geri almak için git kullanmayı söyler.',
+    },
+    {
+      text: '/code-review --undo',
+      explanation: 'Böyle bir bayrak yok.',
+    },
+    {
+      text: 'Hiçbir şey — düzenlemeler kalıcıdır.',
+      explanation: 'Bunlar sıradan çalışma ağacı düzenlemeleridir; git onları geri alabilir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/code-review-commands"
+  questionId="q3"
+  lang="tr"
+  prompt="Hata aramadan bir okunabilirlik ve sürdürülebilirlik geçişi istiyorsunuz. Hangi komut?"
+  options={[
+    {
+      text: '/simplify',
+      correct: true,
+      explanation: 'Yalnızca temizlik yapan bir inceleme — hata aramadan düzeltmeleri uygular.',
+    },
+    {
+      text: '/code-review low',
+      explanation: 'Yine de hata bulan bir inceleme, sadece daha muhafazakâr.',
+    },
+    { text: '/security-review', explanation: 'O, güvenlik açıklarına bakar.' },
+    { text: '/diff', explanation: 'O yalnızca çalışma ağacı değişikliklerini gösterir.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/code-review-commands"
+  questionId="q4"
+  lang="tr"
+  prompt="Headless bir `claude -p '/code-review high'` çalıştırmasında inceleme nerede çalışır?"
+  options={[
+    {
+      text: 'Ön planda — Claude Code onu bekler ve bulguları yanıta dahil eder.',
+      correct: true,
+      explanation:
+        'Etkileşimli olmayan çalıştırmalar dokümante edilmiş ön plan durumlarından biridir; ultra istisnadır.',
+    },
+    {
+      text: 'Arka planda, bu yüzden çalıştırma bulgular gelmeden sona erer.',
+      explanation: 'Arka plan etkileşimli varsayılandır, -p davranışı değil.',
+    },
+    {
+      text: 'Her zaman bulutta.',
+      explanation: 'Yalnızca ultra bulut incelemesini başlatır.',
+    },
+    {
+      text: 'Headless çalışmayı reddeder.',
+      explanation: 'Paketlenmiş skill’ler -p’den çağrılabilir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/code-review-commands"
+  questionId="q5"
+  lang="tr"
+  prompt="`/code-review`'ı seviyesiz yazıyorsunuz ve `Reusing high effort, the level you typed last time` görüyorsunuz. Neden?"
+  options={[
+    {
+      text: 'Oturumun mevcut efor seviyesi high’dır.',
+      explanation:
+        'Oturum eforu yalnızca hiç seviye yazmadığınızda kullanılır; aksi halde hatırlanan seviye kazanır.',
+    },
+    {
+      text: 'Çıplak bir /code-review, low’dan max’a kadar en son yazdığınız seviyeyi, önceki bir oturumda bile olsa, yeniden kullanır.',
+      correct: true,
+      explanation:
+        'Sonraki çalıştırmaların neyi yeniden kullanacağını değiştirmek için bir seviye yazın.',
+    },
+    {
+      text: 'Deponun CLAUDE.md’si bir varsayılan seviye belirler.',
+      explanation: 'CLAUDE.md incelemenin içeriğine yön verir, efor seviyesine değil.',
+    },
+    {
+      text: 'high yerleşik varsayılandır.',
+      explanation:
+        'Sabit bir yerleşik varsayılan yoktur; hatırlanan seviye ya da oturum eforu geçerlidir.',
+    },
+  ]}
+/>
+
+**Sırada:** `05-github-app`, incelemeyi makinenizden uzaklaştırıyor — `/install-github-app`'ın kurduğu şey ve depoda `@claude` çalışmaya başladığında ne değiştiği.

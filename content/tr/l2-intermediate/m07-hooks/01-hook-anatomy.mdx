@@ -6,10 +6,10 @@ module: 'm07-hooks'
 order: 1
 duration_min: 20
 difficulty: core
-tags: ['hooks', 'automation', 'json']
+tags: ['hooks', 'otomasyon', 'json']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Hooks reference'
@@ -27,7 +27,474 @@ lab:
   repo_tag: 'none'
 ---
 
-Bu ders bir [hook](/tr/playbook/glossary/#hook) yapılandırmasının üç katmanını — olay (event), eşleştirici grubu (matcher group) ve işleyici (handler) — anlatır; hook'ların hangi ayar dosyalarında yaşadığını ve bu kapsamların nasıl birleştiğini gösterir; stdin'e gelen ortak alanları (`session_id`, `cwd`, `permission_mode`, `hook_event_name`, `tool_name`, `tool_input`) tanıtır ve çıkış kodu sözleşmesini netleştirir: 0 başarı, 2 engelleme, diğer her kod çoğu olayda engellemeyen bir hata. Laboratuvarda küçük bir PreToolUse hook'u yazıp Claude'un ona gönderdiği gerçek JSON'u dosyaya yazdırırsınız.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l2-intermediate/m07-hooks/01-hook-anatomy.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Bir [hook](/tr/playbook/glossary/#hook) (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan bir komut) yapılandırmasının üç katmanını — [event](/tr/playbook/glossary/#hook-event) (olay), [matcher](/tr/playbook/glossary/#matcher) (eşleştirici) grubu ve hook handler'ı (işleyici) — adlandırmak ve `settings.json`'a bakmadan bir tane yazmak.
+- Verilen bir `matcher` dizesi için Claude Code'un hangi matcher biçimini (tam liste mi, düzenli ifade mi) kullanacağını tahmin etmek.
+- Bir hook'un stdin'ine gelen JSON'u okumak ve ihtiyacınız olan alanları içinden çıkarmak.
+- [Exit kodu](/tr/playbook/glossary/#exit-code) `0`, `2` ve "diğer her şeyin" ne yaptığını söylemek, ve `exit 1`'in neredeyse hiçbir zaman istediğiniz şey olmamasının nedenini açıklamak.
+- Belirli bir iş için düz bir exit kodu ile bir JSON `hookSpecificOutput` nesnesi arasında seçim yapmak.
+
+**Ön koşullar.** Çalışan bir Claude Code kurulumu (m01), `claude -p` ve `--output-format` ile rahatlık (m04) ve beş satırlık bir betik yazabileceğiniz bir dil — buradaki örnekler Node ve Bash kullanıyor. Bu ders için lab deposuna ihtiyacınız yok; laboratuvar bir geçici klasörde çalışır.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bir hook, bir event her ateşlendiğinde tam kullanıcı izinlerinizle otomatik çalışan bir kabuk
+  komutudur. Düz bir talimat yeterli olacaksa bir hook'a başvurmayın: statik proje kuralları, betik
+  çalıştırmadan yüklenen `CLAUDE.md`'ye aittir. Bir hook'u sert bir güvenlik sınırı olarak da
+  kullanmayın — bir hook'u belirli Bash komutlarıyla daraltan `if` filtresi açıkça best-effort'tur
+  (elinden gelenin en iyisini yapar) ve dokümanlar gerçek bir izin ver/reddet için izin sistemini
+  kullanmanızı söyler. Ve olay başına bir yolda yavaş olan hiçbir şey için bir hook kullanmayın:
+  `SessionStart` her oturumda çalışır, `PreToolUse` her [tool](/tr/playbook/glossary/#tool)
+  (Claude'un dosya okuma, komut çalıştırma gibi işleri yapmak için çağırdığı araç) çağrısında
+  çalışır, ve iki saniye süren bir hook bunların her birini iki saniye daha uzatır.
+</WhenNotToUse>
+
+## Kavram
+
+### Hook nedir
+
+Hook'lar, Claude Code'un yaşam döngüsündeki belirli noktalarda otomatik olarak çalışan kullanıcı
+tanımlı kabuk komutları, HTTP endpoint'leri, MCP tool çağrıları, LLM [prompt](/tr/playbook/glossary/#prompt)'ları
+(Claude'a verilen istek metinleri) ya da [subagent](/tr/playbook/glossary/#subagent)'lardır (ana
+oturumun bir alt görevi devrettiği yardımcı agent'lar). Aynı event'lar, Claude Code'un çalıştığı her
+yerde ateşlenir: terminal, IDE eklentileri, masaüstü uygulaması ve web.
+
+Bu ders `type: "command"` hook'larıyla ilgilidir — makinenizdeki bir betik. Betiğiniz event
+hakkındaki JSON'u stdin üzerinden alır, bir şey yapar ve sonucunu exit kodu ile stdout'u aracılığıyla
+geri iletir.
+
+### İç içe geçmenin üç katmanı
+
+Her hook yapılandırması aynı üç katmanlı şekle sahiptir:
+
+1. **Tepki verilecek bir hook event'ı**, `PreToolUse` ya da `Stop` gibi.
+2. **Ne zaman ateşleneceğini filtreleyen bir matcher grubu**, "yalnızca Bash tool'u için" gibi.
+3. **Bir ya da daha fazla hook handler'ı** (işleyici) — gerçekte çalışan komut.
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(rm *)",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/block-rm.sh",
+            "args": []
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+</CodeBlock>
+
+Dıştan içe okuyun: `PreToolUse` event'ı, `Bash` tool'una daraltan bir matcher grubu ve bir handler —
+`if` ile `rm *` desenine uyan Bash alt komutlarına daha da daraltılmış bir komut.
+
+### Hook'lar nerede yaşar, ve bunun anlamı
+
+Bir hook'u koyduğunuz dosya, kapsamını belirler:
+
+| Konum                         | Kapsam                  | Paylaşılabilir mi?                                               |
+| ----------------------------- | ----------------------- | ---------------------------------------------------------------- |
+| `~/.claude/settings.json`     | Tüm projeleriniz        | Hayır, makinenize özeldir                                        |
+| `.claude/settings.json`       | Tek proje               | Evet, depoya commit edilebilir                                   |
+| `.claude/settings.local.json` | Tek proje               | Hayır, Claude Code bir ayarı içine kaydettiğinde gitignore'ludur |
+| Yönetilen politika ayarları   | Organizasyon genelinde  | Evet, yönetici kontrollüdür                                      |
+| Plugin `hooks/hooks.json`     | Etkinleştirildiğinde    | Evet, plugin ile birlikte paketlenir                             |
+| Skill frontmatter'ı           | Oturumun geri kalanında | Evet, skill dosyasında tanımlanır                                |
+| Subagent frontmatter'ı        | Çalıştığı sürece        | Evet, subagent dosyasında tanımlanır                             |
+
+Hook girdileri birbirinin yerini almak yerine bu seviyeler arasında **birleşir** — bir proje hook'u
+kişisel olanınızın yerine geçmez, ikisi de çalışır. Eşleşen tüm hook'lar paralel çalışır ve birden
+fazla ayar dosyasında aynı şekilde tanımlanan bir handler bir kez çalışır.
+
+Şimdiden içselleştirmeye değer iki sonuç var. Birincisi, ayar dosyalarından ve plugin'lerden gelen
+hook'lar subagent'ların içinde de çalışır: bir subagent bir tool çağırdığında, `PreToolUse` ve
+`PostToolUse`, ana konuşmadakiyle aynı hook'ları ateşler. İkincisi, çalışma alanı güveni oturum
+türüne göre farklı davranır — etkileşimli bir oturum, klasör için güven dialoğunu kabul edene kadar
+her ayar-dosyası hook'unu geri tutar, oysa **bir `-p` ya da SDK oturumu klasörü güvenilir sayar**,
+dolayısıyla bir deponun `.claude/settings.json`'ında commit edilmiş hook'lar hiç güvenmediğiniz bir
+klasörde çalışır. Yazmadığınız bir deponun `.claude/`'ını, üzerinde `claude -p` betiklemeden önce
+inceleyin.
+
+### Matcher'lar
+
+`matcher` dizesi her zaman bir düzenli ifade değildir. Nasıl değerlendirileceği, içerdiği
+karakterlere bağlıdır:
+
+| Matcher değeri                                      | Şöyle değerlendirilir                       | Örnek                                                    |
+| --------------------------------------------------- | ------------------------------------------- | -------------------------------------------------------- |
+| `"*"`, `""`, ya da atlanmış                         | Her şeyle eşleşir                           | event'ın her oluşumunda ateşlenir                        |
+| Yalnızca harf, rakam, `_`, `-`, boşluk, `,` ve `\|` | Tam dize, ya da tam dizelerin listesi       | `Bash`; `Edit\|Write`; `Edit, Write`                     |
+| Başka herhangi bir karakter içeriyor                | JavaScript düzenli ifadesi, _sabitlenmemiş_ | `^Notebook`, `Notebook` ile başlayan her tool'la eşleşir |
+
+Tuzak, sabitlenmemiş olmasıdır: bir regex matcher, `RegExp.prototype.test` ile test edilir, bu da
+değerin herhangi bir yerinde bir eşleşme bulduğunda başarılı olur, dolayısıyla `Edit.*` hem
+`Edit`'le hem de `NotebookEdit`'le eşleşir. Tam olarak `Edit`'i kastediyorsanız `^Edit$` yazın.
+
+Her event bir tool adı üzerinden eşleşmez. `SessionStart`, oturumun nasıl başladığına göre eşleşir
+(`startup`, `resume`, `clear`, `compact`, `fork`), `Notification` bildirim türüne göre,
+`SubagentStart` agent türüne göre, `FileChanged` dosya adlarına göre eşleşir. `06-event-catalogue`
+dersi bunların hepsini haritalar.
+
+### stdin'e ne gelir
+
+Her command hook'una stdin üzerinden bir JSON nesnesi verilir. Bu alanlar hepsinde ortaktır:
+
+| Alan              | Ne olduğu                                                                               |
+| ----------------- | --------------------------------------------------------------------------------------- |
+| `session_id`      | Geçerli oturum tanımlayıcısı                                                            |
+| `prompt_id`       | İşlenmekte olan kullanıcı prompt'unun UUID'si; ilk kullanıcı girdisine kadar yoktur     |
+| `transcript_path` | Konuşma JSONL'inin yolu — eşzamansız yazılır, bu yüzden canlı turun gerisinde kalabilir |
+| `cwd`             | Hook çağrıldığındaki çalışma dizini                                                     |
+| `permission_mode` | `default`, `plan`, `acceptEdits`, `auto`, `dontAsk` ya da `bypassPermissions`           |
+| `hook_event_name` | Ateşlenen event                                                                         |
+
+Tool event'ları (`PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`,
+`PermissionDenied`), `tool_name`, `tool_input` ve `tool_use_id`'i ekler; iki post-tool event'ı
+`tool_response`'u da ekler. Diğer her event kendi alanlarını ekler — `Stop`, `stop_hook_active` ve
+`last_assistant_message` alır, `Notification`, `message` ve `notification_type` alır, ve böyle
+devam eder.
+
+Aşağıdaki laboratuvar, gerçek bir tanesini anlatmak yerine yazdırır.
+
+### Exit kodları
+
+İnsanların yanlış anladığı kısım burası, o yüzden tam olarak öğrenin:
+
+- **Exit 0** — başarı, ve yapılandırılmış kontrol için JSON yazdırdığınızda amaçlanan kod. Çoğu
+  event'ta stdout, [debug log](/tr/playbook/glossary/#debug-log)'a (hata ayıklama günlüğü) gider ve
+  [transcript](/tr/playbook/glossary/#transcript)'te (gerçek bir Claude Code oturumunun kaydı)
+  gösterilmez. İstisnalar `UserPromptSubmit`, `UserPromptExpansion`, `SessionStart` ve
+  `PostModelSwitch`'tir; burada düz metin stdout, Claude'un görebileceği bağlam olarak eklenir.
+- **Exit 2** — engelleyebilen event'lerde engelleyen bir hata. JSON yazdırsanız da yazdırmasanız da
+  engeller: bir JSON `permissionDecision`'ının `"allow"` olması bile bunu geçersiz kılamaz.
+  Engelleme mesajı, JSON'unuzun engelleyen kararı bir tane yaptığında ondaki nedendir, aksi halde
+  stderr metninizdir.
+- **Diğer her kod** — çoğu event'ta kendi başına engellemez. Eylem devam eder ve transcript,
+  stderr'in ilk satırıyla birlikte `Failed with non-blocking status code:` önekli bir `<hook adı>
+hook error` bildirimi gösterir.
+
+Dokümanlar bu son satıra bir uyarı koyar, ve bu sayfadaki tek en yararlı cümledir: _"stdout'ta
+geçerli JSON olmadan, Claude Code exit kodu 1'i engellemeyen bir hata olarak ele alır ve eyleme
+devam eder — 1 geleneksel Unix hata kodu olsa bile. Hook'unuz bir politikayı uygulamak içinse,
+`exit 2` kullanın."_ Tek istisna `WorktreeCreate`'tir; burada sıfır olmayan herhangi bir exit
+oluşturmayı iptal eder.
+
+Her event engelleyemez. Referansın event-başına exit kodu tablosu şunları exit 2'de engelleyen
+olarak listeler: `PreToolUse`, `UserPromptSubmit`, `UserPromptExpansion`, `Stop`, `SubagentStop`,
+`TeammateIdle`, `TaskCreated`, `TaskCompleted`, `ConfigChange` ve `PostToolBatch`. Üç tanesi daha
+kendi bölümlerinden engeller: `PreCompact` ve `PreModelSwitch` exit 2'de, ve `WorktreeCreate` sıfır
+olmayan herhangi bir exit'te. `PostToolUse` ve `PostToolUseFailure`'da exit 2 engellemez — tool
+zaten çalıştı — ama stderr'inizi Claude'a gösterir, bu da modelin önüne olay sonrası bir uyarı
+koymanın yoludur.
+
+### Exit kodları JSON'a karşı
+
+Exit kodları yalnızca engellemenize ya da sessiz kalmanıza izin verir. JSON çıktısı daha ince taneli
+kontrol sağlar: exit 0 olun ve stdout'a bir nesne yazdırın. Claude Code'un bu stdout'u JSON olarak
+okuyup okumaması, çevresindeki boşluğu yok sayarak nasıl başlayıp bittiğine bağlıdır — `{` ile
+başlamalı ve `}` ile bitmelidir. Başka her şey düz metindir.
+
+Nesne üç tür alanı destekler: `continue`, `stopReason`, `systemMessage` ve `terminalSequence` gibi
+evrensel olanlar; `PostToolUse`, `Stop`, `UserPromptSubmit` ve benzerlerinin kullandığı üst düzey
+bir `decision` / `reason` çifti; ve bir `hookEventName` gerektiren ve daha zengin event-başına
+alanları taşıyan iç içe bir nesne olan `hookSpecificOutput`. `PreToolUse` üçüncü biçimi kullanır:
+
+<CodeBlock title="tam bir PreToolUse deny'i">
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny",
+    "permissionDecisionReason": "Database writes are not allowed"
+  }
+}
+```
+
+</CodeBlock>
+
+`permissionDecision`, `"allow"`, `"deny"`, `"ask"` ya da `"defer"` alır. Hook başına bir yaklaşım
+seçin — yalnızca exit kodları, ya da exit 0 artı JSON. İkisini karıştırmak işe yarar ama akıl
+yürütmesi zordur, çünkü exit 2, JSON ne derse desin engelleme etkisini korur.
+
+Bir hook'unuz kurulduktan ve Claude'un onu fark edip etmediğini görmek istediğinizde, bu dersin
+işlenmiş örnek prompt'u:
+
+```text
+Try to run `rm -rf *` in the build directory, then tell me exactly what stopped you
+and quote the message you got back.
+```
+
+## Uygulamalı laboratuvar
+
+<Callout label="Not">
+  Bu moduldeki her transcript, laboratuvar komutlarında gösterilmeyen iki ekstra bayrakla
+  kaydedildi: `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, böylece ilgisiz bir otomatik bellek dosyası
+  cevabı değiştiremezdi, ve İngilizceyi zorlayan bir `--settings` geçersiz kılması — çünkü kayıt
+  makinesi varsayılan olarak Türkçe cevaplar istiyor. Her transcript'in ilk satırı bunları
+  adlandırır. Kendi koşularınız ifade bakımından farklı olacaktır; önemli olan çevrelerindeki hook
+  davranışıdır.
+</Callout>
+
+<Lab
+  title="Laboratuvar · bir hook'un gerçekte aldığı JSON'u görün"
+  repoTag="none"
+  steps={[
+    'Önemsediğiniz herhangi bir deponun dışında bir geçici klasör oluşturun, içine `cd` yapın ve içine küçük bir metin dosyası koyun — kurgusal bir proje hakkında bir iki cümlelik `notes.txt`.',
+    '`.claude/hooks/echo-event.mjs` oluşturun: stdin’in tamamını okuyun, `seen.json`’a yazın, exit 0. Beş satır, bağımlılık yok (aşağıdaki kod bloğuna bakın).',
+    '`.claude/settings.json` oluşturun ve o betiği `"matcher": "Read"` ile bir `PreToolUse` hook’u olarak kaydedin.',
+    'Salt okunur bir headless (başsız) oturum çalıştırın: `claude -p "Read notes.txt and tell me in one sentence what it says." --model sonnet --max-turns 3 --output-format text --allowedTools "Read"`',
+    "Yakalanan dosyayı güzel yazdırın: `node -e \"console.log(JSON.stringify(JSON.parse(require('fs').readFileSync('seen.json','utf8')),null,2))\"`. İçinde `hook_event_name`, `tool_name`, `tool_input.file_path` ve `permission_mode`’u bulun.",
+    'Matcher’ı `"Bash"` olarak değiştirin ve aynı prompt’u yeniden çalıştırın. `seen.json` yeniden yazılmaz — hook hiç ateşlenmedi, çünkü hiçbir Bash çağrısı olmadı.',
+  ]}
+  expected="Oturum normal şekilde cevap verir ve seen.json, tool_name'i Read olan ve tool_input.file_path'i notes.txt'inize işaret eden bir PreToolUse nesnesi içerir. Matcher Bash olarak değiştirildiğinde, dosyaya dokunulmaz."
+  checklist={[
+    'Hook, `.claude/settings.json`’da `hooks.PreToolUse` altında görünüyor',
+    '`seen.json`, koşudan sonra var',
+    'İçinde `"hook_event_name": "PreToolUse"` ve `"tool_name": "Read"` var',
+    'İçinde `permission_mode`, `session_id`, `cwd` ve `transcript_path` var',
+    'Matcher’ı `Bash` olarak değiştirmek, salt okunur bir oturum için hook’un ateşlenmesini durduruyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/01-hook-anatomy/01-hook-input.txt"
+    range="2-21"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/01-hook-anatomy/02-matcher-does-not-match.txt"
+    range="2-8"
+  />
+</Lab>
+
+Hook betiği ve ayar dosyası, tam olarak:
+
+<CodeBlock title=".claude/hooks/echo-event.mjs">
+
+```javascript
+#!/usr/bin/env node
+// PreToolUse hook: writes the raw JSON it received on stdin to seen.json, then exits 0.
+import { readFileSync, writeFileSync } from 'node:fs';
+const raw = readFileSync(0, 'utf8');
+writeFileSync('seen.json', raw);
+process.exit(0);
+```
+
+</CodeBlock>
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [{ "type": "command", "command": "node .claude/hooks/echo-event.mjs" }]
+      }
+    ]
+  }
+}
+```
+
+</CodeBlock>
+
+O kayıttaki iki şey ikinci bir bakışı hak ediyor. `permission_mode`, prompt izinlerden hiç
+bahsetmemesine rağmen `"default"`tur — hook'lar oturumun hangi kipte olduğunu her zaman bilir, bu da
+`bypassPermissions` altında farklı davranan bir koruma yazmanın yoludur. Ve `tool_input.file_path`,
+prompt `notes.txt` dese de mutlaktır: hook'un gördüğü, yazdığınız kelimeler değil, Claude'un
+gerçekte yaptığı tool çağrısıdır.
+
+### Hook'u elle çalıştırmak
+
+Bir hook'u test etmek için bir oturuma ihtiyacınız yok. Her command hook'u yalnızca stdin okuyan bir
+programdır, o yüzden ona örnek bir event borulayın:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+echo '{"tool_name":"Bash","tool_input":{"command":"ls"}}' | node .claude/hooks/echo-event.mjs
+echo $?
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+echo '{"tool_name":"Bash","tool_input":{"command":"ls"}}' | node .claude/hooks/echo-event.mjs
+echo $?
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+'{"tool_name":"Bash","tool_input":{"command":"ls"}}' | node .claude/hooks/echo-event.mjs
+$LASTEXITCODE
+```
+
+  </Fragment>
+</OSTabs>
+
+O döngü — betiği düzenle, JSON'u borula, exit kodunu kontrol et — herhangi bir oturumdan daha
+hızlıdır ve `07-debugging-hooks` dersindeki her hata ayıklama oturumunun ilk adımıdır.
+
+## Anti-pattern'ler
+
+**`exit 1`'i engellemek için kullanmak.** Başarısızlık gibi okunur, ama çoğu event'ta engellemeyen
+bir hatadır: eylem devam eder ve bir bildirim alırsınız. _Düzeltme:_ `exit 2`, ya da exit 0 olup bir
+JSON kararı yazdırın.
+
+**JSON'unuzdan önce herhangi bir şey yazdırmak.** Stdout yalnızca `{` ile başlayıp `}` ile bittiğinde
+JSON olarak ayrıştırılır. Bir banner yazdıran bir kabuk profili ya da başıboş bir
+`console.log("ok")`, kararınızı sessizce düz metne çevirir — ve exit 0'da transcript'te hiçbir şey
+raporlanmaz. _Düzeltme:_ stdout'u temiz tutun ve profil çıktısını `if [[ $- == *i* ]]` ile koruyun.
+
+**Yanlışlıkla bir regex matcher yazmak.** `Edit.*`, `*`'dan daha sıkı görünür ama `NotebookEdit`'le
+de eşleşir, çünkü regex matcher'lar sabitlenmemiştir. _Düzeltme:_ tam adları kastediyorsanız
+tam-liste biçimini (`Edit|Write`) kullanın, gerçekten bir desene ihtiyacınız olduğunda `^…$` ile
+sabitleyin.
+
+**Statik proje kurallarını bir hook'a koymak.** "bu depo pnpm kullanıyor" yazdıran bir
+`SessionStart` hook'u, hiç değişmeyen bir cümleyi teslim etmek için her oturumda bir süreç çalıştırır.
+_Düzeltme:_ `CLAUDE.md`. Hook'ları değişen değerler için saklayın — branch, CI sonucu, geçerli durum.
+
+**Bir hook'un bir güvenlik sınırı olduğunu varsaymak.** `if` filtresi tasarım gereği best-effort'tur
+(elinden gelenin en iyisini yapar): Claude Code bir Bash dizesinin ne çalıştıracağını anlayamadığında
+hook'unuzu yine de çalıştırır, ve tam tersi durum — ayrıştıramadığı bir komut — tam olarak bir
+saldırganın kullanacağı durumdur. _Düzeltme:_ izin kuralları ve [sandbox](/tr/playbook/glossary/#sandbox)
+(m14) ile sert sınırlar uygulayın; hook'ları üstteki ergonomik katman için kullanın.
+
+<Callout variant="changed" label="Değişti">
+  `PreToolUse` eskiden kararını üst düzey `decision` / `reason` alanlarında taşırdı. Bunlar bu event
+  için kullanımdan kaldırıldı: bunun yerine `hookSpecificOutput.permissionDecision` ve
+  `permissionDecisionReason` kullanın. Eski `"approve"` ve `"block"` değerleri `"allow"` ve
+  `"deny"`'a eşlenir. `PostToolUse` ve `Stop` gibi diğer event'lar, güncel biçimleri olarak hâlâ üst
+  düzey `decision` ve `reason`'ı kullanır. Claude Code 2.1.263 için `hooks.md`'ye karşı doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/hook-anatomy"
+  questionId="q1"
+  lang="tr"
+  prompt="PreToolUse hook'unuz yasak bir komut tespit ediyor ve stderr'de bir mesajla exit 1 yapıyor. Ne olur?"
+  options={[
+    {
+      text: 'Tool çağrısı engellenir ve Claude stderr mesajını görür.',
+      explanation: 'Bu, exit 2’nin yaptığı şeydir. Exit 1, Claude Code için özel değildir.',
+    },
+    {
+      text: 'Tool çağrısı devam eder; transcript engellemeyen bir hook error bildirimi gösterir.',
+      correct: true,
+      explanation:
+        'Tam olarak — çoğu event’ta 2 dışındaki her sıfır olmayan kod engellemeyen bir hatadır, ve eylem devam eder.',
+    },
+    {
+      text: 'Oturum tamamen durur.',
+      explanation: 'Bu, bir exit kodu değil, `{"continue": false}` adlı bir JSON alanıdır.',
+    },
+    {
+      text: 'Hiçbir şey olmaz; JSON olmadan exit kodları yok sayılır.',
+      explanation: 'Hata raporlanır — yalnızca engellemez.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/hook-anatomy"
+  questionId="q2"
+  lang="tr"
+  prompt='Bir PostToolUse hook’u için "matcher": "Edit.*" yazıyorsunuz. Hangi tool’lar için ateşlenir?'
+  options={[
+    {
+      text: 'Yalnızca `Edit`.',
+      explanation: 'Bunun için sabitleme gerekirdi: `^Edit$`.',
+    },
+    {
+      text: '`Edit` ve `NotebookEdit`, çünkü bir regex matcher sabitlenmemiştir.',
+      correct: true,
+      explanation:
+        'Doğru — `.`, onu bir düzenli ifade yapar ve sabitlenmemiş bir `test()` ile test edilir.',
+    },
+    {
+      text: 'Hiçbiri — `.*` geçerli bir matcher sözdizimi değildir.',
+      explanation: 'Geçerlidir; yalnızca tam bir ad yerine bir regex’tir.',
+    },
+    {
+      text: 'Her tool, `"*"` ile aynı.',
+      explanation: 'Yine de adın bir yerinde `Edit`’le eşleşmesi gerekir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/hook-anatomy"
+  questionId="q3"
+  lang="tr"
+  prompt="Exit 0 yapan bir PostToolUse event'inde bir command hook'unun stdout'u nereye gider?"
+  options={[
+    {
+      text: 'Transcript’e, hemen orada görürsünüz.',
+      explanation:
+        'Yalnızca `UserPromptSubmit`, `UserPromptExpansion`, `SessionStart` ve `PostModelSwitch`, düz stdout’u bağlam olarak yüzeye çıkarır.',
+    },
+    {
+      text: 'Debug log’a — transcript’te gösterilmez.',
+      correct: true,
+      explanation:
+        'Bu yüzden bir biçimlendirici hook’u, etkisiyle ya da debug log’u okuyarak doğrulanmalıdır.',
+    },
+    {
+      text: 'Claude’a, bir sistem hatırlatması olarak.',
+      explanation:
+        'Bu, bu event’ta düz stdout için değil, `hookSpecificOutput` içindeki `additionalContext` için olur.',
+    },
+    { text: 'Hiçbir yere; atılır.', explanation: 'Debug log’a kaydedilir.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/hook-anatomy"
+  questionId="q4"
+  lang="tr"
+  prompt="Tanımadığınız bir depoyu klonluyorsunuz ve hemen içinde claude -p çalıştırıyorsunuz. Kimin hook'ları çalışır?"
+  options={[
+    {
+      text: 'Hiçbiri — hook’lar, çalışma alanı güveni dialoğunu kabul etmenizi bekler.',
+      explanation: 'Bu, bir `-p` oturumu için değil, etkileşimli bir oturum için doğrudur.',
+    },
+    {
+      text: 'Deponun `.claude/settings.json` hook’ları çalışır, çünkü `-p` klasörü güvenilir sayar.',
+      correct: true,
+      explanation:
+        'Doğru — önce bir yabancının `.claude/`’ını inceleyin, `--bare` ile başlayın, ya da o koşu için `disableAllHooks` ayarıyla hook’ları kapatın.',
+    },
+    {
+      text: 'Yalnızca kendi `~/.claude/settings.json` hook’larınız çalışır.',
+      explanation: 'Proje hook’ları sizinkilerle birleşir; beklemezler.',
+    },
+    {
+      text: 'Hook’lar headless modda hiç çalışmaz.',
+      explanation:
+        'Çalışırlar; yalnızca `terminalSequence` gibi birkaç çıktı yolu orada etkisizdir.',
+    },
+  ]}
+/>
+
+**Sırada:** `02-block-dangerous-commands`, sözleşmeyi bir korumaya dönüştürür — `rm -rf`'i ve düz bir
+force-push'u reddeden bir `PreToolUse` hook'u, gerçek bir [headless](/tr/playbook/glossary/#headless)
+(etkileşimli arayüz olmadan tek komutla çalıştırma) koşuyla kanıtlanmış.

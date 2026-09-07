@@ -6,10 +6,10 @@ module: 'm07-hooks'
 order: 2
 duration_min: 20
 difficulty: core
-tags: ['hooks', 'pretooluse', 'safety', 'permissions']
+tags: ['hooks', 'pretooluse', 'güvenlik', 'izinler']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Hooks reference'
@@ -31,7 +31,379 @@ lab:
   repo_tag: 'lesson/m07-02-start'
 ---
 
-Bu ders, bir [hook](/tr/playbook/glossary/#hook) (kanca) açısından `PreToolUse` olayının `hookSpecificOutput.permissionDecision` sözleşmesini (`allow`, `deny`, `ask`, `defer`) ve `permissionDecisionReason` alanının neden modele giden asıl arayüz olduğunu anlatır. Hook'lar her izin kipinden (permission mode) önce çalıştığı için bir `deny` kararı `bypassPermissions` altında bile geçerlidir; ancak `allow` kararı hiçbir kısıtı gevşetmez. Laboratuvarda lab deposunun `guard-dangerous-commands.mjs` hook'unu yazar, önce elle JSON borulayarak, sonra gerçek bir `claude -p` oturumunda engellemenin gerçekleştiğini kanıtlarsınız.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l2-intermediate/m07-hooks/02-block-dangerous-commands.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Claude'un okuyup üzerine hareket edebileceği bir nedenle `permissionDecision: "deny"` döndüren bir [hook](/tr/playbook/glossary/#hook) (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan bir komut) yazmak.
+- O hook'u, herhangi bir oturum söz konusu olmadan önce elle yazılmış JSON'u içine borulayarak çevrimdışı test etmek.
+- Korumanın çalıştığını, engellemeyi adlandıran bir [transcript](/tr/playbook/glossary/#transcript)'e (gerçek bir Claude Code oturumunun kaydı) sahip bir [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) koşuyla kanıtlamak.
+- Bir hook `"deny"`'ının neden `bypassPermissions` altında bile geçerli olduğunu, ve bir hook `"allow"`'ının neden hiçbir şeyi gevşetmediğini açıklamak.
+- Desen eşleştiren bir korumanın sizi gerçekte neden koruyup neden korumadığını dürüstçe söylemek.
+
+**Ön koşullar.** `01-hook-anatomy` dersi (JSON sözleşmesi ve [exit kodları](/tr/playbook/glossary/#exit-code)), `PATH`'inizde Node 24, ve lab deposunun bir klonu:
+
+<CodeBlock title="lab'ı alın">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git
+cd claude-code-lab
+git checkout lesson/m07-02-start
+npm ci
+```
+
+</CodeBlock>
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bir koruma hook'u bir emniyet kemeridir, bir duvar değil. Bir komut dizesine karşı metin desenleri
+  eşleştirir, ve dokümanlar `if` filtresinin best-effort olduğu konusunda açıktır (elinden gelenin
+  en iyisini yapar): Claude Code bir Bash dizesinin ne çalıştıracağını çözemediğinde hook'unuzu yine
+  de çalıştırır, ve regex'inizin öngörmediği bir komut doğrudan geçer. Gerçek bir sınıra ihtiyacınız
+  olduğunda — güvenilmeyen bir depo, bir üretim kimlik bilgisi, kurtaramayacağınız bir makine — izin
+  kuralları, [sandbox](/tr/playbook/glossary/#sandbox) ve tek kullanımlık bir ortam kullanın (m14)
+  ve hook'u dürüst kazaları yakalayan katman olarak görün. Yıkımın amaç olduğu tek kullanımlık bir
+  konteynerde bir korumayı tamamen atlayın.
+</WhenNotToUse>
+
+## Kavram
+
+### Karar nesnesi
+
+`PreToolUse`, bir [tool](/tr/playbook/glossary/#tool) (Claude'un dosya okuma, komut çalıştırma gibi
+işleri yapmak için çağırdığı araç) çağrısı çalışmadan önce ateşlenir, ve onu engelleyebilir. Çoğu
+[event](/tr/playbook/glossary/#hook-event)'in (olay) aksine, kararını `hookSpecificOutput` içinde
+döndürür:
+
+| Alan                       | Ne yapar                                                                                                |
+| -------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `permissionDecision`       | `"allow"`, `"deny"`, `"ask"` ya da `"defer"`                                                            |
+| `permissionDecisionReason` | `"allow"` ve `"ask"` için kullanıcıya gösterilir, Claude'a değil. `"deny"` için **Claude'a gösterilir** |
+| `updatedInput`             | Tool'un çalışmadan önceki tüm girdi nesnesinin yerini alır                                              |
+| `additionalContext`        | Tool sonucunun yanına Claude'un bağlamına eklenen bir dize                                              |
+
+O orta satır, bu dersin tasarımıdır. Bir ret, modelin sessizce çarptığı bir duvar değildir — neden
+dizesi açıklama olarak Claude'a gider, dolayısıyla iyi yazılmış bir neden ona bunun yerine ne
+yapacağını söyler. "Engellendi" hiçbir şey öğretmez; "`--force-with-lease` kullanın, ya da kullanıcıdan
+kendisinin çalıştırmasını isteyin" size daha iyi bir sonraki tool çağrısı kazandırır.
+
+Birden fazla `PreToolUse` hook'u anlaşmazlığa düştüğünde, öncelik `deny` > `defer` > `ask` > `allow`
+şeklindedir. Exit 2 yaparak engelleyen bir hook, stderr'iniz neden olarak, `"deny"` ile aynı yoldan
+gider.
+
+### Bir hook'un izinlere göre nerede durduğu
+
+`PreToolUse` hook'ları, `dontAsk` dahil **her [izin kipinde](/tr/playbook/glossary/#permission-mode)**
+(permission mode), herhangi bir izin-kipi kontrolünden **önce** ateşlenir. `"deny"` döndüren bir hook, `bypassPermissions` kipinde ya da
+`--dangerously-skip-permissions` altında bile tool'u engeller. Commit edilmiş bir proje korumasını
+yazmaya değer kılan da budur: bir takım arkadaşı kendi izin kipini değiştirerek bunu aşamaz.
+
+Tersi doğru değildir. `"allow"` döndüren bir hook, ayarlardan gelen ret kurallarını atlamaz, ve
+`requiresUserInteraction` olarak işaretlenmiş MCP tool'ları için istemi bastıramaz. Tek cümlede:
+**hook'lar kısıtlamaları sıkılaştırabilir, izin kurallarının izin verdiğinden daha fazla
+gevşetemez.**
+
+### Bu laboratuvardaki koruma
+
+Laboratuvarın hook'u, bir oturuşta okunabilecek kadar kasıtlı olarak küçüktür. Tanımadığı her şey
+için exit 0 yapar, ve iki komut ailesi için bir deny nesnesi yazdırır:
+
+<CodeBlock title=".claude/hooks/guard-dangerous-commands.mjs (karar veren kısım)" highlight="1-5">
+
+```javascript
+const DANGEROUS = [
+  /\brm\s+(-\w*r\w*f\w*|-\w*f\w*r\w*)\s+(\/|~|\.\.|\*)/i, // rm -rf /, ~, .., *
+  /\bgit\s+push\b.*--force(?!-with-lease)/i, // plain --force, not --force-with-lease
+  /\bgit\s+push\b.*(-f)\b/i,
+];
+
+const hit = DANGEROUS.find((re) => re.test(command));
+if (!hit) process.exit(0);
+
+console.log(
+  JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason:
+        `Blocked by guard-dangerous-commands: "${command}" looks destructive ` +
+        `(broad rm -rf or a plain force-push). Use --force-with-lease, or narrow the path, ` +
+        `or ask the user to run it themselves.`,
+    },
+  }),
+);
+process.exit(0);
+```
+
+</CodeBlock>
+
+İlk regex'i dikkatlice okuyun, çünkü şekli dersin ta kendisidir: yalnızca `rm -rf`'ten sonraki
+argüman `/`, `~`, `..` ya da `*` ile başladığında ateşlenir. `rm -rf build` **engellenmez**. Bu
+kasıtlı bir sınırdır — adlandırılmış bir alt dizini silmek olağan bir iştir, kökü ya da bir joker
+karakter süpürmesini silmek değildir — ve aynı zamanda bir güvenlik modeline değil bir desen
+listesine baktığınızın bir hatırlatıcısıdır. Bu cümlenin her iki yarısını da laboratuvarda
+doğrulayacaksınız.
+
+Koruma yerindeyken bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a
+verilen istek metni):
+
+```text
+The build/ directory holds stale output. Empty it: cd into build and delete everything
+inside it with rm -rf *. Then tell me what happened.
+```
+
+## Uygulamalı laboratuvar
+
+<Callout label="Not">
+  Kayıt makinesi varsayılan olarak Türkçe cevaplar istediği için bu dersin transcript'leri,
+  İngilizceyi zorlayan bir `--settings` geçersiz kılmasıyla yakalandı; aşağıdaki kayıtlar bu yüzden
+  kaydedildikleri gibi İngilizce gösteriliyor.
+</Callout>
+
+<Lab
+  title="Laboratuvar · rm -rf ve düz bir force-push'u reddet"
+  repoTag="lesson/m07-02-start"
+  steps={[
+    'Başlangıç tag’ini çıkın ve kurun: `git checkout lesson/m07-02-start && npm ci`. Ağaçta `.claude/CLAUDE.md`, kurallar ve skill’ler var, ama `.claude/hooks/` ve `.claude/settings.json` yok.',
+    '`.claude/hooks/guard-dangerous-commands.mjs` oluşturun: stdin’deki JSON’u okuyun, `tool_name` `Bash` ya da `PowerShell` değilse exit 0 yapın, `tool_input.command`’ı yukarıdaki iki desene karşı test edin ve biri eşleştiğinde deny nesnesini yazdırın.',
+    '`.claude/settings.json`’da `hooks.PreToolUse` altında `"matcher": "Bash|PowerShell"` ve `"command": "node .claude/hooks/guard-dangerous-commands.mjs"` ile kaydedin.',
+    'Hiç oturum olmadan test edin: altı elle yazılmış komutu içinden borulayın ve hangilerinin bir deny nesnesi ürettiğini okuyun (aşağıdaki ilk transcript). `rm -rf build`’ın eşleşmediğini ve `--force-with-lease`’in de eşleşmediğini not edin.',
+    'Şimdi gerçek bir oturumda kanıtlayın. `build/`’a iki geçici dosya koyun, sonra şunu çalıştırın: `claude -p "The build/ directory holds stale output. Empty it: cd into build and delete everything inside it with rm -rf *. Then tell me what happened." --model sonnet --permission-mode acceptEdits --max-turns 4 --output-format text`',
+    'Aynı prompt’u `--output-format stream-json --verbose > stream.jsonl` ile yeniden çalıştırın, sonra `permissionDecisionReason`’ınızın Claude’un okuduğu tool sonucu olarak geldiğini görmek için `tool_result` bloklarını yazdırın.',
+  ]}
+  expected="Çevrimdışı, üç yıkıcı biçim bir deny nesnesi yazdırır ve üç güvenli biçim hiçbir şey yazdırmaz. Oturumda, Claude bir koruma hook'unun rm -rf biçimini engellediğini bildirir; stream-json koşusunda, tool sonucu hook'unuzun yazdığı tam permissionDecisionReason dizesidir."
+  checklist={[
+    '`.claude/settings.json`, hook’u `PreToolUse` altında `Bash|PowerShell` matcher’ıyla kaydediyor',
+    '`rm -rf *`’ı betiğe borulamak bir `permissionDecision: "deny"` nesnesi yazdırıyor',
+    '`npm test`’i borulamak hiçbir şey yazdırmıyor ve exit 0 yapıyor',
+    'Headless koşu dosyaları `rm -rf *` ile SİLMİYOR',
+    'Claude’un cevabı, onu durduran şey olarak hook’u adlandırıyor',
+    'stream-json tool sonucu, neden dizenizi harfiyen içeriyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/02-block-dangerous-commands/01-guard-offline.txt"
+    range="2-11"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/02-block-dangerous-commands/02-blocked-headless.txt"
+    range="2-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/02-block-dangerous-commands/03-deny-reason.txt"
+    range="2-5"
+  />
+</Lab>
+
+O kayıttan dört gözlem, hepsi bir açıklamanın perdeleyeceği türden şeyler.
+
+**Koruma işini yaptı, ve Claude etrafından dolaştı.** Dosyaları süpüren biçimle silmedi; onları
+tek tek, adıyla sildi. Bu doğru sonuçtur — hook'un işi joker karakterli bir `rm -rf`'i durdurmaktı,
+görevi durdurmak değil — ama görülmeye değer, çünkü "bunun asla olmasını durdur" olarak yazılmış bir
+koruma sizi hayal kırıklığına uğratacaktır. _Tehlikeli bir şekli_ engelleyen ve güvenli bir yolu açık
+bırakan korumalar yazın, ve bunu neden dizesinde söyleyin.
+
+**Neden dizesi arayüzdür.** Üçüncü kayıtta Claude'un aldığı tool sonucu tam olarak sizin
+cümlenizdir. Modelin ardından yaptığı her şey, o cümlenin ne kadar iyi yazıldığına bağlıdır.
+
+**Güven uyarısı gerçek bir çıktıdır, ve hook'larla değil izinlerle ilgilidir.** `permissions.allow`
+girdilerinin yok sayıldığına dair satır, klasör hiç etkileşimli olarak güvenilmediği için görünür.
+Hook yine de çalıştı: bir `-p` oturumu, hook'lar için klasörü güvenilir sayar. Bunun her iki yarısı
+da belgelenmiş davranıştır, ve `01`. dersteki bir yabancının deposunda `claude -p` çalıştırma
+uyarısının önemli olmasının nedeni de budur.
+
+**`rm -rf build` engellenmez.** Çevrimdışı kayıt bunu gösterir: desen, bayraklardan sonra `/`, `~`,
+`..` ya da `*` gerektirir. Projeniz bunun da engellenmesini istiyorsa regex'i kendiniz genişletin —
+ve ardından çevrimdışı testi yeniden çalıştırın, çünkü bir regex'i genişletmek, bir korumanın
+`npm run build:rm-cache`'i yanlışlıkla engellemeye başlamasının tam da yoludur.
+
+### İşletim sistemine göre kaydetmek
+
+Hook betiği Node'dur, dolayısıyla her platformda aynıdır; yalnızca dosyayı oluşturma şekliniz
+değişir.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+mkdir -p .claude/hooks
+$EDITOR .claude/hooks/guard-dangerous-commands.mjs
+$EDITOR .claude/settings.json
+echo '{"tool_name":"Bash","tool_input":{"command":"git push --force origin main"}}' \
+  | node .claude/hooks/guard-dangerous-commands.mjs
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+mkdir -p .claude/hooks
+$EDITOR .claude/hooks/guard-dangerous-commands.mjs
+$EDITOR .claude/settings.json
+echo '{"tool_name":"Bash","tool_input":{"command":"git push --force origin main"}}' \
+  | node .claude/hooks/guard-dangerous-commands.mjs
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+New-Item -ItemType Directory -Force .claude\hooks
+notepad .claude\hooks\guard-dangerous-commands.mjs
+notepad .claude\settings.json
+'{"tool_name":"Bash","tool_input":{"command":"git push --force origin main"}}' |
+  node .claude\hooks\guard-dangerous-commands.mjs
+```
+
+  </Fragment>
+</OSTabs>
+
+Matcher kasıtlı olarak `Bash|PowerShell`'dir: Git Bash olmadan yerel Windows'ta, Claude Code `Bash`
+yerine `PowerShell` tool'unu kullanır, ve yalnızca `Bash`'le eşleşen bir koruma orada kimseyi
+korumaz.
+
+## Anti-pattern'ler
+
+**Yalnızca "engellendi" diyen bir neden dizesi.** Deny nedeni, modele sahip olduğunuz tek kanaldır.
+Çıplak bir "izin verilmiyor", aynı fikrin farklı bir biçimde yeniden denenmesini kazandırır.
+_Düzeltme:_ kuralı adlandırın, güvenli alternatifi adlandırın.
+
+**`exit 1` ile engellemek.** 01. dersteki aynı tuzak, burada daha kötü sonuçlarla: politika
+hook'unuz sessizce bir uyarıya dönüşür ve yıkıcı komut çalışır. _Düzeltme:_ `exit 2`, ya da bir
+`deny` nesnesiyle exit 0 — ve yanlış yazılmış bir betik yolunun neye benzediğini gösteren bir
+`Failed with non-blocking status code:` bildirimi için ilk koşuyu kontrol edin.
+
+**Bir testi geçtiği için korumaya güvenmek.** Bir terminaldeki tek bir `rm -rf /`, tek bir deseni
+kanıtlar. _Düzeltme:_ tehlikeli ve güvenli komutlardan oluşan bir tablo tutun ve bir regex'i her
+değiştirdiğinizde hepsini hook'un içinden borulayın. Laboratuvarın çevrimdışı kaydı, o tablodur.
+
+**Regex'i gerçek işi engelleyene kadar genişletmek.** `npm run clean`'i durduran bir koruma, acelesi
+olan kim varsa onun tarafından devre dışı bırakılır, ve sonra hiçbir şeyi korumaz. _Düzeltme:_
+kelimeleri değil şekilleri engelleyin, ve gri alan için `"deny"` yerine bir `"ask"` kararını tercih
+edin — bu, işi durdurmadan bir istem zorlar.
+
+**Bir hook `"allow"`'unun bir izin bypası olmasını beklemek.** Değildir: ret kuralları hâlâ
+uygulanır, ve bazı tool'lar her zaman istemde bulunur. _Düzeltme:_ bir komutun otomatik onaylanmasını
+istiyorsanız bir izin kuralı yazın (m02) ve kuralların ifade edemediği durumlar için hook'ları
+kullanın.
+
+<Callout variant="changed" label="Değişti">
+  Daha eski koruma hook'ları, `PreToolUse`'dan üst düzey bir `{"decision": "block", "reason": "…"}`
+  döndürür. Bu alanlar bu event için kullanımdan kaldırıldı. Güncel biçim
+  `hookSpecificOutput.permissionDecision`'dır, `permissionDecisionReason` ile birlikte, ve kabul
+  edilen değerler `"allow"`, `"deny"`, `"ask"` ve `"defer"`'dır — eski `"approve"` ve `"block"`,
+  `"allow"` ve `"deny"`'a eşlenir. Exit 2, JSON ne derse desin hâlâ engeller. Claude Code 2.1.263
+  için `hooks.md`'ye karşı doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/block-dangerous-commands"
+  questionId="q1"
+  lang="tr"
+  prompt="Hook'unuz permissionDecision: deny döndürüyor. permissionDecisionReason'ı kim görür?"
+  options={[
+    {
+      text: 'Claude — tool sonucu olarak gelir ve reddi açıklar.',
+      correct: true,
+      explanation:
+        '`deny` için neden Claude’a gösterilir; `allow` ve `ask` için bunun yerine kullanıcıya gösterilir.',
+    },
+    {
+      text: 'Yalnızca kullanıcı, transcript’te.',
+      explanation: 'Bu, `allow` / `ask` durumudur.',
+    },
+    { text: 'Kimse; debug log içindir.', explanation: 'O, reddin mesajının ta kendisidir.' },
+    {
+      text: 'İkisi de, ama yalnızca etkileşimli modda.',
+      explanation: 'Bu dersteki headless kayıt, Claude’a `-p`’de ulaştığını gösteriyor.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/block-dangerous-commands"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir takım arkadaşı oturumu --dangerously-skip-permissions ile çalıştırıyor. Projenizin deny hook'u komutu yine de engelliyor mu?"
+  options={[
+    {
+      text: 'Evet — PreToolUse hook’ları her kipte, herhangi bir izin-kipi kontrolünden önce ateşlenir.',
+      correct: true,
+      explanation:
+        'Commit edilmiş bir korumayı yazmaya tam olarak değer kılan da budur: kip, onu aşmak için kullanılamaz.',
+    },
+    {
+      text: 'Hayır — o bayrak, istemlerle birlikte hook’ları da devre dışı bırakır.',
+      explanation: 'İzin istemlerini devre dışı bırakır, hook’ları değil.',
+    },
+    {
+      text: 'Yalnızca hook da exit 2 yaparsa.',
+      explanation: 'JSON `deny` yeterlidir.',
+    },
+    {
+      text: 'Yalnızca yönetilen politika ayarlarındaki hook’lar için.',
+      explanation:
+        'Yönetilen ayarlar kimin hook’ları devre dışı bırakabileceğini değiştirir, bir deny’in geçerli olup olmadığını değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/block-dangerous-commands"
+  questionId="q3"
+  lang="tr"
+  prompt="Aynı çağrıda iki PreToolUse hook'u ateşleniyor: biri allow, diğeri deny döndürüyor. Ne olur?"
+  options={[
+    {
+      text: 'Çağrı reddedilir — öncelik deny > defer > ask > allow’dur.',
+      correct: true,
+      explanation: 'En katı karar kazanır, bu da bir korumayı birleştirilebilir yapan şeydir.',
+    },
+    {
+      text: 'Önce biten hook kazanır.',
+      explanation:
+        'Hook’lar paralel çalışır, bu yüzden bu belirsiz olurdu — dokümanlar bunun yerine bir öncelik sırası tanımlar.',
+    },
+    {
+      text: 'Çağrıya izin verilir, çünkü açık bir allow bir deny’i yener.',
+      explanation: 'Hook’lar sıkılaştırabilir, gevşetemez.',
+    },
+    {
+      text: 'Claude Code bir yapılandırma hatası bildirir.',
+      explanation: 'Anlaşmazlık beklenir ve öncelikle çözülür.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/block-dangerous-commands"
+  questionId="q4"
+  lang="tr"
+  prompt="Regex tabanlı bir komut korumasının dürüst tanımı hangisidir?"
+  options={[
+    {
+      text: 'Bir sandbox: kurulduktan sonra hiçbir yıkıcı şey çalışamaz.',
+      explanation: 'Desen eşleştirme, kapsama değildir.',
+    },
+    {
+      text: 'Bilinen-tehlikeli şekilleri yakalayan best-effort bir filtre; sert sınırlar izin kurallarından ve sandbox’tan gelir.',
+      correct: true,
+      explanation:
+        'Dokümanlar bunu açıkça söylüyor: sert bir izin ver ya da reddet uygulamak için izin sistemini kullanın.',
+    },
+    {
+      text: 'Bir oturumun ne yaptığını incelemenin yerini alan bir şey.',
+      explanation: 'Kaza yüzeyini daraltır; bakma ihtiyacını ortadan kaldırmaz.',
+    },
+    {
+      text: 'bypassPermissions’ı güvenli yapmanın bir yolu.',
+      explanation:
+        'Listelediğiniz şekilleri o kipte de engeller — ama listelemediğiniz her şey yine de çalışır.',
+    },
+  ]}
+/>
+
+**Sırada:** `03-format-on-save`, tool çağrısının diğer tarafına geçer — Claude'un düzenlediği her
+dosyayı yeniden biçimlendiren bir `PostToolUse` hook'u, ve Claude bunu istemediğinde size neye mal
+olduğu.

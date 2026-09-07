@@ -1,15 +1,15 @@
 ---
 title: 'Bir görevi doğrulanabilir adımlara ayırmak'
-description: 'Ajanın doğrulayabildiği bir hedef, tahmin etmek zorunda kaldığı bir hedeften iyidir. İşi her biri bir dosya ve bir kontrol adı veren adımlara bölmeyi, diff’ten önce planı istemeyi ve farkı aynı görevin iki headless çalıştırmasıyla kanıtlamayı öğrenin.'
+description: 'Bir agent’ın doğrulayabildiği bir hedef, tahmin etmek zorunda kaldığı bir hedeften iyidir. İşi her biri bir dosya ve bir kontrol adı veren adımlara bölmeyi, diff’ten önce planı istemeyi ve farkı aynı görevin iki headless çalıştırmasıyla kanıtlamayı öğrenin.'
 level: 2
 module: 'm09-prompting'
 order: 1
 duration_min: 15
 difficulty: core
-tags: ['prompting', 'planning', 'decomposition']
+tags: ['prompting', 'planlama', 'ayrıştırma']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Best practices for Claude Code'
@@ -31,7 +31,273 @@ lab:
   repo_tag: 'none'
 ---
 
-Bu ders, tek cümlelik bir isteği her biri hedef, değişiklik ve kontrol taşıyan numaralı adımlara nasıl böleceğinizi anlatır. Plan mode’a ne zaman girmenin işe yaradığını, ne zaman salt ek yük olduğunu gösterir; laboratuvarda aynı görevi önce belirsiz sonra parçalanmış bir prompt ile headless çalıştırıp farkı `claude -p --output-format json` zarfından okursunuz.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l2-intermediate/m09-prompting/01-task-decomposition.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Tek cümlelik bir isteği, her biri bir dosya, bir değişiklik ve bir kontrol adlandıran numaralı adımlara dönüştürmek.
+- Önce plan istemenin ne zaman gerekli, planlamanın ne zaman salt ek yük olduğuna karar vermek.
+- Plan mode'a bilinçli olarak girmek — bir kısayol tuşundan ya da komut satırından.
+- Aynı görevi iki kez çalıştırmak — birinde belirsiz bir prompt, birinde ayrıştırılmış bir prompt ile — ve farkı tartışmak yerine bir `claude -p --output-format json` zarfından okumak.
+
+**Ön koşullar.** Bir proje dizininde `claude` çalıştırabiliyorsunuz ve en az bir kez bir headless çalıştırma (`claude -p`) gördünüz — L1 `m01-start` ikisini de kapsar. Kurs lab deposunun bir tag'te checkout edilmiş olmasına ihtiyacınız yok: bu modülün henüz ders tag'i yok, dolayısıyla laboratuvarları lab deposunun `main` branch'inin taze bir klonuna karşı çalışır.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Ayrıştırma, adımları yazmak için harcadığınız zamana mal olur ve Claude'un göz önünde
+  bulunduracağı şeyi daraltır. Kapsam açık ve düzeltme küçükken bunu atlayın — dokümanlar açıkça
+  diff'i tek cümlede tarif edebiliyorsanız planı atlamanızı söylüyor. İnşa etmek yerine
+  keşfetmekteyken de atlayın: "bu dosyada neyi iyileştirirdiniz?" gibi kasıtlı olarak açık bir
+  prompt, sormayı hiç düşünmeyeceğiniz şeyleri ortaya çıkarır, oysa aynı prompt'un ayrıştırılmış bir
+  hâli yalnızca zaten hayal ettiğiniz cevapları döndürebilir.
+</WhenNotToUse>
+
+## Kavram
+
+### Bir agent'ın neden bir dilek değil adımlara ihtiyacı var
+
+Claude Code bir çevrimde çalışır: **bağlam topla, eylem al, sonuçları doğrula**, iş bitene kadar tekrarla. Bu çevrimin sizden, bir sohbet penceresinin istemediği iki şeye ihtiyacı vardır: üzerinde hareket edilecek somut bir şey ve eylemin karşısında kontrol edilecek bir şey. "Görev takipçisini iyileştir" gibi bir istek bunların hiçbirini vermez. Model bütün gün bağlam toplayabilir ve işin bittiğini söyleyebileceği bir noktaya asla ulaşamaz.
+
+Resmî kılavuz bu iki yarıyı ayrı ayrı adlandırır. "Claude'a işini doğrulamanın bir yolunu verin" kontrolle ilgilidir; "Prompt'larınızda belirli bağlam sağlayın" hedefle ilgilidir. Ayrıştırma, bir görev ikisini de tek cümlede karşılamak için fazla büyük olduğunda yaptığınız şeydir — onu her biri bir hedefi ve bir kontrolü olan parçalara kesersiniz.
+
+Ayrıştırılmış bir adımın üç parçası vardır:
+
+| Parça      | Yanıtladığı soru                    | Örnek                                                             |
+| ---------- | ----------------------------------- | ----------------------------------------------------------------- |
+| Hedef      | Hangi dosya ya da sembol değişiyor? | `src/store.ts`, `listTasks` filtresi                              |
+| Değişiklik | Sonrasında ne farklı?               | yeni bir `"overdue"` durum değerini kabul ediyor                  |
+| Kontrol    | İşe yaradığını ne kanıtlıyor?       | enjekte edilmiş bir saatle `test/store.test.ts`'te yeni bir durum |
+
+Bir adım bir kontrol adlandıramıyorsa, henüz bir adım değildir — bir dilektir ve aşağıdaki önce-plan aşamasına aittir.
+
+### Diff'ten önce planı isteyin
+
+Dokümanlar dört aşamalı bir workflow önerir: **keşfet, planla, uygula, commit'le**. İlk ikisi, Claude'un dosyaları okuyup bir plan önerdiği ama siz onaylayana kadar hiçbir düzenleme yapmadığı plan mode'da gerçekleşir. Durum çubuğu `⏸ plan mode on` gösterene kadar `Shift+Tab`'a basarak girin ya da oturumu `claude --permission-mode plan` ile başlatın.
+
+Plan mode etkileşimli yoldur. Bu dersin laboratuvarının kullandığı yol daha basittir ve her yerde işe yarar: planı doğrudan prompt'un içinde isteyin ve aynı nefeste düzenlemeleri yasaklayın. "Hiçbir dosyayı düzenleme … numaralı bir plan çıkar … plandan sonra dur" — headless bir çalıştırmanın karşılayabileceği ve tek ekranda okuyabileceğiniz bir ayrıştırma isteğidir.
+
+Planlama en çok yaklaşımdan emin olmadığınızda, değişiklik birkaç dosyaya yayıldığında ya da değiştirilen kodu tanımadığınızda işe yarar. Bu üç koşul aynı zamanda ayrıştırmanın da tam olarak kendini amorti ettiği koşullardır.
+
+### Bu dersin örnek prompt'u
+
+```text
+Goal: add a 'labtrack overdue' subcommand that lists only overdue tasks.
+Do not edit any file. Read src/store.ts and src/cli.ts, then output a numbered
+plan: for each step, the file it touches, the change, and the test that would
+prove it works. Stop after the plan.
+```
+
+Bunu yukarıdaki tabloya karşı okuyun: hedef tek cümle, sınır (`do not edit`) açık, giriş noktaları adlandırılmış olduğu için keşif yayılamaz, ve çıktı şekli — her adım için dosya, değişiklik, test — her adımı kendi kontrolünü taşımaya zorluyor.
+
+## Uygulamalı laboratuvar
+
+<Callout label="Not">
+  `m09-prompting`'in henüz lab-repo tag'i yok, dolayısıyla bu modülün frontmatter'ı `repo_tag:
+  'none'` taşıyor ve laboratuvarları lab deposunun `main` branch'inin, `npm test`'in yeşil olduğu
+  taze bir klonuna karşı çalışıyor. Aşağıdaki her transcript bu şekilde kaydedildi.
+</Callout>
+
+<Lab
+  title="Laboratuvar · aynı görev, belirsiz bir prompt ve ayrıştırılmış bir prompt"
+  lessonId="tr/l2-intermediate/m09-prompting/task-decomposition"
+  repoTag="none"
+  steps={[
+    'Lab deposunu geçici bir dizine klonlayın ve kurun: `git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci`. Başlamadan önce `npm test`’in yeşil olduğunu doğrulayın.',
+    'Belirsiz prompt’u headless olarak çalıştırın ve tüm zarfı saklayın: `claude -p "improve the task tracker" --model sonnet --max-turns 6 --output-format json --allowedTools "Read,Grep,Glob"`',
+    'Çalışma ağacını sıfırlayın (`git checkout -- . && git clean -fd`) ki ikinci çalıştırma aynı durumdan başlasın.',
+    'Diğer her bayrak aynıyken ayrıştırılmış prompt’u çalıştırın: `claude -p "Goal: add a \'labtrack overdue\' subcommand that lists only overdue tasks. Do not edit any file. Read src/store.ts and src/cli.ts, then output a numbered plan: for each step, the file it touches, the change, and the test that would prove it works. Stop after the plan." --model sonnet --max-turns 6 --output-format json --allowedTools "Read,Grep,Glob"`',
+    'İki zarfı alan alan karşılaştırın — `num_turns`, `subtype` ve her şeyden önce `result`. Her sonuç için sorun: bunu birine verip işe başlamasını sağlayabilir miydim?',
+  ]}
+  expected="Her iki çalıştırma da subtype: success ve num_turns: 5 bildiriyor. Belirsiz çalıştırma bu turları yönelim bulmaya harcıyor ve hangi yönü kastettiğinizi soran bir soruyla bitiyor — headless bir çalıştırmanın asla cevaplayamayacağı bir soru. Ayrıştırılmış çalıştırma src/store.ts ve src/cli.ts'i adlandıran, her birindeki değişikliği ve her adımı kanıtlayacak testi belirten numaralı bir planla bitiyor."
+  checklist={[
+    'Her iki çalıştırma da aynı modeli, tur bütçesini, tool izin listesini ve başlangıç ağacını kullandı',
+    'Belirsiz çalıştırmanın `result`’ı size geri bir soru içeriyor, bir plan değil',
+    'Ayrıştırılmış çalıştırmanın `result`’ı her adım için bir dosya, bir değişiklik ve bir test adlandırıyor',
+    '`num_turns`’ün ikisinde de aynı olduğunu fark ettiniz — fark sonuçta, harcanan çabada değil',
+    'Hiçbir çalıştırma bir dosyayı değiştirmedi (`git status` temiz)',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/01-task-decomposition/01-weak.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/01-task-decomposition/01-weak.txt"
+    range="110-117"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/01-task-decomposition/02-strong.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/01-task-decomposition/02-strong.txt"
+    range="87-94"
+  />
+</Lab>
+
+İki zarf da aynı `num_turns`'ü bildiriyor — her ikisinde de beş. Akılda tutulmaya değer nokta bu. Ayrıştırma çalıştırmayı ne daha ucuz ne de daha kısa yaptı; beş turun bir işe yarar yere inmesini sağladı. Belirsiz çalıştırma depoyu okudu, `main`'in temiz taban olduğunu doğru şekilde çıkardı, sonra üç yönden hangisini kastettiğinizi sormak için durdu. Bir terminalde cevap verirdiniz. Bir `-p` çalıştırmasında kimse yok ve tur bütçesi basitçe harcanmış oluyor.
+
+Ayrıştırılmış çalıştırmanın `result`'ı bir meslektaşınıza verebileceğiniz bir plan: `src/store.ts`'te var olan `isOverdue`'yu yeniden kullanan bir `listOverdue` sorgusu, `src/cli.ts`'te ince bir `runOverdue` sarmalayıcısı artı kayıtlı bir `overdue` komutu, ve her biri için kanıtlayacak test — `test/overdue.test.ts`'teki var olan sahte-zamanlayıcı kalıbı izlenecek model olarak adlandırılmış. Prompt'un istediği gibi, hiçbir şey düzenlenmedi.
+
+Her iki zarf da bir `permission_denials` dizisi kaydediyor. Belirsiz çalıştırmada bunun içinde iki girdi var, ikisi de `npm test` çalıştırmaya çalışan `Bash` çağrıları — bu laboratuvar için izin listesi `Read,Grep,Glob`'du, dolayısıyla reddedildiler. Bu iki nedenden fark edilmeye değer: çalıştırma kimsenin istemediği bir kontrole uzandı, ve transcript reddi gizlemek yerine gösteriyor, dolayısıyla bir çalıştırmanın ne denediğini ve neyin durdurduğunu her zaman söyleyebilirsiniz.
+
+### Laboratuvarı kurmak, işletim sistemine göre
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```text
+# PowerShell 5.1 — statements separated with ; instead of &&
+git clone https://github.com/codechup/claude-code-lab.git; cd claude-code-lab; npm ci
+git checkout -- .; git clean -fd
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1'in `&&` operatörü yoktur, bu yüzden orada aynı adımlar `;` ile ayrılır. WSL içinde, Linux komutlarını kullanın.
+
+### Bunun yerine plan mode'a girmek
+
+Headless yerine etkileşimli çalışırken, plan mode aynı işi daha az yazarak yapar.
+
+`claude --permission-mode plan`, her platformda bir oturumu bu modda başlatır. Oturum ortasında, durum çubuğu `⏸ plan mode on` gösterene kadar `Shift+Tab`'a basın; `Ctrl+G`, Claude devam etmeden önce adımları kesebilmeniz için önerilen planı editörünüzde açar.
+
+## Anti-pattern'ler
+
+Aşağıda bir dokümantasyon sayfası adlandıran öğeler ondan kaynaklanır; geri kalanı bu sitenin kendi gözlemleridir (D080).
+
+**Bir değişiklik yerine bir iyileştirme istemek.** "Görev takipçisini iyileştir", "bunu temizle", "daha iyi yap" — agent'ın ne hedefi ne kontrolü vardır, dolayısıyla ya tahmin eder ya da sorar. _Düzeltme:_ sonrasında farklı olması gereken davranışı adlandırın.
+
+**Kontrolü olmayan adımlara ayrıştırmak.** Numaralar yalnızca aşamaysa ("1. kodu anla 2. kodu yaz 3. test et") numaralı bir liste bir ayrıştırma değildir. _Düzeltme:_ her adım bir dosya, bir değişiklik ve onu kanıtlayan kontrolü adlandırsın.
+
+**Tek satırlık bir değişikliği planlamak.** Plan mode ve önce-plan prompt'ları bir gidiş-dönüş ekler. Bir yazım hatasında, bir log satırında ya da bir yeniden adlandırmada hiçbir şey kazandırmaz. _Düzeltme:_ diff'i tek cümlede tarif edebiliyorsanız, diff'i isteyin.
+
+**Keşfi sınırsız bırakmak.** "Kod tabanını oku, sonra planla" agent'ı her şeyi okumaya davet eder; dokümanlar buna sonsuz-keşif başarısızlığı der. _Düzeltme:_ giriş noktalarını adlandırın — bu dersin prompt'unda `src/store.ts` ve `src/cli.ts` — ya da keşfi bir subagent'a devredin.
+
+**Planın düzenlemeye kaymasına izin vermek.** Açık bir sınır olmadan, bir plan isteği sık sık dosyalar zaten değişmişken biter ve istediğiniz inceleme adımını kaybedersiniz. _Düzeltme:_ "hiçbir dosyayı düzenleme" ve "plandan sonra dur" deyin, ya da bunu zorunlu kılan plan mode'u kullanın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/task-decomposition"
+  questionId="q1"
+  lang="tr"
+  prompt="Aşağıdakilerden hangisi doğru şekilde ayrıştırılmış bir adımdır?"
+  options={[
+    {
+      text: 'Görev deposunun nasıl çalıştığını anla.',
+      explanation: 'Ne değişiklik ne kontrol var — bu bir adım değil bir aşama.',
+    },
+    {
+      text: 'src/store.ts’e, var olan isOverdue ile filtreleyen bir listOverdue() sorgusu ekle; enjekte edilmiş saati kullanan test/overdue.test.ts’teki yeni bir durumla kanıtlanmış.',
+      correct: true,
+      explanation: 'Hedef, değişiklik ve kontrol, üçü de adlandırılmış.',
+    },
+    {
+      text: 'Overdue işlemesini iyileştir.',
+      explanation: 'Ne hedef var ne de karşılaştırılacak bir şey.',
+    },
+    {
+      text: 'CLI’ı inceltmiş yap.',
+      explanation: 'Bir değişiklik değil bir yön; bittiğini anlamanın bir yolu yok.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/task-decomposition"
+  questionId="q2"
+  lang="tr"
+  prompt="Resmî best-practices kılavuzuna göre, planlamayı ne zaman atlamalısınız?"
+  options={[
+    {
+      text: 'Değişiklik birden fazla dosyaya değindiğinde her zaman.',
+      explanation: 'Planlamanın en çok işe yaradığı zaman tam olarak budur, en az değil.',
+    },
+    {
+      text: 'Değiştirilen kodu tanımıyorsanız.',
+      explanation: 'Bu da planlama lehine bir durumdur, aleyhine değil.',
+    },
+    {
+      text: 'Kapsam açık ve düzeltme küçükse — diff’i tek cümlede tarif edebiliyorsanız.',
+      correct: true,
+      explanation: 'Dokümanlar tam olarak bu pratik kuralı veriyor.',
+    },
+    {
+      text: 'Asla — plan mode her oturumda açık olmalı.',
+      explanation: 'Dokümanlar plan mode’un ek yük getirdiği konusunda açık.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/task-decomposition"
+  questionId="q3"
+  lang="tr"
+  prompt="Laboratuvarda, her iki çalıştırma da num_turns: 5 bildirdi. Bu size ne söylüyor?"
+  options={[
+    {
+      text: 'İki prompt da eşit derecede iyiydi.',
+      explanation: 'Sonuçlar tamamen farklı; yalnızca tur sayısı eşleşti.',
+    },
+    {
+      text: 'Tur sayısı harcanan çabayı ölçer, çabanın kullanılabilir bir şey üretip üretmediğini değil — kanıt result alanıdır.',
+      correct: true,
+      explanation:
+        'Belirsiz çalıştırma bir soruya ulaşmak için beş tur harcadı; ayrıştırılmış çalıştırma bir plana ulaşmak için beş tur harcadı.',
+    },
+    {
+      text: 'Ayrıştırılmış prompt tur sınırına çarptı.',
+      explanation: 'Hiçbiri çarpmadı; ikisi de subtype: success bildirdi.',
+    },
+    {
+      text: 'Belirsiz prompt daha ucuzdu.',
+      explanation:
+        'Maliyet ayrı olarak total_cost_usd’de raporlanır ve boşa giden bir çalıştırma bir tasarruf değildir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/task-decomposition"
+  questionId="q4"
+  lang="tr"
+  prompt="Plan mode'a nasıl girilir?"
+  options={[
+    {
+      text: 'Durum çubuğu ⏸ plan mode on gösterene kadar Shift+Tab’a basın, ya da claude --permission-mode plan ile başlayın.',
+      correct: true,
+      explanation: 'Her iki yol da permission-modes referansında belgelenmiştir.',
+    },
+    {
+      text: '/plan-mode on çalıştırın.',
+      explanation: 'Moda girmek için belgelenmiş bir komut değil.',
+    },
+    {
+      text: '--output-format plan geçirin.',
+      explanation: 'Çıktı biçimleri text, json ve stream-json’dır.',
+    },
+    {
+      text: 'CLAUDE.md’de draft: true ayarlayın.',
+      explanation: 'CLAUDE.md izin modlarını değil proje bağlamını taşır.',
+    },
+  ]}
+/>
+
+**Sırada:** `02-constraints-and-evidence` çiftin diğer yarısını ele alır — agent'a işinin ne zaman bittiğini bilmesi için ne söyleyeceğinizi ve ona kanıtı nasıl gösterteceğinizi.

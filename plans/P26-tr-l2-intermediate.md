@@ -2,7 +2,7 @@
 id: P26
 title: "TR translation: L2 Intermediate"
 milestone: M2
-status: in_progress
+status: review
 owner: sonnet-p26-2026-09-07
 branch: plan/26-tr-l2-intermediate
 model_hint: sonnet
@@ -17,7 +17,7 @@ owned_paths:
 shared_paths:
   - content/tr/playbook/glossary.mdx
 estimate: L
-updated_at: 2026-09-07T10:55:11Z
+updated_at: 2026-09-07T19:29:52Z
 open_questions: []
 ---
 
@@ -85,5 +85,11 @@ A reviewer runs `npm run dev`, switches to `/tr/l2-intermediate/` via LangSwitch
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+- Translated all 30 lessons across the 5 modules (m05: 7, m06: 6, m07: 7, m08: 5, m09: 5), flipping each `draft: true` → `false`. Mix of direct translation and parallel `general-purpose` subagents briefed with the i18n rules; all output reviewed and normalized to one voice before commit.
+- Appended 24 new glossary entries to `content/tr/playbook/glossary.mdx` (append-only, existing entries untouched): argument, plugin, matcher, hook event, exit code, debug log, sandbox, permission mode, workflow, checkpoint, fork, token, context window, commit, branch, worktree, merge, diff, pull request, issue, GitHub App, CI, secret, checklist.
+- **Blocker hit and resolved:** an early batch cleanup script (meant to normalize stray `\'` escapes to curly `’`) had a shell/Python string-escaping bug that briefly converted every apostrophe in several files — including YAML frontmatter delimiters and JS string delimiters inside `<Lab>`/`<Quiz>` props — into curly quotes, which is invalid syntax outside plain prose. `node scripts/content-gate.ts` did not catch this (it only validates YAML + fences, not JSX/JS expressions), but `npx astro build` did, with `mdx-jsx:unexpected-character` errors. Root-caused and fixed via targeted regex passes (frontmatter delimiters, backtick code-span content, bare JSX attributes like `expected="..."`) plus manual fixes for a few residual cases, then verified with a full `astro build` (143 pages, 0 errors) before proceeding. Two independent subagents (m06 lessons, m09 lessons) hit and self-corrected the same class of bug independently, confirming the pattern. Flagging for other TR-translation plans: **content-gate.ts does not catch invalid JSX prop syntax** — a full `astro build` is the only reliable check for that, and it should probably be added to the standard verification chain in the brief.
+- Reviewer subagent (read-only, `--permission-mode plan`) ran against a 5-lesson sample (one per module: `m05/01-model-family`, `m06/02-skill-md-anatomy`, `m07/06-event-catalogue`, `m08/03-pull-requests`, `m09/05-anti-patterns`). Verdict: CHANGES REQUESTED, 0 blockers, 2 majors, 6 minors. Both majors fixed (dead glossary anchors for `pull request`/`argument` — resolved by the glossary additions above; under-linked first-use terms in the 5 sampled files — fixed by hand). All 6 minors fixed (grammar slip, typo, non-standard loanword, one vowel-harmony suffix inconsistency, apostrophe-style note).
+- Known follow-up (not blocking): the reviewer's "systemic under-linking" finding was based on the 5-file sample; a full first-use-glossary-link audit across all 30 lessons was not performed exhaustively — later plans touching this level should treat a spot-check, not a guarantee, when relying on link density here.
+- Verification: `node scripts/content-gate.ts` (158 files OK), `npm run typecheck` (0 errors), `npm run lint` (eslint + prettier + no-inline-script, all clean after `prettier --write` on the 30 files), `npm test` (184/184 passed), `npx astro build` (143 pages, 0 errors), `node scripts/check-raw-colors.mjs` (OK), `node scripts/check-public-hygiene.mjs` (OK), `node tools/plan/cli.ts check` (OK, 48 plans). Playwright on a temporary `playwright.p26.config.ts` (port 4426, deleted after use) with a temporary `e2e/p26-l2-tr.spec.ts` (deleted after use) visiting all 36 TR L2 routes (level index + 5 module indexes + 30 lessons) at 390/1280: 86/86 passed, 0 axe serious/critical. `e2e/shell.spec.ts` and `e2e/lesson.spec.ts` also re-run against the same port: 38/38 passed.
+- `lychee` was not run directly (not installed in this environment); internal glossary-link integrity was instead verified by cross-referencing every `#anchor` used in the 30 TR files against the glossary's own `###` headings (see glossary additions above) and by the reviewer subagent's dead-link finding, which is now resolved.
 

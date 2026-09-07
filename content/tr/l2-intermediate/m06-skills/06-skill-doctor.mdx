@@ -1,15 +1,15 @@
 ---
-title: "Skill'leri /skill-doctor ile ölçmek"
-description: 'Listedeki her skill, kullanılsa da kullanılmasa da her turda bağlam harcar. /skill-doctor her birinin maliyetini ve kaç kez çalıştığını gösterir.'
+title: 'Skill’leri /skill-doctor ile ölçmek'
+description: 'Listedeki her skill, kullanılsa da kullanılmasa da her turda bağlam harcar. /skill-doctor her birinin neye mal olduğunu ve ne sıklıkla çalıştığını gösterir, böylece hiç tetiklenmeyen description’ları düzeltebilir ve kimsenin ihtiyaç duymadığı skill’leri kapatabilirsiniz.'
 level: 2
 module: 'm06-skills'
 order: 6
 duration_min: 10
 difficulty: advanced
-tags: ['skills', 'context', 'diagnostics']
+tags: ['skills', 'context', 'tanılama']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Extend Claude with skills'
@@ -27,6 +27,264 @@ lab:
   repo_tag: 'none'
 ---
 
-**Not:** Bu dersin Türkçe çevirisi henüz yapılmadı; `draft: true` kaldığı sürece sayfa gezinmede görünmez. Çeviri `content/en/l2-intermediate/m06-skills/06-skill-doctor.mdx` dosyasından üretilir (kurallar: `.claude/rules/i18n.md`, D016, D018).
+## Hedefler ve ön koşullar
 
-Bu ders `/skill-doctor` raporunu okumayı öğretir: her skill'in listeleme satırının tur başına maliyeti, son yedi gündeki token kullanımı, çağrı sayısı ve son kullanım. Ayrıca `skillOverrides` ile bir skill'i `on`, `name-only`, `user-invocable-only` ve `off` durumları arasında taşımayı ve hiç tetiklenmeyen bir skill'in üç olası nedenini kapsar.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Hem etkileşimli bir oturumda hem de `-p` modunda `/skill-doctor`'ı çalıştırmak ve raporunu okumak.
+- Bir [skill](/tr/playbook/glossary/#skill)'in (`SKILL.md` ile tanımlanan, `/ad` ile çağrılan ya da Claude'un kendisinin yüklediği yeniden kullanılabilir talimat paketi) _listesinin_ (listing) tur başına maliyeti ile _gövdesinin_ tek seferlik maliyeti arasındaki farkı açıklamak.
+- `skillOverrides`'ı — `/skills` menüsü üzerinden ya da elle — bir skill'i `on`, `name-only`, `user-invocable-only` ve `off` arasında taşımak için kullanmak.
+- Hiç tetiklenmeyen bir skill'i teşhis etmek ve üç nedenden hangisine baktığınızı bilmek.
+- `/skill-doctor`'ın nerede kullanılamadığını ve onun yerine ne çalıştırılacağını söylemek.
+
+**Ön koşullar.** `01`–`05` dersleri, ve Claude Code v2.1.252 ya da sonrası. İçinde en az iki ya da üç skill olan bir proje — 05. dersi bitirdiğiniz durum ideal.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  `/skill-doctor`, kullanımı ölçer; kaliteyi ölçmez. Her prompt'ta çalışan ve vasat bir çıktı üreten
+  bir skill, bu raporda mükemmel görünür. Bir skill'in tetiklendiğini görmek, size Claude'un onu
+  bulduğunu söyler, istediğinizi yaptığını değil — bunun için dokümanlar bir temel karşılaştırmaya
+  işaret eder: aynı gerçekçi [prompt](/tr/playbook/glossary/#prompt)'ları (Claude'a verdiğiniz istek
+  metni), skill mevcutken taze bir oturumda ve devre dışıyken yeniden çalıştırın, sonra
+  karşılaştırın. Bunun için `/skill-doctor`'ı kullanmayın, ve nadiren kullanılan bir skill'i,
+  çalıştığı birkaç sefer önemli olan seferlerse, düşük bir sayının gücüyle silmeyin.
+</WhenNotToUse>
+
+## Kavram
+
+### Hiç kullanmadığınız bir skill'e sahip olmanın maliyeti
+
+Claude Code, Claude'un neyin mevcut olduğunu bilmesi için skill adları ve description'larından oluşan bir listeyi bağlama yükler. O listedeki her skill, Claude onu hiç kullansın ya da kullanmasın, bağlamınıza **her turda** eklenir. Gövde farklıdır: yalnızca skill çalıştığında yüklenir ve sonra oturumun geri kalanı için orada kalır.
+
+Yani bir skill'in iki maliyeti vardır ve bunlar hiç birbirine benzemez şekilde davranır:
+
+| Maliyet              | Ne zaman ödenir                         | Nasıl azaltılır                                                               |
+| -------------------- | --------------------------------------- | ----------------------------------------------------------------------------- |
+| Liste girdisi        | Her turda, tüm oturum boyunca           | `skillOverrides: "name-only"` ya da `"off"`; `disable-model-invocation: true` |
+| Render edilmiş gövde | Çağrı başına bir kez, sonra kalıcı olur | Gövdeyi kısa tutun; ayrıntıyı destekleyici dosyalara taşıyın                  |
+
+`/skill-doctor`, ilkini raporlar ve size hangi skill'lerin buna değmediğini gösterir.
+
+### Raporu okumak
+
+`/skill-doctor`, skill'lerinizin her birinin neye mal olduğunu ve ne sıklıkla kullanıldığını gösterir. Etkileşimli bir oturumda rapor, `/plugin` yöneticisinin **Stats** sekmesinde açılır; `-p` ile non-interactive modda, Claude Code onu metin olarak yazdırır. Oturumunuzdaki, bundled ve enterprise skill'ler dışındaki skill'leri kapsar, listede hiç çağrılmamış skill'leri işaretler, onları nerede kapatacağınızı söyler ve son zamanlarda kullanmadığınız [plugin](/tr/playbook/glossary/#plugin)'leri (Claude Code'a hook, skill, subagent gibi bileşenleri paket hâlinde ekleyen eklenti) listeler.
+
+`context` sütunu, insanların yanlış okuduğu kısımdır. Her turda dahil edilen, _bu skill'in tek satırlık liste girdisinin_ boyutudur — `SKILL.md`'nin boyutu değil. Bir tire, skill'in geçerli listede hiç olmadığı ve bu yüzden tur başına hiçbir şeye mal olmadığı anlamına gelir. Aşağıdaki kayıtta, üç skill'den ikisi bir tire gösteriyor: ikisi de `disable-model-invocation: true` ayarlıyor, ki bu da description'larını Claude'un bağlamının tamamen dışında tutuyor — tam olarak 02. derste tablonun söylediği gibi.
+
+### Bir skill'i kapatmak yerine kısmak
+
+`.claude/settings.json` ya da `.claude/settings.local.json`'daki `skillOverrides`, sahibi olmayabileceğiniz bir `SKILL.md`'yi düzenlemeden görünürlüğü kontrol eder:
+
+| Değer                   | Claude'a listelenir | `/` menüsünde |
+| ----------------------- | ------------------- | ------------- |
+| `"on"` (varsayılan)     | Ad ve description   | Evet          |
+| `"name-only"`           | Yalnızca ad         | Evet          |
+| `"user-invocable-only"` | Gizli               | Evet          |
+| `"off"`                 | Gizli               | Gizli         |
+
+`/skills` menüsü bunu sizin yerinize yazar: bir skill'i vurgulayın, durumlar arasında dönmek için `Space`'e, `.claude/settings.local.json`'a kaydetmek için `Esc`'e basın. Menü, `"user-invocable-only"`'yi `user-only` olarak etiketler. Plugin skill'leri `skillOverrides`'tan etkilenmez — onları `/plugin` üzerinden yönetin.
+
+`"name-only"`, hafife alınan bir ayardır. Skill'i yazılabilir tutarken liste bütçesini serbest bırakır, ki elle çağırdığınız ama Claude'un asla tahmin etmesini istemediğiniz bir skill için istediğiniz de tam olarak budur.
+
+### Bir skill neden tetiklenmiyor
+
+Kontrol etmeye değer sırayla üç neden:
+
+1. **Description'ı listede hiç yok.** Ya `disable-model-invocation: true` ayarladınız (bu durumda tasarlandığı gibi çalışıyor ve onu yazmanız gerekiyor), ya da liste taştı. Bütçe, modelin bağlam penceresinin %1'i olarak ölçeklenir ve taştığında Claude Code, description'ları **en az çağırdığınız skill'lerden başlayarak** düşürür — böylece en çok kullandığınız skill'ler tam metinlerini korur, ihmal edilenler ise sessizleşir. `/doctor`, listenin maliyetini ve en büyük katkıda bulunanlarını tahmin eder; bütçe aşıldığında `--debug`, debug log'una bir uyarı yazar.
+2. **Description, nasıl sorduğunuzla eşleşmiyor.** Ana kullanım durumunu öne koyun ve tetikleyici ifadeler için `when_to_use`'u kullanın. Girdi başına birleşik 1.536 karakter sınırını unutmayın.
+3. **`paths` onu daraltıyor.** `paths` ayarlı bir skill, yalnızca Claude eşleşen dosyalarla çalışırken otomatik olarak etkinleşir.
+
+`/context`'in Skills satırı, liste boyutunu bütçe uygulandıktan _sonra_ raporlar, dolayısıyla modelin gerçekte aldığıyla eşleşir. Bütçeyi yükseltmek için `skillListingBudgetFraction`'ı (örneğin %2 için `0.02`) ya da `SLASH_COMMAND_TOOL_CHAR_BUDGET` ortam değişkenini ayarlayın.
+
+Rapor önünüzdeyken yazacağınız prompt:
+
+```text
+Here is my /skill-doctor output. Three skills have never been invoked. For each,
+tell me whether the fix is a better description, a `paths` restriction, or turning
+it off in skillOverrides — and write the settings.json entry for the ones to turn off.
+```
+
+### Nerede kullanılamaz
+
+`/skill-doctor`, Claude Code v2.1.252 ya da sonrasını gerektirir ve feature-flag getirmeyi atlayan oturumlarda kullanılamaz. Bir telefon ya da tarayıcıdan Remote Control üzerinden `Skill usage reports are not available on this connection.` yanıtını verir — onu, oturumun çalıştığı makinenin terminalinde çalıştırın.
+
+## Uygulamalı laboratuvar
+
+<Callout label="Not">
+  Lab-repo tag'i yok: bunu, 05. dersi bitirdiğiniz projeye karşı çalıştırın, böylece bakılacak
+  gerçek kullanım sayılarına sahip gerçek skill'ler olur.
+</Callout>
+
+<Callout label="Not">
+  Kaydedilen komutlar `--settings '&#123;"language":"English"&#125;'` taşıyor çünkü onları kaydeden
+  makinenin genel `language` tercihi Türkçe olarak ayarlı. Bu bayrağı kaldırın; çalıştırmayla ilgili
+  başka hiçbir şey değişmiyor.
+</Callout>
+
+<Lab
+  title="Laboratuvar · skill'leriniz için faturayı okuyun"
+  lessonId="tr/l2-intermediate/m06-skills/skill-doctor"
+  repoTag="none"
+  steps={[
+    'Sürümünüzü doğrulayın: `claude --version`, 2.1.252 ya da sonrasını raporlamalı.',
+    'İki ya da üç skill olan bir projede, raporun sayacak bir şeyi olsun diye en az birini çağırın.',
+    '`claude -p "/skill-doctor" --output-format text --max-turns 10` çalıştırın ve tabloyu okuyun: skill, source, context, 7d tokens, uses, last used.',
+    '`context` sütununu her skill’in frontmatter’ıyla karşılaştırın. Tire gösteren her skill’in `disable-model-invocation: true` olması gerekir — böyle olduğunu doğrulayın.',
+    'Etkileşimli bir oturum açın ve bunun yerine `/skill-doctor`’ı orada çalıştırın: aynı rapor, `/plugin` yöneticisinin Stats sekmesinde açılır.',
+    '`/skills`’i çalıştırın, nadiren kullandığınız bir skill’i vurgulayın, `name-only` okuyana kadar `Space`’e basın, sonra `Esc`. `.claude/settings.local.json`’ın şimdi bir `skillOverrides` girdisine sahip olduğunu kontrol edin.',
+  ]}
+  expected="Yüklenen her skill için kaynağını, tur başına liste maliyetini, 7 günlük token atfını, çağrılma sayısını ve son kullanımını gösteren bir satır içeren bir tablo — ve hiç çağrılmamış skill'leri adlandıran ya da hepsinin kullanıldığını doğrulayan bir kapanış satırı."
+  checklist={[
+    'Rapor, oturumdaki her project skill’ini listeliyor',
+    '`disable-model-invocation: true` olan skill’ler `context` sütununda bir tire gösteriyor',
+    'Bir skill için, listesinin tur başına neye mal olduğunu söyleyebiliyorsunuz',
+    'Etkileşimli çalıştırma, metin yazdırmak yerine Stats sekmesini açtı',
+    '`/skills`’i kullandıktan sonra `.claude/settings.local.json` bir `skillOverrides` girdisi kazandı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/06-skill-doctor/01-skill-doctor.txt"
+    range="2-14"
+  />
+</Lab>
+
+O kaydı, son üç derste inşa ettiklerinizle karşılaştırarak okuyun. Üç skill de `projectSettings`'ten geliyor — bunlar deponun `.claude/skills/`'i, kişisel ya da plugin skill'leri değil. `commit-msg` ve `review-security`, `context` sütununda bir tire gösteriyor çünkü ikisi de `disable-model-invocation: true` ayarlıyor: description'ları Claude'un listesinde hiç yok, dolayısıyla tur başına hiçbir şeye mal olmuyorlar ve yalnızca adla çağrılabiliyorlar. `new-component`, yaklaşık 90 token gösteriyor, ki bu da liste girdisinin bu projedeki her oturumun her bir turuna mal olduğu şey — ucuz, ve bir description'ı yeniden yazdıktan sonra hâlâ doğru olup olmadığını kontrol etmeye değer.
+
+`7d tokens` sütunu farklı bir ölçüdür: bu makinedeki son yedi günlük oturumlar boyunca skill'e atfedilen token'lar. `commit-msg`, bu modül yazılırken on üç kez çağrıldığı için buna hakim. Düşük bir çağrılma sayısıyla yüksek token, araştırmaya değer bir kalıptır — yaptığı iş için fazla uzun bir gövde.
+
+`/skill-doctor` öncelikle etkileşimli olduğundan, bu lab'ın ikinci yarısı bir transcript değil bir TUI akışıdır. İşte tam olarak komutlar:
+
+<CodeBlock title="etkileşimli yarı">
+
+```text
+/skill-doctor      # opens the /plugin manager on the Stats tab
+/skills            # listing menu: Space cycles visibility, Esc saves
+/context           # the Skills row: listing size after the budget is applied
+/doctor            # estimate of the listing's context cost and its biggest contributors
+```
+
+</CodeBlock>
+
+## Anti-pattern'ler
+
+**`context` sütununu `SKILL.md`'nin boyutu olarak okumak.** Bu, tur başına ödenen tek satırlık liste girdisidir. Gövde, çağrıda ödenen ayrı, tek seferlik bir maliyettir. _Düzeltme:_ tüm oturumun taşıdığı şey için `/context`'i, listenin neye mal olduğu için `/skill-doctor`'ı kullanın.
+
+**Sayı düşük olduğu için bir skill'i silmek.** Rapor, sıklığı ölçer, değeri değil. _Düzeltme:_ önce `"name-only"`'ye ayarlayın — onu yazılabilir tutar ve description'ı için ödemeyi durdurursunuz — ve yalnızca ona hiç uzanmıyorsanız silin.
+
+**Tetiklenmeyen bir skill'i gövdeyi yeniden yazarak düzeltmek.** Claude, bir skill'i yükleyip yüklemeyeceğine `description`'ından ve `when_to_use`'undan karar verir; gövde, karar verdikten _sonra_ okuduğu şeydir. _Düzeltme:_ description'ı, ana kullanım durumu önce olacak şekilde yeniden yazın.
+
+**İlk hamle olarak `skillListingBudgetFraction`'ı yükseltmek.** Daha fazla bütçe, her turda, sonsuza dek description'lara harcanan daha fazla bağlam demektir. _Düzeltme:_ önce description'ları kısaltın ve düşük öncelikli skill'leri `"name-only"`'ye ayarlayın; bütçeyi yalnızca kısaltılmış liste hâlâ taşıyorsa yükseltin.
+
+**Raporu Remote Control üzerinden beklemek.** Skill kullanım raporlarının o bağlantıda kullanılamadığını yanıtlar. _Düzeltme:_ onu, oturumu barındıran makinenin terminalinde çalıştırın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/skill-doctor"
+  questionId="q1"
+  lang="tr"
+  prompt="/skill-doctor raporunda, `context` sütunu neyi ölçer?"
+  options={[
+    {
+      text: 'O skill’in her turda dahil edilen tek satırlık liste girdisinin boyutu',
+      correct: true,
+      explanation:
+        'Bir tire, skill’in listede olmadığı ve tur başına hiçbir şeye mal olmadığı anlamına gelir.',
+    },
+    {
+      text: 'Tüm SKILL.md dosyasının boyutu',
+      explanation: 'Gövde yalnızca skill çalıştığında yüklenir.',
+    },
+    {
+      text: 'Skill’in en son çalıştığında ne kadar bağlam tükettiği',
+      explanation: 'Bu, 7d tokens sütununa daha yakındır ve yedi gün üzerinden ölçülür.',
+    },
+    {
+      text: 'Kalan bağlam penceresi',
+      explanation: '/context’in raporladığı şey budur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/skill-doctor"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir skill, `context` sütununda bir tire gösteriyor. En olası neden nedir?"
+  options={[
+    {
+      text: '`disable-model-invocation: true` ayarlıyor, dolayısıyla description’ı Claude’un listesinde yok',
+      correct: true,
+      explanation: 'Yine de adla çağrılabilir; yalnızca tur başına hiçbir şeye mal olmuyor.',
+    },
+    {
+      text: 'Hiç çağrılmamış',
+      explanation: 'Rapor, hiç çağrılmamış skill’leri kapanış satırlarında ayrıca işaretler.',
+    },
+    {
+      text: 'Bir `description` alanı yok',
+      explanation:
+        'Biri olmadan, Claude Code gövdenin ilk paragrafına geri döner — girdi yine de var olur.',
+    },
+    {
+      text: 'Bundled bir skill',
+      explanation: 'Rapor, bundled ve enterprise olanlar dışındaki skill’leri kapsar.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/skill-doctor"
+  questionId="q3"
+  lang="tr"
+  prompt="/deploy'ı kendiniz yazmaya devam etmek ama description'ı için her turda ödemeyi durdurmak istiyorsunuz. En küçük değişiklik nedir?"
+  options={[
+    {
+      text: '`skillOverrides: { "deploy": "name-only" }` ayarlayın, ya da skill’e `disable-model-invocation: true` ekleyin',
+      correct: true,
+      explanation:
+        'İkisi de skill’i yazılabilir tutar; `"name-only"`, paylaşılan bir SKILL.md’yi düzenlemeden ayarlardan bunu yapar.',
+    },
+    {
+      text: '`"off"`’e ayarlayın',
+      explanation: '`"off"`, onu `/` menüsünden de gizler, dolayısıyla artık onu yazamazsınız.',
+    },
+    {
+      text: '`user-invocable: false` ayarlayın',
+      explanation: 'Bu tam tersi — *sizin* onu çağırmanızı durdurur ve Claude’a bırakır.',
+    },
+    {
+      text: 'description alanını silin',
+      explanation:
+        'Claude Code o zaman gövdenin genellikle daha uzun olan ilk paragrafına geri döner.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/skill-doctor"
+  questionId="q4"
+  lang="tr"
+  prompt="Projeniz otuz skill'e büyüdü ve eski bir tanesi sessizce tetiklenmeyi bıraktı. Kontrol edilecek ilk şey nedir?"
+  options={[
+    {
+      text: 'Listenin bütçesini taşırıp taşırmadığı — description’lar en az çağrılan skill’lerden başlayarak düşürülür',
+      correct: true,
+      explanation:
+        'Bütçe, bağlam penceresinin %1’idir; /doctor maliyeti tahmin eder ve aşıldığında --debug bir uyarı loglar.',
+    },
+    {
+      text: 'SKILL.md gövdesinin çok uzun olup olmadığı',
+      explanation: 'Gövde, Claude skill’i yüklemeye karar verene kadar okunmaz.',
+    },
+    {
+      text: '`allowed-tools`’un süresinin dolup dolmadığı',
+      explanation: 'O izin tur başınadır ve tetiklenmeyle hiçbir ilgisi yoktur.',
+    },
+    {
+      text: 'Skill dizininin yeniden adlandırılıp adlandırılmadığı',
+      explanation: 'Bu, komut adını değiştirirdi, ki bunu yazarken hemen fark ederdiniz.',
+    },
+  ]}
+/>
+
+**Sırada:** `m07-hooks`, skill'lerin bıraktığı yerden devam eder — bir `SKILL.md`'nin size veremeyeceği, model yerine harness tarafından uygulanan garantiler.

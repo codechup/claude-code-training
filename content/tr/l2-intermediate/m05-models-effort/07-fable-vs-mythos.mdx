@@ -1,15 +1,15 @@
 ---
 title: 'Fable ve Mythos'
-description: 'Fable 5.1, Claude Code içinde seçebileceğiniz en yetenekli modeldir. Mythos ise neredeyse kesinlikle seçemeyeceğiniz sınır modeldir — sınırlı erişim, savunma amaçlı güvenlik çalışması ve ikisini ayıran güvenlik sınıflandırıcı yönlendirmesi.'
+description: 'Fable 5.1, Claude Code’da seçebileceğiniz en yetenekli modeldir. Mythos ise neredeyse kesinlikle seçemeyeceğiniz öncü modeldir — sınırlı erişilebilirlik, savunmacı güvenlik işi ve ikisini birbirinden ayıran güvenlik sınıflandırıcısı yönlendirmesi.'
 level: 2
 module: 'm05-models-effort'
 order: 7
 duration_min: 10
 difficulty: advanced
-tags: ['models', 'fable', 'mythos', 'safety']
+tags: ['modeller', 'fable', 'mythos', 'güvenlik']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Model configuration'
@@ -35,8 +35,239 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l2-intermediate/m05-models-effort/07-fable-vs-mythos.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Fable 5.1 ve Fable 5, Claude Code'un en yetenekli modelleridir ve tek oturuma sığmayan işler için tasarlanmıştır: uzun otonom oturumları sürdürür, harekete geçmeden önce araştırır ve işini daha sık doğrular. Hiçbir planda varsayılan değildirler; açıkça seçilmeleri gerekir. Kritik bir operasyonel ayrıntı: etkileşimli oturumda Claude Code, bir Fable isteği usage credits'ten düşecekse önce onay sorar — ancak `claude -p` ile başlatılan etkileşimsiz koşularda bu onay hiç sorulmaz ve harcama sessizce yapılır. Bu yüzden bu modüldeki hiçbir lab `--model fable` çalıştırmaz. Mythos'a gelince: 2026-09-07'de getirilen kaynaklarda Mythos 5.1 ve Mythos 5, fiyat tablosunda "limited availability" notuyla ve Project Glasswing bağlantısıyla yer alır; Glasswing savunma amaçlı bir siber güvenlik girişimidir ve Anthropic, Claude Mythos Preview'ı genel kullanıma açmayı planlamadığını belirtir. Erişim plan yükseltmesiyle değil, güvenilir erişim programlarıyla verilir.
+- Fable 5.1’in ne için olduğunu, nasıl seçileceğini ve neye mal olduğunu — etkileşimli ve headless koşular arasında farklılık gösteren kullanım-kredisi onay davranışı dahil — söylemek.
+- "Mythos sınıfı"nın neye atıfta bulunduğunu, kimin erişimi olduğunu ve nedenini açıklamak.
+- Bir güvenlik sınıflandırıcısı bir isteği bayrakladığında otomatik model geri düşüşünü tanımak ve her kategorinin hangi modele düştüğünü bilmek.
+- Bu kursun laboratuvarlarının neden seçemeyeceğiniz bir model yerine Fable ve Opus’u hedeflediğini açıklamak.
+
+**Ön koşullar.** Bu modülün geri kalanı, özellikle `01-model-family` (alias’lar) ve `06-cost-and-usage` (kullanım kredileri ve harcamanın nereye indiği).
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bu ders bir yön belirleme dersidir, bir tavsiye değil. Fable 5.1, MTok başına 10 $/50 $ ile
+  dizideki en pahalı modeldir, diğerlerinden daha yavaştır ve birçok planda planınızın dahil
+  kullanımı yerine kullanım kredilerine faturalandırılır — dolayısıyla ona meraktan uzanmanın gerçek
+  bir bedeli vardır. Mythos açabileceğiniz bir şey değildir: sınırlı erişilebilirliktedir ve
+  Anthropic, Claude Mythos Preview’u genel kullanıma açmayı planlamadığını belirtir. Buraya erişim
+  kazanmanın bir yolunu aramak için geldiyseniz, cevap bir ayar değil, hesap ekibiniz aracılığıyla
+  güvenilir erişim programıdır.
+</WhenNotToUse>
+
+## Kavram
+
+### Fable 5.1: seçilebilir dizinin tepesi
+
+Claude Fable 5.1 ve Claude Fable 5, tek bir oturuşta bitecek olandan daha büyük görevlere uygun, Claude Code’daki en yetenekli modellerdir. Model yapılandırma dokümanı bunun pratikte ne anlama geldiği konusunda özeldir: uzun otonom oturumları sürdürürler, harekete geçmeden önce araştırırlar ve işlerini daha küçük modellerden daha sık doğrularlar. Fable 5.1 daha yeni sürümdür.
+
+Fable modellerinden hiçbiri hiçbir planda ya da sağlayıcıda hesap tipi varsayılanı değildir — birini açıkça seçersiniz:
+
+<CodeBlock title="Fable seçmek">
+
+```text
+/model fable                    # Fable 5.1 (from Claude Code v2.1.255)
+/model claude-fable-5           # Fable 5 by model ID on the Anthropic API
+```
+
+</CodeBlock>
+
+```bash
+claude --model fable
+```
+
+Anthropic’in kendi Fable sayfası onu, kolay görünen kestirmelerden kaçınan ve kök nedenleri düzelten, iddialı, uzun soluklu projeler için model olarak tanımlıyor — ve Claude.ai’de Pro, Max, Team ve Enterprise kullanıcıları artı Claude Platform, AWS, Google Cloud ve Microsoft Foundry’deki geliştiriciler için erişilebilirlik listeliyor.
+
+Dokümanların ondan değer elde etme tavsiyesi ana hatlarıyla alıntılanmaya değer, çünkü insanların genellikle daha ucuz bir modeli nasıl prompt’ladığının tam tersi: **adımları değil sonucu tarif edin**; ona **belirsiz problemler** verin — kök-neden araştırmaları, kesinti hata ayıklaması, mimari kararlar; **doğrulama hatırlatmalarını atlayın**, çünkü kendi işini daha az yönlendirmeyle doğrular; ve normalde parçalara böleceğiniz **daha büyük görevleri büyütün**.
+
+Fiyatlandırma sayfasından fiyatlar: MTok başına 10 $ girdi, MTok başına 50 $ çıktı. Cache okumaları buna göre alışılmadık derecede ucuz — MTok başına 0,25 $, ki bu, Mythos 5.1 dışında her modelin kullandığı standart %10 çarpanı yerine temel girdi fiyatının %2,5’idir.
+
+### Headless koşularda kullanım-kredisi tuzağı
+
+Bu, bu derste sizi sürpriz bir şekilde paraya mal olabilecek tek operasyonel ayrıntı.
+
+Planınıza ve koltuk katmanınıza bağlı olarak, Fable kullanımı planınızın dahil sınırlarını çekmek yerine **kullanım kredilerine** faturalandırılabilir; böyle olduğunda, `/model` seçicisi Fable satırında "Requires usage credits" gösterir. Etkileşimli bir oturumda, Claude Code bir Fable isteği kullanım kredilerini faturalandırmadan önce bir onay istemi gösterir ve Fable’da devam edebilir ya da varsayılan modelinize geçebilirsiniz.
+
+Etkileşimsiz modda — `claude -p` — ve Agent SDK üzerinden, **Claude Code onay istemini asla göstermez. Oradaki bir Fable isteği kullanım kredilerine faturalandırılacaksa, Claude Code sormadan faturalandırır.**
+
+Bu yüzden bu modülün laboratuvarlarından hiçbiri `--model fable` ya da `--model best` çalıştırmıyor. Size maliyeti ölçmeyi öğreten bir kurs, size krediyi sessizce harcayan bir betik vermemeli.
+
+### Otomatik geri düşüş: Fable isteği geri verdiğinde
+
+Fable modelleri ve Opus 5, en çok siber güvenlik ve biyoloji içeriğini bayraklayan güvenlik sınıflandırıcılarıyla çalışır. Bir sınıflandırıcı bir isteği bayrakladığında ve kategorinin bir geri düşüş modeli olduğunda, Claude Code isteği o modelde yeniden çalıştırır ve transcript’te bir bildirim gösterir:
+
+| Reddeden model       | Siber güvenlik bayraklı     | Biyoloji bayraklı                                        |
+| -------------------- | --------------------------- | -------------------------------------------------------- |
+| Fable 5.1 ve Fable 5 | Opus 4.8’de yeniden çalışır | Opus 5’te yeniden çalışır                                |
+| Opus 5               | Opus 4.8’de yeniden çalışır | Bir retle sona erer — Opus 5’in biyoloji geri düşüşü yok |
+
+Bir geri düşüşten sonra oturum, geri düşüş modelinde devam eder; `/model` sizi geri koyar. Bu, cache açısından da bir model değişimidir, dolayısıyla taze bir prompt cache başlatır.
+
+İki pratik not. Geri düşüş, siz henüz olağandışı bir şey yazmadan, bir oturumun **ilk** isteğinde bile tetiklenebilir, çünkü o istek `CLAUDE.md`’niz ve git durumunuz gibi çalışma alanı bağlamını taşır — güvenlik ya da biyoloji materyali içeren bir depo, yalnızca bu yüzden sınıflandırıcıyı tetikleyebilir. `claude --safe-mode`, özelleştirmelerin tetikleyici olup olmadığını kontrol edebilmeniz için özelleştirmeleri devre dışı bırakır. Ve kararı geri alabilirsiniz: `/config`’in bir **Switch models when a message is flagged** anahtarı vardır, ya da `switchModelsOnFlag: false` ayarlayın, o zaman bayraklı bir istek geçiş yapmak yerine bir seçimle duraklar.
+
+Dokümanlar, bunun bir hesap bayrağı değil, saldırgan-güvenlik ve biyoloji işi için beklenen yönlendirme olduğu konusunda açıktır — ve bu dersin ikinci yarısına doğrudan götüren cümleyle kapanırlar: organizasyonunuzun o iş için Fable-sınıfı yetenek gerekiyorsa, Anthropic hesap ekibinize güvenilir erişim programları hakkında sorun.
+
+### Mythos: muhtemelen seçemeyeceğiniz model
+
+"Mythos sınıfı", bir Claude Code ayarı, bir alias ya da yükseltebileceğiniz bir katman değildir. Anthropic’in kamuya açık fiyatlandırma tablosunda görünen ve ürün yüzeyinin neredeyse hiçbir başka yerinde görünmeyen bir model ailesidir.
+
+2026-09-07’de getirilen kaynaklar gerçekte şunu söylüyor:
+
+- **Fiyatlandırma sayfası**, her biri Project Glasswing’e bir bağlantıyla **sınırlı erişilebilirlik** olarak işaretlenmiş **Claude Mythos 5.1** ve **Claude Mythos 5**’i listeliyor. Fiyatları Fable modelleriyle tam olarak eşleşiyor — MTok başına 10 $ girdi, MTok başına 50 $ çıktı, 5 dakikalık ve 1 saatlik cache yazmaları için MTok başına 12,50 $ / 20 $ — ve Mythos 5.1, Fable 5.1’in alışılmadık derecede ucuz MTok başına 0,25 $’lık cache okumalarını paylaşıyor. Sayfa ayrıca **Claude Mythos Preview**’un, Claude 4.7 ve sonraki modellerle birlikte, daha yeni bir tokenizer kullandığını ve standart fiyatlandırmayla tam 1M token’lık bağlam penceresini içerdiğini not ediyor.
+- **Modeller genel bakış** sayfası Mythos 5.1’den yalnızca bir kez, Fable 5.1 ile aynı cache-fiyatlandırma dipnotunda bahsediyor. Mythos’un model karşılaştırma tablosunda **hiç sütunu yok** — gecikme yok, bağlam penceresi yok, model kimliği yok, emeklilik tarihi yok.
+- **Project Glasswing**, Anthropic’in 7 Nisan 2026’da, kritik yazılımı güvence altına almayı hedefleyen AWS, Apple, Microsoft, Google ve Cisco gibi ortaklarla duyurduğu bir siber güvenlik girişimi. Claude Mythos Preview orada, kodlama ve güvenlik açığı tespitinde önemli bir sıçrama yapan, yayınlanmamış bir öncü model olarak tanımlanıyor — duyuru, ona OpenBSD’de 27 yıllık bir kusur ve FFmpeg’de 16 yıllık bir kusur dahil, binlerce yüksek önemli sıfırıncı gün güvenlik açığı bulma başarısını atfediyor. Erişim, girişimin lansman ortaklarına, kritik yazılım altyapısını sürdüren diğer organizasyonlara ve Claude for Open Source programı üzerinden başvuran açık kaynak sürdürücülerine sınırlı. Anthropic, saldırgan potansiyeli göz önüne alındığında Claude Mythos Preview’u **genel kullanıma açmayı planlamadığını** belirtiyor, sonunda daha güçlü koruma önlemleriyle daha güvenli Mythos-sınıfı modelleri ölçekte konuşlandırmayı hedeflerken.
+- Anthropic’in **Fable sayfası**, Claude Mythos 5.1’in Anthropic’in güvenilir erişim programları aracılığıyla incelenmiş organizasyonlara erişilebilir olduğunu ve siber savunmacıların Cyber Verification Program’a başvurabileceğini belirtiyor.
+
+Yani dürüst özet şu: Mythos gerçek, fiyatlandırılmış, adlandırılmış bir model ailesidir, bilinçli olarak bir plan katmanının değil incelemenin arkasına kilitlenmiştir ve savunmacı güvenlik işini hedefler. Erişiminiz varsa, bilirsiniz — çünkü bir organizasyon sizin adınıza başvurmuştur.
+
+Bu ders için getirilen hiçbir sayfada **belgelenmemiş olan**: Mythos’un buna sahip organizasyonlar için Claude Code’un `/model` seçicisinde görünüp görünmediği, bağlam penceresinin ve effort seviyelerinin ne olduğu ya da hangi Claude Code sürümünün gerekli olduğu. Bu sorular açık ve bu ders onları bir kaynak dışında hiçbir yerden cevaplamıyor.
+
+### Bu kursun neden Fable’ı hedeflediği
+
+Bu kurstaki her ders, sıradan bir aboneliği olan bir okuyucu tarafından doğrulanabilir. Fable 5.1 tek bir komutla seçilebilir, kamuya fiyatlandırılmış ve ailenin geri kalanıyla aynı referans sayfalarında belgelenmiştir. Mythos, bunu okuyan neredeyse herkes için bunların hiçbiri değildir. Çalıştıramayacağınız bir modele karşı öğretmek, kursun kendi kanıt kuralını bozardı — tek bir transcript’i yeniden üretemezdiniz.
+
+Bu dersin örnek prompt’u, Fable’ın belgelendiği iş türüdür — sonuç öncelikli, belirsiz ve tek bir oturuştan daha büyük:
+
+```text
+Our nightly job silently drops about 2% of task records. I don't know where. Find
+the root cause, prove it with a failing test, then fix it and show me both runs.
+```
+
+## Uygulamalı laboratuvar
+
+Bu dersin bir laboratuvarı yok. İçindeki her uygulamalı alıştırma ya sormadan kullanım kredisi harcardı — bir `claude -p --model fable` koşusu birçok planda tam olarak bunu yapar — ya da tasarım gereği sınırlı erişilebilir bir modele erişim gerektirirdi.
+
+Bunun yerine, hiç maliyet olmadan yapabileceğiniz şey, Fable’ın size hiç erişilebilir olup olmadığına karar veren iki şeyi okumaktır:
+
+<CodeBlock title="harcamadan önce kontrol edin">
+
+```text
+/status                   # login method: subscription, or a Console organisation
+/model                    # the picker marks a Fable row "Requires usage credits" when it applies
+/usage                    # your usage-credit spend for the month, when credits are on
+```
+
+</CodeBlock>
+
+`/model` seçicisi bir Fable satırı listelemiyorsa, Anthropic API’sinde seçicinin bir tane göstermesinin ancak server organizasyonunuz için mevcut olduğunu bildirdikten sonra olduğunu unutmayın — `/model fable` yazmak kullanılabilirliği doğrudan server’la kontrol eder, dolayısıyla yazılı bir seçim, seçicinin hiçbir şey göstermediği yerde başarılı olabilir.
+
+## Anti-pattern’ler
+
+**Bir betikte `--model fable` ya da `--model best` çalıştırmak.** Headless koşular hiçbir kullanım-kredisi onay istemi almaz; faturalandırır ve devam ederler. _Düzeltme:_ bir Fable modelinde herhangi bir şeyi otomatikleştirmeden önce, etkileşimli bir oturumda bilinçli olarak karar verin — ve sonrasında `/usage`’ı kontrol edin.
+
+**Fable’ı daha ucuz bir model gibi prompt’lamak.** Adım adım talimatlar ve "testleri çalıştırmayı unutma" hatırlatmaları, güçlü yanlarını itaate harcar. _Düzeltme:_ sonucu tarif edin, ona belirsizliği verin ve planlayıp doğrulamasına izin verin.
+
+**Bir geri düşüş bildirimini bir hesap sorunu olarak okumak.** Güvenlik ve biyoloji işi sıklıkla, çoğu zaman ilk istekte, sınıflandırıcı geri düşüşünü tetikler ve dokümanlar bunu size karşı bir bayrak değil beklenen yönlendirme olarak adlandırır. _Düzeltme:_ özelleştirmelerinizin tetikleyici olup olmadığını `claude --safe-mode` ile kontrol edin ve sorulmayı tercih ediyorsanız `switchModelsOnFlag: false` kullanın.
+
+**"Mythos sınıfı"nı satın alabileceğiniz bir katman gibi görmek.** Plana değil, savunmacı güvenlik işi için incelemeye kilitlenmiştir. _Düzeltme:_ organizasyonunuzun gerçekten buna ihtiyacı varsa, bu konuşma Anthropic hesap ekibinizin güvenilir erişim programları üzerinden geçer.
+
+**Mythos yeteneklerini ezberden alıntılamak.** Model karşılaştırma tablosunda hiç satırı yok; onun hakkında dolaşan neredeyse her şey çıkarımdır. _Düzeltme:_ fiyatlandırma sayfasını ve Glasswing duyurusunu alıntılayın ya da bilmediğinizi söyleyin.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/fable-vs-mythos"
+  questionId="q1"
+  lang="tr"
+  prompt="Fable’ın kullanım kredilerine faturalandırıldığı bir planda `claude -p '…' --model fable` çalıştırıyorsunuz. Ne olur?"
+  options={[
+    {
+      text: 'Claude Code kredi harcamadan önce onaylamanızı ister.',
+      explanation: 'Onay istemi yalnızca etkileşimli oturumlarda görünür.',
+    },
+    {
+      text: 'Koşu devam eder ve sormadan kullanım kredilerini faturalandırır — etkileşimsiz mod hiçbir zaman onay istemi göstermez.',
+      correct: true,
+      explanation:
+        'Bu tam olarak bu modülün laboratuvarlarının fable ya da best yerine haiku, sonnet ve opus kullanmasının nedenidir.',
+    },
+    {
+      text: 'Koşu bir "requires usage credits" hatasıyla başarısız olur.',
+      explanation: 'O mesaj krediler kapalıyken fast mode’a aittir, bir Fable koşusuna değil.',
+    },
+    {
+      text: 'Claude Code sizi sessizce Opus’a düşürür.',
+      explanation: 'Düşüşler güvenlik-sınıflandırıcı geri düşüşünde olur, faturalandırmada değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/fable-vs-mythos"
+  questionId="q2"
+  lang="tr"
+  prompt="Fable 5.1’de biyoloji bayraklı bir istek hangi modelde yeniden çalıştırılır?"
+  options={[
+    { text: 'Opus 4.8', explanation: 'Bu, siber-güvenlik bayraklı geri düşüş hedefidir.' },
+    {
+      text: 'Opus 5',
+      correct: true,
+      explanation:
+        'Ve Opus 5’te sonraki bir biyoloji bayrağının bir retle sona erdiğini unutmayın, çünkü Opus 5’in biyoloji geri düşüşü yoktur.',
+    },
+    {
+      text: 'Sonnet 5',
+      explanation: 'Sonnet hiçbir kategori için bir geri düşüş hedefi değildir.',
+    },
+    { text: 'Fable 5', explanation: 'Geri düşüş Fable ailesinin dışına çıkar, içine değil.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/fable-vs-mythos"
+  questionId="q3"
+  lang="tr"
+  prompt="Kamuya açık kaynaklar Claude Mythos hakkında gerçekte ne söylüyor?"
+  options={[
+    {
+      text: 'Enterprise planlarında mevcut olan, Fable’ın üstündeki ücretli katmandır.',
+      explanation:
+        'Hiçbir şey onu bir plan katmanına bağlamıyor; kapı incelemedir, faturalandırma değil.',
+    },
+    {
+      text: 'Mythos 5.1 ve Mythos 5, fiyatlandırma tablosunda "limited availability" işaretiyle görünür, savunmacı-güvenlik girişimi Project Glasswing’e bağlanır ve Anthropic, Claude Mythos Preview’u genel kullanıma açmayı planlamadığını belirtir.',
+      correct: true,
+      explanation:
+        'Bu, artı güvenilir-erişim yolu, getirilen kaynakların ortaya koyduğu her şeydir.',
+    },
+    {
+      text: '`max`’ın üstünde bir Claude Code effort seviyesidir.',
+      explanation: 'Bu, `ultracode` olurdu ve o bir seviye değil bir ayardır.',
+    },
+    {
+      text: 'Uyumluluk için tutulan daha eski bir modeldir.',
+      explanation: 'Genel kullanıma açılmamış öncü bir model olarak tanımlanıyor.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/fable-vs-mythos"
+  questionId="q4"
+  lang="tr"
+  prompt="Belgelenmiş kılavuza göre hangi prompt Fable 5.1’den en fazlasını alır?"
+  options={[
+    {
+      text: '"Open src/store.ts, change line 86, then run npm test and report back."',
+      explanation: 'Adımları dikte etmek, araştırma ve planlama güçlerini itaate harcar.',
+    },
+    {
+      text: '"The nightly job silently drops about 2% of records and I don’t know why. Find the root cause, prove it with a failing test, then fix it."',
+      correct: true,
+      explanation:
+        'Sonuç öncelikli, gerçekten belirsiz, tek bir oturuştan büyük — belgelenmiş tatlı nokta.',
+    },
+    {
+      text: '"Reformat this JSON file. Remember to check your work afterwards."',
+      explanation:
+        'Belirlenimci bir görev, artı dokümanların genellikle gereksiz dediği bir doğrulama hatırlatması.',
+    },
+    {
+      text: '"Rename `addTask` to `createTask` everywhere."',
+      explanation: 'Mekanik genişlik — daha ucuz bir model bunu onda bir fiyata halleder.',
+    },
+  ]}
+/>
+
+Bu, modülü kapatıyor. Artık kanıta dayanarak bir model seçebilir, bilinçli olarak bir effort seviyesi belirleyebilir, gecikmenin ödemeye değip değmediğine karar verebilir ve herhangi birinin neye mal olduğunu söyleyen sayıyı okuyabilirsiniz.

@@ -1,15 +1,15 @@
 ---
 title: 'Maliyet ve kullanım'
-description: 'Bir oturumun gerçekte ne harcadığını izleyin: /usage (ve /cost takma adı), prompt cache satırı, JSON zarfındaki cache alanları, plan ile API faturalandırması ve sayıyı en çok değiştiren alışkanlıklar.'
+description: 'Bir oturumun gerçekte ne harcadığını izleyin: /usage (ve alias’ı /cost), prompt cache satırı, bir JSON zarfındaki cache alanları, plan ile API faturalandırması ve faturanızı en çok oynatan bir avuç alışkanlık.'
 level: 2
 module: 'm05-models-effort'
 order: 6
 duration_min: 20
 difficulty: core
-tags: ['cost', 'usage', 'prompt-caching', 'context']
+tags: ['maliyet', 'kullanım', 'prompt-caching', 'bağlam']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Manage costs effectively'
@@ -35,8 +35,291 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l2-intermediate/m05-models-effort/06-cost-and-usage.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-`/cost` ve `/stats`, `/usage` komutunun takma adlarıdır — üç ad, tek ekran. Session bloğundaki dolar rakamı, token sayımlarından liste fiyatı üzerinden yerel olarak hesaplanan bir tahmindir; Pro ve Max aboneliklerinde kullanımınız zaten aboneliğe dahildir, bu yüzden faturalandırma için Claude Console'un Usage sayfasına bakılır. Faturanızın büyük kısmını prompt caching belirler: bir cache okuması standart girdi fiyatının %10'una (Fable 5.1'de %2,5'ine) mal olur, bu yüzden en pahalı davranış cache'i tekrar tekrar geçersiz kılmaktır — model değiştirmek, efor değiştirmek, fast mode'u açmak, MCP server bağlamak, compact etmek. Ders, gerçek zarflardan okunan cache sayaçlarını (`cache_read_input_tokens`, `cache_creation_input_tokens`, `cache_creation.ephemeral_1h_input_tokens`) ve maliyeti en çok düşüren beş alışkanlığı gösterir.
+- `/usage` Session bloğunu, `Prompt cache (main)` satırı dahil, okumak ve bir kaçırmanın (miss) ne anlama geldiğini söylemek.
+- Bir JSON zarfından `cache_read_input_tokens`, `cache_creation_input_tokens` ve `cache_creation.ephemeral_*`’ı okumak ve aldığınız cache TTL’ini çıkarmak.
+- Uzun süredir çalışan bir oturumun kullanımının, siz nadiren yazsanız bile neden yükseldiğini açıklamak.
+- Hangi faturalandırma modelinde olduğunuzu ve yetkili rakamın nerede yaşadığını söylemek.
+- Bir faturayı en çok oynatan beş alışkanlığı uygulamak ve oynatmayanları atlamak.
+
+**Ön koşullar.** Bu modülün `01`–`05` dersleri. `m02-interact`’in `06-context-basics`’i yardımcı olur, çünkü çoğu maliyet sorusu gerçekte bağlam sorusudur.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bir sayınız olmadan maliyeti optimize etmeyin. Pro ya da Max aboneliğinde oturum maliyeti rakamı,
+  API kullanıcıları için yerel olarak hesaplanmış bir tahmindir — kullanımınız aboneliğinize
+  dahildir, dolayısıyla dolar rakamı size faturalandırılan şey değildir. Onu orada kovalamak,
+  dikkatin plan-kullanım çubuklarına ait olduğu yerde harcanmasına neden olur. Ve cache’i mikro
+  yönetmeyin: en büyük, en güvenilir tasarruflar akıllı ayarlardan değil, bağlamı küçük tutmaktan ve
+  modelinizi ile effort’unuzu bir kez seçmekten gelir.
+</WhenNotToUse>
+
+## Kavram
+
+### `/usage` ve alias’ları
+
+`/usage`, oturum maliyetini, plan kullanım sınırlarını ve etkinlik istatistiklerini gösterir. **`/cost` ve `/stats` bunun alias’larıdır** — üç adla aynı ekran. Üstteki Session bloğu şöyle görünür. Bu, resmî `costs.md` sayfasında yazdırılan örnek gösterimdir, aramanız gereken şekli bilmeniz için alıntılanmıştır — bu kursun oturumlarından bir kayıt **değildir**, bu yüzden bu modülün kayıtlarının hiçbirinde görünmeyen bir modeli (`claude-sonnet-4-6`) adlandırır:
+
+<CodeBlock title="Resmî costs.md dokümanından örnek — bir kayıt değil">
+
+```text
+Total cost:            $0.55
+Total duration (API):  6m 20s
+Total duration (wall): 6h 33m 10s
+Total code changes:    0 lines added, 0 lines removed
+Usage by model:
+   claude-sonnet-4-6:  1.2k input, 5.3k output, 940.0k cache read, 50.0k cache write ($0.55)
+```
+
+</CodeBlock>
+
+O sayı hakkında üç şey. **Yerel olarak** hesaplanır, liste fiyatından token sayılarından — faturalandırma için yetkili rakam Claude Console’daki Usage sayfasıdır. **`/clear`’da sıfırlanır**, dolayısıyla bir sonraki oturumun toplamı 0 $’dan başlar. Ve Pro ve Max’te açıkça size faturalandırılan şey değildir: kullanımınız aboneliğinize dahildir ve aynı ekran bunun yerine size plan kullanım çubuklarını, etkinlik istatistiklerini ve bir kullanım dökümünü gösterir.
+
+Pro, Max, Team ya da Enterprise planında, `/usage` ayrıca plan sınırlarınıza neyin sayıldığını döker: **atıf** (son kullanımınızın hangi skill, subagent, plugin ve MCP server’lara gittiği), **davranış bayrakları** (uzun bağlam, cache kaçırmaları — biri %10 ya da daha fazlasını oluşturduğunda bayraklanır) ve **döngüler** (en ağır zamanlanmış görevler). Son 24 saat ile son 7 gün arasında geçiş yapmak için `d` ya da `w`’ye basın. Rakamlar bu makinedeki yerel oturum geçmişinden hesaplanır, dolayısıyla diğer cihazlardan ya da claude.ai’den kullanım dahil değildir.
+
+### Prompt cache satırı
+
+Ana konuşmanın ilk API cevabından sonra, `/usage` bir `Prompt cache (main)` satırı ekler. Yine, aşağıdaki örnek `costs.md`’de yazdırılan örnektir, bizim bir oturumumuz değil:
+
+<CodeBlock title="Resmî costs.md dokümanından örnek — bir kayıt değil">
+
+```text
+Prompt cache (main):   14 requests · 91% of input tokens from cache · 2 misses (last 6m 10s ago, 310.2k tokens re-cached) · 1 expected rebuild (compaction or tool-result clearing) · warm (1h TTL, last activity 40s ago)
+```
+
+</CodeBlock>
+
+- **Kaçırmalar (misses)**, cache’in zaten tuttuğu içeriği yeniden işleyen isteklerdir. Claude Code, cache’ten okuyabileceğinin %5’inden fazlasını ve en az 2.000 token’ını yeniden işlediğinde bir isteği kaçırma sayar. Nedenini belirleyebildiğinde, satır onu adlandırır — örneğin `likely cause: tool definitions changed`.
+- **Beklenen yeniden inşalar (expected rebuilds)**, Claude Code’un kendisinin, sıkıştırma (compaction) yaparak ya da eski tool sonuçlarını temizleyerek neden olduğu kaçırmalardır.
+- **Sıcak ya da soğuk (warm/cold)**, cache’lenmiş önekin hâlâ ömrü içinde olup olmadığını ve hangi TTL’in geçerli olduğunu söyler.
+
+O satır yalnızca ana konuşmayı kapsar, subagent’ları değil, ve `/clear` onu Session bloğunun geri kalanıyla birlikte sıfırlar.
+
+### Caching’in faturanızın çoğu olmasının nedeni
+
+Claude Code, her istekte tam bağlamı yeniden gönderir: sistem prompt’u, proje bağlamı, önceki her mesaj ve tool sonucu, artı yeni mesajınız. Her isteğin çoğu bir öncekiyle aynıdır ve prompt caching, API’nin değişmeyen kısmı yeniden işlemekten kaçınma yoludur.
+
+Ekonomi çarpıcı. Bir cache **okuması**, standart girdi fiyatının %10’una mal olur — Fable 5.1’de %2,5 — cache’lenmemiş girdi ise tam orana mal olur. Somut olarak, Sonnet 5’te bu, taze girdi için MTok başına 2 $’a karşı bir cache isabeti için MTok başına 0,20 $’dır; 5 dakikalık bir cache **yazması** MTok başına 2,50 $’dır ve 1 saatlik bir yazma 4 $’dır.
+
+Yani bir oturumda yapabileceğiniz en pahalı tek şey, cache’i tekrar tekrar geçersiz kılmaktır. Belgelenmiş geçersiz kılıcılar şunlardır: modelleri değiştirmek, effort seviyesini değiştirmek, fast mode’u açmak, bir MCP server bağlamak ya da bağlantısını kesmek, bir plugin’i etkinleştirmek ya da devre dışı bırakmak, bütün bir tool’u reddetmek, sıkıştırmak, birçok görsel biriktirmek ve Claude Code’u güncellemek. Belgelenmiş koruyucular arasında deponuzdaki dosyaları düzenlemek, oturum ortasında `CLAUDE.md`’yi düzenlemek, çıktı stilini ya da permission mode’u değiştirmek, skill ve komutları çağırmak ve geri sarmak (rewind) vardır.
+
+TTL de önemlidir. Bir Claude aboneliğinde, planınızın dahil kullanımı içinde, ana konuşma **bir saatlik** bir TTL alır; kullanım kredilerinde, bir API anahtarında ya da bir bulut sağlayıcısında **beş dakikadır**. `promptCacheTtl` (ya da `CLAUDE_CODE_PROMPT_CACHE_TTL`) bunu kendiniz ayarlar; her kontrol `5m` ya da `1h` alır.
+
+Cache ayrıca insanların beklediğinden daha dar bir kapsama sahiptir: etkin olarak tek bir makine ve tek bir dizine, çünkü sistem prompt’u çalışma dizinini, platformu, kabuğu ve memory yollarını gömer. **Buna aynı deponun worktree’leri de dahildir** — her [worktree](/tr/playbook/glossary/#worktree) (aynı deponun farklı bir dalını ayrı bir dizinde çalışır durumda tutan ek bir çalışma ağacı) kendi çalışma dizinine ve dolayısıyla kendi cache’ine sahiptir.
+
+### Uzun bir oturumun kullanımının neden yükseldiği
+
+Dokümanlar nedenleri listeliyor ve hepsi tanınmaya değer, çünkü hiçbiri "pahalı bir şey istedim" gibi görünmüyor:
+
+- **Uzun bağlam** — her istek tüm konuşmayı taşır, dolayısıyla bütün gün açık kalmış bir oturumdaki tek satırlık bir soru bile tamamının kullanımını çeker.
+- **Cache kaçırmaları** — cache ömründen daha uzun bir aradan sonraki ilk mesajınız, tam bağlamınızı yeniden işler.
+- **Zamanlanmış görevler**, **oturumlar arası mesajlar** ve **hedef kontrolleri** — her biri kendi zamanlamasında ateşlenir ve boşta olsanız bile tam bağlamınızı gönderir.
+- **Agent takım arkadaşları** — her aktif takım arkadaşı çıkana kadar token tüketmeye devam eder.
+- **Sıkıştırma (compaction)** — `/compact`, özetlediği konuşmayı okur, dolayısıyla büyük bir bağlamı sıkıştırmak kendisi büyük bir istektir. `/clear`’ın hiçbir maliyeti yoktur.
+
+Arka plan işlevselliği — `--resume` için konuşma özetleme, bazı komut işleme — gerçektir ama küçüktür: genellikle oturum başına 0,04 dolardan az.
+
+### Rakamı gerçekten oynatan alışkanlıklar
+
+Maliyet dokümanından, kaldıraç sırasına göre kabaca:
+
+1. **Görevler arasında temizleyin.** İlgisiz bir işe geçtiğinizde `/clear`; daha sonra `/resume` yapmak isterseniz önce `/rename`.
+2. **Doğru modeli seçin.** Sonnet çoğu kodlama görevini karşılar ve Opus’tan daha az maliyetlidir; Opus’u karmaşık mimari kararlar ve çok adımlı akıl yürütme için ayırın. Basit subagent işleri için, subagent’ın yapılandırmasında `model: haiku`.
+3. **Modeli ve effort’u bir kez, en başta seçin.** Her oturum-içi değişiklik bir cache yeniden inşasıdır.
+4. **Sıkıştırma talimatları verin.** `/compact Focus on code samples and API usage`, ya da `CLAUDE.md`’de bir "Compact instructions" bölümü.
+5. **Tool tanımlarını yalın tutun.** MCP tool tanımları varsayılan olarak ertelenir, dolayısıyla Claude belirli bir tool’u kullanana kadar bağlama yalnızca tool adları ve server talimatları girer. Bir server’ı bağlamanın ya da bağlantısını kesmenin cache’i geçersiz kılıp kılmadığı buna bağlıdır: ertelenmiş tool’lar öneki olduğu gibi bırakır, öneke yüklenen tool’lar bırakmaz. `/context`, neyin yer kapladığını gösterir ve `gh` ve `aws` gibi CLI tool’ları hiç tool-başına listeleme maliyeti taşımaz.
+
+Bu dersin örnek prompt’u maliyet şeklinde bir prompt’tur — iş yapılmadan önce kapsamının belirlenmesini istiyor:
+
+```text
+Before you change anything: list the files you would need to read to add pagination
+to the /tasks endpoint, and estimate how much of the context window that is. Then stop.
+```
+
+## Uygulamalı laboratuvar
+
+`/usage` bir TUI ekranıdır, bu yüzden bu ders onları kaydetmiş gibi yapmak yerine komutları gösteriyor — ve yukarıdaki Kavram bölümündeki iki ekran örneği resmî dokümandan alıntılanmış ve öyle etiketlenmiştir, kayıt olarak sunulmamıştır. Ölçülebilir yarısı, `Prompt cache (main)` satırının özetlediği aynı cache sayaçlarını raporlayan sonuç zarfıdır — ve bu modül zaten gerçeklerini yakaladı. Aşağıdaki ikisi, `02` dersinin Sonnet koşusu ve `04` dersinin düşük-effort koşusudur.
+
+<Lab
+  title="Laboratuvar · cache isabet oranınızı iki kez bulun"
+  lessonId="tr/l2-intermediate/m05-models-effort/cost-and-usage"
+  repoTag="none"
+  steps={[
+    'Birkaç turdur çalışan etkileşimli bir oturumda `/usage` çalıştırın. Session bloğunu, sonra `Prompt cache (main)` satırını okuyun: istek sayısı, cache’ten gelen girdi token’larının payı, kaçırmalar ve cache’in sıcak olup olmadığı.',
+    'Plan-kullanım dökümünü son 24 saat ile son 7 gün arasında değiştirmek için `d` ve `w`’ye basın.',
+    '`/context` çalıştırın ve karşılaştırın: cache satırı isteklerinizi göndermenin size neye mal olduğunu söyler, `/context` içlerinde ne olduğunu söyler.',
+    'Şimdi bunu headless olarak yapın. `--output-format json` ile herhangi bir görev çalıştırın ve `usage.cache_read_input_tokens`, `usage.cache_creation_input_tokens` ve `usage.cache_creation`’ı okuyun.',
+    'TTL’inizi hesaplayın: bir saatlik cache yazmaları `ephemeral_1h_input_tokens` altında, beş dakikalık yazmalar `ephemeral_5m_input_tokens` altında görünür.',
+    '`/clear` çalıştırın, sonra yeniden `/usage`, ve Session bloğunun 0 $’a sıfırlandığını doğrulayın.',
+  ]}
+  expected="`Prompt cache (main)` satırı, sağlıklı bir oturumda cache’ten gelen girdi token’larının yüksek bir payını bildirir. Zarfta, cache_read_input_tokens, cache_creation_input_tokens’tan bir büyüklük mertebesi daha büyüktür ve plan kullanımı içindeki bir Claude aboneliğinde cache_creation’ın tamamı ephemeral_1h_input_tokens altında oturur."
+  checklist={[
+    'Caching’in çalıştığını varsaymak yerine gerçek bir isabet-oranı rakamı okudunuz',
+    'Kendi oturumunuzdan bir kaçırmaya neden olan bir eylemi adlandırabiliyorsunuz',
+    'JSON zarfında üç cache alanını buldunuz',
+    'Yazmalarınızın hangi TTL kovasına düştüğünü ve nedenini biliyorsunuz',
+    '`/clear`, Session bloğunu sıfırladı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/03-sonnet.txt"
+    range="2-2"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/03-sonnet.txt"
+    range="6-24"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/04-effort-lab/02-effort-low.txt"
+    range="6-24"
+  />
+</Lab>
+
+Sonnet zarfını çözümlü bir örnek olarak okuyun. `input_tokens` **12** — tüm koşudaki tek gerçekten yeni girdi. `cache_read_input_tokens` **214.589** ve `cache_creation_input_tokens` **15.938** — yaklaşık 13’e 1 bir okuma-yazma oranı, ki sağlıklı bir oturum böyle görünür. Yüksek bir okuma-yaratma oranı caching’in iyi çalıştığı anlamına gelir; yaratmanın tur be tur yüksek kalması önekinizde bir şeyin sürekli değiştiği anlamına gelir.
+
+`cache_creation` dökümü TTL kanıtıdır: yazılan 15.938 token’ın tamamı `ephemeral_1h_input_tokens` altında oturuyor, `ephemeral_5m_input_tokens` sıfırda. Bu, planın dahil kullanımı içindeyken bir Claude aboneliğinin ana konuşma için aldığı bir saatlik TTL’dir. Kullanım kredilerinde, bir API anahtarında ya da bir bulut sağlayıcısında, aynı koşu bu token’ları bunun yerine beş dakikalık kova altında bildirirdi.
+
+Şimdi effort-lab koşusunu karşılaştırın: **12** yeni girdi token’ı, cache’ten **205.380** okuma, **12.639** yazma. Farklı bir depoda farklı bir görevde neredeyse aynı şekil — ki asıl nokta bu. Olağan agentic işler genelinde, girdi için ödediğinizin ezici çoğunluğu cache okumalarıdır ve kaldıracınız o cache’i çöpe atmamaktadır.
+
+<CodeBlock title="maliyet ve kullanım komutları">
+
+```text
+/usage          # session cost, plan bars, prompt cache line (aliases: /cost, /stats)
+/context        # what is currently in the context window
+/compact Focus on code samples and API usage
+/clear          # reset the session and its cost counters; costs nothing
+/rename         # name the session first if you want to /resume it later
+/insights       # HTML report on how you work, written to ~/.claude/usage-data/
+/usage-credits  # turn usage credits on, or request them from an admin
+```
+
+</CodeBlock>
+
+## Anti-pattern’ler
+
+**Oturum maliyeti rakamını faturanız gibi görmek.** Bu, liste fiyatından yerel bir tahmindir ve Pro ve Max’te kullanımınız zaten aboneliğe dahildir. _Düzeltme:_ faturalandırma için Console Usage sayfasını, "bir sınıra çarpmak üzere miyim" için `/usage`’daki plan çubuklarını kullanın.
+
+**Para biriktirmek için sıkıştırmak.** `/compact`, özetlemek için tüm konuşmayı okur ve özet cache’i geçersiz kılar. Bir bağlam yönetimi aracıdır, bir maliyet tasarrufu aracı değil. _Düzeltme:_ ilgisiz görevler arasında `/clear` — hiçbir maliyeti yok.
+
+**"Sadece denemek için" görev ortasında modeli ya da effort’u değiştirmek.** Her değişim, tüm konuşmayı tam oranda cache’lenmemiş girdi olarak yeniden işler. _Düzeltme:_ oturumun başında karar verin; bir oturum içinde değil, oturumlar arasında karşılaştırın.
+
+**Bir oturumu bütün gün açık bırakmak.** Uzun bağlam artı zamanlanmış görevler, oturumlar arası mesajlar ve hedef kontrolleri, siz hiçbir şey yapmasanız bile tam konuşmanızı göndermeye devam eder. _Düzeltme:_ iş blokları arasında `/clear` (ya da kapatıp yeniden açın) ve `/usage` davranış bayraklarını kontrol edin.
+
+**Worktree ağırlıklı bir iş akışında cache’i optimize edip paylaşım beklemek.** Her worktree kendi çalışma dizinidir ve dolayısıyla kendi cache önekidir. _Düzeltme:_ worktree başına soğuk bir ilk tur bekleyin ve bunu bir hata gibi görmeyin.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/cost-and-usage"
+  questionId="q1"
+  lang="tr"
+  prompt="`/cost` ile `/usage` arasındaki ilişki nedir?"
+  options={[
+    {
+      text: '`/cost` dolar rakamını gösterir ve `/usage` plan sınırlarını gösterir — iki farklı ekran.',
+      explanation: 'Tek bir ekran ikisini de gösterir.',
+    },
+    {
+      text: '`/cost`, `/usage`’ın bir alias’ıdır; `/stats` de öyle.',
+      correct: true,
+      explanation:
+        'Üç ad, tek ekran: oturum maliyeti, plan kullanım sınırları ve etkinlik istatistikleri.',
+    },
+    {
+      text: '`/cost` kullanımdan kaldırıldı ve hiçbir şey yapmıyor.',
+      explanation: 'Güncel bir alias’tır, kaldırılmış bir komut değil.',
+    },
+    {
+      text: '`/cost` Console faturanızı doğrudan bildirir.',
+      explanation: 'Rakam liste fiyatından token sayılarından yerel olarak hesaplanır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/cost-and-usage"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir koşunun zarfı `input_tokens: 12`, `cache_read_input_tokens: 214589` ve `cache_creation_input_tokens: 15938` bildiriyor. Bu size ne söylüyor?"
+  options={[
+    {
+      text: 'Oturum bağlam sızdırıyor ve sıkıştırılması gerekiyor.',
+      explanation: '13:1’lik bir okuma-yazma oranı bir sızıntı değil, sağlıklı bir cache’tir.',
+    },
+    {
+      text: 'Girdinin neredeyse tamamı, standart girdi oranının yaklaşık onda birinden cache’ten sunuldu — caching iyi çalışıyor.',
+      correct: true,
+      explanation:
+        'Aranacak sinyal yüksek bir okuma-yaratma oranıdır; kalıcı yüksek yaratma uyarı işaretidir.',
+    },
+    {
+      text: 'Model deponuzun yalnızca 12 token’ını okudu.',
+      explanation:
+        '`input_tokens`, okunan dosyaları değil, koşu için cache’lenmemiş girdiyi sayar.',
+    },
+    {
+      text: 'Cache TTL’i koşu ortasında sona erdi.',
+      explanation: 'Bu, yüksek yaratma ve düşük okuma olarak görünürdü.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/cost-and-usage"
+  questionId="q3"
+  lang="tr"
+  prompt="Bunlardan hangisi prompt cache’i sağlam tutar?"
+  options={[
+    {
+      text: 'Oturum ortasında effort seviyesini değiştirmek.',
+      explanation:
+        'Çoğu modelde her seviyenin kendi cache’i vardır. Bir API anahtarı ya da abonelikte Fable 5.1 istisnadır.',
+    },
+    {
+      text: 'Oturum çalışırken `CLAUDE.md`’yi düzenlemek.',
+      correct: true,
+      explanation:
+        'Cache’i koruyan eylemler arasında listelenir — proje bağlamı oturum başında yüklenir.',
+    },
+    {
+      text: 'Tool’ları öneğe yüklenen bir MCP server bağlamak.',
+      explanation:
+        'Tool tanımları sistem prompt katmanında oturur, dolayısıyla cache geçersiz olur.',
+    },
+    {
+      text: 'Fast mode’u açmak.',
+      explanation: 'Fast-mode başlığı cache anahtarının bir parçasıdır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/cost-and-usage"
+  questionId="q4"
+  lang="tr"
+  prompt="Altı saattir tek bir oturumdasınız, çoğunlukla okuyorsunuz. Kullanım, yazdıklarınızın önerdiğinden çok daha yüksek. En olası açıklama nedir?"
+  options={[
+    {
+      text: 'Claude Code oturum süresinin dakikası başına faturalandırır.',
+      explanation: 'Faturalandırma token başınadır, dakika başına değil.',
+    },
+    {
+      text: 'Her istek tüm konuşmayı taşır, dolayısıyla geç kalan tek satırlık sorular bile tüm geçmişin kullanımını çeker — ve cache TTL’inden daha uzun her ara, tamamını yeniden işler.',
+      correct: true,
+      explanation:
+        'Uzun bağlam artı cache kaçırmaları, maliyet dokümanının listelediği ilk iki nedendir ve `/usage`, biri son kullanımın %10’unu aştığında bunları bayraklar.',
+    },
+    {
+      text: '`/usage` rakamı uzun oturumlarda yanlıştır.',
+      explanation: 'Liste fiyatından bir tahmindir, ama eğilim hakkında yanlış değildir.',
+    },
+    {
+      text: 'Dosya okumak premium bir oranda faturalandırılır.',
+      explanation: 'Tool sonuçları olağan girdi token’larıdır.',
+    },
+  ]}
+/>
+
+**Sırada:** `07-fable-vs-mythos`, ailenin en tepesindeki iki adla modülü kapatıyor — biri bugün seçebileceğiniz, diğeri neredeyse kesinlikle seçemeyeceğiniz.

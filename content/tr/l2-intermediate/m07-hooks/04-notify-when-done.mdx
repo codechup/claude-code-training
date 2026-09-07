@@ -1,15 +1,15 @@
 ---
-title: 'Claude bittiğinde — ya da takıldığında — haber alma'
-description: "Bir oturumun sizi ne zaman beklediğini söyleyen Notification ve Stop olayları: inceleyebileceğiniz yerel bir günlük, `terminalSequence` ile masaüstü bildirimi ve gizli anahtarını depoda tutmayan bir Slack webhook'u."
+title: 'Claude bittiğinde — ya da takıldığında bildirin'
+description: 'Bir oturumun sizi ne zaman gerektirdiğini söylemek için Notification ve Stop event’larını kullanın: inceleyebileceğiniz yerel bir log, terminalSequence aracılığıyla bir masaüstü bildirimi ve sırrını depodan uzak tutan bir Slack webhook’u.'
 level: 2
 module: 'm07-hooks'
 order: 4
 duration_min: 15
 difficulty: core
-tags: ['hooks', 'notification', 'stop', 'automation']
+tags: ['hooks', 'notification', 'stop', 'otomasyon']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Hooks reference'
@@ -27,7 +27,314 @@ lab:
   repo_tag: 'lesson/m07-04-start'
 ---
 
-Bu ders, [hook](/tr/playbook/glossary/#hook) tarafında `Notification` ve `Stop` olaylarının neden aynı "bitti" anlamına gelmediğini anlatır: `Stop` her tur sonunda çalışır, `Notification` ise izin istemi veya boşta kalma gibi sizin klavye başında olmadığınız durumlara bağlıdır. Masaüstü bildiriminin desteklenen yolu `/dev/tty` değil `terminalSequence` alanıdır ve bu alan `-p` modunda yok sayılır. Slack örneği webhook URL'sini ortam değişkeninden okur. Laboratuvarda tek bir hook'u iki olaya birden kaydeder ve headless bir turdan sonra günlükte yalnızca `[Stop]` satırının olduğunu görürsünüz.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l2-intermediate/m07-hooks/04-notify-when-done.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- `Notification`'ın ne için, `Stop`'un ne için ateşlendiğini ve neden aynı "bitti" olmadıklarını söylemek.
+- `hook_event_name`'e dallanarak her iki event'a da hizmet eden tek bir hook yazmak.
+- `terminalSequence` ile desteklenen yoldan bir masaüstü bildirimi yaymak ve o alanın nerede etkisiz olduğunu söylemek.
+- Webhook URL'sini depoya koymadan bir hook'tan Slack'e göndermek.
+- `Stop` hook'larının iki başarısızlık modunu tanımak: sekiz-engel tavanı ve bir kesintide asla ateşlenmemek.
+
+**Ön koşullar.** `01`–`03` dersleri ve bu dersin tag'indeki laboratuvar:
+
+<CodeBlock title="laboratuvarı alın">
+
+```bash
+git checkout lesson/m07-04-start
+npm ci
+```
+
+</CodeBlock>
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bir bildirim hook'u karşılığını uzun, gözetimsiz koşularda kazanır. Zaten terminale bakıyor
+  olduğunuz kısa, etkileşimli bir oturumda gürültüdür — `Stop`, Claude her cevap vermeyi
+  bitirdiğinde ateşlenir, görev başına bir kez değil, dolayısıyla tur başına bir masaüstü uyarısı
+  sizi uyarıları yok saymaya alıştırır. Bir `Stop` hook'unu otomasyon için bir görev-tamamlama
+  sinyali olarak da kullanmayın: her turda ateşlenir ve bir kullanıcı kesintisinde asla ateşlenmez,
+  ve bir API hatası bunun yerine `StopFailure`'ı ateşler. Ve paylaşılan bir depoda yaşayan bir
+  hook'a bir webhook URL'si, token ya da kanal kimliği koymayın; `.claude/settings.local.json` ve
+  ortam değişkenleri bunun için var.
+</WhenNotToUse>
+
+## Kavram
+
+### İki farklı "bitti"
+
+`Notification`, Claude Code bir bildirim gönderdiğinde çalışır ve bildirim türüne göre eşleşir. Erken dönemde yararlı olanlar `permission_prompt` (Claude bir tool kullanımını onaylamanızı istiyor ve istem yaklaşık altı saniye beklemiş) ve `idle_prompt`'tur (Claude yaklaşık 60 saniye önce cevap vermeyi bitirdi ve o zamandan beri yazmadınız). Bir düzine daha var, `auth_success`, `elicitation_*` ailesi, `agent_needs_input` ve `agent_completed` ile `quota_auto_resume_*` türleri dahil.
+
+İki özellik önemli. Bu event'ları **masaüstü bildirimleri kapalıyken bile** alırsınız — `preferredNotifChannel` ayarı nasıl uyarıldığınızı değiştirir, hook'unuzun çalışıp çalışmayacağını değil. Ve `permission_prompt`, `idle_prompt` ve elicitation dialoglarının zamanlaması, uzaktaymış gibi görünmenize kilitlenir: zamanlayıcı istem göründüğünde başlar ve her tuş vuruşu onu erteler. Claude izin istediği anda tepki vermek istiyorsanız, bunun yerine `PermissionRequest` kullanın.
+
+`Stop`, ana agent **cevap vermeyi bitirdiğinde** çalışır. Görev bittiğinde değil — tur bittiğinde. Bir kullanıcı kesintisinde çalışmaz ve bir API hatası bunun yerine `StopFailure`'ı ateşler. `SubagentStop`, bir subagent için aynı event'tır.
+
+Hiçbir event, proje-yönetimi anlamında bir tamamlanma sinyali değildir. Onlar oturumun kenarlarıdır.
+
+### Her biri neyi döndürebilir
+
+`Notification` hook'ları bildirimleri engelleyemez ya da değiştiremez. Claude Code onların `systemMessage` ve `continue` alanlarını atar; onlar yan etkiler içindir — harici bir servise yönlendirme. İşe yarayan tek çıktı `terminalSequence`'tir.
+
+`Stop` hook'ları engelleyebilir. Bir `reason`'la `decision: "block"`, Claude'un durmasını önler ve neden devam etmesi gerektiğini söyler; `hookSpecificOutput.additionalContext` aynı şeyi daha yumuşakça yapar, transcript'te bir hook hatası değil `Stop hook feedback` olarak etiketlenir. İkisi de aynı korkuluğa çarpar: **Claude Code, art arda sekiz kez engelledikten sonra bir Stop hook'unu geçersiz kılar.** Engelleyebilen bir Stop hook'u, girdisinden `stop_hook_active`'i okumalı ve `true` olduğunda erken çıkmalıdır.
+
+### Desteklenen yoldan masaüstü bildirimleri
+
+Hook'lar kontrol eden bir terminal olmadan çalışır, dolayısıyla `/dev/tty`'ye kaçış dizileri yazmak başarısız olur. Diziyi `terminalSequence`'te döndürün, Claude Code onu sizin için yayar — yarış durumu olmadan ve tmux içinde ve Windows'ta çalışır:
+
+<CodeBlock title="masaüstünü pingleyen bir Notification hook'u">
+
+```bash
+#!/bin/bash
+# Notification hook: ping the desktop when Claude Code needs attention.
+input=$(cat)
+title="Claude Code"
+body=$(jq -r '.message // "Needs your attention"' <<<"$input")
+seq=$(printf '\033]777;notify;%s;%s\007' "$title" "$body")
+jq -nc --arg seq "$seq" '{terminalSequence: $seq}'
+```
+
+</CodeBlock>
+
+İzin listesi bilinçli olarak dardır: OSC `0`/`1`/`2` (pencere ve simge başlıkları), OSC `9` (iTerm2, ConEmu, Windows Terminal, WezTerm), OSC `99` (Kitty), OSC `777` (urxvt, Ghostty, Warp) ve çıplak bir BEL. Başka her şey — imleç hareketleri, renkler, OSC 8 köprüleri, OSC 52 pano yazmaları — reddedilir ve alanın tamamı yok sayılır.
+
+Etrafında planlanacak iki sınır var. Claude Code diziyi **yalnızca etkileşimli bir oturumda ve yalnızca arayüzü ekrandayken** yazar: `-p`'de ve Agent SDK'da alan yok sayılır. Ve bir `WorktreeCreate` komut hook'u onu hiç kullanamaz, çünkü stdout'u bir yol olarak okunur.
+
+Platformun kendi bildiricisini kullanmayı tercih ederseniz, resmî kılavuzun `Notification` örnekleri ayarlarda tek satırlıktır:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```json
+{
+  "type": "command",
+  "command": "osascript -e 'display notification \"Claude Code needs your attention\" with title \"Claude Code\"'"
+}
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```json
+{
+  "type": "command",
+  "command": "notify-send 'Claude Code' 'Claude Code needs your attention'"
+}
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```json
+{
+  "type": "command",
+  "command": "powershell.exe -Command \"[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms'); [System.Windows.Forms.MessageBox]::Show('Claude Code needs your attention', 'Claude Code')\""
+}
+```
+
+  </Fragment>
+</OSTabs>
+
+macOS'ta, `osascript`, Script Editor üzerinden yönlenir, ki bu System Settings'te bir kez bildirim izni verilmesini gerektirir yoksa sessizce başarısız olur. Linux'ta, `notify-send` bir bildirim daemon'ı gerektirir — SSH üzerinden ya da bir konteyner içinde çalışmaz. Windows'ta örnek bir dialog kutusu açar, ki bu terminalinizin arkasında görünebilir.
+
+### Webhook'u sızdırmadan Slack
+
+Bir Slack bildirimi, gelen-webhook URL'sine bir POST'tur. URL bir sırdır: onu tutan herkes kanalınıza gönderi yapabilir. Onu depodan uzak tutun — ortamdan okuyun ve ayarlanmadığında hook'un hiçbir şey yapmamasına izin verin:
+
+<CodeBlock title=".claude/hooks/notify-slack.mjs">
+
+```javascript
+#!/usr/bin/env node
+// Stop hook: post one line to Slack. No webhook configured -> do nothing, quietly.
+import { readFileSync } from 'node:fs';
+
+const url = process.env.SLACK_WEBHOOK_URL;
+if (!url) process.exit(0);
+
+let input = {};
+try {
+  input = JSON.parse(readFileSync(0, 'utf8') || '{}');
+} catch {
+  process.exit(0);
+}
+
+const text = `Claude Code finished a turn in ${input.cwd ?? 'a session'}.`;
+await fetch(url, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ text }),
+}).catch(() => {});
+process.exit(0);
+```
+
+</CodeBlock>
+
+`SLACK_WEBHOOK_URL`'i kabuk profilinizde export edin ya da `.claude/settings.local.json`'ın `env` bloğunda ayarlayın — o dosya, Claude Code ona yazdığında gitignore'lanır. Claude Code ayrıca event JSON'unu doğrudan bir URL'ye POST'layan, `allowedEnvVars`'ta listelediğiniz ortam değişkenlerinden enterpole edilen `headers` ile bir `type: "http"` hook'u da gönderir; uç noktanız Slack'in değil hook JSON biçimini konuştuğunda doğru araç odur.
+
+Bu dersin işlenmiş örnek prompt'u bilinçli olarak sıradan — asıl mesele etrafında olan:
+
+```text
+In one sentence, what does src/store.ts do?
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · her Notification ve Stop'u loglayın, sonra gerçek bir uyarıyı bağlayın"
+  lessonId="tr/l2-intermediate/m07-hooks/notify-when-done"
+  repoTag="lesson/m07-04-start"
+  steps={[
+    "`lesson/m07-04-start`'ı checkout edin ve `npm ci`. 2. ve 3. derslerin koruma ve biçimlendirici hook'ları zaten orada.",
+    "`.claude/hooks/notify-done.mjs` oluşturun: stdin'i ayrıştırın, `hook_event_name`'i okuyun ve tek bir satırı — zaman damgası, event adı ve `message` (bir varsayılana geri dönerek) — `notify.log`'a ekleyin. Eklemeyi try/catch içine sarın ve her zaman 0 ile çıkın; yazılamayan bir bildirim bir oturumu asla kesmemelidir.",
+    "Aynı betiği `.claude/settings.json`'da hem `Notification` hem `Stop`'a, ikisinde de matcher olmadan kaydedin, böylece her bildirim türü ve her tur sonu ona ulaşır.",
+    '`notify.log`\'u silin, kısa bir tur çalıştırın — `claude -p "In one sentence, what does src/store.ts do?" --model sonnet --max-turns 4 --output-format text --allowedTools "Read"` — sonra `cat notify.log`.',
+    'Dosyada olanı ve olmayanı okuyun: tam olarak bir `[Stop]` satırı ve hiç `[Notification]` satırı yok. Headless bir koşu asla izin beklemez ve asla boşta değildir, dolayısıyla hiçbir bildirim gönderilmez.',
+    "Şimdi etkileşimli yarı: `claude`'u normal şekilde başlatın, onaylanması gereken bir şey yapmasını isteyin ve on saniye klavyeden uzaklaşın. Belgelenmiş davranış, istem göründükten yaklaşık altı saniye sonra bir `[Notification] permission_prompt` satırıdır. Laboratuvarın bu yarısının aşağıda bir transcript'i yok: event, yazmadığınıza kilitlenir, dolayısıyla headless yakalanamaz ve bu ders yapmadığı bir kaydı göndermez.",
+    'İsteğe bağlı: Kavram bölümünden `terminalSequence` varyantını `Notification` üzerinde ikinci bir handler olarak ekleyin ve teriminalinizin bir bildirim yükselttiğini doğrulayın. `-p` altında etkisiz olduğunu unutmayın.',
+  ]}
+  expected="Headless turdan sonra, notify.log tam olarak bir satır tutar, [Stop] etiketli — bu, aşağıdaki transcript'in kanıtladığı kısım. Etkileşimli adım dokümantasyon kaynaklıdır: Notification referansına göre, yalnız bırakılan bir izin istemi yaklaşık altı saniye sonra bir [Notification] satırı eklemelidir."
+  checklist={[
+    "Aynı betik hem `Notification` hem `Stop`'a kayıtlı",
+    'Betik, log yazılamadığında dahil, her yolda 0 ile çıkıyor',
+    '`notify.log`, bir headless turdan sonra bir `[Stop]` satırına sahip',
+    'Headless koşudan hiç `[Notification]` satırı görünmüyor',
+    'İsteğe bağlı, burada yakalanmadı: yalnız bırakılan etkileşimli bir izin istemi bir `[Notification]` satırı üretiyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/04-notify-when-done/01-stop-log.txt"
+    range="2-6"
+  />
+</Lab>
+
+Kayıt kısa ve en yararlı içeriği yokluk: bir `[Stop]` satırı, hiç `[Notification]` satırı yok. Bu bozuk bir hook değil. `Notification`, Claude Code bir bildirim gönderdiğinde ateşlenir ve "sana ihtiyacım var" anlamına gelen türler — `permission_prompt`, `idle_prompt` — klavyeden uzak bir insana kilitlenir. Bir `-p` koşusunun klavyesi ve istemi yoktur, dolayısıyla hiçbir şey gönderilmez.
+
+Bu, oturum-kenarı hook'larını test etmenin genel şeklidir: `Stop` yarısı headless kanıtlanabilir ve `Notification` yarısı uzaklaşabileceğiniz gerçek bir terminal gerektirir. Bu aynı zamanda bu dersin masaüstü ve Slack yarılarını kaydedilmiş bir oturum yerine yapılandırmayla tarif etmesinin de nedenidir — bir `terminalSequence`, `-p` altında yok sayılır ve gösteremeyeceğiniz bir webhook, bir derse yapıştırmamanız gereken bir webhook'tur.
+
+## Anti-pattern'ler
+
+**`Stop`'u "görev bitti" saymak.** Claude her cevap vermeyi bitirdiğinde ateşlenir. Üç turluk bir konuşma üç `Stop` event'ıdır. _Düzeltme:_ "iş bitti"ye ihtiyacınız varsa, koşulun kendisini — testler yeşil, branch push edildi — hook içinde kontrol edin ve aksi hâlde sessiz kalın.
+
+**Çıkış koşulu olmayan engelleyen bir `Stop` hook'u.** "Testler başarısız" durumunda engellemek ve testleri geçiremeyen bir oturum, Claude Code sizi art arda sekiz engellemeden sonra geçersiz kılana kadar döngüye girer. _Düzeltme:_ `stop_hook_active`'i okuyun ve `true` olduğunda 0 ile çıkın; `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP`'ı yalnızca döngü gerçekten yakınsıyorsa yükseltin.
+
+**`/dev/tty`'ye kaçış dizileri yazmak.** Hook'ların kontrol eden bir terminali yoktur; yazma başarısız olur ve Windows'ta hiç `/dev/tty` yoktur. _Düzeltme:_ `terminalSequence`'i döndürün ve Claude Code'un onu yaymasına izin verin.
+
+**Webhook'u commit'lemek.** `.claude/settings.json`'daki bir Slack URL'si, depo klonlandığı anda genel bir kimlik bilgisidir. _Düzeltme:_ onu ortamdan okuyun ve eksik olduğunda hiçbir şey yapmayın, böylece hook commit'lemek için güvenli ve bir yabancı için işe yaramaz olur.
+
+**Her turda uyarmak.** Bir bildirim hook'unu değersiz kılmanın en hızlı yolu. _Düzeltme:_ matcher'ı daraltın (her şey yerine `permission_prompt`) ya da betikte geçen zamana göre uyarıyı kısıtlayın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/notify-when-done"
+  questionId="q1"
+  lang="tr"
+  prompt="Hem Notification hem Stop'a kayıtlı bir hook'la tek bir headless tur çalıştırıyorsunuz. Log'unuza ne iner?"
+  options={[
+    {
+      text: 'Bir Stop satırı ve bir Notification satırı.',
+      explanation:
+        'Hiçbir bildirim gönderilmez: bir `-p` koşusunun izin istemi ve boşta kullanıcısı yoktur.',
+    },
+    {
+      text: 'Yalnızca bir Stop satırı.',
+      correct: true,
+      explanation:
+        'Claude cevap vermeyi bitirdiğinde Stop ateşlenir; "sana ihtiyacım var" anlamına gelen Notification türleri klavyeden uzak bir insana kilitlenir.',
+    },
+    {
+      text: 'Hiçbir şey — headless modda hiçbir event ateşlenmez.',
+      explanation: "Stop, `-p`'de normal şekilde ateşlenir.",
+    },
+    {
+      text: 'Tool çağrısı başına bir satır.',
+      explanation: 'Bu PostToolUse olurdu.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/notify-when-done"
+  questionId="q2"
+  lang="tr"
+  prompt="Stop hook'unuz test paketi kırmızı olduğunda decision: block döndürüyor. Paket kırmızı kalıyor. Ne olur?"
+  options={[
+    {
+      text: 'Oturum sonsuza kadar döngüye girer.',
+      explanation: 'Bir tavan var.',
+    },
+    {
+      text: "Claude Code, art arda sekiz engellemeden sonra hook'u geçersiz kılar ve turu bitirir.",
+      correct: true,
+      explanation:
+        "Ve düzeltme, girdiden `stop_hook_active`'i okumak ve doğru olduğunda erken çıkmaktır.",
+    },
+    {
+      text: "Engel yok sayılır çünkü Stop hook'ları engelleyemez.",
+      explanation:
+        'Stop, exit 2 ve `decision: "block"`\'un gerçekten engellediği event\'lardan biridir.',
+    },
+    {
+      text: 'Claude farklı bir modele geçer.',
+      explanation: 'Hook sözleşmesindeki hiçbir şey modeli değiştirmez.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/notify-when-done"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir hook'un terminalSequence alanı nerede yok sayılır?"
+  options={[
+    {
+      text: "tmux ve GNU screen'de.",
+      explanation:
+        "Orada çalışması için tasarlanmıştır — /dev/tty'ye göre avantajlarından biri budur.",
+    },
+    {
+      text: "Etkileşimsiz `-p` koşularında ve Agent SDK'da.",
+      correct: true,
+      explanation:
+        'Claude Code diziyi yalnızca arayüzü ekranda olan etkileşimli bir oturumda yazar.',
+    },
+    {
+      text: "Windows'ta.",
+      explanation: "Windows'ta çalışır, orada yazacak bir /dev/tty yoktur.",
+    },
+    {
+      text: "Notification hook'larında.",
+      explanation:
+        "Notification tam olarak çalıştığı yerdir — event, systemMessage ve continue'yu atar ama yine de terminalSequence'i yayar.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/notify-when-done"
+  questionId="q4"
+  lang="tr"
+  prompt="Paylaşılan bir depoda bir Slack-bildiren hook göndermenin güvenli yolu nedir?"
+  options={[
+    {
+      text: "Webhook URL'sini `.claude/settings.json`'a koyun ki herkes uyarı alsın.",
+      explanation: 'Bu, her klona bir kimlik bilgisi yayınlar.',
+    },
+    {
+      text: "URL'yi bir ortam değişkeninden okuyun ve ayarlanmadığında sessizce 0 ile çıkın.",
+      correct: true,
+      explanation:
+        "Hook o zaman commit'lemek için güvenli ve kendi webhook'unu yapılandırmamış herkes için işe yaramaz olur.",
+    },
+    {
+      text: "URL'yi betikte Base64 ile kodlayın.",
+      explanation: 'Kodlama şifreleme değildir.',
+    },
+    {
+      text: "Bir HTTP hook'u kullanın — onlar hiç sır gerektirmez.",
+      explanation:
+        "HTTP hook'ları başlıkları izin listenizdeki ortam değişkenlerinden enterpole eder; sır yine de ortamda yaşar.",
+    },
+  ]}
+/>
+
+**Sırada:** `05-session-start-context`, oturumun diğer ucudur — ilk prompt'tan önce proje durumunu yüklemek ve tur bittiğinde test paketini çalıştırmak.

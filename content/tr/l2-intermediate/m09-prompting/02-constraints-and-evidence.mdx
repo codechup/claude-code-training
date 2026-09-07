@@ -1,15 +1,15 @@
 ---
 title: 'Kısıtlar, kabul kriterleri ve kanıt'
-description: 'Bir ajan iş bitmiş göründüğünde durur. Kısıtlar nereye gidilmeyeceğini, kabul kriterleri ne zaman durulacağını söyler; talep edilen kanıt ise "çalışıyor" iddiasını okuyabileceğiniz çıktıya dönüştürür.'
+description: 'Bir agent, iş bitmiş göründüğünde durur. Kısıtlar nereye gidilmeyeceğini, kabul kriterleri ne zaman durulacağını söyler; talep edilen kanıt ise "çalışıyor" iddiasını okuyabileceğiniz çıktıya dönüştürür. Üçünü de tek küçük bir görevin iki headless çalıştırmasıyla kanıtlayın.'
 level: 2
 module: 'm09-prompting'
 order: 2
 duration_min: 15
 difficulty: core
-tags: ['prompting', 'constraints', 'verification', 'evidence']
+tags: ['prompting', 'kısıtlar', 'doğrulama', 'kanıt']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Best practices for Claude Code'
@@ -27,7 +27,280 @@ lab:
   repo_tag: 'none'
 ---
 
-Bu ders üç ayrı şeyi birbirinden ayırır: kısıtlar (nereye gidilmeyecek), kabul kriterleri (ne zaman durulacak) ve kanıt (bana ne göstereceksin). Laboratuvarda tek bir küçük test görevini iki kez çalıştırır, kısıtsız çalıştırmanın altı turluk bütçesini `result` alanı bile üretmeden tükettiğini, kısıtlı olanınsa gerçek vitest özetini alıntıladığını görürsünüz.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l2-intermediate/m09-prompting/02-constraints-and-evidence.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- İyi bir prompt'un taşıdığı üç şeyi birbirinden ayırmak: kısıtlar (nereye gidilmeyecek), kabul kriterleri (ne zaman durulacak) ve geri istediğiniz kanıt.
+- "Bitti" koşulunu gözle kontrol etmeniz gereken değil, bir makinenin değerlendirebileceği bir prompt yazmak.
+- İşin başarılı olduğuna dair bir iddiayı kabul etmek yerine kanıt — komut ve çıktısı — istemek.
+- İki headless zarftan, aynı görevin kısıtsız bir sürümünün tüm tur bütçesini bitirmeden yaktığını göstermek.
+
+**Ön koşullar.** Bu modüldeki `01-task-decomposition` dersi ve çalışan bir `claude -p` çalıştırması. Laboratuvar dosyaları düzenliyor, dolayısıyla değişmesine aldırmayacağınız geçici bir klona ihtiyacınız var.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Kısıtlar aramayı daraltır. İyinin neye benzediğini gerçekten bilmediğinizde — tanımadığınız bir
+  modülü keşfediyorsanız ya da Claude'u bir kutuya kapatmadan önce sorunu nasıl okuduğunu görmek
+  istiyorsanız — kabul kriterlerini üst üste yığmak yalnızca şu anki tahmininizi kodlar ve
+  alternatifleri gizler. Önce açık soruyu sorun, sonra takibi kısıtlayın. Kısıtların söylenmesi de
+  bedavadır ama yanlış söylenmesi her şeye mal olur: projenizde aslında doğru olmayan bir kriter
+  ("bütün testler geçmeli") agent'ı göreviyle hiçbir ilgisi olmayan önceden var olan
+  başarısızlıkların peşinden gönderir.
+</WhenNotToUse>
+
+## Kavram
+
+### Aynı olmayan üç şey
+
+Bunları "spesifik olun"a indirgemek kolaydır. Farklı işler yaparlar.
+
+| Öğe               | Yanıtladığı            | Eksikken olan başarısızlık                                                        |
+| ----------------- | ---------------------- | --------------------------------------------------------------------------------- |
+| **Kısıt**         | Nereye gidilmemeli?    | Kapsam kayması — istemediğiniz dosyaların dokunulması, yeni bir bağımlılık        |
+| **Kabul kriteri** | Ne zaman bitmiş olur?  | Agent, iş _göründüğünde_ bitmiş olduğunda durur                                   |
+| **Kanıt**         | Bana ne göstermelisin? | "Çalışıyor" alırsınız ve kontrolü kendiniz yeniden çalıştırmak zorunda kalırsınız |
+
+Resmî kılavuz ortadaki hakkında açık sözlüdür: Claude iş bitmiş göründüğünde durur, ve çalıştırabileceği bir kontrol olmadan "bitmiş görünmek" elindeki tek sinyaldir — bu da doğrulama döngüsünü _siz_ yaparsınız, dolayısıyla her hata sizin fark etmenizi bekler. Ona geçti ya da kaldı döndüren bir şey verin, döngü kendi kendine kapansın.
+
+Üçüncüsü ayrı bir istektir. Dokümanlar bunu açıkça koyar: Claude'un başarıyı iddia etmek yerine kanıt göstermesini sağlayın — test çıktısı, çalıştırdığı komut ve döndürdüğü şey, ya da sonucun bir ekran görüntüsü. Kanıtı incelemek, doğrulamayı kendiniz yeniden çalıştırmaktan daha hızlıdır ve izlemediğiniz oturumlar için de işe yarar.
+
+### Bir kontrol sayılan nedir
+
+Claude'un konuşma içinde okuyabileceği bir sinyal döndüren her şey: bir test paketi, bir build çıkış kodu, bir linter, çıktıyı bir fixture'a karşı diff'leyen bir script, ya da bir tasarıma karşı karşılaştırılan bir tarayıcı ekran görüntüsü. "Artık daha iyi okunuyor" bir kontrol değildir. "`npm test`, 16 geçti bildiriyor" bir kontroldür.
+
+Dokümanlar ayrıca kontrolün durmayı ne kadar sıkı kilitlediğini en ucuzdan en güvenilire sıralar: aynı prompt'ta kontrolü istemek; onu, her turdan sonra ayrı bir değerlendiricinin yeniden kontrol ettiği bir `/goal` koşulu olarak ayarlamak; bir script geçene kadar turun bitmesini engelleyen bir `Stop` hook'u; ya da bir doğrulama subagent'ından ikinci bir görüş. Her adım kurulumu dikkatle takas eder. Bu ders, bugün her görevde işe yarayan birincisi hakkındadır.
+
+### Bu dersin örnek prompt'u
+
+```text
+Add exactly one test to test/overdue.test.ts: isOverdue must return false when
+the task has no dueDate. Constraints: follow the injectable-clock style already
+used in that file, change nothing under src/, add no new dependency.
+Then run 'npm test' and quote its final summary lines as proof the whole suite
+still passes.
+```
+
+Her cümle yerini hak ediyor. "Tam olarak bir test" ve adlandırılmış dosya hedeftir. "`src/` altında hiçbir şeyi değiştirme" ve "yeni bağımlılık ekleme" kısıtlardır — bu görevin en olası iki yanlış gidiş yolu. "O dosyada zaten kullanılan enjekte edilebilir-saat stilini izle", bir stil tarif etmek yerine var olan bir kalıba işaret eder, ki dokümanlar bunu kendi başına bir strateji olarak listeler. Ve son cümle kanıttır: "testlerin geçtiğinden emin ol" değil, _özet satırlarını alıntıla_.
+
+## Uygulamalı laboratuvar
+
+<Callout label="Not">
+  Bu modülün henüz lab-repo tag'i yok (`repo_tag: 'none'`), dolayısıyla laboratuvar lab deposunun
+  `main` branch'inin taze bir klonuna karşı çalışır. Aşağıdaki her iki çalıştırma da
+  `--permission-mode acceptEdits --allowedTools "Read,Grep,Glob,Edit,Write,Bash"` kullandı,
+  dolayısıyla aralarındaki tek fark prompt'tur.
+</Callout>
+
+<Lab
+  title="Laboratuvar · iki kez yazılan bir test"
+  lessonId="tr/l2-intermediate/m09-prompting/constraints-and-evidence"
+  repoTag="none"
+  steps={[
+    'Lab deposunun `main`’deki geçici bir klonunda `npm ci` çalıştırın ve `npm test`’in 15 geçti bildirdiğini doğrulayın.',
+    'Kısıtsız sürümü çalıştırın: `claude -p "add a test for isOverdue" --model sonnet --max-turns 6 --output-format json --permission-mode acceptEdits --allowedTools "Read,Grep,Glob,Edit,Write,Bash"`',
+    'Ağacı sıfırlayın: `git checkout -- . && git clean -fd`.',
+    'Kısıtlı sürümü aynı bayraklarla ve yukarıdaki Kavram bölümündeki prompt ile çalıştırın.',
+    'Her iki zarfta da `subtype`, `is_error` ve `num_turns`’ü okuyun, sonra hangi çalıştırmanın varsa onun `result` alanını okuyun.',
+  ]}
+  expected='Kısıtsız çalıştırma "is_error": true, "subtype": "error_max_turns" ile ve hiçbir result alanı olmadan biter — altı-turluk bütçesini tüketti. Kısıtlı çalıştırma beş turda "subtype": "success" bildirir ve result’ı vitest özetini alıntılar: 4 test dosyası geçti, 16 test geçti — koşudan önce paketin sahip olduğundan bir fazla.'
+  checklist={[
+    'Kısıtsız zarfta "Reached maximum number of turns (6)" okuyan bir `errors` dizisi var',
+    'Kısıtsız zarfta bir `result` anahtarı yok — geri verecek bir şey yok',
+    'Kısıtlı çalıştırmanın sonucu düzenlediği dosyayı adlandırıyor ve `src/` altında hiçbir şeyin değişmediğini belirtiyor',
+    'Kısıtlı çalıştırmanın sonucu gerçek vitest özetini içeriyor, testlerin geçtiği iddiasını değil',
+    'Paket tam olarak bir test kazandı (başlamadan önce `npm test` çalıştırıp sayıları kendiniz karşılaştırın)',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/02-constraints-and-evidence/01-weak.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/02-constraints-and-evidence/01-weak.txt"
+    range="104-111"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/02-constraints-and-evidence/02-strong.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/02-constraints-and-evidence/02-strong.txt"
+    range="87-94"
+  />
+</Lab>
+
+"`isOverdue` için bir test ekle" bir meslektaşa söylenecek makul olmayan bir cümle değildir — ve tam da bu yüzden çalıştırmaya değer. Agent, fonksiyonun hangi davranışının test edilmediğine, testin hangi dosyaya ait olduğuna, hangi stile uyulacağına ve sonrasında bir şey çalıştırıp çalıştırmayacağına karar vermek zorunda kalır. Altı tur boyunca karar vermek `error_max_turns` üretti ve, önemlisi, **hiçbir `result` alanı olmadan**. Bu zarfı tüketen bir script 1 çıkış koduyla ve okuyacak hiçbir şeyle karşılaşır.
+
+Kısıtlı çalıştırma aynı kararları önceden verdi ve `result`'ı dokümanların istediği blokla — gerçek çıktıyla — bitiyor:
+
+```text
+ Test Files  4 passed (4)
+      Tests  16 passed (16)
+```
+
+Bu blok çalıştırmanın kendi çıktısı, onunla ilgili bir iddia değil — bu, "testler geçiyor" ile kanıt arasındaki farktır. `npm test`'i 2. adımdan önce kendiniz çalıştırın ve sayıları doğrudan karşılaştırabilirsiniz.
+
+<Callout label="Not">
+  Tur bütçesi de gerçek bir kısıttır. Altı tur, kısıtlı çalıştırma için yeterliydi ve kısıtsız olan
+  için yeterli değildi — dolayısıyla `--max-turns`'ü script'lerde bilinçli olarak ayarlamaya değer,
+  ve bir prompt'un başarısız olduğu sonucuna varmadan önce onu yükseltmeye değer.
+  `03-iterative-refinement` dersi, aynı prompt'un 6 turda başarısız olup 10 turda başarılı olduğu
+  bir vaka gösterir.
+</Callout>
+
+### Laboratuvarı kurmak, işletim sistemine göre
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```text
+# PowerShell 5.1 — statements separated with ; instead of &&
+git clone https://github.com/codechup/claude-code-lab.git; cd claude-code-lab; npm ci
+git checkout -- .; git clean -fd
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1'in `&&` operatörü yoktur, bu yüzden orada aynı adımlar `;` ile ayrılır. WSL içinde, Linux komutlarını kullanın.
+
+## Anti-pattern'ler
+
+Aşağıda bir dokümantasyon sayfası adlandıran öğeler ondan kaynaklanır; geri kalanı bu sitenin kendi gözlemleridir (D080).
+
+**İddia etmek, kanıtlamak yerine.** "Testi ekledim ve her şey geçiyor"u kabul etmek sizi bir iddiayla baş başa bırakır. _Düzeltme:_ komutu ve çıktısını isteyin, çıktıyı okuyun.
+
+**Kimsenin değerlendiremeyeceği bir kriter.** "Sağlam yap", "kenar durumları düzgün ele al", "üretime hazır" — bunların hiçbirinin geçti/kaldı hâli yok. _Düzeltme:_ durumu ve beklenen değeri adlandırın: `dueDate` tanımsızken `isOverdue`, `false` döner.
+
+**Diff'ten sonra gelen kısıtlar.** Düzenlemeler zaten varken "ha, bir de `src/`'a dokunma" demek bir yeniden yazım demektir. _Düzeltme:_ kısıtlar ilk prompt'a girer; söylemesi ucuz, sonradan eklemesi pahalıdır.
+
+**Bir kısıtı bir kriterle karıştırmak.** "Bağımlılık ekleme" agent'a asla bittiğini söylemez. Yalnızca yasaklardan oluşan bir prompt'un durma koşulu yoktur. _Düzeltme:_ her kısıt kümesini en az bir kriterle eşleştirin.
+
+**Zaten başarısız olan bir kriter.** Bilinen-kırmızı bir testi olan bir depoda "bütün testler geçmeli" agent'ı istemediğiniz bir şeyi düzeltmeye gönderir. _Düzeltme:_ kriteri değişikliğinizin etkilediği pakete ya da dosyaya sınırlayın, ya da önce kırmızı testi düzeltin.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/constraints-and-evidence"
+  questionId="q1"
+  lang="tr"
+  prompt="Resmî kılavuz Claude'a çalıştırabileceği bir kontrol vermeyi neden söylüyor?"
+  options={[
+    {
+      text: 'Çünkü Claude test çıktısını okuyamaz.',
+      explanation: 'Okuyabilir — bir kontrolün işe yaramasının tam nedeni de bu.',
+    },
+    {
+      text: 'Çünkü Claude iş bitmiş göründüğünde durur, ve bir kontrol olmadan "bitmiş görünmek" tek sinyaldir — bu da doğrulama döngüsünü siz yaparsınız.',
+      correct: true,
+      explanation: 'Bu, dokümanların neredeyse kelimesi kelimesine kendi çerçevelemesi.',
+    },
+    {
+      text: 'Çünkü testler token kullanımını azaltır.',
+      explanation:
+        'Bir kontrol çalıştırmak genellikle tur harcar; doğruluk kazandırır, token değil.',
+    },
+    {
+      text: 'Çünkü permission mode’lar bunu gerektirir.',
+      explanation: 'Permission mode’lar onayları yönetir, doğrulamayı değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/constraints-and-evidence"
+  questionId="q2"
+  lang="tr"
+  prompt="Laboratuvarda, kısıtsız çalıştırmanın zarfında bir `result` anahtarı yoktu. Buna ne sebep oldu?"
+  options={[
+    {
+      text: 'Tool izin listesi her tool’u engelledi.',
+      explanation: 'Her iki çalıştırma da aynı izin listesini ve aynı permission mode’u kullandı.',
+    },
+    {
+      text: 'Altı-tur tavanına çarptı: subtype error_max_turns, is_error true, ve bir result yerine bir errors dizisi.',
+      correct: true,
+      explanation:
+        'Çalıştırma hiçbir zaman nihai bir cevaba ulaşmadı, dolayısıyla `result`’a koyacak bir şey yoktu.',
+    },
+    {
+      text: 'JSON çıktısı düzenleme görevleri için result alanını atlar.',
+      explanation: 'Kısıtlı çalıştırma da dosyaları düzenledi ve yine de bir result döndürdü.',
+    },
+    {
+      text: 'Prompt hiçbir çıktı istemedi.',
+      explanation: 'Bir test istedi; yalnızca hangisine karar vermeyi hiç bitiremedi.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/constraints-and-evidence"
+  questionId="q3"
+  lang="tr"
+  prompt="Bu dersin örnek prompt'undaki hangi cümle kabul kriteridir?"
+  options={[
+    {
+      text: '"`src/` altında hiçbir şeyi değiştirme"',
+      explanation: 'Bir kısıt — nereye gidilmeyeceğini söyler, ne zaman durulacağını değil.',
+    },
+    {
+      text: '"`isOverdue`, görevin `dueDate`’i olmadığında `false` dönmeli"',
+      correct: true,
+      explanation: 'Bir testin değerlendirebileceği geçti/kaldısı olan, belirtilmiş bir davranış.',
+    },
+    {
+      text: '"yeni bağımlılık ekleme"',
+      explanation: 'Bu da bir kısıt.',
+    },
+    {
+      text: '"o dosyada zaten kullanılan enjekte edilebilir-saat stilini izle"',
+      explanation: 'Var olan bir kalıba işaret eder — yararlı, ama bir durma koşulu değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/constraints-and-evidence"
+  questionId="q4"
+  lang="tr"
+  prompt="Best-practices sayfasına göre, bunlardan hangisi durmayı en katı şekilde kilitler?"
+  options={[
+    {
+      text: 'Kontrolü aynı prompt’ta istemek.',
+      explanation: 'En ucuz seçenek — bugün işe yarar, ama hiçbir şey onu zorunlu kılmaz.',
+    },
+    {
+      text: 'Kontrolünüzü bir script olarak çalıştıran ve geçene kadar turun bitmesini engelleyen bir Stop hook’u.',
+      correct: true,
+      explanation:
+        'Deterministik bir kapı. Claude Code, 8 ardışık bloktan sonra hook’u geçersiz kılar ve turu bitirir.',
+    },
+    {
+      text: 'Kriteri CLAUDE.md’ye koymak.',
+      explanation: 'CLAUDE.md talimatları tavsiye niteliğindedir, deterministik değil.',
+    },
+    {
+      text: '--max-turns eklemek.',
+      explanation: 'Bir bütçe tavanıdır, bir doğruluk kapısı değil.',
+    },
+  ]}
+/>
+
+**Sırada:** `03-iterative-refinement` — ilk deneme yakın ama yanlışken ikinci turda ne söyleneceği.

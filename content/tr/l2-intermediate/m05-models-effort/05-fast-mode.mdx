@@ -1,15 +1,15 @@
 ---
 title: 'Fast mode'
-description: '/fast neyi takas eder — 10/50 dolar MTok fiyatıyla 2,5 kata kadar hızlı Opus, usage credits üzerinden faturalanır — nerede kullanılabilir, neden açılmayı reddeder ve neden geç açmak pahalıdır.'
+description: '/fast neyi takas ediyor — MTok başına 10 $/50 $’a kadar %2,5 daha hızlı Opus, kullanım kredilerinden faturalandırılıyor — nerede mevcut, neden açılmayı reddediyor ve bir konuşmanın geç bir anında etkinleştirmenin erken etkinleştirmekten neden daha pahalıya mal olduğu.'
 level: 2
 module: 'm05-models-effort'
 order: 5
 duration_min: 10
 difficulty: core
-tags: ['fast-mode', 'models', 'cost']
+tags: ['fast-mode', 'modeller', 'maliyet']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Speed up responses with fast mode'
@@ -31,8 +31,285 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l2-intermediate/m05-models-effort/05-fast-mode.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Fast mode (hızlı mod) farklı bir model değildir: hız için yapılandırılmış Claude Opus'tur. Opus 5 ve Opus 4.8'de desteklenir; Sonnet, Haiku ve diğer modellerde yoktur. Kalite aynı kalır, gecikme düşer, token başına fiyat 5/25 dolardan 10/50 dolara çıkar ve abonelik planlarında bu harcama plan kotanızdan değil usage credits'ten düşer. Fast mode'u açmak istek başlığını değiştirdiği için cache anahtarını da değiştirir: açtığınız andaki ilk istek tüm konuşmayı önbelleksiz olarak yeniden işler, bu yüzden oturumun başında açmak sonundan çok daha ucuzdur. `/fast` komutunun beş ayrı reddetme mesajı vardır ve her biri farklı bir yapılandırma sorununu adlandırır. Bu ders uydurma bir kayıt göstermez: fast mode'un durumu, modülün diğer derslerinde yakalanmış gerçek JSON zarflarındaki `fast_mode_state` alanından okunur.
+- Fast mode’un tam olarak ne olduğunu ve ne olmadığını söylemek: aynı model, aynı kalite, daha düşük gecikme, token başına daha yüksek fiyat.
+- Üzerinde çalıştığı modelleri ve mevcut olmadığı platformları adlandırmak.
+- `/fast`’ın reddedebileceği her yolu ve ret mesajının size neyi düzeltmenizi söylediğini açıklamak.
+- Bir konuşmanın başında etkinleştirmenin neden sonradan etkinleştirmekten daha az maliyetli olduğunu söylemek.
+- Belirli bir iş türü için fast mode ile daha düşük bir effort seviyesi arasında seçim yapmak.
+
+**Ön koşullar.** `01-model-family` ve `03-effort-levels` dersleri. Fast mode üçüncü kadrandır ve diğer ikisiyle de etkileşir.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Fast mode, klavyenin başında beklediğiniz etkileşimli işler içindir — hızlı yineleme, canlı hata
+  ayıklama, bir son teslim tarihi. Uzun otonom görevler, toplu işleme ve CI/CD hatları için ve
+  maliyete duyarlı herhangi bir şey için yanlış araçtır: standart Opus 5’in 5 $/25 $ olduğu yerde
+  MTok başına 10 $/50 $ ödersiniz ve bir abonelikte bu harcama planınızın dahil kullanımından değil
+  kullanım kredilerinden çıkar. Ayrıca Amazon Bedrock, Google Cloud’un Agent Platform’u, Microsoft
+  Foundry ve AWS üzerindeki Claude Platform’da mevcut değildir. Fast mode araştırma önizlemesinde,
+  dolayısıyla fiyatlandırması ve kullanılabilirliği değişebilir.
+</WhenNotToUse>
+
+## Kavram
+
+### Ne olduğu
+
+Fast mode, Claude Opus için modeli **token başına daha yüksek bir maliyetle %2,5’e kadar daha hızlı** yapan yüksek hızlı bir yapılandırmadır. Farklı bir model değildir: maliyet verimliliği yerine hızı önceliklendiren farklı bir API yapılandırmasına sahip Opus’tur, dolayısıyla aynı kalite ve yetenekleri daha hızlı cevaplarla alırsınız.
+
+**Opus 5 ve Opus 4.8**’de desteklenir, Sonnet, Haiku ya da diğer modellerde değil. Opus 5, Claude Code v2.1.219’dan itibaren fast-mode varsayılanıdır.
+
+### Neye mal olduğu
+
+| Model    | Girdi (MTok) | Çıktı (MTok) |
+| -------- | ------------ | ------------ |
+| Opus 5   | 10 $         | 50 $         |
+| Opus 4.8 | 10 $         | 50 $         |
+
+Bu, MTok başına 5 $ / 25 $ olan standart Opus 5 oranının iki katıdır ve fast-mode fiyatı tüm 1M token’lık bağlam penceresi boyunca sabittir.
+
+Harcamanın nerede göründüğü nasıl giriş yaptığınıza bağlıdır — kontrol etmek için `/status` çalıştırın. Pro ve Max’te fast mode kullanım kredilerinizden ödenir ve claude.ai’deki **Settings > Usage**, ayın kullanım-kredisi harcamasını fast mode’u ayrı ayırmadan gösterir. Team ve Enterprise’da organizasyonunuz kendi kullanım kredilerinden öder ve `/usage` kendi harcamanızı gösterir. Claude Console’da organizasyonunuz bunu API kullanımının geri kalanıyla birlikte öder ve Usage ile Cost sayfaları, onu ayırmak için **Speed (Research Preview)**’e göre gruplayabilir.
+
+Dokümanlardan bir satır iki kez okunmaya değer: fast mode kullanımı, planınızda kalan kullanımınız olsa bile doğrudan kullanım kredilerinden çekilir.
+
+### Onu açmanın tek seferlik maliyeti
+
+Fast mode’u etkinleştirmek, cache anahtarının bir parçası olan bir istek başlığı ekler. Yani Claude Code’un fast mode açıkken gönderdiği ilk istek, tüm konuşma geçmişini **hiç cache isabeti olmadan** okur — ve bu cache’lenmemiş girdi token’ları fast-mode oranlarından faturalandırılır.
+
+Sonuç, harekete geçebileceğiniz bir kuraldır: bir konuşmanın ne kadar derinine indiğinizde onu etkinleştirirseniz, o ilk tur o kadar pahalıya mal olur. Fast mode’u bir oturumun başında etkinleştirin, uzun bir oturumun ortasında değil. Maliyet konuşma başına bir kez uygulanır, dolayısıyla onu sonra kapatıp yeniden açmak bunu tekrarlamaz.
+
+### Fast mode’a karşı daha düşük bir effort seviyesi
+
+İkisi de cevapların daha erken gelmesini sağlar, zıt yollarla:
+
+| Ayar                       | Etki                                                                                                 |
+| -------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Fast mode                  | Aynı model kalitesi, daha düşük gecikme, daha yüksek maliyet                                         |
+| Daha düşük effort seviyesi | Daha az düşünme süresi, daha hızlı cevaplar, karmaşık görevlerde potansiyel olarak daha düşük kalite |
+
+Birleşirler: fast mode artı daha düşük bir effort seviyesi, basit görevler için maksimum hız yapılandırmasıdır. Sorununuz bir görevin çok fazla akıl yürütme gerektirdiği için özünde yavaş olmasıysa, effort’u düşürmek cevabı değiştirir, fast mode değiştirmez.
+
+### `/fast` ne zaman reddeder
+
+`/fast`, durumunu bildiren bir anahtardır ve birkaç farklı reddi vardır. Her biri kendi düzeltmesini adlandırır:
+
+| Mesaj                                                               | Ne anlama gelir                                                                                                                                  |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `Fast mode requires usage credits · /usage-credits to turn them on` | Hesabınız için kullanım kredileri kapalı                                                                                                         |
+| `Fast mode has been disabled by your organization`                  | Bir Owner, Team ya da Enterprise organizasyonu için onu etkinleştirmemiş — ya da bir gateway yapılandırması devre dışı bir cevap olarak okunuyor |
+| `is not in your organization's allowed models`                      | `availableModels` izin listesi fast-mode Opus modelini dışlıyor                                                                                  |
+| `Fast mode unavailable during evaluation. Please purchase credits.` | Ücretsiz Evaluation planındaki bir Console organizasyonu                                                                                         |
+| `Fast mode unavailable due to network connectivity issues`          | `api.anthropic.com`’a yapılan kullanılabilirlik kontrolü başarısız oldu; istekler standart hızda çalışıyor                                       |
+
+İzin listesi durumunun bilinmeye değer bir istisnası var: fast mode’u destekleyen izinli bir Opus modelinde zaten çalışan bir oturum, reddedilmek yerine geçerli modelde fast mode’u etkinleştirilmiş bulur.
+
+Bir LLM gateway’inin arkasında bir kıvrım var. Fast mode’u sunmadan önce, Claude Code kullanılabilirliği doğrudan `api.anthropic.com`’a yapılan bir istekle kontrol eder — kontrol `ANTHROPIC_BASE_URL`’i takip etmez. Claude trafiğini bir gateway üzerinden yönlendiren ve doğrudan çıkışı engelleyen bir ağda, inference çalışsa bile kontrol başarısız olur. `CLAUDE_CODE_SKIP_FAST_MODE_NETWORK_ERRORS=1`, başarısız bir kontrolü mevcut sayar; `CLAUDE_CODE_SKIP_FAST_MODE_ORG_CHECK=1` kontrolü tamamen atlar. Fast mode’u tamamen devre dışı bırakmak için `CLAUDE_CODE_DISABLE_FAST_MODE=1` ayarlayın.
+
+### Değiştirme, kalıcılık ve hız sınırları
+
+CLI’da, değiştirmek için `/fast` yazıp Tab’a basın ya da kullanıcı ayarlarınızda `"fastMode": true` ayarlayın. Açıldığında, `Fast mode ON` ve prompt’un yanında küçük bir `↯` simgesi görürsünüz; durumu kontrol etmek için istediğiniz zaman yeniden `/fast` çalıştırın. Geçerli modeliniz fast mode’u desteklemiyorsa, fast mode’u açmak modelinizi de Opus’a çevirir. Onu kapatmak sizi Opus’ta bırakır — taşınmak için `/model` kullanın.
+
+Varsayılan olarak, etkileşimli bir oturumda açtığınız fast mode oturumlar arasında kalıcıdır. Her oturumun kapalı başlamasını sağlamak için herhangi bir ayar dosyasında `fastModePerSessionOptIn: true` ayarlayın; kaydedilen tercih korunur, dolayısıyla ayarı kaldırmak kalıcı davranışı geri getirir. Team ya da Enterprise plandaki Owner’lar bunu sunucu tarafından yönetilen ayarlar üzerinden organizasyon genelinde dağıtabilir.
+
+Fast mode’un desteklenen Opus modelleri arasında paylaşılan kendi hız sınırı havuzu vardır. Ona çarptığınızda, fast mode otomatik olarak standart hıza geri döner, `↯` simgesi griye döner, standart hız ve fiyatlandırmayla çalışmaya devam edersiniz ve soğuma süresi dolduğunda fast mode yeniden etkinleşir.
+
+Bu dersin örnek prompt’u, fast mode’un gerçekten ne için olduğu türden bir iştir — kısa, etkileşimli ve sizi bekleyen:
+
+```text
+The dev server is throwing "Cannot read properties of undefined" on /tasks after my
+last change. Reproduce it, tell me the line, and stop. I'm watching.
+```
+
+## Uygulamalı laboratuvar
+
+Fast mode’un bir lab-repo tag’i yok ve bilinçli olarak uydurma bir oturum kaydı da yok: onu değiştirmek bir TUI etkileşimidir ve kullanım kredileri açık olan bir hesapta onu etkinleştirmek, planınızın dahil kullanımı dışında gerçek para harcar. Yani bu ders bunun yerine iki dürüst şey yapıyor — size tam komutları gösteriyor ve bu modüldeki diğer dersler için yakalanan koşularda fast mode’un durumunu bildiren alanı gösteriyor.
+
+<Lab
+  title="Laboratuvar · durumu okuyun, sonra karar verin"
+  lessonId="tr/l2-intermediate/m05-models-effort/fast-mode"
+  repoTag="none"
+  steps={[
+    'Etkileşimli bir oturumda `/status` çalıştırın ve giriş yöntemi satırını not edin: `Claude Max account` tarzı bir satır bir abonelik demektir; bir `API key` satırı bir Console organizasyonu demektir. Bu, fast mode harcamasının nerede görüneceğini belirler.',
+    '`/fast`’ı bir kez çalıştırın ve ne dediğini okuyun. Açılırsa `Fast mode ON` ve bir `↯` simgesi görürsünüz; reddederse mesaj nedeni adlandırır — yukarıdaki ret tablosuyla eşleştirin.',
+    'Açıldıysa, kapatmak için yeniden `/fast` çalıştırın ve Opus’ta kaldığınızı not edin.',
+    '`--output-format json` ile herhangi bir headless komut çalıştırın ve zarftaki `fast_mode_state` ve `fast_mode_disabled_reason` alanlarını bulun.',
+    'Bir sonraki göreviniz etkileşimli-ve-bekleyen mi (fast mode) yoksa uzun-ve-otonom mu (standart) olduğuna tek cümlede karar verin.',
+  ]}
+  expected="`/fast` ya `Fast mode ON` bildirir ya da belgelenmiş retlerden birini adlandırır. Her headless koşu `fast_mode_state`’i bildirir ve — kapalıyken — bir `fast_mode_disabled_reason`; düz bir `claude -p` koşusunda bu neden `sdk_opt_in_required`’dır, çünkü etkileşimsiz modda fast mode’a oturumun `--settings` değeri üzerinden dahil olunması gerekir."
+  checklist={[
+    '`/status`, fast mode harcamasının nereye ineceğini söyledi',
+    'Çalıştığını varsaymak yerine gerçek `/fast` cevabını okudunuz',
+    'Gerçek bir JSON zarfında `fast_mode_state`’i buldunuz',
+    'Standart Opus 5 oranını ve fast-mode oranını ezberden söyleyebiliyorsunuz',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/04-opus.txt"
+    range="2-2"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/04-opus.txt"
+    range="82-83"
+  />
+</Lab>
+
+O zarf, `02` dersinin Opus koşusundan geliyor — fast-mode ayarı olmayan sıradan bir `claude -p` çağrısı. `"fast_mode_state": "off"`’u `"fast_mode_disabled_reason": "sdk_opt_in_required"` ile birlikte bildiriyor, ki bu tam olarak belgelenmiş etkileşimsiz davranıştır: `-p` bayrağıyla, `/fast` yalnızca fast mode’u `--settings` değerinde taşıyarak başlatılan bir oturumda çalışır.
+
+<CodeBlock title="fast mode kontrolleri">
+
+```text
+/fast                                     # toggle (Tab), or report the current state
+/status                                   # login method: subscription or Console organisation
+/usage                                    # Team/Enterprise: your own usage-credit spend
+/usage-credits                            # open the page that turns usage credits on
+/model                                    # move off Opus after turning fast mode off
+```
+
+</CodeBlock>
+
+<CodeBlock title="ayarlar ve ortam">
+
+```json
+{
+  "fastMode": true,
+  "fastModePerSessionOptIn": true
+}
+```
+
+</CodeBlock>
+
+Fast mode’u etkileşimsiz bir koşuda kullanmak için, başlangıçta geçirin — `claude -p --settings '{"fastMode": true}'` — bu yalnızca o oturuma uygulanır ve varsayılanınız olarak kaydedilmez.
+
+## Anti-pattern’ler
+
+**Fast mode’u uzun bir oturumun yarısında açmak.** Başlığı açık olan ilk istek, tüm konuşmanızı hiç cache isabeti olmadan, fast-mode oranlarından faturalandırılmış olarak okur — ne kadar derinlerdeyseniz o kadar pahalıya mal olur. _Düzeltme:_ bir oturumun başında etkinleştirin ya da yeni bir tane başlatın.
+
+**Sorun derinlikken fast mode’a uzanmak.** Fast mode size aynı cevabı daha erken verir, daha iyi bir cevap değil. Claude sığ iş üretiyorsa, farklı bir model ya da daha yüksek bir effort seviyesi istersiniz. _Düzeltme:_ harcamadan önce gecikmeyi kaliteden ayırt edin.
+
+**Onu otonom ya da CI işleri için kullanmak.** Bir hattın gecikmesini bekleyen kimse yok ve hat, token başına iki kat öder. _Düzeltme:_ toplu iş, CI/CD ve uzun otonom görevler için standart mod.
+
+**Bir reddin "bana kapalı" anlamına geldiğini varsaymak.** Beş farklı ret vardır ve üçü sizin ya da bir yöneticinin değiştirebileceği bir yapılandırmadır. _Düzeltme:_ tam mesajı okuyun ve yukarıdaki tabloyla eşleştirin.
+
+**Kapattıktan sonra hâlâ Opus’ta olduğunuzu unutmak.** `/fast`’ı kapatmak modeli koyduğu yerde bırakır. _Düzeltme:_ olmak istediğiniz her neyse ona `/model` ile geri dönün.
+
+<Callout variant="changed" label="Değişti">
+  Opus 4.7 için fast mode 25 Haziran 2026’da kullanımdan kaldırıldı ve 24 Temmuz 2026’da tamamen
+  silindi; Claude Code artık Opus 4.7’yi fast-mode desteği olmayan diğer her model gibi görüyor,
+  dolayısıyla ona geçmek fast mode’u kapatıyor. Claude Code 2.1.263 için `fast-mode.md` üzerinden
+  doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/fast-mode"
+  questionId="q1"
+  lang="tr"
+  prompt="Fast mode neyi değiştirir?"
+  options={[
+    {
+      text: 'Sizi daha küçük, daha hızlı bir modele geçirir.',
+      explanation: 'Farklı bir model değil — farklı bir API yapılandırmasına sahip Opus’tur.',
+    },
+    {
+      text: 'Model ya da kalitesiyle ilgili hiçbir şeyi: 5 $/25 $ yerine MTok başına 10 $/50 $’a, %2,5’e kadar daha hızlı, hızı önceliklendiren bir yapılandırmayla sunulan Opus’tur.',
+      correct: true,
+      explanation: 'Aynı kalite ve yetenekler, daha düşük gecikme, token başına daha yüksek fiyat.',
+    },
+    {
+      text: 'Effort seviyesini otomatik olarak düşürür.',
+      explanation:
+        'Effort ayrı bir kadrandır; ikisi birleştirilebilir ama biri diğerini ayarlamaz.',
+    },
+    {
+      text: 'İstekleri küçültmek için bağlam penceresini daraltır.',
+      explanation: 'Fast-mode fiyatlandırması tüm 1M token’lık bağlam penceresi boyunca sabittir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/fast-mode"
+  questionId="q2"
+  lang="tr"
+  prompt="Fast mode’u bir oturumun başında etkinleştirmek neden iki saat sonra etkinleştirmekten daha ucuzdur?"
+  options={[
+    {
+      text: 'Çünkü token başına fiyat bir oturum boyunca yükselir.',
+      explanation: 'Oran sabittir.',
+    },
+    {
+      text: 'Çünkü fast-mode başlığı cache anahtarının bir parçasıdır, dolayısıyla açıkken gönderilen ilk istek tüm konuşmayı cache’lenmemiş girdi olarak — fast-mode oranlarından — yeniden işler.',
+      correct: true,
+      explanation:
+        'Maliyet konuşma başına bir kez uygulanır ve ne kadar konuşma olduğuyla ölçeklenir.',
+    },
+    {
+      text: 'Çünkü Claude Code oturum başına sabit bir etkinleştirme ücreti alır.',
+      explanation: 'Bir etkinleştirme ücreti yoktur.',
+    },
+    {
+      text: 'Çünkü hız sınırları günün ilerleyen saatlerinde daha katıdır.',
+      explanation:
+        'Fast mode’un kendi hız sınırı havuzu vardır, onu ne zaman etkinleştirdiğinizle ilgisi yoktur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/fast-mode"
+  questionId="q3"
+  lang="tr"
+  prompt="`/fast`, `Fast mode requires usage credits · /usage-credits to turn them on` bildiriyor. Ne oluyor?"
+  options={[
+    {
+      text: 'Organizasyonunuz fast mode’u devre dışı bırakmış.',
+      explanation: 'O ret kendi ayrı mesajına sahiptir.',
+    },
+    {
+      text: 'Hesabınız için kullanım kredileri açık değil — fast mode onlara faturalandırır, dolayısıyla onlar açılana kadar başlayamaz.',
+      correct: true,
+      explanation:
+        'Pro ve Max’te bunları Settings > Usage’da siz açarsınız; Team ve Enterprise’da faturalandırma erişimi olan bir üye açar.',
+    },
+    {
+      text: 'Fast mode’u desteklemeyen bir modeldesiniz.',
+      explanation: 'O durumda fast mode’u açmak, reddetmek yerine sizi Opus’a geçirir.',
+    },
+    {
+      text: 'Ağınız `api.anthropic.com`’u engelliyor.',
+      explanation: 'Bu, bunun yerine bağlantı mesajını üretir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/fast-mode"
+  questionId="q4"
+  lang="tr"
+  prompt="Hangi iş yükü fast mode için en iyi uyumdur?"
+  options={[
+    {
+      text: 'Her açık PR üzerinde bir inceleme hattı çalıştıran gecelik bir CI işi.',
+      explanation: 'Kimse beklemiyor ve hat token başına iki kat ödüyor.',
+    },
+    {
+      text: 'Klavyenin başında her cevaba tepki verdiğiniz canlı hata ayıklama.',
+      correct: true,
+      explanation:
+        'Gecikmenin maliyetten daha önemli olduğu etkileşimli iş, tam olarak belgelenmiş durumdur.',
+    },
+    {
+      text: 'Çalışır bırakmayı planladığınız uzun, otonom bir refactor.',
+      explanation: 'Standart mod, uzun otonom görevler için belgelenmiş seçimdir.',
+    },
+    {
+      text: 'Hızlandırmak istediğiniz bir Sonnet 5 oturumu.',
+      explanation: 'Fast mode yalnızca Opus 5 ve Opus 4.8’de desteklenir.',
+    },
+  ]}
+/>
+
+**Sırada:** `06-cost-and-usage`, kadranları izleyebileceğiniz sayılara dönüştürüyor — `/cost`, `/usage` ve faturanızın çoğuna karar veren cache alanları.

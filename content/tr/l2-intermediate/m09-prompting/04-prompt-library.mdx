@@ -1,15 +1,15 @@
 ---
-title: 'Prompt library kalıplarını uyarlamak'
-description: 'Resmi prompt library, faz ve göreve göre etiketlenmiş 52 kopyala-yapıştır prompt içerir; çoğu slot’lu şablonlardır. Şablonun arkasındaki kalıbı okumayı, slot’ları kendi projeniz için doldurmayı ve bunun ne kazandırdığını görmeyi öğrenin.'
+title: 'Prompt kütüphanesi kalıpları, uyarlanmış'
+description: 'Resmî prompt kütüphanesi, aşamaya ve göreve göre düzenlenmiş, çoğu yuvalı şablon olan 52 kopyala-yapıştır prompt’tur. Bir şablonun arkasındaki kalıbı okumayı, yuvalarını projeniz için doldurmayı ve doldurmanın size ne kazandırdığını görmeyi öğrenin.'
 level: 2
 module: 'm09-prompting'
 order: 4
 duration_min: 15
 difficulty: core
-tags: ['prompting', 'prompt-library', 'patterns', 'templates']
+tags: ['prompting', 'prompt-kütüphanesi', 'kalıplar', 'şablonlar']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Prompt library'
@@ -27,7 +27,279 @@ lab:
   repo_tag: 'none'
 ---
 
-Bu ders, resmi prompt library’nin nasıl düzenlendiğini (Discover, Design, Build, Ship, Operate fazları ve kategoriler) ve bir şablonun anatomisini — fiil, sınırlı hedef, açık çıktı biçimi — anlatır. Laboratuvarda çıplak bir fiil ile doldurulmuş şablon aynı depoya karşı headless çalıştırılıp karşılaştırılır.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l2-intermediate/m09-prompting/04-prompt-library.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Resmî prompt kütüphanesinde aşamaya ve kategoriye göre gezinmek ve prompt'larının nereden geldiğini söylemek.
+- Şablonlu bir prompt'u kopyalanacak bir cümle olarak değil bir kalıp olarak — bir fiil, bir hedef yuvası ve bir çıktı-şekli yuvası — okumak.
+- Bir şablonun yuvalarını, onu işe yarayan parçayı kaybetmeden kendi projeniz için doldurmak.
+- İki headless koşudan, doldurulmuş şablonun çıplak fiile göre ne kazandırdığını göstermek.
+
+**Ön koşullar.** Bu modülün `01`–`03` dersleri. Bir prompt'u yöneltebileceğiniz bir kod tabanına aşinalık.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bir kütüphane prompt'u, başka birinin projesinin şekillendirdiği bir başlangıç noktasıdır.
+  Göreviniz gerçekten kod tabanınıza özgüyse birine uzanmayın — en yakın eşleşen şablon sizi
+  sessizce yazıldığı göreve doğru itecektir. Ve örnek yuva değerleri hâlâ içindeyken bir şablonu
+  asla yapıştırmayın: <code>src/scheduler/queue.ts</code>, kütüphanenin yer tutucusudur, deponuzdaki
+  bir dosya değil, ve var olmayan bir dosyayı adlandıran bir prompt, oturuma çözülmesi gereken bir
+  çelişkiyle başlar.
+</WhenNotToUse>
+
+## Kavram
+
+### Kütüphanenin gerçekte ne olduğu
+
+Prompt kütüphanesi, **göreve ve role göre etiketlenmiş, Claude Code için kopyala-yapıştır prompt'ları** olan bir sayfadır. 2026-09-07'de doğrulandığı üzere **52 prompt** taşır, beş yazılım-yaşam-döngüsü aşamasına gruplandırılmış — Discover, Design, Build, Ship, Operate — sonra her birinin içinde kategoriye göre: Onboard, Understand, Plan, Prototype, Implement, Test, Refactor, Review, Steer, Git, Release, Debug, Incident, Data, Automate. Bazıları ayrıca mühendislik-dışı roller için etiketlenmiştir (pm, design, docs, marketing, data, ops, security).
+
+Her girdi ayrıca nereden geldiğini kaydeder. 2026-09-07'de sayıldığında döküm şöyle: Common workflows 23, bir Anthropic takım-kullanımı makalesi 13, Best practices 10 ve üç daha küçük kaynaktan altı daha. Bir kütüphane prompt'u bu yüzden genellikle tek satıra sıkıştırılmış bir workflow tarifidir, bu yüzden Common workflows ve Best practices burada kütüphaneyle birlikte anılıyor.
+
+### Bir şablonun anatomisi
+
+Çoğu girdi sabit cümleler değildir. Süslü parantez içinde yazılmış, ekli bir örnek değeri olan **yuvalar** içerirler. İşte kütüphaneden birebir bir tanesi:
+
+```text
+explain what {path} does and how data flows through it. write it up as {format}
+```
+
+kütüphanenin kendi örnek yuva değerleriyle: `path: src/scheduler/queue.ts` ve `format: an HTML page with a diagram, then open it in my browser`.
+
+Üç şey iş yapıyor ve onları ayrı ayrı adlandırmaya değer:
+
+| Öğe               | Bu şablonda                     | Neden önemli                                                            |
+| ----------------- | ------------------------------- | ----------------------------------------------------------------------- |
+| Kapsamlı bir fiil | `explain what {path} does`      | Keşfi depo yerine tek bir dosyayla sınırlar                             |
+| İkinci bir soru   | `and how data flows through it` | Yalnızca bir açıklama değil, ilişkiler ister                            |
+| Bir çıktı şekli   | `write it up as {format}`       | Cevabın biçimini sabitler, dolayısıyla sonuç olduğu gibi kullanılabilir |
+
+Kalıp bu tek girdinin ötesine genelleşir: **fiil + sınırlı hedef + açık çıktı şekli**. Ödünç aldığınız şekil budur. Kelimeler tesadüfidir.
+
+### Kopyalamak yerine uyarlamak
+
+Yuvaları iyi doldurmak, üç parçanın tümü için _kendi_ değerlerinizi koymak demektir:
+
+- **Hedef:** deponuzdaki gerçek bir yol. Kütüphanenin `src/scheduler/queue.ts`'i değil, `src/store.ts`.
+- **Çıktı şekli:** üzerinde hareket edebileceğiniz bir şey. Kütüphane bir diyagramlı HTML sayfası öneriyor; cevabı yalnızca terminalinizde okumak istiyorsanız, bir markdown tablosu isteyin ve sütunlarının ne olduğunu söyleyin.
+- **Kütüphanenin bilemeyeceği her şey:** projenizin konvansiyonları, burada önemli olan kısıt, yazdığınız incelemeci.
+
+Diğer girdiler de aynı okumayı ödüllendirir. `where do we {behavior}?`, alan diliyle sınırlı bir aramadır. `what would break if I deleted {target}?`, yerleşik bir durdurma koşulu olan bir etki analizidir. `look through the commit history of {path} and summarize how it evolved and why`, modelden spekülasyon yapmasını istemek yerine bir kaynağa — git tarihçesine — işaret eder, ki bu best-practices sayfasının kendi başına bir strateji olarak listelediği bir şeydir.
+
+### Bu dersin örnek prompt'u
+
+```text
+explain what src/store.ts does and how data flows through it. write it up as a
+markdown table of exported functions with their inputs, what they mutate, and
+their callers
+```
+
+Her yuva gerçek bir şeyle dolu: var olan bir dosya ve sütunları adlandırılmış bir çıktı şekli. Sütunlar ilginç kısımdır — "what they mutate" ve "their callers", dosyanın ilişkileri hakkında sorulardır ve onları sütun olarak adlandırmak cevabı onları içermeye zorlar.
+
+## Uygulamalı laboratuvar
+
+<Callout label="Not">
+  Bu modülün henüz lab-repo tag'i yok (`repo_tag: 'none'`), dolayısıyla laboratuvar lab deposunun
+  `main` branch'inin taze bir klonuna karşı çalışır. İki koşu da salt-okunur: `--allowedTools
+  "Read,Grep,Glob"`, aynı model, aynı altı-turluk bütçe.
+</Callout>
+
+<Lab
+  title="Laboratuvar · çıplak fiile karşı doldurulmuş şablon"
+  lessonId="tr/l2-intermediate/m09-prompting/prompt-library"
+  repoTag="none"
+  steps={[
+    'Lab deposunun `main`\'deki geçici bir klonunda (`npm ci` çalıştırılmış), prompt kütüphanesini açın ve Discover · Understand altındaki "Explain unfamiliar code" girdisini bulun. İki yuvasını not edin.',
+    'Önce çıplak fiili çalıştırın: `claude -p "explain the code" --model sonnet --max-turns 6 --output-format json --allowedTools "Read,Grep,Glob"`',
+    'Şablonu bu depo için doldurun ve aynı bayraklarla çalıştırın: `claude -p "explain what src/store.ts does and how data flows through it. write it up as a markdown table of exported functions with their inputs, what they mutate, and their callers" …`',
+    "`subtype`, `is_error` ve `num_turns`'ü karşılaştırın, sonra hangi koşu bir tane ürettiyse onun `result`'ını okuyun.",
+    'Listeden bir şablon daha seçin — `what would break if I deleted {target}?` iyi bir tanesi — ve aynı kalıbın tuttuğunu kontrol edin.',
+  ]}
+  expected='Çıplak fiil altı-turluk bütçesini tüketir: "is_error": true, "subtype": "error_max_turns", result alanı yok. Doldurulmuş şablon beş turda, src/store.ts’in export’larının, girdilerinin, her birinin neyi değiştirdiğinin ve hangi çağıranların kullandığının bir markdown tablosuyla, artı veri akışı hakkında bir nesir paragrafıyla döner.'
+  checklist={[
+    'Her iki koşu da aynı modeli, tur bütçesini ve tool izin listesini kullandı',
+    'Çıplak-fiil zarfı bir `result` değil bir `errors` dizisi taşıyor',
+    'Doldurulmuş şablonun sonucu, istediğiniz sütunları o sırayla içeriyor',
+    'Sonuç, iki kez sormanız gerekmeyen ilişkilerden (çağıranlar, mutasyon) bahsediyor',
+    'Hiçbir koşu bir dosyayı düzenlemedi',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/04-prompt-library/01-weak.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/04-prompt-library/01-weak.txt"
+    range="87-94"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/04-prompt-library/02-strong.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/04-prompt-library/02-strong.txt"
+    range="87-94"
+  />
+</Lab>
+
+"Explain the code"'ın bir fiili var ve başka hiçbir şeyi yok — hedef yok, çıktı şekli yok — ve altı turun tamamını "kod"un ne anlama geldiğine karar vermeye harcadı, döndürecek bir sonuç olmadan `error_max_turns`'te bitti.
+
+Doldurulmuş şablon istenen tabloyla beş turda geri geldi. İçeriğini okuduğunuzda her yuvanın karşılığını verdiğini görebilirsiniz: hedef yuvası okumayı tek bir dosya artı ihtiyaç duyduğu çağrı noktalarıyla sınırlı tuttu ve çıktı-şekli yuvası bir açıklamayı inceleyebileceğiniz bir şeye çeviren sütunlar — girdiler, ne değiştiriliyor, çağıranlar — üretti. Ayrıca orta cümlenin istediği veri-akışı paragrafını da gönüllü olarak sundu: CLI'ın başlangıçta bellek içi diziyi diskten canlandırdığını, API'nin ise her koşuda boş başladığını.
+
+Kütüphanenin genel dersi bu. Prompt'lar sihirli sözler değildir; her zaman sınırlı bir hedef ve bir çıktı şekli sağlamanın bir hatırlatıcısıdır.
+
+### Laboratuvarı kurmak, işletim sistemine göre
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```text
+# PowerShell 5.1 — statements separated with ; instead of &&
+git clone https://github.com/codechup/claude-code-lab.git; cd claude-code-lab; npm ci
+git checkout -- .; git clean -fd
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1'in `&&` operatörü yoktur, bu yüzden orada aynı adımlar `;` ile ayrılır. WSL içinde, Linux komutlarını kullanın.
+
+## Anti-pattern'ler
+
+Aşağıda bir dokümantasyon sayfası adlandıran öğeler ondan kaynaklanır; geri kalanı bu sitenin kendi gözlemleridir (D080).
+
+**Bir şablonu örnek yuvaları sağlam bırakarak kopyalamak.** Böyle bir dosyası olmayan bir depoda `src/scheduler/queue.ts` hakkında sormak, oturuma bir çelişkiyle başlar. _Düzeltme:_ Enter'a basmadan önce gerçek bir yolla değiştirin.
+
+**Kütüphaneyi bir büyü sözleri listesi gibi görmek.** Önünüzdeki görev için sınırlı bir tane yazmak yerine "doğru prompt"u aramak. _Düzeltme:_ şekli ödünç alın — fiil, sınırlı hedef, çıktı şekli — ve kendi cümlenizi yazın.
+
+**Çıktı şeklini düşürmek.** En sık kesilen yuva `{format}`'tır ve cevabı kullanılabilir kılan tam olarak odur. _Düzeltme:_ her zaman cevabı hangi biçimde istediğinizi söyleyin ve tablolar için sütunları adlandırın.
+
+**Doğru kalıp yerine en yakın şablonu seçmek.** Bir Design-aşaması sorusuna uygulanan bir Debug-aşaması prompt'u, oturumu belirtilere doğru sürükler. _Düzeltme:_ önce aşamayı seçin — Discover, Design, Build, Ship, Operate — sonra kategoriyi.
+
+**Bir topluluk prompt koleksiyonunu resmîymiş gibi alıntılamak.** Resmî olmayan listeler güncel davranıştan sapar ve artık var olmayan bayraklar adlandırabilir. _Düzeltme:_ resmî kütüphaneden başlayın ve ödünç aldığınız herhangi bir prompt'un bayraklarını dokümanlarla kontrol edin.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/prompt-library"
+  questionId="q1"
+  lang="tr"
+  prompt="Resmî prompt kütüphanesi nasıl düzenlenmiştir?"
+  options={[
+    {
+      text: 'Prompt metnine göre alfabetik.',
+      explanation: 'Gruplandırılmıştır, alfabetik değil.',
+    },
+    {
+      text: 'Yazılım-yaşam-döngüsü aşamasına göre — Discover, Design, Build, Ship, Operate — sonra kategoriye göre, bazı girdiler ayrıca role göre de etiketlenmiş.',
+      correct: true,
+      explanation:
+        'Bu, sayfanın kendi gruplandırması ve pm, ops ve security gibi roller ek etiketlerdir.',
+    },
+    {
+      text: 'Modele göre: her Claude modeli için bir bölüm.',
+      explanation: 'Model seçimi tamamen ayrı bir konudur.',
+    },
+    {
+      text: "Permission mode'a göre.",
+      explanation: "Permission mode'ların kütüphanenin nasıl gruplandığıyla ilgisi yoktur.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/prompt-library"
+  questionId="q2"
+  lang="tr"
+  prompt="`explain what {path} does and how data flows through it. write it up as {format}` içindeki süslü parantezler nedir?"
+  options={[
+    {
+      text: 'Yuvalar — kendi değerlerinizle değiştirdiğiniz yer tutucular; kütüphane her biri için bir örnek değer gönderir.',
+      correct: true,
+      explanation: 'Örnek değerler birer örnektir, tutulacak varsayılanlar değil.',
+    },
+    {
+      text: "Claude Code'un yaptığı kabuk değişkeni genişletmesi.",
+      explanation: 'Claude Code bir prompt içindeki süslü parantezleri genişletmez.',
+    },
+    {
+      text: 'Bir JSON şema parçası.',
+      explanation: 'Şemalar prompt metni içinde değil --json-schema ile sağlanır.',
+    },
+    {
+      text: 'Silebileceğiniz isteğe bağlı cümleler.',
+      explanation:
+        'Doldurmanız gereken parçalardır; onları silmek hedefi ve çıktı şeklini kaldırır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/prompt-library"
+  questionId="q3"
+  lang="tr"
+  prompt="Laboratuvarda, `explain the code` neden subtype: error_max_turns ile bitti?"
+  options={[
+    {
+      text: "İzin listesi Read tool'unu reddetti.",
+      explanation: 'Read, Grep ve Glob her iki koşuda da izinliydi.',
+    },
+    {
+      text: 'Bir fiili vardı ama sınırlı bir hedefi ve çıktı şekli yoktu, dolayısıyla tüm bütçe neyin açıklanacağına karar vermeye gitti.',
+      correct: true,
+      explanation: 'Aynı bayraklar, aynı depo — yalnızca prompt farklıydı.',
+    },
+    {
+      text: 'Depo altı tur için çok büyük.',
+      explanation: 'Doldurulmuş şablon aynı depoyu beş turda kapsadı.',
+    },
+    {
+      text: 'JSON çıktısı tur sayısını sınırlıyor.',
+      explanation: "Sınır, her iki koşunun da paylaştığı --max-turns 6'dan geldi.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/prompt-library"
+  questionId="q4"
+  lang="tr"
+  prompt="`what would break if I deleted {target}?`'ın kendi deponuz için en iyi uyarlaması hangisidir?"
+  options={[
+    {
+      text: 'what would break if I deleted {target}?',
+      explanation: 'Yuva hâlâ doldurulmamış — hiçbir hedef yok.',
+    },
+    {
+      text: 'what would break if I deleted the retryWithBackoff helper?',
+      explanation:
+        "Bu, kütüphanenin kendi örnek değeridir; projenizin sahip olmayabileceği bir helper'ı adlandırır.",
+    },
+    {
+      text: 'what would break if I deleted paginate() from src/store.ts? list the call sites and the tests that would fail.',
+      correct: true,
+      explanation: 'Üzerinde hareket edebileceğiniz gerçek bir hedef artı bir çıktı şekli.',
+    },
+    {
+      text: 'what would break if I deleted anything?',
+      explanation: 'Sınırsız — sonsuz-keşif başarısızlık kalıbı.',
+    },
+  ]}
+/>
+
+**Sırada:** `05-anti-patterns`, en çok oturumu boşa harcayan on prompt hatasını, her birinin düzeltmesi ve kaynağıyla birlikte topluyor.

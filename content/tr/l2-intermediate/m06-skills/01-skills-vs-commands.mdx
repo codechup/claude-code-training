@@ -1,15 +1,15 @@
 ---
-title: "Skill'ler ve özel komutlar"
-description: "Özel komutlar skill'lere taşındı: tek mekanizma, tek dosya biçimi. Bir SKILL.md'nin nerede yaşayabileceğini, aynı ada sahip iki kopyadan hangisinin kazandığını ve kimin çağırabileceğini öğrenin."
+title: 'Skill’ler ve özel komutlar'
+description: 'Özel komutlar skill’lere taşındı: tek mekanizma, tek dosya biçimi. Bir SKILL.md’nin nerede yaşayabileceğini, aynı adı taşıyan iki kopyadan hangisinin kazandığını ve kimin çağırabileceğini öğrenin.'
 level: 2
 module: 'm06-skills'
 order: 1
 duration_min: 15
 difficulty: core
-tags: ['skills', 'custom-commands', 'configuration']
+tags: ['skills', 'özel-komutlar', 'yapılandırma']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Extend Claude with skills'
@@ -35,6 +35,288 @@ lab:
   repo_tag: 'none'
 ---
 
-**Not:** Bu dersin Türkçe çevirisi henüz yapılmadı; `draft: true` kaldığı sürece sayfa gezinmede görünmez. Çeviri `content/en/l2-intermediate/m06-skills/01-skills-vs-commands.mdx` dosyasından üretilir (kurallar: `.claude/rules/i18n.md`, D016, D018).
+## Hedefler ve ön koşullar
 
-Bu ders, custom command (özel komut) ile skill (beceri) arasındaki ilişkiyi anlatır: artık tek bir mekanizma var. `.claude/commands/deploy.md` ile `.claude/skills/deploy/SKILL.md` aynı `/deploy` komutunu üretir; ikisi birden varsa skill kazanır. Skill'lerin nerede yaşadığını (enterprise, personal, project, plugin ve iç içe proje dizinleri), ad çakışmalarında öncelik sırasını ve yazılan komut adının dosya yolundan nasıl türediğini kapsar.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- `.claude/commands/*.md` ile `.claude/skills/*/SKILL.md`'nin tek bir mekanizmanın iki yazılışı olduğunu ve bir skill'in bir komut dosyasının yapamadığı neyi eklediğini açıklamak.
+- Bir skill'in yaşayabileceği dört yeri — enterprise, personal, project, plugin — artı iç içe proje skill'lerini adlandırmak ve her birinin kimi kapsadığını söylemek.
+- İki skill aynı adı taşıdığında hangisinin çalışacağını tahmin etmek, hem seviyeler arasında hem de bir skill ile bir komut dosyası arasında.
+- Dosyanın diskte nerede durduğundan yazacağınız komutu çıkarmak.
+- Tekrarlanan bir talimatın `CLAUDE.md`'ye mi yoksa bir skill'e mi ait olduğuna karar vermek.
+
+**Ön koşullar.** Çalışan bir Claude Code kurulumu (level 1, `m01-start`) ve içine dosya ekleyebileceğiniz bir proje. `CLAUDE.md`'nin ne yaptığını zaten bilmeniz gerekir (`m03-memory`) — bu ders ikisini sürekli karşılaştırıyor.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Claude'un bilmesini istediğiniz şey bir prosedür değil de bir gerçekse bir skill'e uzanmayın —
+  proje kuralları, deploy branch'inin adı, deponun hangi paket yöneticisini kullandığı, hepsi
+  `CLAUDE.md`'ye aittir; orada bir kez yüklenip kalıcı olurlar. Yalnızca bir kez çalıştıracağınız
+  bir şey için skill kurmayın; talimatı yazmak bir dosyayı bakımda tutmaktan daha ucuzdur. Ve
+  modelin ne karar verirse versin her seferinde geçerli olması gereken bir kuralı zorlamak için bir
+  skill kullanmayın — bir skill, modelin okuduğu talimattır, dolayısıyla mutlak bir garanti ("bir
+  `git push --force`'u asla geçirme") bir hook'a (`m07-hooks`) ya da bir permission deny kuralına
+  aittir, bir `SKILL.md`'ye değil.
+</WhenNotToUse>
+
+## Kavram
+
+### Tek mekanizma, iki yazılış
+
+Resmî dokümanlar konusunda açık: **özel komutlar skill'lere taşındı**. `.claude/commands/deploy.md`'deki bir dosya ile `.claude/skills/deploy/SKILL.md`'deki bir skill, ikisi de `/deploy`'u yaratır ve aynı şekilde çalışır. Var olan `.claude/commands/` dosyaları çalışmaya devam eder ve aynı frontmatter'ı destekler — `name` ve `paths` hariç, Claude Code bunları bir komut dosyasında yok sayar.
+
+Bir skill'in bir komut dosyasına eklediği şey ekstra dizine değer:
+
+| Skill bunu yapabilir                                                                     | Komut dosyası yapamaz       |
+| ---------------------------------------------------------------------------------------- | --------------------------- |
+| `SKILL.md`'nin yanında destekleyici dosyalar taşıyabilir (betikler, referans dokümanlar) | Tek bir markdown dosyasıdır |
+| Görüntülenen etiketini değiştirmek için `name` belirleyebilir                            | `name` yok sayılır          |
+| `paths` ile otomatik etkinleşmeyi eşleşen dosyalarla sınırlayabilir                      | `paths` yok sayılır         |
+
+Geri kalan her şey — `$ARGUMENTS`, `allowed-tools`, `context: fork`, dinamik `` !`command` `` enjeksiyonu — ortak. Yani pratik kural şu: skill yazın; elinizdeki `.claude/commands/` dosyalarını yukarıdaki üç satırdan birine ihtiyaç duyana kadar olduğu gibi bırakın.
+
+Bir skill, memory ile aynı şey değildir. `CLAUDE.md` içeriği oturum başında yüklenir ve her turda token maliyetini öder. Bir skill'in _gövdesi_ yalnızca skill kullanıldığında yüklenir, bu yüzden dokümanlar bir `CLAUDE.md` bölümünü "bir gerçek olmaktan çıkıp bir prosedür hâline geldiğinde" bir skill'e taşımanızı önerir. Yalnızca skill'in tek satırlık listelemesi (ad artı description) bağlamda kalıcı olarak durur.
+
+### Bir skill nerede yaşar
+
+| Konum      | Yol                              | Kimi kapsar                                                                                                                                   |
+| ---------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enterprise | Yönetilen ayarlar dizini         | Organizasyonunuzdaki tüm kullanıcılar                                                                                                         |
+| Personal   | `~/.claude/skills/<ad>/SKILL.md` | Tüm projeleriniz                                                                                                                              |
+| Project    | `.claude/skills/<ad>/SKILL.md`   | Yalnızca bu proje                                                                                                                             |
+| Plugin     | `<plugin>/skills/<ad>/SKILL.md`  | [Plugin](/tr/playbook/glossary/#plugin) (Claude Code'a hook, skill, subagent gibi bileşenleri paket hâlinde ekleyen eklenti) etkin olduğu yer |
+
+Project skill'leri, Claude Code'u başlattığınız dizindeki `.claude/skills/`'ten **ve depo köküne kadar olan her üst dizinden** yüklenir, dolayısıyla bir alt dizinde oturum başlatmak yine de deponun skill'lerini alır. Başlangıç dizininizin _altındaki_ iç içe `.claude/skills/` dizinlerindeki skill'ler farklı davranır: başlangıçta yüklenmezler. Claude, o alt dizindeki bir dosyayı ilk okuduğunda ya da düzenlediğinde yüklenirler ve oturumun geri kalanında kullanılabilir kalırlar. Onları daha erken yüklemek için o yolla `/add-dir` çalıştırın (Claude Code v2.1.257 ya da sonrası).
+
+### Hangisi kazanır
+
+İki skill aynı adı taşıdığında, Claude Code çakışmayı kaynağa göre çözer:
+
+- Seviyeler arasında, **enterprise personal'ı geçersiz kılar, personal da project'i geçersiz kılar.** Hem `~/.claude/skills/`'te hem de projenin `.claude/skills/`'inde bir `deploy` skill'i varsa, `/deploy` personal olanı çalıştırır.
+- Bu seviyelerden herhangi birindeki bir skill, aynı adı taşıyan bir bundled (paketlenmiş) skill'i **geçersiz kılar** — ama o bundled skill'in alias'larını değil. Bir project `code-review` skill'i `/code-review`'ı değiştirir; bundled alias `/review`'ı yazmak yine bundled olanı çalıştırır.
+- Plugin skill'leri `plugin-adı:skill-adı` şeklinde isim alanına ayrılır, dolayısıyla diğer seviyelerle çakışamazlar.
+- **Bir skill, aynı adı taşıyan bir komut dosyasını yener.** Hem `.claude/commands/deploy.md` hem de `.claude/skills/deploy/SKILL.md` varken, `/deploy` skill'i çalıştırır. Bunu aşağıdaki laboratuvarda kendiniz kanıtlayacaksınız.
+- Çakışan iç içe bir skill, dizin nitelikli bir ad altında kullanılabilir kalır: `apps/web/.claude/skills/deploy/SKILL.md`, `/apps/web:deploy` olur ve çıplak `/deploy` proje kökündekini çalıştırır.
+
+### Komut adı yoldan gelir
+
+| Skill konumu                                | Komut adı kaynağı                                         | Örnek                                                          |
+| ------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------- |
+| `~/.claude/skills/` ya da `.claude/skills/` | Dizin adı                                                 | `.claude/skills/deploy-staging/SKILL.md` → `/deploy-staging`   |
+| İç içe `.claude/skills/`, bir çakışmada     | Alt dizin yolu, sonra dizin adı                           | `apps/web/.claude/skills/deploy/SKILL.md` → `/apps/web:deploy` |
+| `.claude/commands/`                         | Uzantısız dosya adı                                       | `.claude/commands/deploy.md` → `/deploy`                       |
+| Plugin `skills/` alt dizini                 | Frontmatter `name` ya da dizin adı, isim alanına ayrılmış | `my-plugin/skills/review/SKILL.md` → `/my-plugin:review`       |
+
+Bir personal ya da project skill için, frontmatter `name`'i yalnızca listelemedeki görüntülenen etiketi belirler — komut yine de dizin adından gelir. Bu insanları şaşırtıyor, o yüzden satırı iki kere okuyun.
+
+### Kim çağırabilir
+
+Varsayılan olarak ikiniz de çağırabilirsiniz: siz `/skill-adı` yazarsınız, Claude ise `description` yaptığınız şeyle eşleştiğinde skill'i kendiliğinden yükler. İki frontmatter anahtarı bunu daraltır, ders 02 onları baştan sona ele alır. Şimdilik, kararın şekli şöyle:
+
+```text
+Add a skill to this repo that drafts a conventional commit message from the
+staged diff, and make it something only I can trigger — never Claude on its own.
+```
+
+Bu son cümle `disable-model-invocation: true`'ya karşılık gelir ve bu, yan etkisi olan herhangi bir şey için doğru içgüdüdür.
+
+## Uygulamalı laboratuvar
+
+<Callout label="Not">
+  Bu laboratuvar, içine dosya ekleyebileceğiniz herhangi bir git deposuna ihtiyaç duyar; bir
+  lab-repo tag'i kullanmaz. Kaydedilen komutlar `--settings '&#123;"language":"English"&#125;'`
+  taşıyor çünkü onları yakalayan makinenin genel bir `language` tercihi Türkçe'ye ayarlı. O bayrağı
+  bırakın; başka hiçbir şeyi değiştirmiyor.
+</Callout>
+
+<Lab
+  title="Laboratuvar · bir skill'in bir komut dosyasını geride bıraktığını kanıtlayın"
+  lessonId="tr/l2-intermediate/m06-skills/skills-vs-commands"
+  repoTag="none"
+  steps={[
+    'Yazabildiğiniz herhangi bir git deposunda bir terminal açın.',
+    '`.claude/commands/lab-hello.md`’yi tek satırlık bir gövdeyle oluşturun: `Reply with exactly one line: "from .claude/commands/lab-hello.md".` Frontmatter’da bir `description` verin.',
+    'Aynı şekle sahip ama gövdesi `from .claude/skills/lab-hello/SKILL.md` diyen `.claude/skills/lab-hello/SKILL.md`’yi oluşturun.',
+    '`claude -p "/lab-hello " --output-format text --max-turns 6` çalıştırın ve ikisinden hangisinin cevap verdiğini okuyun. Cevap size skill’i kendinizin çalıştırmasını söylüyorsa, komutu yeniden çalıştırın — transcript’in altındaki nota bakın.',
+    '`.claude/skills/lab-hello/`’i silin ve aynı komutu yeniden çalıştırın: artık komut dosyası cevap veriyor.',
+  ]}
+  expected="Her iki dosya da varken skill cevap verir ('from .claude/skills/lab-hello/SKILL.md'); skill dizini kaldırıldığında komut dosyası cevap verir."
+  checklist={[
+    'Her iki dosya da mevcut ve ikisi de bir `description` bildiriyor',
+    'İlk çalıştırma SKILL.md gövdesini rapor ediyor, komut dosyasınınkini değil',
+    'Skill dizinini kaldırmak `/lab-hello`’yu komut dosyasına geri düşürüyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/01-skills-vs-commands/01-skill-wins-over-command.txt"
+    range="2-3"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/01-skills-vs-commands/02-command-file-fallback.txt"
+    range="2-3"
+  />
+</Lab>
+
+### İki dosyayı işletim sistemine göre oluşturmak
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+mkdir -p .claude/commands .claude/skills/lab-hello
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+mkdir -p .claude/commands .claude/skills/lab-hello
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+New-Item -ItemType Directory -Force .claude\commands, .claude\skills\lab-hello
+```
+
+  </Fragment>
+</OSTabs>
+
+İkinci kayıt, `.claude/skills/lab-hello/` silindikten sonraki aynı komuttur: yalnızca komut dosyası kalınca, `/lab-hello` ona geri düşer. Başka hiçbir şey değişmedi.
+
+Bu kayıtların sessizce söylediği iki şey daha var.
+
+**Skill dizinleri canlı izlenir.** Claude Code, `~/.claude/skills/`'i, project `.claude/skills/`'i ve herhangi bir `--add-dir` skill dizinini izler ve çalışan bir oturum içinde yeniden başlatmaya gerek kalmadan `SKILL.md` metin değişikliklerini yakalar. Tek istisna: oturum başladığında var olmayan bir üst düzey skill dizini oluşturursanız, Claude Code'un onu izleyebilmesi için yeniden başlatın. Yukarıdaki kayıtların bunu gösteremeyeceğini unutmayın — her `claude -p` çalıştırması taze bir oturumdur — bu yüzden bu, etkileşimli bir oturumda denenecek belgelenmiş bir davranıştır, bu laboratuvarın kanıtladığı bir şey değil.
+
+**Headless bir skill çağrısı doğrulanmaya değer.** Skill'lerin `-p` modunda çalıştığı belgelenir: prompt string'ine `/skill-adı`'nı ekleyin, Claude Code onu çalıştırmadan önce genişletir. Pratikte, bu modülü 2.1.263'e karşı yakalarken, `disable-model-invocation: true` olan bir project skill'inin headless çalıştırmalarından yaklaşık her üç dört tanesinden biri, skill'in kendi çıktısı yerine bir refüzasyonla döndü — "skill doğrudan sizin tarafınızdan çalıştırılmalı". Aynı komutu yeniden çalıştırmak kayıtlı sonucu üretti. Skill adından sonra hiçbir şey olmayan iki çalıştırma da reddedildi ve sondan boşluk ya da bir argüman olan her çalıştırma başarılı oldu, ama bu bir düzine kadar çalıştırma, bunu bir neden olarak adlandırmak için çok küçük bir örneklem. Pratik tavsiye basitçe şu: skill'ler öncelikle etkileşimli bir mekanizmadır, dolayısıyla headless bir çağrıyı kontrol edilecek bir şey olarak ele alın ve cevap size onu kendinizin çalıştırmasını söylüyorsa yeniden çalıştırın.
+
+## Anti-pattern'ler
+
+**"Komutlar deprecated olduğu için" her `.claude/commands/` dosyasını taşımak.** Deprecated değiller; taşındılar. Var olan dosyalarınız çalışmaya devam ediyor ve aynı frontmatter'ı alıyor. _Düzeltme:_ bir komut dosyasını yalnızca bir destekleyici dosyaya, bir `name` etiketine ya da `paths`'e ihtiyacınız olduğunda dönüştürün — aksi hâlde olduğu gibi bırakın ve zamanı başka yere harcayın.
+
+**Bir prosedürü `CLAUDE.md`'ye koymak.** Memory'deki on iki adımlık bir release checklist'i, CSS hakkında olanlar dahil her oturumun her turunda token'a mal olur. _Düzeltme:_ onu bir skill'e taşıyın; gövde o zaman yalnızca skill çalıştığında yüklenir.
+
+**Frontmatter `name`'in komutu yeniden adlandırdığını varsaymak.** Personal ya da project bir skill'de yalnızca listelerdeki etiketi değiştirir. `.claude/skills/deploy/`'u `.claude/skills/ship/`'e yeniden adlandırmak `/deploy`'u `/ship`'e çeviren şeydir. _Düzeltme:_ dizini yeniden adlandırın.
+
+**İç içe bir skill'in en başından orada olmasını beklemek.** `apps/web/.claude/skills/` altındaki bir skill, Claude `apps/web/`'de bir dosya okuyup düzenleyene kadar autocomplete'te görünmez. _Düzeltme:_ `/add-dir apps/web` çalıştırın (v2.1.257+) ya da önce orada bir dosya açın.
+
+**Bir skill'i sert bir kuralı zorlamak için kullanmak.** Bir skill, modelin okuduğu ve ikna edilerek vazgeçirilebileceği metindir. _Düzeltme:_ sert garantiler hook'lara ya da permission deny kurallarına gider; skill'ler yargı taşır, zorlama değil.
+
+<Callout variant="changed" label="Değişti">
+  Slash command'lar (`/ad` yazılarak çağrılan kısayollar) ve skill'ler, Claude Code 2.1.3'te (9 Ocak
+  2026) birleştirildi — "davranışta hiçbir değişiklik olmadan zihinsel modeli basitleştirerek".
+  `.claude/commands/deploy.md` ile `.claude/skills/deploy/SKILL.md`, ikisi de `/deploy`'u yaratır;
+  var olan komut dosyaları çalışmaya devam eder ve ikisi de var olduğunda skill önceliklidir —
+  Claude Code 2.1.263 için changelog ve `skills.md` üzerinden doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/skills-vs-commands"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir depoda hem .claude/commands/deploy.md hem de .claude/skills/deploy/SKILL.md var. /deploy ne çalıştırır?"
+  options={[
+    {
+      text: '.claude/skills/deploy/SKILL.md’deki skill',
+      correct: true,
+      explanation: 'Bir skill ve bir komut dosyası aynı adı taşıdığında, skill önceliklidir.',
+    },
+    {
+      text: 'Komut dosyası, çünkü .claude/commands/ önce kontrol edilir',
+      explanation: 'Dizinlerin sırası buna karar vermez; skill kazanır.',
+    },
+    {
+      text: 'Claude Code ikisinden birini kaldırana kadar başlamayı reddeder',
+      explanation: 'İkisi de sorunsuz yüklenir; çakışma sessizce skill lehine çözülür.',
+    },
+    {
+      text: 'En son değiştirilen dosya hangisiyse o',
+      explanation: 'Öncelik zaman damgasına değil, kaynağa göredir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/skills-vs-commands"
+  questionId="q2"
+  lang="tr"
+  prompt="~/.claude/skills/'te bir deploy skill'iniz ve projenin .claude/skills/'inde bir tane daha var. /deploy hangisini çalıştırır?"
+  options={[
+    {
+      text: '~/.claude/skills/’teki personal olan',
+      correct: true,
+      explanation:
+        'Enterprise personal’ı geçersiz kılar, personal da project’i geçersiz kılar — dolayısıyla personal kopyanız kazanır.',
+    },
+    {
+      text: 'Project olan, çünkü project ayarları daha spesifiktir',
+      explanation:
+        'Permission scope’ları böyle çalışır, ama skill önceliği tersine işler: project üzerinde personal.',
+    },
+    {
+      text: 'İkisi de, sırayla',
+      explanation: 'Belirli bir ada yalnızca bir skill cevap verir.',
+    },
+    {
+      text: 'Hiçbiri — ad çakışması ikisini de devre dışı bırakır',
+      explanation: 'Bir çakışma çözülür, ölümcül değildir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/skills-vs-commands"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir project skill'i .claude/skills/deploy-staging/SKILL.md'de yaşıyor ve frontmatter'ı `name: ship` diyor. Onu çalıştırmak için ne yazarsınız?"
+  options={[
+    {
+      text: '/deploy-staging',
+      correct: true,
+      explanation:
+        'Bir personal ya da project skill’de, `name` yalnızca görüntülenen etiketi belirler; komut dizin adından gelir.',
+    },
+    {
+      text: '/ship',
+      explanation:
+        'Bu, `name`’in komutun son parçasını belirlediği plugin skill’leri için doğrudur — project skill’leri için değil.',
+    },
+    {
+      text: '/skills deploy-staging',
+      explanation: '/skills listeleme menüsünü açar; bir skill’i çağırmaz.',
+    },
+    { text: 'İkisi de çalışır', explanation: 'Burada yalnızca dizin adı komuttur.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/skills-vs-commands"
+  questionId="q4"
+  lang="tr"
+  prompt="Bunlardan hangisi bir skill'e değil, CLAUDE.md'ye aittir?"
+  options={[
+    {
+      text: '“Bu depo pnpm kullanıyor, asla npm değil.”',
+      correct: true,
+      explanation:
+        'Her turda geçerli olması gereken kalıcı bir gerçek. Skill’ler kullanıldığında yüklenen prosedürler içindir.',
+    },
+    {
+      text: 'İki haftada bir çalıştırdığınız dokuz adımlık bir release checklist’i',
+      explanation:
+        'Bu büyüklükte bir prosedür tam olarak bir skill’in amacıdır — çağrılana kadar hiçbir şeye mal olmaz.',
+    },
+    {
+      text: 'Dört numaralı kontrolü olan bir güvenlik incelemesi checklist’i',
+      explanation: 'Talep üzerine çağrılan bir prosedür: bir skill.',
+    },
+    {
+      text: 'Bir betik çalıştırıp sonra kod yazan bir scaffolding rutini',
+      explanation: 'Destekleyici dosyası olan çok adımlı bir eylem: bir skill dizini.',
+    },
+  ]}
+/>
+
+**Sırada:** `02-skill-md-anatomy`, dosyayı alan alan parçalar — Claude Code'un kabul ettiği her frontmatter anahtarı, her birinin ne değiştirdiği ve hangilerini güvenle yok sayabileceğiniz.

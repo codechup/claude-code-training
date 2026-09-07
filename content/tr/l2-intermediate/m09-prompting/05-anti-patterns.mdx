@@ -1,15 +1,15 @@
 ---
 title: 'On prompt anti-pattern’i'
-description: 'Bir promptun oturumu boşa harcamasının on yolu; her biri düzeltmesi ve kaynağıyla. Dokuzu resmi dokümantasyonda adlandırılmıştır; onuncusu bu sitenin kendi gözlemidir ve headless bir çalıştırmadan yakalanmıştır.'
+description: 'Bir prompt’un bir oturumu boşa harcamasının on yolu, her biri düzeltmesi ve geldiği kaynakla birlikte. Dokuzu resmî dokümantasyonda adlandırılmış; onuncusu bu sitenin kendi gözlemi, headless bir koşudan yakalanmış.'
 level: 2
 module: 'm09-prompting'
 order: 5
 duration_min: 15
 difficulty: core
-tags: ['prompting', 'anti-patterns', 'context', 'verification']
+tags: ['prompting', 'anti-pattern’ler', 'bağlam', 'doğrulama']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Best practices for Claude Code'
@@ -27,7 +27,318 @@ lab:
   repo_tag: 'none'
 ---
 
-Bu ders on prompt anti-pattern’ini, belirtilerini ve düzeltmelerini toplar; her maddenin kaynağı (resmi doküman ya da açıkça "observation" etiketi) belirtilir. Laboratuvarda en pahalısı olan sınırsız keşif ile aynı sorunun kapsamlandırılmış hali karşılaştırılır.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l2-intermediate/m09-prompting/05-anti-patterns.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- On [prompt](/tr/playbook/glossary/#prompt) (Claude'a verilen istek metni) anti-pattern'ini adlandırmak, her birini belirtisinden tanımak ve düzeltmesini uygulamak.
+- Bunlardan herhangi biri için, resmî dokümantasyondan mı yoksa bu sitenin kendi gözleminden mi geldiğini söylemek — ve bu ayrımın neden önemli olduğunu.
+- En pahalılarını, sınırsız keşfi, ve düzeltmesini, iki [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) zarftan göstermek.
+
+**Ön koşullar.** Bu modülün `01`–`04` dersleri. Anti-pattern'ler aynı kataloğun tersten okunmuş hâlidir, dolayısıyla düzeltmeler zaten tanıdık gelecek.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bir anti-pattern listesi bir tanı yardımcısıdır, bir stil kılavuzu değil. Her prompt'u göndermeden
+  önce on tanesinin hepsinden geçirmeyin — çoğu prompt bir meslektaşa söylenen tek bir cümledir ve
+  birini yanlış yapmanın maliyeti bir cümle daha fazlasıdır. Bir oturum kötü gittiğinde ve nedenini
+  bilmek istediğinizde ya da bir prompt kimsenin izlemeyeceği bir betiğe girdiğinde listeye uzanın.
+  Resmî kılavuz kendi kalıpları hakkında aynı noktayı yapıyor: genel olarak iyi çalışan başlangıç
+  noktalarıdır, kurallar değil, ve bazen belirsiz bir prompt tam olarak doğrudur çünkü onu
+  kısıtlamadan önce Claude'un problemi nasıl yorumladığını görmek istersiniz.
+</WhenNotToUse>
+
+## Kavram
+
+### Bu listeyi nasıl okumalı
+
+Aşağıdaki her girdi, bu sitenin kaynak kuralına (D080) göre kaynağını taşır. Dokuzu, geldikleri sayfayla birlikte resmî dokümantasyonda adlandırılmıştır. Biri **gözlem** olarak işaretlenmiştir: bu sitenin bu modüldeki gerçek koşulardan yakaladığı kendi bulgusudur ve resmî bir kılavuz olduğu iddia edilmez.
+
+| #   | Anti-pattern                       | Kaynak                |
+| --- | ---------------------------------- | --------------------- |
+| 1   | Lavabo oturumu                     | best-practices        |
+| 2   | Tekrar tekrar düzeltmek            | best-practices        |
+| 3   | Aşırı belirtilmiş CLAUDE.md        | best-practices        |
+| 4   | Güven-sonra-doğrula boşluğu        | best-practices        |
+| 5   | Sonsuz keşif                       | best-practices        |
+| 6   | Doğrulama kriteri yok              | best-practices        |
+| 7   | Kök neden yerine belirti           | best-practices        |
+| 8   | Her incelemeci bulgusunu kovalamak | best-practices        |
+| 9   | Devretmek yerine dikte etmek       | how-claude-code-works |
+| 10  | Cevaplanamaz soru                  | **gözlem** (bu site)  |
+
+### 1. Lavabo oturumu
+
+_Kaynak: best-practices, "Avoid common failure patterns"._ Bir görevle başlarsınız, ilgisiz bir şey sorarsınız, sonra ilk göreve geri dönersiniz. Bağlam artık ilgisiz bilgiyle dolu.
+
+**Düzeltme:** ilgisiz görevler arasında `/clear`.
+
+### 2. Tekrar tekrar düzeltmek
+
+_Kaynak: best-practices._ Claude bir şeyi yanlış yapar, düzeltirsiniz, hâlâ yanlıştır, yeniden düzeltirsiniz. Bağlam başarısız yaklaşımlarla kirlenmiştir.
+
+**Düzeltme:** iki başarısız düzeltmeden sonra, `/clear` ve öğrendiklerinizi içeren daha iyi bir ilk prompt yazın.
+
+### 3. Aşırı belirtilmiş CLAUDE.md
+
+_Kaynak: best-practices._ `CLAUDE.md`'niz çok uzunsa, Claude yarısını yok sayar çünkü önemli kurallar gürültüde kaybolur. İşaret: Claude, karşı bir kuralınız olan bir şeyi yapmaya devam eder.
+
+**Düzeltme:** acımasızca budayın. Her satır için, onu kaldırmanın bir hataya yol açıp açmayacağını sorun; açmayacaksa kesin ya da onu bir [hook](/tr/playbook/glossary/#hook)'a (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan komut) dönüştürün — `CLAUDE.md` talimatları tavsiye niteliğindeyken hook'lar belirlenimlidir.
+
+### 4. Güven-sonra-doğrula boşluğu
+
+_Kaynak: best-practices._ Claude, uç durumları ele almayan makul görünen bir uygulama üretir ve siz kanıtı değil iddiayı kabul edersiniz.
+
+**Düzeltme:** her zaman doğrulama sağlayın — testler, betikler, ekran görüntüleri. Doğrulayamıyorsanız, göndermeyin.
+
+### 5. Sonsuz keşif
+
+_Kaynak: best-practices._ Claude'dan bir şeyi kapsamını belirlemeden "araştırmasını" istersiniz; yüzlerce dosya okur ve bağlamı doldurur.
+
+**Düzeltme:** araştırmaların kapsamını dar tutun ya da keşfin ana bağlamınızı tüketmemesi için onları bir [subagent](/tr/playbook/glossary/#subagent)'a (ana oturumdan ayrı, kendi bağlam penceresi olan yardımcı agent) devredin. Aşağıdaki laboratuvar tam olarak bunu ölçüyor.
+
+### 6. Doğrulama kriteri yok
+
+_Kaynak: best-practices, "Give Claude a way to verify its work" tablosu._ "E-posta adreslerini doğrulayan bir fonksiyon uygula" bir hedef belirtir, geçme/kalma yok.
+
+**Düzeltme:** dokümanların kendi "after" sütununun yaptığı gibi, aynı prompt'ta örnek durumları ve kontrolü sağlayın — örnek girdileri ve beklenen sonuçlarını adlandırın ve uyguladıktan sonra testleri çalıştırmasını söyleyin.
+
+### 7. Kök neden yerine belirti
+
+_Kaynak: best-practices, aynı tablo._ "Derleme başarısız oluyor" bir belirti teslim eder ve onu bastıran bir düzeltmeyi davet eder.
+
+**Düzeltme:** hatayı yapıştırın, "düzeltilmiş"in neye benzediğini söyleyin ve bir bastırma yerine açıkça kök nedeni isteyin.
+
+### 8. Her incelemeci bulgusunu kovalamak
+
+_Kaynak: best-practices, "Add an adversarial review step" altındaki callout._ Boşlukları bulması istenen bir incelemeci, iş sağlam olsa bile genellikle bazılarını bildirir, çünkü istenen şey budur. Hepsini düzeltmek aşırı mühendisliğe yol açar: fazladan soyutlama katmanları, savunmacı kod ve olamayacak durumlar için testler.
+
+**Düzeltme:** incelemeciye yalnızca doğruluğu ya da belirtilen gereksinimleri etkileyen boşlukları bayraklamasını söyleyin ve geri kalanını isteğe bağlı sayın.
+
+### 9. Devretmek yerine dikte etmek
+
+_Kaynak: how-claude-code-works, "Delegate, don't dictate"._ Hangi dosyaların açılacağını ve hangi komutların çalıştırılacağını listelemek, bir agent'ı yavaş bir makroya çevirir ve iyi olduğu kısmı çöpe atar.
+
+**Düzeltme:** yetkin bir meslektaşa devrediyormuş gibi düşünün — bağlam ve yön verin, sonra ayrıntıları Claude'un çıkarmasına izin verin. Dokümanların kendi örneği belirtiyi, kodun alanını verir, başka hiçbir şey vermez.
+
+### 10. Cevaplanamaz soru
+
+_**Gözlem** — bu sitenin bu modülde yakalanan koşulardan kendi bulgusu; resmî bir kılavuz değil._ Gözetimsiz bir koşuda, Claude'un size açıklayıcı bir soru sormasına yetecek kadar belirsiz bir prompt, turu hiçbir şey yapılmadan bitirir, çünkü cevaplayacak kimse yoktur. Bir başarısızlık gibi görünmez: zarf `"subtype": "success"` bildirir. Bu modüldeki iki ders bunu kaydetti — `01`'in belirsiz prompt'u beş tur harcadı ve "hangi yönü istiyorsunuz?" ile kapandı, `03`'ün "bu doğru değil, tekrar dene"si dört tur harcadı ve üç açıklayıcı soruyla kapandı.
+
+**Düzeltme:** bir prompt bir betiğe girmeden önce, agent'ın size sormaya ihtiyaç duyacağı şeyin ne olacağını sorun — ve onu prompt'ta cevaplayın. Etkileşimli olarak aynı prompt sorun değildir; birisi cevaplayacak durumdayken soru ucuzdur.
+
+### Bu dersin örnek prompt'u
+
+```text
+Scope: src/api/server.ts only. List every HTTP route it defines as a markdown
+table with method, path, and the status codes it can return. Do not read any
+other file, and do not suggest changes.
+```
+
+Bu, 5. anti-pattern'in düzeltmesinin yazılı hâlidir: bir sınırı olan bir kapsam, bir çıktı şekli ve iki açık yasak.
+
+## Uygulamalı laboratuvar
+
+<Callout label="Not">
+  Bu modülün henüz lab-repo tag'i yok (`repo_tag: 'none'`), dolayısıyla laboratuvar lab deposunun
+  `main` branch'inin taze bir klonuna karşı çalışır. İki koşu da salt-okunur, aynı model, aynı
+  altı-turluk bütçe; yalnızca prompt farklı.
+</Callout>
+
+<Lab
+  title="Laboratuvar · sınırsız keşif ve kapsamı belirlenmiş aynı soru"
+  lessonId="tr/l2-intermediate/m09-prompting/anti-patterns"
+  repoTag="none"
+  steps={[
+    'Lab deposunun `main`\'deki geçici bir klonunda (`npm ci` çalıştırılmış), kapsamı belirsiz araştırmayı çalıştırın: `claude -p "investigate this repo" --model sonnet --max-turns 6 --output-format json --allowedTools "Read,Grep,Glob"`',
+    "Zarfı okuyun: `subtype`, `is_error`, `errors` dizisini ve bir `result`'ın yokluğunu not edin.",
+    "Kapsamı belirlenmiş sürümü aynı bayraklarla ve yukarıdaki Kavram bölümündeki prompt'la çalıştırın.",
+    "İki koşu arasında `num_turns`'ü karşılaştırın, sonra kapsamı belirlenmiş koşunun `result`'ını okuyun.",
+    'Listeden bir anti-pattern daha seçin ve kendi projeniz için önce/sonra çiftini yazın. İkisini de çalıştırın. Zarfları saklayın.',
+  ]}
+  expected='Kapsamı belirsiz koşu altı-turluk bütçesini tüketir ve "is_error": true, "subtype": "error_max_turns" bildirir, "Reached maximum number of turns (6)" diyen bir errors dizisiyle ve result olmadan. Kapsamı belirlenmiş koşu iki turda, API’nin rotalarının, yöntemlerinin ve durum kodlarının bir markdown tablosuyla cevap verir — ve başka bir dosyayı okumadan doğrulayamadığı tek durum kodunu bayraklar.'
+  checklist={[
+    'Kapsamı belirsiz zarfın bir `result` alanı yok',
+    'Kapsamı belirlenmiş koşu, kapsamı belirsiz koşunun yedisine karşı iki tur kullandı',
+    'Kapsamı belirlenmiş sonuç, istediğiniz üç sütunu olan bir tablo',
+    'Kapsamı belirlenmiş sonuç, belirlediğiniz kapsam içinde hangi iddiayı doğrulayamadığını açıkça söylüyor',
+    "Her prompt'un hangi anti-pattern'i gösterdiğini adlandırabiliyorsunuz",
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/05-anti-patterns/01-weak.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/05-anti-patterns/01-weak.txt"
+    range="120-127"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/05-anti-patterns/02-strong.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/05-anti-patterns/02-strong.txt"
+    range="87-94"
+  />
+</Lab>
+
+Yedi tur ve gösterecek hiçbir şey, iki tur ve bir tabloya karşı. (Zarf, `--max-turns 6`'ya sabitlenmiş bir koşu için `num_turns: 7` bildiriyor: bu kayıtlarda gözlemlenen sayı, onu durduran tavandan bir ilerde çalışıyor, bu yüzden ne olduğunu anlamak için sayıyı değil `subtype`'ı okuyun.) O oran, kapsam belirlemenin bütün argümanıdır.
+
+Kapsamı belirlenmiş sonuç, ikinci bir nedenle yakından okunmaya değer. Son notu, `POST /tasks/:id/done` için `markDone` çağrılmadan önce eksik bir task'ın açıkça kontrol edilmediğini, dolayısıyla tam durum kodunun `store.ts`'teki davranışa bağlı olduğunu söylüyor — "kapsam kısıtlaması nedeniyle okunmadı, dolayısıyla tam durumu yalnızca bu dosyadan doğrulanamıyor". Belirlediğiniz sınıra saygı duyuldu ve cevap size sınırın onu nerede sınırladığını söyledi. Kendi kör noktasını bildiren kapsamı belirlenmiş bir prompt tam olarak istediğiniz şeyi yapıyordur; cevabı belirsizliği sessizce atlayan kapsamı belirlenmiş bir prompt, kapsamı belirsiz olandan daha kötüdür.
+
+### Laboratuvarı kurmak, işletim sistemine göre
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```text
+# PowerShell 5.1 — statements separated with ; instead of &&
+git clone https://github.com/codechup/claude-code-lab.git; cd claude-code-lab; npm ci
+git checkout -- .; git clean -fd
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1'in `&&` operatörü yoktur, bu yüzden orada aynı adımlar `;` ile ayrılır. WSL içinde, Linux komutlarını kullanın.
+
+## Anti-pattern'ler
+
+Yukarıdaki on tanesi bu dersin konusudur. Bunlar, insanların listenin kendisiyle yaptığı hatalardır.
+
+**Her prompt'u on tanesinden geçirmek.** Bir tanı yardımcısını bir kontrol listesine çevirmek, sıradan istekleri yazmayı pahalı kılar. _Düzeltme:_ kötü bir oturumdan sonra ya da bir prompt bir betiğe girmeden önce kullanın.
+
+**"Belirsiz"i her zaman yanlış saymak.** Dokümanlar, keşfediyorsanız ve rotayı düzeltmeyi göze alabiliyorsanız belirsiz bir prompt'un tam olarak doğru olabileceğini söylüyor. _Düzeltme:_ rotayı düzeltecek biri var mı diye sorun. Yoksa, belirsizlik hatanın ta kendisidir.
+
+**Bir gözlemi resmî kılavuzmuş gibi alıntılamak.** 10. anti-pattern bu sitenin bulgusudur, Anthropic'in değil; onu belgelenmiş gibi sunmak, gerçekten belgelenmiş olan dokuzunu zayıflatır. _Düzeltme:_ onu alıntılarken etiketi koruyun.
+
+**Sorun bağlamken prompt'u düzeltmek.** Kirlenmiş bir oturum, iyi prompt'ların kötü davranmasına neden olur ve hiçbir yeniden ifade onu onarmaz. _Düzeltme:_ önce `/context`'i, sonra `/clear`'ı kontrol edin.
+
+**Nedeni değil listeyi öğrenmek.** On tanesi iki fikre indirgenir — işi sınırlayın ve ona karşı doğrulayacak bir şey verin. _Düzeltme:_ bir anti-pattern'in ikisinden hangisini ihlal ettiğini söyleyebiliyorsanız, on birinciyle karşılaştığınızda onu tanıyacaksınız.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/anti-patterns"
+  questionId="q1"
+  lang="tr"
+  prompt="'investigate this repo' hangi anti-pattern'i gösteriyor ve belgelenmiş düzeltmesi nedir?"
+  options={[
+    {
+      text: "Sonsuz keşif — araştırmaların kapsamını dar tutun ya da onları bir subagent'a devredin.",
+      correct: true,
+      explanation: 'Düzeltmenin her iki yarısı da best-practices başarısızlık-kalıbı listesinde.',
+    },
+    {
+      text: 'Lavabo oturumu — görevler arasında /clear.',
+      explanation: 'O, bir oturumda ilgisiz görevleri karıştırmakla ilgilidir.',
+    },
+    {
+      text: 'Güven-sonra-doğrula boşluğu — her zaman doğrulama sağlayın.',
+      explanation: 'O, kanıt olmadan makul bir uygulamayı kabul etmekle ilgilidir.',
+    },
+    {
+      text: 'Aşırı belirtilmiş CLAUDE.md — dosyayı budayın.',
+      explanation: "Tek bir prompt'un nasıl kapsamlandığıyla ilgisi yok.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/anti-patterns"
+  questionId="q2"
+  lang="tr"
+  prompt="On tanesinden hangisi resmî kılavuz yerine bu sitenin kendi gözlemi olarak etiketlenmiştir?"
+  options={[
+    {
+      text: 'Cevaplanamaz soru — açıklayıcı bir soruyu tetiklemeye yetecek kadar belirsiz bir prompt, subtype: success bildirmeye devam ederken gözetimsiz bir koşuyu boşa harcar.',
+      correct: true,
+      explanation:
+        'Bu modülün kendi koşularından yakalanmış ve bir gözlem olarak etiketlenmiştir (D080).',
+    },
+    {
+      text: 'Lavabo oturumu.',
+      explanation: 'Best-practices başarısızlık-kalıbı listesinde adlandırılmıştır.',
+    },
+    {
+      text: 'Devretmek yerine dikte etmek.',
+      explanation: 'how-claude-code-works sayfasından, "Delegate, don\'t dictate".',
+    },
+    {
+      text: 'Her incelemeci bulgusunu kovalamak.',
+      explanation: '"Add an adversarial review step" altındaki callout\'tan.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/anti-patterns"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir incelemeci subagent'ı, küçük ve sağlam bir diff'te on bir bulgu döndürüyor. Dokümanlar ne tavsiye ediyor?"
+  options={[
+    {
+      text: 'On birini de düzeltin — bir bulgu bir bulgudur.',
+      explanation: 'Bu, dokümanların uyardığı aşırı mühendislik tuzağıdır.',
+    },
+    {
+      text: 'Boşlukları bulması istenen bir incelemeci, iş sağlam olsa bile genellikle bazılarını bildirir; ona yalnızca doğruluğu ya da belirtilen gereksinimleri etkileyen boşlukları bayraklamasını söyleyin ve geri kalanını isteğe bağlı sayın.',
+      correct: true,
+      explanation: "Doğrudan adversarial-review callout'undan.",
+    },
+    {
+      text: "İncelemeci subagent'ları kullanmayı bırakın.",
+      explanation:
+        'Dokümanlar adversarial inceleme adımını tavsiye ediyor; yalnızca neyin bir bulgu sayıldığının kapsamını belirliyorlar.',
+    },
+    {
+      text: 'İncelemeciyi hiçbir şey döndürmeyene kadar yeniden çalıştırın.',
+      explanation: 'Bu, kodu değil incelemeciyi optimize eder.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m09-prompting/anti-patterns"
+  questionId="q4"
+  lang="tr"
+  prompt="CLAUDE.md'nizde Claude'un yok saymaya devam ettiği bir kural var. Best-practices sayfası ne öneriyor?"
+  options={[
+    {
+      text: "Dosya muhtemelen çok uzun ve kural kayboluyor — onu budayın ya da kuralı belirlenimli olan bir hook'a dönüştürün.",
+      correct: true,
+      explanation:
+        'IMPORTANT gibi bir vurgu yalnızca tek bir satırda yardımcı olur; birçoğunu vurgularsanız, hiçbiri öne çıkmaz.',
+    },
+    {
+      text: 'Kuralı dosyada birkaç yerde tekrarlayın.',
+      explanation: 'Bu, dosyayı daha uzun yapar, ki bu çare değil nedendir.',
+    },
+    {
+      text: "Kuralı her prompt'a taşıyın.",
+      explanation: "Kalıcı kurallar her prompt'a değil CLAUDE.md'ye ya da bir hook'a aittir.",
+    },
+    {
+      text: 'Model değiştirin.',
+      explanation: 'Dokümanlar bunu model seçimine değil dosya uzunluğuna bağlıyor.',
+    },
+  ]}
+/>
+
+**Sırada:** Playbook'un `04-anti-pattern-catalogue` sayfası, kurstaki her anti-pattern'i, düzeltmesi ve kaynağıyla birlikte, çalışırken açık tutabileceğiniz tek sayfalık bir referans olarak topluyor.

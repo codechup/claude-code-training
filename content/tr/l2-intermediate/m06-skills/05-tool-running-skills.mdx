@@ -1,15 +1,15 @@
 ---
-title: "Araç çalıştıran skill'ler"
-description: "Bir skill'e betik, araç bütçesi ve kendi bağlamını verin: Bash kurallarıyla allowed-tools, dinamik !`komut` enjeksiyonu ve context: fork."
+title: 'Araç çalıştıran skill’ler'
+description: 'Bir skill’e betik, bir tool bütçesi ve kendi bağlamını verin: Bash kurallarıyla allowed-tools, dinamik !`komut` enjeksiyonu ve context: fork. /new-component’ı kurun ve tool listesi işten dar olduğunda ne olduğunu okuyun.'
 level: 2
 module: 'm06-skills'
 order: 5
 duration_min: 25
 difficulty: core
-tags: ['skills', 'allowed-tools', 'subagents', 'lab']
+tags: ['skills', 'allowed-tools', 'subagent’lar', 'laboratuvar']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Extend Claude with skills'
@@ -31,6 +31,383 @@ lab:
   repo_tag: 'lesson/m06-05-start'
 ---
 
-**Not:** Bu dersin Türkçe çevirisi henüz yapılmadı; `draft: true` kaldığı sürece sayfa gezinmede görünmez. Çeviri `content/en/l2-intermediate/m06-skills/05-tool-running-skills.mdx` dosyasından üretilir (kurallar: `.claude/rules/i18n.md`, D016, D018).
+## Hedefler ve ön koşullar
 
-Bu ders bir skill'e betik, araç bütçesi ve kendi bağlamını verir. `allowed-tools` içindeki Bash kurallarının nasıl eşleştiğini, `` !`komut` `` ile dinamik bağlam enjeksiyonunu ve `context: fork` ile `agent`/`background` alanlarını kapsar. Uygulamada lab deposunda `/new-component` yazılır; gerçek çalıştırma, araç listesi işten dar olduğunda ne olduğunu gösterir.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- `SKILL.md`'nin yanında bir betik gönderin ve [skill](/tr/playbook/glossary/#skill)'in (`SKILL.md` ile tanımlanan, `/ad` ile çağrılan ya da Claude'un kendisinin yüklediği yeniden kullanılabilir talimat paketi) onu bir permission istemi olmadan çalıştırmasını sağlamak.
+- Skill'inizin çalıştırdığı komutlarla gerçekten eşleşen `allowed-tools` Bash kuralları yazmak — insanların yanlış yaptığı sondaki joker karakter kurallarını da dahil ederek.
+- Bir skill gövdesine `` !`komut` `` ile ve ` ```! ` blok biçimiyle canlı komut çıktısı enjekte etmek, ve bu komutlardan biri başarısız olduğunda ne olacağını tahmin etmek.
+- `context: fork`'un ne zaman karşılığını çıkardığına karar vermek, bir [agent](/tr/playbook/glossary/#agent) (bir hedefi kendi başına adım adım yürüten, tool çağırabilen yapay zekâ süreci) seçmek ve `background: false`'un ne zaman gerektiğini bilmek.
+- Lab deposuna karşı `/new-component`'ı kurup çalıştırmak, ve tool bütçesinin işten dar olduğu gerçek bir çalıştırmayı okumak.
+
+**Ön koşullar.** `01`–`04` dersleri, ve `lesson/m06-05-start` etiketinde bir `claude-code-lab` klonu.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  `context: fork`, yalnızca açık talimatlar taşıyan bir skill için anlamlıdır. Kurallar taşıyan bir
+  skill — "şu API kurallarını kullan" — görevi olmadan [subagent](/tr/playbook/glossary/#subagent)'a
+  (ana oturumun bir alt görevi devrettiği, kendi bağlam penceresi ve tool izinleri olan yardımcı
+  agent) yönerge verir, [prompt](/tr/playbook/glossary/#prompt) (Claude'a verdiğiniz istek metni)
+  vermez ve elinde yararlı hiçbir şey olmadan döner. Skill'in konuşmaya ihtiyacı olduğunda da
+  [fork](/tr/playbook/glossary/#fork)'lamayı (bir skill'i konuşma geçmişi olmayan izole bir subagent
+  bağlamında çalıştırmak) atlayın: forklanmış bir subagent'ın geçmişi yoktur, dolayısıyla az önce
+  konuştuğunuza bağlı olan her şeyin argüman olarak geçirilmesi gerekir, yoksa kaybolur. Ve düz bir
+  [tool](/tr/playbook/glossary/#tool) (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi
+  işleri yapmak için çağırdığı yerleşik araç) çağrısı yeterli olacakken bir skill'e betik koymayın —
+  bir betik, üç işletim sisteminde çalışır tutulması gereken bir dosya daha demektir.
+</WhenNotToUse>
+
+## Kavram
+
+### Destekleyici dosyalar
+
+Bir skill bir dizindir, dolayısıyla `SKILL.md`'den fazlasını taşıyabilir:
+
+```text
+new-component/
+├── SKILL.md      (required — overview and navigation)
+├── reference.md  (detailed docs, loaded only when needed)
+└── scripts/
+    └── helper.mjs (executed, not loaded into context)
+```
+
+Ekstra dosyalara `SKILL.md`'den referans verin, böylece Claude her birinin ne tuttuğunu ve ne zaman açacağını bilir. Bir betik hiç bağlama okunmaz — çalıştırılır.
+
+### Bir betik için `allowed-tools`
+
+Güvenilir kalıp, hem gövdede hem de kuralda `${CLAUDE_SKILL_DIR}` kullanmaktır, çünkü ikisi de yerine konur:
+
+<CodeBlock title="paketlenmiş bir betikle eşleşen bir kural">
+
+```yaml
+allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/helper.mjs *)
+```
+
+</CodeBlock>
+
+Bash kuralları komutun metniyle eşleşir ve ayrıntılar önemlidir:
+
+| Kural                 | Eşleşenler                                         | Eşleşmeyenler           |
+| --------------------- | -------------------------------------------------- | ----------------------- |
+| `Bash(npm run build)` | tam olarak `npm run build`                         | `npm run build --watch` |
+| `Bash(npm run *)`     | `npm run build`, `npm run test --watch`, `npm run` | `npm install`           |
+| `Bash(ls *)`          | `ls -la`, `ls`                                     | `lsof`                  |
+| `Bash(ls*)`           | `ls -la`, `lsof`                                   |                         |
+
+Bu tablonun arkasında üç pratik kural var. Önünde bir boşluk olan sondaki bir `*`, çıplak komutla da eşleşir, dolayısıyla `Bash(ls *)` düz `ls` ile de eşleşir. Boşluk kuralın bir parçasıdır — `Bash(ls*)`'de boşluk yoktur ve bu yüzden `lsof` ile de eşleşir. Ve `:*` soneki, sondaki bir joker karakteri yazmanın eşdeğer bir yoludur: `Bash(ls:*)` ve `Bash(ls *)` aynı kuraldır, ama `:*` yalnızca bir desenin _sonunda_ tanınır.
+
+Claude Code kabuk operatörlerinin farkındadır, dolayısıyla `Bash(safe-cmd *)`, `safe-cmd && other-cmd`'yi onaylamaz; her alt komut bağımsız olarak bir kuralla eşleşmelidir.
+
+### Dinamik bağlam enjeksiyonu
+
+`` !`komut` ``, skill içeriği Claude'a gönderilmeden **önce** bir kabuk komutu çalıştırır ve çıktı yer tutucunun yerini alır — dolayısıyla Claude, gidip onu almak için bir talimat değil, veri alır.
+
+<CodeBlock title="PR'ı içinde zaten taşıyarak gelen bir skill">
+
+```yaml
+---
+name: pr-summary
+description: Summarize changes in a pull request
+context: fork
+agent: Explore
+allowed-tools: Bash(gh *)
+---
+## Pull request context
+
+- PR diff: !`gh pr diff`
+- PR comments: !`gh pr view --comments`
+
+## Your task
+
+Summarize this pull request...
+```
+
+</CodeBlock>
+
+Çok satırlı komutlar için, satır içi biçim yerine ` ```! ` ile çevrelenmiş bir blok açın. Bilmeniz gereken mekanik ayrıntılar:
+
+- Yerine koyma, orijinal dosya üzerinde **bir kez** çalışır; çıktı düz metin olarak eklenir ve asla yeniden taranmaz, dolayısıyla bir komut, sonraki bir geçiş için bir yer tutucu üretemez.
+- Satır içi biçim yalnızca `!` bir satırı başlattığında ya da bir boşluğu takip ettiğinde tanınır. `` KEY=!`cmd` `` içinde yer tutucu, harfi harfine metin olarak bırakılır.
+- Komutlar, oturumun geçerli çalışma dizininde (Claude `cd` çalıştırdığında hareket eder), Bash tool'unun iki dakikalık zaman aşımı altında, stderr stdout'a birleştirilerek çalışır.
+- **Başarısız bir komut, çağrının tamamını iptal eder.** Claude, skill içeriğini asla görmez; stderr eklenmiş olarak `Shell command failed for pattern "..."` alırsınız. Sıfır olmayan herhangi bir çıkış bir başarısızlıktır, arama ve karşılaştırma komutlarından gelen ve normal bir sonuç sayılan 1 çıkış kodu hariç. Sıfır olmayan bir çıkış beklediğiniz başka her şeye `|| true` ekleyin.
+- Enjekte edilen komutlar asla sormaz. Permission kontrolü allow dışında bir şey döndürürse — normalde soracak bir kural dahil — çağrı iptal olur. `allowed-tools` ile önceden onaylayın; eşleşen bir ask ya da deny kuralı yine de her durumda iptal eder.
+- Ayarlarda `"disableSkillShellExecution": true`, bunu user, project, [plugin](/tr/playbook/glossary/#plugin) (Claude Code'a hook, skill, subagent gibi bileşenleri paket hâlinde ekleyen eklenti) ve additional-directory skill'leri için kapatır, her komutu bir yer tutucuyla değiştirir. Bundled ve managed skill'ler etkilenmez.
+
+### `context: fork`
+
+`context: fork` ekleyin ve skill, izole bir subagent bağlamında çalışır: konuşma geçmişi yok, taze bir bağlam penceresi ve skill içeriği subagent'ın prompt'u hâline gelir. Sonuç, bittiğinde oturumunuza geri döner.
+
+Varsayılan olarak forklanmış bir skill **arka planda** çalışır — siz çalışmaya devam edersiniz. Onu çağıran turda beklemek için `background: false` (v2.1.218+) ayarlayın. Claude Code, birkaç durumda bu alandan bağımsız olarak bekler ve bunlardan biri lab'da karşılaşacağınız durumdur: **`-p` ile non-interactive mod**. Diğerleri `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, aynı skill'in daha önceki bir çağrısı hâlâ çalışırken forklanmış bir skill'i çağırmak ve skill'i prompt'u olarak ateşlenen zamanlanmış bir task'tır.
+
+Planlamaya değer iki sonuç var. Arka plana alınmış bir fork, arka plan subagent'larına uygulanan daha dar tool setiyle çalışır — skill'inizin adımları o setin dışında bir tool'a ihtiyaç duyuyorsa, `background: false` kullanın. Ve arka plana alınmış bir fork'un düzenlemeleri **oturumunuzun checkpoint'lerinin dışında** kalır, dolayısıyla `/rewind` onları geri almaz; git kullanın.
+
+`agent` alanı, yürütme ortamını seçer: `Explore` (salt okunur tool'lar, kod tabanı keşfi için optimize edilmiş), `Plan`, `general-purpose` (belirtilmediğinde varsayılan) ya da `.claude/agents/`'ten özel bir agent. `Explore` ve `Plan`, bağlamlarını küçük tutmak için `CLAUDE.md`'yi atlar — izolasyon istediğinizde bir özellik, skill'iniz orada yaşayan proje kurallarına dayandığında ise bir tuzaktır.
+
+| Yaklaşım                  | Sistem prompt'u     | Task                   | Ayrıca yüklenen                                           |
+| ------------------------- | ------------------- | ---------------------- | --------------------------------------------------------- |
+| `context: fork` ile skill | Agent türünden      | `SKILL.md` içeriği     | `CLAUDE.md`, agent `Explore` ya da `Plan` olduğunda hariç |
+| `skills:` ile subagent    | Subagent'ın gövdesi | Claude'un devir mesajı | Önyüklenmiş skill'ler artı `CLAUDE.md`                    |
+
+Yazmak üzere olduğunuz skill'i üreten prompt:
+
+```text
+Write .claude/skills/new-component/ for this repo: a SKILL.md plus a scaffold.mjs
+that prints a store.ts function stub and a test stub for a name. The skill should
+run the script, read the existing conventions, write the real code and run npm test.
+Give it context: fork so the exploration doesn't fill my session, and pre-approve
+only the script, the editing tools and `npm test`.
+```
+
+## Uygulamalı laboratuvar
+
+<Callout label="Not">
+  Kaydedilen komutlar `--settings '&#123;"language":"English"&#125;'` taşıyor çünkü onları kaydeden
+  makinenin genel `language` tercihi Türkçe olarak ayarlı. Bu bayrağı kaldırın; çalıştırmayla ilgili
+  başka hiçbir şey değişmiyor.
+</Callout>
+
+<Lab
+  title="Laboratuvar · bir betik çalıştıran, kod yazan ve kendi bağlamından rapor veren bir skill"
+  lessonId="tr/l2-intermediate/m06-skills/tool-running-skills"
+  repoTag="lesson/m06-05-start"
+  steps={[
+    'Lab deposu klonunuzda: `git checkout lesson/m06-05-start && npm ci`.',
+    '`.claude/skills/new-component/` dizinini oluşturun ve transcript’in altında gösterilen iki dosyayı yazın: `SKILL.md` ve `scaffold.mjs`.',
+    'Betiği önce elle çalıştırın — `node .claude/skills/new-component/scaffold.mjs archiveTask` — böylece skill’in 1. adımının ne ürettiğini bilirsiniz.',
+    '`allowed-tools` satırını okuyun ve `npm test`, `npm run typecheck` ve `npm run lint`’ten hangilerini skill’in bir izin istemi olmadan çalıştırabileceğini tahmin edin. Tahmininizi yazın.',
+    '`claude -p "/new-component archiveTask" --permission-mode acceptEdits --output-format text --max-turns 30` çalıştırın.',
+    '`npm test` ve `git status --short`’u kendiniz çalıştırın, sonra sonucu 4. adımdaki tahmininizle karşılaştırın.',
+    'Bitirdiğinizde çalışma ağacını sıfırlamak için `git checkout -- . && git clean -fd` çalıştırın.',
+  ]}
+  expected="Skill, scaffold betiğini çalıştırır, src/store.ts'e gerçek bir archiveTask implementasyonu artı gerçek bir test yazar, npm test'i çalıştırır (4 dosya, 17 test geçiyor) ve geri rapor verir — çalıştıramadığı herhangi bir komutu, geçtiğini iddia etmek yerine dürüstçe adlandırır."
+  checklist={[
+    '`src/store.ts`, bilinmeyen bir id için `InvalidTaskError` fırlatan, dışa aktarılan bir `archiveTask` kazandı',
+    'Yeni bir test var ve gerçek bir zamanlayıcı yerine enjekte edilebilir bir saat kullanıyor',
+    '`npm test` geçiyor',
+    'Rapor ya typecheck ve lint’i çalıştırdı ya da çalıştıramadığını söyledi — bir komutun geçtiğini göstermeden asla iddia etmiyor',
+    'Çalışma ağacı sonrasında sıfırlandı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/05-tool-running-skills/01-new-component.txt"
+    range="2-27"
+  />
+</Lab>
+
+### Yazdığınız iki dosya
+
+<CodeBlock title=".claude/skills/new-component/SKILL.md">
+
+```markdown
+---
+name: new-component
+description: Scaffold a new store.ts operation (function stub + test stub) from a name, then implement it. Tool-running — runs a script, then writes real code in a forked context.
+when_to_use: Adding a brand-new operation to src/store.ts (not fixing an existing bug).
+argument-hint: '<functionName>'
+allowed-tools: Bash(node .claude/skills/new-component/scaffold.mjs:*), Read, Edit, Write, Bash(npm test)
+context: fork
+model: sonnet
+effort: medium
+---
+
+# /new-component
+
+1. Run `node .claude/skills/new-component/scaffold.mjs $ARGUMENTS` to print a starting stub.
+2. Read `src/store.ts` and `test/store.test.ts` to match existing conventions (named exports,
+   `InvalidTaskError` for bad input, an injectable clock for anything time-based).
+3. Write the real implementation into `src/store.ts` and a real test into `test/`, replacing
+   the `TODO`s from the stub.
+4. Run `npm test` and report the result before finishing.
+
+Runs in a forked context so this exploration doesn't consume the parent session's context
+window — only the final diff and test result need to come back.
+```
+
+</CodeBlock>
+
+<CodeBlock title=".claude/skills/new-component/scaffold.mjs">
+
+```javascript
+#!/usr/bin/env node
+// Prints a store.ts function stub and a matching test stub for a new task-store operation.
+// Usage: node scaffold.mjs <functionName>
+const name = process.argv[2];
+if (!name) {
+  console.error('usage: node scaffold.mjs <functionName>');
+  process.exit(1);
+}
+
+console.log(`// Add to src/store.ts:
+export function ${name}(/* args */): void {
+  // TODO: implement
+}
+
+// Add to test/store.test.ts:
+test("${name} …", () => {
+  // TODO: assert behaviour
+});
+`);
+```
+
+</CodeBlock>
+
+### Laboratuvarı işletim sistemine göre kurmak
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git checkout lesson/m06-05-start && npm ci
+mkdir -p .claude/skills/new-component
+node .claude/skills/new-component/scaffold.mjs archiveTask
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git checkout lesson/m06-05-start && npm ci
+mkdir -p .claude/skills/new-component
+node .claude/skills/new-component/scaffold.mjs archiveTask
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git checkout lesson/m06-05-start; npm ci
+New-Item -ItemType Directory -Force .claude\skills\new-component
+node .claude\skills\new-component\scaffold.mjs archiveTask
+```
+
+  </Fragment>
+</OSTabs>
+
+### Kayıt gerçekte neyi öğretiyor
+
+Rapor bir uyarıyla bitiyor ve bu uyarı dersin ta kendisi. `allowed-tools`, `Bash(npm test)`'i listeliyor — joker karakteri olmayan tam bir eşleşme, dolayısıyla yalnızca `npm test`'i onaylıyor, başka hiçbir şeyi değil. `npm run typecheck` ve `npm run lint` o izinde hiç yer almadı. Lab deposunun kendi `.claude/settings.json`'ı ikisine de izin veriyor, ama bu kayıt, workspace güven diyaloğu hiç kabul edilmemiş bir klonda çalıştı, dolayısıyla Claude Code o `permissions.allow` girdilerini yok saydı ve bunu söyleyen bir uyarıyı stderr'e yazdırdı — kaydedilen stdout'un bunu içermemesinin nedeni de bu. **Sizin çalıştırmanız farklı olabilir:** etkileşimli olarak açtığınız ve güvendiğiniz bir klonda, proje allow-list'i uygulanır ve iki komut da geçer. Her iki durumda da skill dürüst olanı yaptı: yapabildiğini çalıştırdı, yapamadığını adlandırdı ve bir komutun geçtiğini iddia etmedi.
+
+Kendi skill'inizde bunu düzeltmenin, ne demek istediğinize bağlı iki yolu var. Tüm npm script yüzeyini istiyorsanız, kuralı `Bash(npm run *)`'a genişletin ve `Bash(npm test)`'i de yanında tutun. Skill'in dar kalmasını istiyorsanız, bunu gövdede söyleyin — "yalnızca `npm test` çalıştır; typecheck ya da lint denemeyi deneme" — böylece model, yapamayacağı çağrılara tur harcamaz.
+
+`context: fork`'un burada ne yaptığına da dikkat edin. Keşif — `src/store.ts`'i okumak, `test/store.test.ts`'i okumak, kuralları çözmek — subagent'ın kendi bağlamında gerçekleşti. Oturuma geri dönen, okuyabileceğiniz özetti: değişen dosyalar, implementasyon, test sonucu, uyarı. `-p` modunda tur, tam olarak belgelendiği gibi onu bekledi.
+
+## Anti-pattern'ler
+
+**Komutla eşleşmeyen bir `allowed-tools` kuralı.** `Bash(npm test)` ve `npm run typecheck` farklı string'lerdir ve hiçbir şey sizi uyarmaz — skill, alamayacağı bir izinde takılır kalır. _Düzeltme:_ kuralları gövdedeki tam komutlardan yazın ve bir joker karakter kullanmadan önce yukarıdaki tabloyu iki kez okuyun.
+
+**Alt komuttan önce bir joker karakter.** `Bash(git * main)`, `-c` dahil her git alt komutuyla eşleşir, ki bu da git'in adlandırdığınız bir programı çalıştırmasını sağlar. Claude Code, alt komuttan önce `*` olan bir allow kuralı hakkında başlangıçta uyarır. _Düzeltme:_ `*`'ı alt komuttan sonra koyun: `Bash(git log *)`.
+
+**Sıfır olmayan çıkış yapabilen enjekte edilmiş bir komut.** Sorun bulduğunda 1 ile çıkan bir kontrol betiği, tüm skill çağrısını iptal eder ve Claude gövdeyi asla görmez. _Düzeltme:_ `` !`my-check || true` ``, tabii bu, 1-çıkış istisnasına sahip arama ve karşılaştırma komutlarından biri değilse.
+
+**Görevi olmayan bir skill'de `context: fork`.** Kurallardan oluşan bir gövde, subagent'a yönerge verir ama prompt vermez; yararlı hiçbir şey döndürmez. _Düzeltme:_ yalnızca ne yapılacağını söyleyen skill'leri fork'layın.
+
+**Arka planda fork'layıp sonra `/rewind`'e uzanmak.** Arka plana alınmış bir fork'un düzenlemeleri, oturumunuzun checkpoint'lerinin dışındadır. _Düzeltme:_ git ile geri alın, ya da işi tur içinde istediğinizde `background: false` ayarlayın.
+
+**Gövdede göreli bir betik yolu.** Hareket eden oturumun çalışma dizinine göre çözülür. _Düzeltme:_ hem gövdede hem de `allowed-tools` kuralında `${CLAUDE_SKILL_DIR}`.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/tool-running-skills"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir skill'de `allowed-tools: Bash(npm test)` var. Hangi komutlar bir permission istemi olmadan çalışır?"
+  options={[
+    {
+      text: 'Yalnızca tam olarak `npm test` komutu',
+      correct: true,
+      explanation:
+        'Joker karakter yok, dolayısıyla `npm test --watch` ve `npm run typecheck` kapsanmıyor.',
+    },
+    {
+      text: 'Herhangi bir npm komutu',
+      explanation: 'Bu `Bash(npm *)` olurdu.',
+    },
+    {
+      text: '`npm test` ve `npm run test`',
+      explanation: 'Kurallar komut metniyle eşleşir; bunlar iki farklı string’dir.',
+    },
+    {
+      text: 'Her komut, çünkü skill kullanıcı tarafından çağrıldı',
+      explanation: 'Çağırma, izinleri listelenen kuralların ötesine genişletmez.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/tool-running-skills"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir skill gövdesindeki enjekte edilmiş bir !`komut`, 3 koduyla çıkıyor. Claude ne görür?"
+  options={[
+    {
+      text: 'Hiçbir şey — başarısızlık, Claude skill içeriğini almadan önce çağrının tamamını iptal eder',
+      correct: true,
+      explanation:
+        'stderr eklenmiş olarak `Shell command failed for pattern "..."` alırsınız. Sıfır olmayan bir çıkış bekleniyorsa `|| true` ekleyin.',
+    },
+    {
+      text: 'Çıktının olacağı yerde boş bir string’le skill gövdesi',
+      explanation: 'Bir başarısızlık boş olarak yerine konmaz; iptal eder.',
+    },
+    {
+      text: 'Skill gövdesi artı bir hata notu, ve çalıştırma devam eder',
+      explanation:
+        'Yalnızca arama ve karşılaştırma komutları bir istisna alır, ve yalnızca 1 çıkış kodu için.',
+    },
+    {
+      text: 'Devam edilip edilmeyeceğini soran bir permission istemi',
+      explanation: 'Enjekte edilen komutlar asla sormaz.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/tool-running-skills"
+  questionId="q3"
+  lang="tr"
+  prompt="`claude -p` kullanarak `context: fork` olan ve `background` alanı olmayan bir skill çağırıyorsunuz. Ne olur?"
+  options={[
+    {
+      text: 'Claude Code, o turda subagent’ın sonucunu bekler, çünkü non-interactive mod her zaman bekler',
+      correct: true,
+      explanation:
+        'Aynısı `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, yeniden girişli bir çağrı ya da zamanlanmış bir task için de geçerlidir.',
+    },
+    {
+      text: 'Arka planda çalışır ve -p çalıştırması sonuç gelmeden çıkar',
+      explanation: 'Non-interactive mod, belgelenmiş her-zaman-bekle durumlarından biridir.',
+    },
+    {
+      text: 'Çağrı başarısız olur, çünkü `context: fork` ile `background` zorunludur',
+      explanation: '`background` varsayılan olarak `true`’dur ve isteğe bağlıdır.',
+    },
+    {
+      text: 'Subagent, konuşma geçmişini devralır',
+      explanation: 'Forklanmış bir skill, bilerek geçmişsiz başlar.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/tool-running-skills"
+  questionId="q4"
+  lang="tr"
+  prompt="`agent` alanı belirtilmediğinde, forklanmış bir skill hangi agent türünü kullanır?"
+  options={[
+    {
+      text: 'general-purpose',
+      correct: true,
+      explanation:
+        'Explore ve Plan, salt okunur ve planlama alternatifleridir, ve ikisi de CLAUDE.md’yi atlar.',
+    },
+    { text: 'Explore', explanation: 'Explore’un adıyla istenmesi gerekir.' },
+    { text: 'Plan', explanation: 'Plan’ın adıyla istenmesi gerekir.' },
+    {
+      text: '.claude/agents/’te tanımlı ilk agent',
+      explanation: 'Özel agent’lar `agent` alanı üzerinden isteğe bağlı olarak dahil edilir.',
+    },
+  ]}
+/>
+
+**Sırada:** `06-skill-doctor`, tüm koleksiyonu ölçer — her skill'in bağlamda neye mal olduğu, gerçekte ne sıklıkta kullanıldığı ve hangilerinin kapatılması gerektiği.

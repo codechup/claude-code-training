@@ -1,15 +1,15 @@
 ---
-title: 'Commit’ler ve kurallar'
-description: 'Az önce yaptığı diff’ten commit mesajını Claude yazsın: Conventional Commits, Claude Code’un eklediği attribution trailer’ı ve bunu değiştiren ya da kaldıran ayarlar.'
+title: 'Commit’ler ve konvansiyonlar'
+description: 'Claude’ın commit mesajını, az önce yaptığı diff’ten yazmasına izin verin: Conventional Commits, Claude Code’un eklediği atıf trailer’ı ve onu değiştiren ya da kaldıran ayarlar.'
 level: 2
 module: 'm08-git'
 order: 1
 duration_min: 15
 difficulty: core
-tags: ['git', 'commits', 'conventional-commits', 'attribution']
+tags: ['git', 'commit’ler', 'conventional-commits', 'atıf']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Common workflows'
@@ -31,8 +31,299 @@ lab:
   repo_tag: 'lesson/m08-01-start'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l2-intermediate/m08-git/01-commits-and-conventions.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders, staged bir diff’ten Conventional Commits mesajını Claude’a yazdırmayı öğretir. `claude -p` çalıştırması `--allowedTools "Read,Bash(git *)"` ile sınırlandırılır, böylece Claude diff’i okuyup mesajı yazarken hiçbir dosyayı değiştiremez. Ders, `type(scope): subject` biçimini ve bu projenin kabul ettiği tipleri (`feat|fix|docs|chore|test|refactor|ci|build`), Claude Code kendi commit’ini attığında eklediği attribution trailer’ını (`Co-Authored-By: Claude … <noreply@anthropic.com>`) ve bu trailer’ı değiştiren ayarları (`attribution.commit`, `attribution.pr`, `attribution.sessionUrl`, `includeGitInstructions`) kapsar; `includeCoAuthoredBy` artık deprecated’dır. Laboratuvar, lab repo’sunda gerçek bir değişiklik yapıp önce yalnızca mesajı, sonra da commit’in kendisini Claude’a yaptırır.
+- Claude’dan, kendiniz yazmak yerine bir diff’ten bir [commit](/tr/playbook/glossary/#commit) (deponuzdaki bir değişiklik kümesinin kalıcı kaydı) mesajı yazmasını istemek ve sonucun tutmaya değer olup olmadığına karar vermek.
+- Bir Conventional Commits konu satırı — `type(scope): subject` — yazmak ve bir değişiklik için doğru türü seçmek.
+- Claude Code’un yaptığı bir commit’e eklediği atıf trailer’ını tanımak ve nereden geldiğini söylemek.
+- Bu trailer’ı bir ayar dosyasında `attribution` ile değiştirmek ya da kaldırmak, ve yerleşik commit talimatlarını `includeGitInstructions` ile tamamen kaldırmak.
+- Claude’un ne zaman commit yapması ve ne zaman mesajda durması gerektiğine karar vermek.
+
+**Ön koşullar.** Kurulu ve kimliği doğrulanmış Claude Code, PATH’inizde `git` ve lab deposunun bir klonu. `git add`, `git diff --cached` ve `git log` ile rahat olmalısınız.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Mesaj diff’te olmayan bilgi taşıdığında commit’i Claude’a bırakmayın — yalnızca sizin bildiğiniz
+  bir ticket numarası, bir toplantıda alınan bir karar, bir sonraki okuyucunun anlamasını
+  istediğiniz bilinçli bir uzlaşma. Claude, görebildiğinden yazar, dolayısıyla yalnızca diff’ten
+  türettiği bir mesaj doğru ama sığ olur. Çalışma ağacınız incelemediğiniz ilgisiz iş taşırken onu
+  hiç commit yaptırmayın: denetlemediğiniz bir `git add -A`, üç değişikliğin bir commit hâline gelme
+  şeklidir. Ve tarihçesi ürünün kendisi olan bir depo için — sürüm notlarından üretilen bir
+  değişiklik günlüğü, imzalı-commit uyumluluk izi — atıf trailer’ının araçlarınıza ne yaptığını
+  kontrol edene kadar bu desenin tamamını atlayın.
+</WhenNotToUse>
+
+## Kavram
+
+### Diff’in mesajı neden yazması gerektiği
+
+Bir commit mesajı iki soruyu cevaplar: ne değişti ve neden. "Ne" zaten diff’te mekanik ve tam olarak var — ki bu, insanların yorgunken kötü özetlediği tam olarak o kısımdır. "Neden" kafanızdadır. İlk yarıyı Claude’a devretmek ve ikinci yarıyı elinizde tutmak, tekniğin tamamı budur.
+
+Bu dersin örnek prompt’unun yaptığı da bu. İçeriği değil şekli verir:
+
+```text
+Read the staged diff with git diff --cached and write a Conventional Commits
+message for it: a type(scope): subject line under 72 characters, a blank line,
+and a short body saying why. Print only the message, nothing else.
+```
+
+Bunun headless çalışmasını sağlayan iki şey var. `--allowedTools "Read,Bash(git *)"`, Claude’u dosya okumak ve git çalıştırmakla sınırlar, dolayısıyla değişiklik hakkında yazarken hiçbir şeyi düzenleyemez. "Print only the message", çıktıyı bir betik tarafından kullanılabilir kılar — bir `-p` koşusunun stdout’u borulayabileceğiniz metindir.
+
+### Tek tabloda Conventional Commits
+
+Conventional Commits bir konvansiyondur, bir Claude Code özelliği değil: hem araçların hem insanların ayrıştırabileceği yapılandırılmış bir konu satırı. Bu deponun kendi katkı kuralları bunu zorunlu kılar ve aşağıdaki türler onun kabul ettikleridir.
+
+| Tür        | Ne için kullanılır                                            |
+| ---------- | ------------------------------------------------------------- |
+| `feat`     | Bir kullanıcının gözlemleyebileceği yeni bir yetenek          |
+| `fix`      | Düzeltilen bir kusur                                          |
+| `docs`     | Yalnızca dokümantasyon                                        |
+| `chore`    | Davranış değişikliği olmayan ev işleri                        |
+| `test`     | Üretim kodu değişikliği olmadan eklenen ya da değişen testler |
+| `refactor` | Davranışı koruyan yeniden yapılandırma                        |
+| `ci`       | Hat ve workflow yapılandırması                                |
+| `build`    | Derleme sistemi, bağımlılıklar, paketleme                     |
+
+Parantez içindeki scope, alanı adlandırır — `fix(store):`, `docs(m08-git):`. `git log --oneline` okunabilir kalsın diye konuyu emir kipinde ve yaklaşık 72 karakterin altında tutun.
+
+### Atıf trailer’ı
+
+Claude Code bir commit’i kendisi yaptığında, mesaja bir atıf trailer’ı ekler. Aşağıdaki kayıtta trailer şudur:
+
+```text
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+```
+
+Trailer, modelin her seferinde uydurduğu bir şey değildir; Claude Code’un başlangıçta yüklediği yerleşik git talimatlarından gelir ve ayarlar onu kontrol eder:
+
+| Ayar                     | Ne yapar                                                                      |
+| ------------------------ | ----------------------------------------------------------------------------- |
+| `attribution.commit`     | Claude Code’un commit’lere eklediği trailer’ı değiştirin ya da gizleyin       |
+| `attribution.pr`         | Pull request açıklamalarındaki atıf satırını değiştirin ya da gizleyin        |
+| `attribution.sessionUrl` | Cloud ve Remote Control commit’lerinden claude.ai oturum bağlantısını çıkarın |
+| `includeGitInstructions` | Sistem prompt’undan yerleşik commit ve PR talimatlarını kaldırın              |
+
+Dördü de bir ayar dosyasında yaşar (`~/.claude/settings.json`, bir proje `.claude/settings.json`’ı ya da yönetilen ayarlar). Commit’lerin farklı atıflandırılmasını istediğinizde `attribution`’a, Claude’un yalnızca projenizin kendi commit kurallarını, yerleşiklerden hiçbirini olmadan izlemesini istediğinizde `includeGitInstructions`’a uzanın.
+
+### Claude ne zaman commit yapmalı, ne zaman durmalı
+
+İki prompt, iki farklı güven düzeyi:
+
+- **"Mesajı yaz"** — Claude staged diff’i okur ve bir mesaj yazdırır. Onu `git commit`’e yapıştırırsınız. Mesaj yanlışsa depoda hiçbir şey değişmez. Henüz incelemediğiniz iş için varsayılan budur.
+- **"Staged değişiklikleri commit et"** — Claude `git commit`’i kendisi çalıştırır. Daha hızlı ve diff’i okuduktan ve yalnızca mesaj kaldığında doğru seçim. Aynı zamanda atıf trailer’ının göründüğü noktadır.
+
+Her ikisinde de **staged** kelimesine dikkat edin. Staging sizin inceleme adımınızdır: göndermeyi düşündüğünüz hunk’ları `git add -p` ile ekleyin ve Claude’un mesajı tam olarak onları tarif eder. Claude’dan "her şeyi commit et" istemek, incelemeyi sonraya taşır.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · Claude’un gerçek bir değişikliği adlandırmasına izin verin"
+  lessonId="tr/l2-intermediate/m08-git/commits-and-conventions"
+  repoTag="lesson/m08-01-start"
+  steps={[
+    'Lab deposunu atılabilir bir yere klonlayın ve başlangıç tag’ini checkout edin: `git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && git checkout lesson/m08-01-start && npm ci`. Bu depoya asla push etmeyin — laboratuvar okuyucular için salt-okunurdur.',
+    'Gerçek bir değişiklik yapın: `src/store.ts`’te, `paginate()`’in `page` bir tamsayı olmadığında ya da 1’den küçük olduğunda `InvalidTaskError` fırlatmasını sağlayın ve `test/store.test.ts`’e `page = 0` için bir test ekleyin.',
+    '`npm test` çalıştırın ve yeşil olduğunu doğrulayın — 4 dosya, 16 test.',
+    'Değişikliği `git add -A` ile stage’leyin, sonra `git diff --cached` ile ne stage’lediğinize bakın.',
+    'Claude’dan yalnızca mesajı isteyin: `claude -p "Read the staged diff with git diff --cached and write a Conventional Commits message for it: a type(scope): subject line under 72 characters, a blank line, and a short body saying why. Print only the message, nothing else. Do not run git commit." --allowedTools "Read,Bash(git *)" --model sonnet --max-turns 6 --output-format text`',
+    'Şimdi Claude’un commit’i yapmasına izin verin: `claude -p "Commit the staged changes with the Conventional Commits message you consider right for them. Do not push. Then show the result with: git log -1 --format=%B" --allowedTools "Read,Bash(git *)" --model sonnet --max-turns 8 --output-format text`',
+    'Commit edilen mesajı `git log -1 --format=%B` ile okuyun ve atıf trailer’ını bulun.',
+  ]}
+  expected="İlk koşu bir `fix(store): …` mesajı yazdırır ve hiçbir şeyi değiştirmez. İkinci koşu, mesajı `Co-Authored-By: Claude … <noreply@anthropic.com>` trailer’ıyla biten bir commit oluşturur ve sonrasında git status temizdir."
+  checklist={[
+    'Commit yapılmadan önce `npm test`, "4 passed (4) … 16 passed (16)" yazdırdı',
+    'İlk koşu bir mesaj yazdırdı ve `git status`’un değişikliği hâlâ stage’li gösterdiğini bıraktı',
+    'Konu satırı `type(scope): subject` ve 72 karakterin altında',
+    'Commit edilen mesajın yalnızca neyi değil neden’i açıklayan bir gövdesi var',
+    'Commit mesajı bir atıf trailer’ıyla bitiyor',
+    'Lab deposuna hiçbir şey push edilmedi',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m08-git/01-commits-and-conventions/03-npm-test.txt"
+    range="3-10"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m08-git/01-commits-and-conventions/01-commit-message.txt"
+    range="4-7"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m08-git/01-commits-and-conventions/02-commit-and-trailer.txt"
+    range="5-24"
+  />
+</Lab>
+
+O kayıtta durup düşünmeye değer üç ayrıntı var.
+
+İlk kaydın ilk satırı gürültü değil gerçek bir bildirimdir: atılabilir klon hiç etkileşimli olarak açılmamıştı, bu yüzden Claude Code, `.claude/settings.json`’ındaki `permissions.allow` girdilerini uygulamayı reddetti. Çalışma alanı güveni, `--allowedTools`’tan ayrı bir kapıdır ve taze bir klonda headless bir koşu size bunu söyler.
+
+İkinci kayıt Türkçe cevap veriyor. Bu kayıtta bir kusur değil — onu üreten makinenin genel Claude Code tercihleri Türkçe cevap istiyor ve bu tercihler `-p` olanlar dahil her oturuma ulaşıyor. Commit mesajının kendisi İngilizce kaldı çünkü prompt bir Conventional Commits mesajı istedi; etrafındaki nesir sürekli tercihi izledi.
+
+İkinci kaydın son bloğu, 7. adımdaki düz `--format=%B` yerine `git log -1 --format='%H%n%an <%ae>%n%B'` kullanıyor — daha uzun biçim, mesajın yanında commit hash’ini ve yazarı göstermek için aynı kabukta çalıştırıldı, böylece trailer’ın mesajın bir parçası olduğunu, yazar alanının değil, görebilirsiniz.
+
+Ve iki koşu aynı diff için farklı konu satırları seçti — `fix(store): validate page number in paginate` ve `fix(store): reject non-positive or non-integer page in paginate`. İkisi de doğru. Bir commit mesajı bir özettir ve özetler benzersiz değildir; yararlı test, belirli bir dizeyle eşleşip eşleşmediği değil, doğru türü, doğru scope’u ve gerçek bir nedeni adlandırıp adlandırmadığıdır.
+
+### Mesajı geri okumak, işletim sistemine göre
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git log -1 --format=%B
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git log -1 --format=%B
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git log -1 --format=%B
+```
+
+  </Fragment>
+</OSTabs>
+
+Komut üçünde de aynı; `%n` ya da boşluklu biçim dizeleri geçirmeye başladığınızda farklı olan tırnaklamadır. PowerShell’de, kabuğun içindeki hiçbir şeyi genişletmeye çalışmaması için biçimi tek tırnak içine alın (`--format='%H%n%B'`).
+
+## Anti-pattern’ler
+
+**Claude’un hem stage’lemesine hem commit yapmasına izin vermek.** Kirli bir ağaçla "commit my changes" demek, etrafta duran her ne varsa tek bir commit’e paketler. _Düzeltme:_ bilinçli olarak stage’leyin (`git add -p`), sonra Claude’dan **staged değişiklikleri** commit yapmasını isteyin.
+
+**Yalnızca diff’i yeniden ifade eden bir mesajı kabul etmek.** "Update store.ts" incelemeyi geçer ama kimseye yardımcı olmaz. _Düzeltme:_ nedeni söyleyen bir gövde isteyin ve gövde konunun bir paraphrase’i olduğunda mesajı reddedin.
+
+**Commit başına bir scope uydurmak.** Aynı dosya için `fix(pagination):`, `fix(paginate):` ve `fix(store):`, tarihçeyi aranamaz kılar. _Düzeltme:_ projenizin kullandığı scope’ları bir kez `CLAUDE.md`’ye yazın; Claude her koşuda onu okur.
+
+**Trailer’ı sonradan mesajları düzenleyerek gizlemek.** Atıfı çıkarmak için tarihçeyi yeniden yazmak, sonsuza kadar tekrarlayacağınız bir iştir. _Düzeltme:_ `attribution.commit`’i bir kez, ihtiyacı olan herkese uygulanan ayar kapsamında ayarlayın.
+
+**Commit mesajından "testler geçiyor"a güvenmek.** Mesaj nesirdir; test koşusu kanıttır. _Düzeltme:_ laboratuvarın yaptığı gibi, stage’lemeden önce testleri kendiniz çalıştırın.
+
+<Callout variant="changed" label="Değişti">
+  `includeCoAuthoredBy` ayarı kullanımdan kaldırıldı. Bunun yerine commit ve pull request atıfını
+  gizlemek ya da değiştirmek için `attribution` — `attribution.commit`, `attribution.pr` ve
+  `attribution.sessionUrl` — kullanın. Ayarlar referansı bunu Claude Code 2.1.263 itibarıyla
+  kullanımdan kaldırılmış olarak işaretliyor ama bunu değiştiren sürümü adlandırmıyor, dolayısıyla
+  `attribution`’ı güncel ayar olarak görün ve kullanımdan kaldırmaya bir sürüm okumayın.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/commits-and-conventions"
+  questionId="q1"
+  lang="tr"
+  prompt="Claude’un depoya dokunmadan bir değişikliği tarif etmesini istiyorsunuz. Doğru koşu şekli hangisi?"
+  options={[
+    {
+      text: 'claude -p "…write a Conventional Commits message…" --allowedTools "Read,Bash(git *)"',
+      correct: true,
+      explanation:
+        'Yalnızca Read artı git: Claude diff’i inceleyebilir ve bir mesaj yazdırabilir, hiçbir Edit ya da Write tool’u olmadan. Prompt yine de "git commit çalıştırma" demek zorunda, çünkü `Bash(git *)` buna izin verirdi.',
+    },
+    {
+      text: 'claude -p "…" --permission-mode acceptEdits',
+      explanation: 'Bu düzenlemeleri önceden onaylar, ki burada istediğinizin tam tersi.',
+    },
+    {
+      text: 'claude -p "…" --allowedTools "Edit,Write"',
+      explanation: 'Bunlar dosyaları değiştiren tool’lardır ve ikisi de bir diff okuyamaz.',
+    },
+    {
+      text: 'claude --worktree message-only',
+      explanation:
+        'Bir worktree düzenlemeleri ana checkout’unuzdan izole eder; Claude’un düzenleme yapmasını durdurmaz.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/commits-and-conventions"
+  questionId="q2"
+  lang="tr"
+  prompt="Takımınız, Claude Code’un commit’lerinin varsayılan trailer yerine paylaşılan bir bot adresine atıflandırılmasını istiyor. Neyi ayarlarsınız?"
+  options={[
+    {
+      text: 'includeCoAuthoredBy',
+      explanation:
+        'Kullanımdan kaldırıldı — ayarlar referansı sizi bunun yerine `attribution`’a yönlendiriyor.',
+    },
+    {
+      text: 'attribution.commit',
+      correct: true,
+      explanation: 'Claude Code’un commit’lere eklediği trailer’ı değiştirir ya da gizler.',
+    },
+    {
+      text: 'attribution.pr',
+      explanation:
+        'Bu, commit’leri değil pull request açıklamalarındaki atıf satırını kontrol eder.',
+    },
+    {
+      text: 'includeGitInstructions',
+      explanation:
+        'Bu, yerleşik commit ve PR talimatlarını tamamen kaldırır — trailer’ı değiştirmekten daha büyük bir çekiç.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/commits-and-conventions"
+  questionId="q3"
+  lang="tr"
+  prompt="Aynı staged diff’te iki headless koşu iki farklı konu satırı üretti. Bu size ne söylüyor?"
+  options={[
+    {
+      text: 'Koşulardan biri yanlış diff’i okudu.',
+      explanation:
+        'İkisi de `git diff --cached`’i okudu; kayıt ikisinde de aynı değişikliği gösteriyor.',
+    },
+    {
+      text: 'Bir diff’in özeti benzersiz değildir — tam kelimeleri değil, türü, scope’u ve belirtilen nedeni değerlendirin.',
+      correct: true,
+      explanation:
+        'Doğru. İki mesaj da doğru bir gövdeyle `fix(store): …` idi; yalnızca ifade farklıydı.',
+    },
+    {
+      text: 'Conventional Commits uygulanmadı.',
+      explanation: 'İki konu satırı da `type(scope): subject`.',
+    },
+    {
+      text: 'Bir koşuda `--max-turns` çok düşüktü.',
+      explanation: 'İki koşu da tamamlandı ve tam bir mesaj yazdırdı.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/commits-and-conventions"
+  questionId="q4"
+  lang="tr"
+  prompt="Taze bir klonda headless bir koşu “this workspace has not been trusted” yazdırıyor. Bu size ne söylüyor?"
+  options={[
+    {
+      text: '`--allowedTools` bayrağı reddedildi.',
+      explanation: '`--allowedTools` hâlâ geçerlidir; bildirim farklı bir kapı hakkındadır.',
+    },
+    {
+      text: 'O projenin ayarlarındaki `permissions.allow` girdileri, çalışma alanı güvenilmediği için yok sayıldı.',
+      correct: true,
+      explanation:
+        'Çalışma alanı güveni tool izin listesinden ayrıdır — dialoğu kabul etmek için Claude’u orada bir kez etkileşimli çalıştırın.',
+    },
+    {
+      text: 'Depoda henüz hiç commit yok.',
+      explanation: 'Bu farklı bir hata üretir ve yalnızca worktree oluşturma için.',
+    },
+    {
+      text: 'Git kurulu değil.',
+      explanation: 'Koşu diff’i git ile okumaya devam etti.',
+    },
+  ]}
+/>
+
+**Sırada:** `02-worktrees-branches`, her paralel oturuma kendi checkout’unu verir, böylece iki agent aynı depoda birbirinin üzerine yazmadan çalışabilir.

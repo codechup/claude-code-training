@@ -1,15 +1,15 @@
 ---
-title: 'SessionStart ile bağlam yükleme, Stop ile test çalıştırma'
-description: "Bir SessionStart hook ilk prompt'tan önce canlı proje durumunu Claude'un bağlamına enjekte eder; bir Stop hook tur bittiğinde test paketini çalıştırır. Tek betik, iki olay, ikisi de gerçek bir oturumdan kanıtlı."
+title: 'SessionStart’ta bağlam yükleyin, Stop’ta testleri çalıştırın'
+description: 'Bir SessionStart hook’u, ilk prompt’tan önce canlı proje durumunu Claude’ın bağlamına enjekte eder; bir Stop hook’u tur bittiğinde test paketini çalıştırır. Tek betik, iki event, ikisi de gerçek bir oturumdan kanıtlanmış.'
 level: 2
 module: 'm07-hooks'
 order: 5
 duration_min: 20
 difficulty: core
-tags: ['hooks', 'sessionstart', 'stop', 'context', 'testing']
+tags: ['hooks', 'sessionstart', 'stop', 'bağlam', 'test']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Hooks reference'
@@ -31,7 +31,319 @@ lab:
   repo_tag: 'lesson/m07-05-start'
 ---
 
-Bu ders, bir [hook](/tr/playbook/glossary/#hook) (kanca) açısından `SessionStart` olayının `additionalContext` alanıyla oturuma canlı bilgi (dal adı, açık işler, mevcut durum) taşımayı; `startup`, `resume`, `clear`, `compact` ve `fork` eşleştiricilerini; ve statik bilginin neden hook'a değil `CLAUDE.md`'ye ait olduğunu anlatır. İkinci yarıda `Stop` olayı bir denetçiye dönüşür: test paketini çalıştırır, isterse `additionalContext` ile modele bildirir, isterse engelleme kararıyla durmayı reddeder (sekiz ardışık engelleme sınırına dikkat). Laboratuvarda hiçbir dosya okumadan projeyi tarif eden bir yanıt ve hata ayıklama günlüğünde Vitest çıktısı elde edersiniz.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l2-intermediate/m07-hooks/05-session-start-context.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- `SessionStart` ve `additionalContext` ile canlı proje durumunu bir oturuma enjekte etmek ve konuşmanın neresine indiğini söylemek.
+- Belirli bir bilgi parçası için bir `SessionStart` hook'u ile `CLAUDE.md` arasında doğru seçimi yapmak.
+- Taze bir oturumda ve devam ettirilen bir oturumda farklı iş çalıştırmak için `SessionStart` matcher'ını (`startup`, `resume`, `clear`, `compact`, `fork`) kullanmak.
+- Bir `Stop` hook'undan bir kontrol — test paketi — çalıştırmak ve çıktısını debug log'da okumak.
+- Devam ettirilen bir oturumun neyi yeniden oynattığını ve neyi yeniden çalıştırdığını tanımak, böylece enjekte ettiğiniz bağlam siz fark etmeden bayatlamaz.
+
+**Ön koşullar.** `01`–`04` dersleri ve bu dersin tag'indeki laboratuvar. `npm ci` burada her zamankinden daha önemli: hook'un `Stop` yarısı deponun kendi Vitest'ine kabuk açıyor.
+
+<CodeBlock title="laboratuvarı alın">
+
+```bash
+git checkout lesson/m07-05-start
+npm ci
+```
+
+</CodeBlock>
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bir `SessionStart` hook'u her tek oturumda çalışır, dolayısıyla yavaş ya da statik herhangi bir
+  şey için yanlış evdir. Hiç değişmeyen konvansiyonlar, bir süreç başlatmadan yüklenen
+  `CLAUDE.md`'ye aittir; dokümanlar bunu doğrudan söylüyor. Tüm paketi çalıştıran bir `Stop` hook'u,
+  paketin dakikalar sürdüğü bir depoda yanlıştır — görev başına bir kez değil her turun sonunda
+  ateşlenir, dolayısıyla bu maliyeti alışveriş başına ödersiniz. Ve hiçbir event CI'ın yerine
+  geçmez: bir hook, geliştiricinin makinesinde, geliştiricinin ortamıyla çalışır ve tek bir ayarla
+  devre dışı bırakılabilir.
+</WhenNotToUse>
+
+## Kavram
+
+### SessionStart
+
+`SessionStart`, Claude Code yeni bir oturum başlattığında ya da birini devam ettirdiğinde çalışır. **Geliştirme bağlamı yüklemek** içindir — açık issue'lar, son değişiklikler, geçerli branch — ve ortam değişkenlerini ayarlamak içindir. Yalnızca `type: "command"` ve `type: "mcp_tool"` handler'ları desteklenir.
+
+Matcher'ı, oturumun nasıl başladığıdır:
+
+| Matcher   | Ne zaman ateşlenir                                                                  |
+| --------- | ----------------------------------------------------------------------------------- |
+| `startup` | Yeni oturum                                                                         |
+| `resume`  | `--resume`, `--continue` ya da `/resume`                                            |
+| `clear`   | `/clear`                                                                            |
+| `compact` | Otomatik ya da manuel sıkıştırma                                                    |
+| `fork`    | Çatallanmış bir oturum: `--fork-session`, `/fork` arka plan kopyası ya da `/branch` |
+
+O matcher göründüğünden daha yararlıdır. "Branch'i ve başarısız testleri yazdır", `startup` için doğrudur; "üzerinde anlaştığımız planı yeniden ifade et", konuşmanın az önce sıkıştırıldığı `compact` için doğrudur.
+
+Event'ın kendi çıktı alanları şunlardır:
+
+| Alan                 | Ne yapar                                                                                            |
+| -------------------- | --------------------------------------------------------------------------------------------------- |
+| `additionalContext`  | Konuşmanın başında, ilk prompt'tan önce Claude'un bağlamına eklenen dize                            |
+| `initialUserMessage` | İlk kullanıcı mesajı olur — `-p`'de, hiçbir prompt verilmediğinde bile                              |
+| `sessionTitle`       | Oturumu, `/rename` gibi adlandırır                                                                  |
+| `watchPaths`         | Bu oturum için `FileChanged` event'ları izlenecek mutlak yollar                                     |
+| `reloadSkills`       | Hook bittikten sonra skill dizinlerini yeniden tarar, böylece kurduğu skill'ler bu oturumda çalışır |
+
+`SessionStart`, **düz stdout'un Claude'un bağlamına eklendiği** dört event'tan biridir (`UserPromptSubmit`, `UserPromptExpansion` ve `PostModelSwitch` ile birlikte), dolayısıyla yalnızca bağlam yükleyen bir hook bir dizeyi `echo` edebilir ve JSON'u tamamen atlayabilir. Bağlamı başka bir alanla birleştirmeniz gerektiğinde, `sessionTitle` gibi, JSON biçimini kullanın.
+
+### additionalContext gerçekte nereye gider
+
+`additionalContext` bir sohbet mesajı değildir. Claude Code, dizeyi bir **sistem hatırlatıcısına** sarar ve hook'un ateşlendiği noktaya ekler — `SessionStart` için, konuşmanın başında, ilk prompt'tan önce. Claude onu bir sonraki model isteğinde okur; onu arayüzde hiç görmezsiniz.
+
+Bundan iki kural doğar ve ikisi de dokümanlarda:
+
+- **Talimat değil olgu yazın.** "Dağıtım hedefi production'dır" proje bilgisi olarak okunur. Bant-dışı bir sistem talimatı gibi çerçevelenen metin, Claude'un prompt-injection savunmalarını tetikleyebilir, bu noktada Claude metninizi harekete geçmek yerine size gösterir.
+- **Statik olan her şey için `CLAUDE.md`'yi tercih edin.** Değişmeyen bir cümle yazdıran bir hook, bir dosyanın bedava yaptığı bir şey için oturum başına bir süreç başlatmadır.
+
+Keskin bir kenarı olan bir uyarı var: enjekte edilen metin oturum transcript'inde kaydedilir. `--continue` ya da `--resume` ile devam ettirdiğinizde, Claude Code hook'u yeniden çalıştırmak yerine geçmiş turlar için **kaydedilen metni yeniden oynatır**, dolayısıyla oturum ortasındaki bir event'tan gelen zaman damgaları ve commit SHA'ları bayatlar. `SessionStart`'ın kendisi devam ettirmede yeniden çalışır, `source` `"resume"` (ya da `"fork"`) olarak ayarlanmış olarak, ki bu onu yenilemenin tam olarak yoludur.
+
+### Bir kontrolcü olarak Stop
+
+4. ders `Stop`'u duyurmak için kullandı. Burada iş yapıyor: tur bittiğinde test paketini çalıştırın, böylece bir şeyi bozan bir oturum siz sormadan bunu öğrensin.
+
+Laboratuvarın hook'u bunu bilinçli olarak dişsiz tutuyor — Vitest'i çalıştırır ve hatayı yutar — çünkü bu kursun `-start` tag'leri ekilmiş hatalar taşıyor ve engelleyen bir Stop hook'u her dersle savaşırdı. Kendi deponuzda üç yükselen seçeneğiniz var:
+
+1. **Yalnızca raporlayın.** Paketi çalıştırın, 0 ile çıkın. Çıktı debug log'a gider; oturum rahatsız edilmez.
+2. **Claude'a söyleyin.** `hookSpecificOutput.additionalContext`'i döndürün — "`test/overdue.test.ts`'te 3 test başarısız oluyor". Konuşma devam eder ve transcript onu `Stop hook feedback` olarak etiketler.
+3. **Durmayı reddedin.** `{"decision": "block", "reason": "…"}`, ya da nedeni stderr'de olacak şekilde 2 ile çıkın. Claude çalışmaya devam eder. Önce `stop_hook_active`'i okuyun ve `true` olduğunda erken çıkın, yoksa 4. dersteki art-arda-sekiz-engel tavanına çarparsınız.
+
+### Tek betik, iki event
+
+Aynı betiği her iki event'a kaydetmek ve `hook_event_name`'e dallanmak, ikiliyi bir arada tutar:
+
+<CodeBlock title=".claude/hooks/session-context.mjs (şekli)">
+
+```javascript
+const event = input.hook_event_name ?? '';
+
+if (event === 'SessionStart') {
+  console.log(
+    JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'SessionStart',
+        additionalContext: `claude-code-lab: a tiny task-tracker CLI + HTTP API. ${bugCount} entries in BUGS.md. Run "npm test" to see current pass/fail.`,
+      },
+    }),
+  );
+  process.exit(0);
+}
+
+if (event === 'Stop') {
+  try {
+    execFileSync(process.execPath, ['node_modules/vitest/vitest.mjs', 'run'], {
+      cwd: root,
+      stdio: 'inherit',
+    });
+  } catch {
+    // A failing suite is expected on most -start tags — never block Stop over it.
+  }
+  process.exit(0);
+}
+```
+
+</CodeBlock>
+
+Bu dersin işlenmiş örnek prompt'u, açık alternatifi yasaklayarak enjeksiyonu kanıtlamak için var:
+
+```text
+Without reading any files, tell me what this project is and how many entries BUGS.md has.
+Answer only from the context you were already given.
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · oturumu yönlendirin, sonra işini kontrol edin"
+  lessonId="tr/l2-intermediate/m07-hooks/session-start-context"
+  repoTag="lesson/m07-05-start"
+  steps={[
+    "`lesson/m07-05-start`'ı checkout edin ve `npm ci` çalıştırın. 2–4. derslerin üç hook'u zaten kayıtlı.",
+    "`.claude/hooks/session-context.mjs` oluşturun: stdin'i ayrıştırın, `hook_event_name`'e dallanın. `SessionStart`'ta, `BUGS.md`'deki `## B` başlıklarını sayın ve projeyi ve o sayıyı adlandıran bir `additionalContext` dizesi olan bir `hookSpecificOutput` nesnesi yazdırın. `Stop`'ta, depo-yerel Vitest'i çalıştırın ve bir hatayı yutun. Her yolda 0 ile çıkın.",
+    "Onu `.claude/settings.json`'da hem `SessionStart` hem `Stop`'a kaydedin (`Stop` dizisi artık iki handler'a sahip — bu ve 4. dersteki bildirici).",
+    'Sonda prompt\'u debug loglama açıkken çalıştırın: `claude -p "Without reading any files, tell me what this project is and how many entries BUGS.md has. Answer only from the context you were already given." --model sonnet --max-turns 3 --output-format text --debug-file debug.txt`',
+    "Cevabı okuyun. Projeyi tek bir Read çağrısı olmadan tarif ediyor — o tarif hook'unuzdan geldi.",
+    'Hook\'unuzun yazdırdığı JSON\'u ve `additionalContext`\'in kaç karakterinin kabul edildiğini doğrulayan satırı görmek için `grep -n "Hook SessionStart" debug.txt`; sonra Vitest koşusunu bulmak için `grep -n "Hook Stop" debug.txt`.',
+  ]}
+  expected="Claude, hiçbir şey okumadan claude-code-lab'i tarif eder ve debug log hem SessionStart JSON'unu (bir 'provided additionalContext (N chars)' satırıyla) hem de Vitest özetini tutan bir Stop girdisini içerir."
+  checklist={[
+    "Betik hem `SessionStart` hem `Stop`'a kayıtlı",
+    'Cevap, koşuda hiç Read tool çağrısı olmadan projeyi adlandırıyor',
+    '`debug.txt`, `Hook SessionStart:startup (SessionStart) success` içeriyor',
+    '`debug.txt`, bir `provided additionalContext (N chars)` satırı içeriyor',
+    '`debug.txt`, test özetini tutan bir `Hook Stop (Stop) success` girdisi içeriyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/05-session-start-context/01-context-and-tests.txt"
+    range="2-12"
+  />
+</Lab>
+
+O kayıtta, temiz sürümden daha iyi olan bir kaza var.
+
+`BUGS.md`, bu tag'de mevcut değil, dolayısıyla hook'un sayımı kendi `"unknown"` yedeğine düştü — ve Claude'un cevabı bunu söylüyor, hook'u alıntılayarak: _"SessionStart hook'u açıkça 'BUGS.md'de unknown entries' olduğunu bildiriyor"_. Üç şey aynı anda kanıtlanıyor. Hook çalıştı. `additionalContext`'i okunabilir metin olarak modele ulaştı. Ve model, bir olgunun nereden geldiğini ve nerede tükendiğini size söylemeye istekli — ki bu tam olarak enjekte edilmiş bağlamdan istediğiniz davranış ve tam olarak neden talimatlar yerine olgular olarak ifade edilmesi gerektiği.
+
+Debug satırları resmi tamamlıyor. `Hook SessionStart:startup (SessionStart) success`, ateşlenen matcher'ı (`startup`) gösteriyor; `provided additionalContext (158 chars)`, Claude Code'un dizeyi kabul ettiğini doğruluyor; ve `Hook Stop` girdisi, cevap yazıldıktan sonra kimse test istemeden çalışan bir süreçten yakalanan Vitest özetini — `Test Files 4 passed (4)`, `Tests 15 passed (15)` — taşıyor.
+
+### Bağlam dizesine ne koymalı
+
+İyi adaylar oturumlar arasında değişir ve hesaplanması ucuzdur:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git rev-parse --abbrev-ref HEAD          # current branch
+git status --porcelain | head -20        # uncommitted work
+gh issue list --assignee @me --limit 5   # what you are on the hook for
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git rev-parse --abbrev-ref HEAD          # current branch
+git status --porcelain | head -20        # uncommitted work
+gh issue list --assignee @me --limit 5   # what you are on the hook for
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git rev-parse --abbrev-ref HEAD                    # current branch
+git status --porcelain | Select-Object -First 20   # uncommitted work
+gh issue list --assignee @me --limit 5             # what you are on the hook for
+```
+
+  </Fragment>
+</OSTabs>
+
+Kötü adaylar bir dosyaya ait olanlardır: kodlama konvansiyonları, test komutu, dizin düzeni. Cümle gelecek ay da aynı olacaksa, onu `CLAUDE.md`'ye koyun.
+
+## Anti-pattern'ler
+
+**Yavaş bir `SessionStart` hook'u.** Yalnızca hızlı bir soru sormak istediğiniz oturumlar dahil, her oturum bunu öder. _Düzeltme:_ onu ucuz yerel komutlarla sınırlayın; ağ bağımlı herhangi bir şeyi bir önbelleğin arkasına taşıyın ya da bırakın.
+
+**Bir hook'ta statik metin.** "Bu depo pnpm kullanıyor" değişmez. _Düzeltme:_ `CLAUDE.md`.
+
+**Bağlamı talimat olarak yazmak.** "Cevaplamadan önce her zaman npm test çalıştırmalısın", bant-dışı bir sistem komutu gibi okunur ve prompt-injection savunmalarını tetikleyebilir, dolayısıyla Claude onu izlemek yerine size gösterir. _Düzeltme:_ olguları belirtin — "test komutu `npm test`'tir" — ve talimatları `CLAUDE.md`'ye ve prompt'unuza bırakın.
+
+**Devam ettirilen oturumların her şeyi yeniden çalıştırdığını varsaymak.** Oturum ortasındaki `additionalContext`, `--resume`'da transcript'ten yeniden oynatılır, dolayısıyla bir saat önce enjekte edilen bir zaman damgası değişmeden geri gelir. _Düzeltme:_ değişken olguları, devam ettirmede yeniden çalışan `SessionStart` hook'una koyun ve onları `PostToolUse`'dan uzak tutun.
+
+**Yavaş ya da kararsız bir paketi olan bir depoda engelleyen bir `Stop` test-çalıştırıcısı.** Her turun sonunda ateşlenir ve geçersiz kılınmadan önce yalnızca sekiz kez engelleyebilir. _Düzeltme:_ önce raporlayın (seçenek 1), `additionalContext`'e yükselin (seçenek 2) ve yalnızca kontrol hızlı ve belirlenimli olduğunda engelleyin.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/session-start-context"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir SessionStart hook'unun additionalContext'i nerede görünür?"
+  options={[
+    {
+      text: "Transcript'in en üstünde bir sohbet mesajı olarak.",
+      explanation: 'O bir sistem hatırlatıcısıdır, görünür bir mesaj değil.',
+    },
+    {
+      text: "Konuşmanın başında, ilk prompt'tan önce, bir sistem hatırlatıcısı olarak sarılmış hâlde Claude'un bağlamında.",
+      correct: true,
+      explanation: "Bu yüzden laboratuvar prompt'u hiç dosya okunmadan cevaplanabilir.",
+    },
+    {
+      text: "Yalnızca debug log'da.",
+      explanation: 'JSON orada loglanır, ama dizenin kendisi modele ulaşır.',
+    },
+    {
+      text: "CLAUDE.md'ye eklenir.",
+      explanation: "Hook'lar hiçbir zaman memory dosyalarınıza yazmaz.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/session-start-context"
+  questionId="q2"
+  lang="tr"
+  prompt="Bunlardan hangisi CLAUDE.md yerine bir SessionStart hook'una aittir?"
+  options={[
+    {
+      text: 'Projenin commit-mesajı konvansiyonu.',
+      explanation: 'Hiç değişmez — bu bir memory dosyasıdır.',
+    },
+    {
+      text: "Geçerli branch ve commit'lenmemiş dosyaların listesi.",
+      correct: true,
+      explanation: 'Değişken, hesaplaması ucuz, her oturumda farklı.',
+    },
+    {
+      text: 'Dizin düzeni.',
+      explanation: "Statik yapı CLAUDE.md'ye aittir.",
+    },
+    {
+      text: "Commit'lemeden önce testlerin geçmesi gerektiği kuralı.",
+      explanation: "Kalıcı bir kural memory'dir, bir hook değil.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/session-start-context"
+  questionId="q3"
+  lang="tr"
+  prompt="Stop hook'unuz test paketini çalıştırıyor ve sonuçlar stdout'ta olacak şekilde 0 ile çıkıyor. Onları kim görür?"
+  options={[
+    {
+      text: 'Claude, konuşmanın bir parçası olarak.',
+      explanation:
+        "Düz stdout, Claude'a SessionStart, UserPromptSubmit, UserPromptExpansion ve PostModelSwitch'te ulaşır — Stop'ta değil.",
+    },
+    {
+      text: "Oturumda kimse; çıktı debug log'a yazılır.",
+      correct: true,
+      explanation:
+        "Sonucu Claude'un önüne koymak için, `hookSpecificOutput.additionalContext`'i döndürün ya da bir nedenle engelleyin.",
+    },
+    { text: "Kullanıcı, transcript'te.", explanation: "Başarılı hook stdout'u gösterilmez." },
+    {
+      text: 'Tamamen atılır.',
+      explanation: 'Debug log onu tutar — laboratuvarın Vitest özetini bulma şekli budur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m07-hooks/session-start-context"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir sıkıştırmadan sonra başlangıçtakinden farklı bağlam istiyorsunuz. Nasıl?"
+  options={[
+    {
+      text: "`hook_event_name`'i okuyun — kaynağa göre farklıdır.",
+      explanation: "İki durumda da `SessionStart`'tır; kaynak ayrı bir alandır.",
+    },
+    {
+      text: "SessionStart'ta iki matcher grubu kullanın: biri `startup`'a, biri `compact`'a eşleşen.",
+      correct: true,
+      explanation:
+        "SessionStart matcher'ı oturum kaynağıdır: startup, resume, clear, compact ya da fork.",
+    },
+    {
+      text: "PostCompact event'ını kullanın; SessionStart farkı anlayamaz.",
+      explanation:
+        'PostCompact var, ama SessionStart da `compact` kaynağıyla ateşlenir ve ona göre eşleştirilebilir.',
+    },
+    {
+      text: 'Bir ortam değişkeni olmadan mümkün değil.',
+      explanation: 'Matcher bunu kapsıyor.',
+    },
+  ]}
+/>
+
+**Sırada:** `06-event-catalogue`, geri çekilip 33 event'ın tümünü — henüz dokunmadığınız iki düzine dahil — haritalıyor ve `/hooks`'un onlarla ne yaptığını gösteriyor.

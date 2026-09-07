@@ -1,15 +1,15 @@
 ---
-title: 'Model seçmek'
-description: 'Aynı gerçek hatayı Haiku 4.5, Sonnet 5 ve Opus 5 üzerinde aynı prompt ve aynı tur bütçesiyle çalıştırın, sonra JSON zarflarını yan yana okuyun: süre, maliyet, tur sayısı ve düzeltmenin gerçekten tutup tutmadığı.'
+title: 'Bir model seçmek'
+description: 'Aynı prompt’lar ve sabit bir tur bütçesiyle gerçek bir hatayı Haiku 4.5, Sonnet 5 ve Opus 5 üzerinden çalıştırın, sonra JSON zarflarını yan yana okuyun: süre, maliyet, tur sayısı ve düzeltmenin gerçekten oturup oturmadığı.'
 level: 2
 module: 'm05-models-effort'
 order: 2
 duration_min: 25
 difficulty: core
-tags: ['models', 'cost', 'headless', 'lab']
+tags: ['modeller', 'maliyet', 'headless', 'lab']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Model configuration'
@@ -31,8 +31,263 @@ lab:
   repo_tag: 'lesson/m05-02-start'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l2-intermediate/m05-models-effort/02-choosing-a-model.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders, lab deposundaki `lesson/m05-02-start` etiketiyle gelen gerçek bir hatayı (B3 — `await` edilmemiş bir `save()` çağrısı) üç farklı modelde çalıştırır. Karşılaştırmanın adil olması için üç şey sabit tutulur: başlangıç durumu (her koşudan önce `git checkout -- . && git clean -fd`), prompt metni ve tur bütçesi. Sonuç, modelin kendi özetinden değil, sizin çalıştırdığınız `npm test` çıktısından okunur. Gerçek ölçümler üç modelin de hatayı doğru şekilde düzelttiğini, en ucuz modelin en pahalısının yaklaşık dörtte birine mal olduğunu ve `--max-turns` bütçesinin en az model seçimi kadar belirleyici olabildiğini gösteriyor.
+- Gerçekten adil bir model karşılaştırması tasarlamak: aynı prompt, aynı başlangıç durumu, aynı tur bütçesi.
+- Aynı görevi üç modelde headless (etkileşimli arayüz olmadan tek komutla çalıştırma) olarak çalıştırmak ve `--output-format json` ile makine tarafından okunabilir kanıt yakalamak.
+- Bir sonuç zarfından `duration_ms`, `total_cost_usd`, `num_turns`, `subtype` ve `result`’ı okuyup bir karara dönüştürmek.
+- İnsanların birbirine karıştırdığı iki soruyu ayırmak — "işe yaradı mı?" ve "neye mal oldu?" — ve her birini doğru araçla ölçmek.
+
+**Ön koşullar.** `01-model-family` dersi (alias’lar ve neye çözüldükleri), lab deposunun bir klonu, Node 24 ve bir terminal. Laboratuvarın tamamı headless’tır, yani bir TUI’yi izlemeniz gerekmeyecek.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bu karşılaştırma bir tanı aracıdır, bir alışkanlık değil. Her görevi üç kez çalıştırmak,
+  genellikle zaten bildiğiniz bir soruyu cevaplamak için harcamanızı üçe katlar: günlük kodlama
+  işlerinin çoğu Sonnet’te rahatça oturur ve dokümantasyon da bunu söylüyor. Karşılaştırmayı, bir iş
+  sınıfı gerçekten başarısız oluyorsa ya da bir ekip varsayılanı belirliyor ve folklor yerine kanıt
+  istiyorsanız çalıştırın — her görevden önce değil. Ve tek bir üç-koşulu karşılaştırmayı bir
+  benchmark gibi okumayın: bir hata, bir depo, bir prompt, bir öğleden sonra, sayılarla süslenmiş
+  bir anekdottur.
+</WhenNotToUse>
+
+## Kavram
+
+### Bir model karşılaştırmasını neyin adil kıldığı
+
+Koşular arasında üç şeyin aynı olması gerekir, yoksa sayılar hiçbir şey ifade etmez:
+
+- **Başlangıç durumu.** İkinci model, birinci modelin karşılaştığı aynı bozuk depoyla karşılaşmalıdır. Git terimleriyle: koşular arasında `git checkout -- . && git clean -fd`.
+- **Prompt.** Bayt bayt aynı dize, birinci koşu zorlandığı için eklenmiş fazladan bir ipucu olmadan.
+- **Bütçe.** Aynı `--max-turns`, aynı `--allowedTools`, aynı permission mode.
+
+Ve bir şey modelin kendi raporunun _dışında_ ölçülmelidir: düzeltmenin işe yarayıp yaramadığı. Bir modelin "bütün testler geçiyor" demesi bir iddiadır; `npm test`’in yeşil çıkması kanıttır. Bu ayrım, bu kurstaki D093’ün tamamıdır ve tam olarak yararlı bir karşılaştırmayı bir izlenimden ayıran şeydir.
+
+### Sonuç zarfı ölçüm aracıdır
+
+`claude -p … --output-format json`, koşu bittiğinde tek bir JSON nesnesi yazdırır. Karşılaştırmayı taşıyan alanlar:
+
+| Alan                 | Ne söylüyor                                                            |
+| -------------------- | ---------------------------------------------------------------------- |
+| `subtype`            | `success`, ya da `error_max_turns` gibi bir hata türü                  |
+| `is_error`           | Claude Code’un koşuyu tamamlanmış sayıp saymadığı                      |
+| `num_turns`          | Koşunun kaç tur tükettiği                                              |
+| `duration_ms`        | Koşunun tamamı için duvar saati süresi                                 |
+| `total_cost_usd`     | Claude Code’un liste fiyatından token sayılarına dayanan yerel tahmini |
+| `result`             | Son asistan mesajı — başarıda var, koşu kesildiğinde yok               |
+| `modelUsage`         | Model başına token sayıları, `contextWindow` ve o modelin `costUSD`’ı  |
+| `permission_denials` | `--allowedTools` listenizin reddettiği her tool çağrısı                |
+
+`total_cost_usd`, Claude Code’un liste fiyatından token sayılarına dayanarak yerel olarak hesapladığı bir tahmindir; yetkili rakam Claude Console’daki Usage sayfasıdır. Aynı makinede dakikalar arayla yapılan bir karşılaştırma koşusu için tahmin tam olarak doğru araçtır — elmayla elmayı karşılaştırıyorsunuz.
+
+Karşılaştırmayı korktuğunuzdan daha temiz kılan bir incelik: her modelin kendi prompt cache’i vardır. Model değiştirmek, bir sonraki isteğin tüm konuşmayı hiç cache isabeti olmadan okuması anlamına gelir — yani üç model üzerinde art arda üç koşu birbirinin cache’ini ısıtmaz ve üçüncü koşu haksız yere ucuz olmaz.
+
+Bu dersin örnek prompt’u, laboratuvarın kullandığıdır. Belirtiyi adlandırdığına ama kestirmeyi yasakladığına dikkat edin, ama hatanın bulunduğu dosyayı adlandırmıyor:
+
+```text
+npm test fails one test in test/persist.test.ts. Find the root cause in src/ and
+fix it. Do not change any test file.
+```
+
+## Uygulamalı laboratuvar
+
+`lesson/m05-02-start` tag’i, lab deposunun `BUGS.md`’sinden **B3** hatasını ekiyor: `src/cli.ts`’teki `runAdd()` içinde, `save()` çağrısı `await` ya da `.catch` olmadan tetikleniyor, dolayısıyla bir disk yazma hatası çağıranın ele alabileceği bir hata yerine gözlemlenmemiş bir promise reddine dönüşüyor. Bir test başarısız oluyor.
+
+<Lab
+  title="Laboratuvar · Haiku, Sonnet ve Opus’ta aynı hata"
+  lessonId="tr/l2-intermediate/m05-models-effort/choosing-a-model"
+  repoTag="lesson/m05-02-start"
+  steps={[
+    'Lab deposunu bu kursun dışında bir yere klonlayın, sonra `git checkout lesson/m05-02-start` ve `npm ci` çalıştırın. Her tag değişiminden sonra `npm ci`’yi yeniden çalıştırın — lockfile tag’ler arasında farklıdır.',
+    '`npm test` çalıştırın ve hatayı okuyun. Bu, her modelin karşılaşması gereken durumdur.',
+    'Görevi Haiku üzerinde çalıştırın: `claude -p "npm test fails one test in test/persist.test.ts. Find the root cause in src/ and fix it. Do not change any test file." --model haiku --output-format json --max-turns 6 --permission-mode acceptEdits --allowedTools "Read Edit Grep Glob Bash(npm test*)"`',
+    'İşi kendiniz kontrol edin, modelin özetini değil: `git diff --stat` ve `npm test`.',
+    '`git checkout -- . && git clean -fd` ile sıfırlayın, `npm test`’in yeniden başarısız olduğunu doğrulayın ve 3. adımı önce `--model sonnet`, sonra `--model opus` ile tekrarlayın.',
+    'Üç zarftan `subtype`, `num_turns`, `duration_ms` ve `total_cost_usd`’ı, her koşu için kendi `npm test` sonucunuzun yanına, tek bir tabloya koyun.',
+  ]}
+  expected="Üç model de src/cli.ts’te çalışan bir düzeltme üretiyor ve npm test her seferinde `1 failed | 14 passed`’dan `15 passed`’a geçiyor. Yalnızca Sonnet koşusu altı turluk bütçe içinde bitiyor; Haiku ve Opus zarfları, düzeltme zaten oturduktan sonra subtype error_max_turns bildiriyor."
+  checklist={[
+    'Çalışma ağacı her koşu arasında sıfırlandı',
+    'Prompt dizesi üç koşu için de aynıydı',
+    '`npm test`, `result` metninden güvenilerek değil, her modelden sonra sizin tarafınızdan çalıştırıldı',
+    'Her koşunun diff’i yalnızca `src/cli.ts`’e dokunuyor',
+    'Üç zarf da kaydedildi, yalnızca göz atılmadı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/01-npm-test-before.txt"
+    range="2-7"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/02-haiku.txt"
+    range="2-2"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/02-haiku.txt"
+    range="85-95"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/03-sonnet.txt"
+    range="99-112"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/06-npm-test-after-sonnet.txt"
+    range="2-5"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/04-opus.txt"
+    range="108-118"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/05-npm-test-after-opus.txt"
+    range="2-6"
+  />
+</Lab>
+
+### Gerçek sayılar
+
+Bunlar, 2026-09-07 tarihinde Claude Code 2.1.263’e karşı yakalanan, yukarıdaki üç zarftan gelen değerlerdir. "Sonrasında testler" sütunu, modelin iddiası değil, yazarın kendi `npm test`’idir.
+
+| Koşu             | `subtype`         | `num_turns` | `duration_ms` | `total_cost_usd` | Sonrasında testler | Diff                            |
+| ---------------- | ----------------- | ----------- | ------------- | ---------------- | ------------------ | ------------------------------- |
+| `--model haiku`  | `error_max_turns` | 7           | 60.125        | 0,0588           | 15 geçti           | `src/cli.ts`, 1 ekleme, 3 silme |
+| `--model sonnet` | `success`         | 6           | 38.164        | 0,1201           | 15 geçti           | `src/cli.ts`, 1 ekleme, 3 silme |
+| `--model opus`   | `error_max_turns` | 7           | 76.868        | 0,2453           | 15 geçti           | `src/cli.ts`, 2 ekleme, 3 silme |
+
+Bu tabloyu dürüstçe okuyun, çünkü "pahalı model daha iyidir" demiyor.
+
+**Her model hatayı düzeltti** ve üçü de aynı kök nedeni buldu: `await` edilmemiş `save()` çağrısı. Haiku ve Sonnet aynı şekilde bir değişiklik ürettiler — `src/cli.ts`’te bir eklenen, üç silinen satır. Opus aynı düzeltmeyi yaptı ve ayrıca üstündeki artık yanıltıcı olan yorumu doğru bir yorumla değiştirdi, diff’inin bir satır daha fazla eklemesi olmasının nedeni bu. Bu gerçek, küçük de olsa bir kalite farkıdır ve yalnızca toplamlar değil diff’leri okuyarak görebileceğiniz türden bir farktır.
+
+**Haiku, bu görevde Opus’tan dört kat daha ucuzdu** ve daha kısa duvar saati süresinde bitirdi. Kendisine işaret eden başarısız bir testi olan, kapsamı belirli bir hatada, en ucuz model tamamen yeterliydi.
+
+**Sonnet, bitiren tek koşuydu.** Hem Haiku hem Opus `--max-turns 6`’ya çarptı — dosyayı düzenledikten _sonra_, bu yüzden `is_error: true` olmasına ve `result` dizesi olmamasına rağmen testler geçiyor. Bu gerçekten önemli bir bulgu: `subtype: error_max_turns`, "iş başarısız oldu" değil "bütçe tükendi" demektir ve otomasyonunuz yalnızca `is_error`’a bakıyorsa iyi bir işi çöpe atar. Ders şu: bir tur bütçesi, tıpkı model gibi, deneyde bir değişkendir.
+
+**Opus’un zarfı ayrıca tur harcamasının bir kısmını açıklıyor.** `permission_denials` dizisi, reddedilen bir `Bash` çağrısını kaydediyor:
+
+<Transcript
+  src="content/_shared/transcripts/m05-models-effort/02-choosing-a-model/04-opus.txt"
+  range="71-81"
+/>
+
+İzin listesi `Bash(npm test*)`’ti ve model, o kalıpla eşleşmeyen `cd "<lab>" && npm test … && npm run typecheck … && npm run lint …` çalıştırmayı denedi. Ret bir tura mal oldu. Bu bir model zayıflığı değil; bilinmeye değer bir deney tasarım kusurudur — `--allowedTools` kalıbınız, modelleri karşılaştırdığınız ortamın bir parçasıdır.
+
+### `result` dizeleri hakkında dürüst bir uyarı
+
+Sonnet zarfının `result`’ı Türkçedir. Bu gerçek, değiştirilmemiş bir çıktıdır: bu transcript’leri (kaydedilmiş gerçek oturum dökümleri) yakalayan makinenin genel Claude Code tercihleri Türkçe cevap istiyor ve headless bir çalıştırma, diğer her oturum gibi ayarlarınızı ve memory’nizi yükler. "Aynı prompt" ile "aynı bağlam"ın aynı şey olmadığını hatırlatan yararlı bir örnek — kendi yapılandırmanız yaptığınız her koşunun bir parçasıdır.
+
+## Anti-pattern’ler
+
+**Depoyu sıfırlamadan modelleri karşılaştırmak.** İkinci koşu hatayı zaten düzeltilmiş bulur ve bir turda başarı bildirir, siz de ikinci modelin daha hızlı olduğu sonucuna varırsınız. _Düzeltme:_ koşular arasında `git checkout -- . && git clean -fd` yapın ve hatanın geri geldiğini doğrulamak için `npm test`’i yeniden çalıştırın.
+
+**`result` metnine sonuç olarak güvenmek.** Bir modelin özeti, işi yapan şeyin ürettiği, iş hakkında bir iddiadır. _Düzeltme:_ testleri kendiniz çalıştırın ve çıkış durumunu kaydedin; "işe yaradı mı?" sorusunu cevaplayan tek sütun odur.
+
+**`is_error: true`’yu "koşu başarısız oldu" saymak.** Buradaki üç koşudan ikisi, doğru bir düzeltme oturduktan sonra `error_max_turns` bildirdi. _Düzeltme:_ `subtype` ve `terminal_reason`’ı okuyun, koşuyu atmadan önce çalışma ağacını kontrol edin.
+
+**`--allowedTools`’un koşular arasında farklı olmasına izin vermek.** Bir modelin tool çağrısını reddedip diğerininkine izin veren bir kalıp, karşılaştırmayı modeller hakkında değil izin listeniz hakkında yapar. _Düzeltme:_ önce izin listesini düzeltin, sonra tüm kolları yeniden çalıştırın.
+
+**Bir hatayı bir politikaya genellemek.** Küçük bir TypeScript deposundaki bir asenkron hata, bir şema migrasyonu için hangi modeli kullanacağınızı söylemez. _Düzeltme:_ karşılaştırmayı kendi işinize benzeyen bir iş üzerinde çalıştırın ve işiniz değiştiğinde yeniden çalıştırın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/choosing-a-model"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir koşunun zarfı `subtype: error_max_turns` ve `is_error: true` diyor, ama `npm test` yeşil ve `git diff` mantıklı bir düzeltme gösteriyor. Ne oldu?"
+  options={[
+    {
+      text: 'Model başarısız oldu ve başka bir şey kodu düzeltti.',
+      explanation: 'Ağaca başka hiçbir şey dokunmadı — model, kesilmeden önce düzenlemeyi yaptı.',
+    },
+    {
+      text: 'Koşu tüm tur bütçesini kullandı ve düzenleme zaten oturduktan sonra durduruldu. İş iyi; koşu yalnızca rapor verecek fırsat bulamadı.',
+      correct: true,
+      explanation:
+        'Bu laboratuvardaki Haiku ve Opus koşularının başına gelen tam olarak buydu. Yalnızca bayrağa değil ağaca bakın.',
+    },
+    {
+      text: 'Bir koşu kesildiğinde JSON zarfı güvenilmezdir.',
+      explanation: 'Zarf doğrudur; bir bütçe tükenmesi bildiriyor ve gerçekten de bu oldu.',
+    },
+    {
+      text: 'Testler önceki koşudan cache’lenmişti.',
+      explanation: 'Vitest yeniden çalıştı; ağaç da koşu başlamadan önce sıfırlanmıştı.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/choosing-a-model"
+  questionId="q2"
+  lang="tr"
+  prompt="Üç farklı model üzerinde art arda üç koşu neden haksız yere sonuncuyu kayırmaz?"
+  options={[
+    {
+      text: 'Çünkü Claude Code headless modda prompt cache’i devre dışı bırakır.',
+      explanation: 'Bırakmaz; cache, `-p` koşularına da diğerleri gibi uygulanır.',
+    },
+    {
+      text: 'Çünkü her modelin kendi prompt cache’i vardır, dolayısıyla bir modelin koşusu diğerininkini ısıtamaz.',
+      correct: true,
+      explanation:
+        'Caching dokümanı açık: model değiştirmek, tüm isteği hiç cache isabeti olmadan okumak demektir.',
+    },
+    {
+      text: 'Çünkü `--max-turns` cache’i sıfırlar.',
+      explanation: 'Tur bütçesinin cache ile hiçbir ilgisi yoktur.',
+    },
+    {
+      text: 'Gerçekten sonuncuyu kayırırlar ve karşılaştırma geçersizdir.',
+      explanation: 'Model başına cache’ler tam olarak bunun neden böyle olmadığının nedenidir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/choosing-a-model"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir tool çağrısının `--allowedTools` listeniz tarafından reddedildiğini öğrenmek için hangi alanı okursunuz?"
+  options={[
+    { text: '`num_turns`', explanation: 'Turları sayar; birinin neden harcandığını söylemez.' },
+    {
+      text: '`permission_denials`',
+      correct: true,
+      explanation:
+        'Modelin çalıştırmaya çalıştığı tam komut dizesi dahil, reddedilen çağrıları kaydeder.',
+    },
+    { text: '`total_cost_usd`', explanation: 'Bir maliyet tahmini, izin kaydı değil.' },
+    { text: '`modelUsage`', explanation: 'Model başına token ve maliyet muhasebesi.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/choosing-a-model"
+  questionId="q4"
+  lang="tr"
+  prompt="Bu laboratuvarın görevinde, yakalanan kanıtların desteklediği sonuç hangisidir?"
+  options={[
+    {
+      text: 'Opus, bir asenkron hatayı düzeltebilen tek modeldir.',
+      explanation: 'Üçü de çalışan bir düzeltme üretti.',
+    },
+    {
+      text: 'Kendisine işaret eden başarısız bir testi olan, kapsamı belirli bir hata, üç model tarafından da doğru şekilde düzeltildi ve en ucuz olanı en pahalısının yaklaşık dörtte birine mal oldu.',
+      correct: true,
+      explanation:
+        'Bu — artı tur bütçesi bulgusu — üç zarfın ve üç test koşusunun gerçekten gösterdiği şeydir.',
+    },
+    {
+      text: 'Haiku her zaman Opus’tan dört kat daha ucuzdur.',
+      explanation:
+        'Bu görevde öyleydi. Maliyet, sabit bir orana değil, bir koşunun gerçekte tükettiği token’lara bağlıdır.',
+    },
+    {
+      text: 'Sonnet, Haiku’dan daha iyi bir düzeltme üretti.',
+      explanation: 'Diff’leri burada aynı biçimdeydi — aynı dosyada bir eklenen, üç silinen satır.',
+    },
+  ]}
+/>
+
+**Sırada:** `03-effort-levels`, diğer kadrana geçiyor — modelin ne kadar sıkı düşündüğüne — ve her seviyenin gerçekte ne için olduğuna.

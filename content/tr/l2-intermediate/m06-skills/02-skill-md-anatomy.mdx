@@ -1,15 +1,15 @@
 ---
 title: 'SKILL.md anatomisi ve frontmatter'
-description: "Claude Code'un bir SKILL.md dosyasında kabul ettiği tüm frontmatter alanları, her birinin gerçekte neyi değiştirdiği ve skill'i kimin çağırabileceğini belirleyen alanlar."
+description: 'Claude Code’un bir SKILL.md’de kabul ettiği her frontmatter alanı, her birinin gerçekte ne değiştirdiği ve skill’i kimin çağırabileceğine, neye dokunabileceğine karar veren üç alan.'
 level: 2
 module: 'm06-skills'
 order: 2
 duration_min: 20
 difficulty: core
-tags: ['skills', 'frontmatter', 'configuration']
+tags: ['skills', 'frontmatter', 'yapılandırma']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Extend Claude with skills'
@@ -27,6 +27,309 @@ lab:
   repo_tag: 'none'
 ---
 
-**Not:** Bu dersin Türkçe çevirisi henüz yapılmadı; `draft: true` kaldığı sürece sayfa gezinmede görünmez. Çeviri `content/en/l2-intermediate/m06-skills/02-skill-md-anatomy.mdx` dosyasından üretilir (kurallar: `.claude/rules/i18n.md`, D016, D018).
+## Hedefler ve ön koşullar
 
-Bu ders SKILL.md dosyasını alan alan parçalar: `name`, `description`, `when_to_use`, `argument-hint`, `arguments`, `disable-model-invocation`, `user-invocable`, `allowed-tools`, `disallowed-tools`, `model`, `effort`, `context`, `agent`, `background`, `hooks`, `paths`, `shell`. Hiçbir alan zorunlu değildir; yalnızca `description` önerilir çünkü Claude'un skill'i bulup bulmayacağını belirleyen alan odur.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Ezbere geçerli bir `SKILL.md` yazmak: hangi alanların zorunlu olduğunu (hiçbiri), hangisinin önerildiğini (`description`) ve `---` işaretlerinin nereye oturması gerektiğini.
+- On yedi Claude Code frontmatter alanının her birinin ne değiştirdiğini ve hangi üçünün kabul edilip de etkisiz kaldığını söylemek.
+- Bir [skill](/tr/playbook/glossary/#skill)'i (`SKILL.md` ile tanımlanan yeniden kullanılabilir talimat paketi) kimin çalıştırabileceğini kontrol etmek için `disable-model-invocation` ile `user-invocable` arasında seçim yapmak — üçüncü kaldıraç, `skillOverrides` ayarı, 06. derste geliyor.
+- `description`'ın Claude'un skill'inizi hiç bulup bulamayacağına karar veren tek alan olduğunu ve neden `when_to_use` ile birlikte 1.536 karakterle sınırlandığını açıklamak.
+- Claude Code dışında hangi alanların hayatta kaldığını (claude.ai yüklemeleri, Skills API) ve hangilerinin orada sert bir hataya yol açtığını tanımak.
+
+**Ön koşullar.** `01-skills-vs-commands` dersi ve yazabileceğiniz bir `.claude/` dizini olan bir proje.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bir alanı sadece var diye ayarlamayın. Çalışan skill'lerin çoğu yalnızca `description` bildirir,
+  başka hiçbir şey değil; her ekstra anahtar, skill'in gerçekte yaptığından sapabilecek bir şey daha
+  demektir. Özellikle, ölçtüğünüz bir ihtiyaç olmadıkça bir skill'i belirli bir modele sabitlemek
+  için `model` ya da `effort` ayarlamayın — turun geri kalanı için okuyucunun kendi `/model`
+  seçimini geçersiz kılıyorsunuz. Ve `allowed-tools`'u bir güvenlik sınırı olarak kullanmayın: izin
+  verir, asla kaldırmaz — yani bir skill Claude'un yapabileceklerini genişletebilir ama daraltamaz.
+</WhenNotToUse>
+
+## Kavram
+
+### Dosya
+
+Bir skill, `SKILL.md` içeren bir dizindir: `---` işaretleri arasında YAML frontmatter, ardından skill çalıştığında prompt hâline gelen bir markdown gövdesi.
+
+İki mekanik kural hemen etkisini gösterir. **Claude Code, frontmatter'ı yalnızca açılış `---`'i dosyanın ilk satırıysa okur** — üstünde başıboş bir boş satır varsa, `---` işaretleri dahil tüm dosya gövde metni olarak ele alınır. Ve **tüm alanlar isteğe bağlıdır**; yalnızca `description` önerilir, böylece Claude skill'i ne zaman kullanacağını bilir. `description`'ı atlarsanız, Claude Code markdown'ın ilk paragrafına geri döner.
+
+Boolean alanlar, `true` ve `false`'a ek olarak herhangi bir harf büyüklüğünde `yes`, `no`, `on`, `off`, `1` ve `0`'ı kabul eder. v2.1.218'den önce yalnızca `true` ve `false` tanınıyordu.
+
+### Alanlar
+
+**Kimlik ve keşif**
+
+| Alan            | Ne değiştirir                                                                                                                                                                                                                                                                        |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `name`          | Skill listelerindeki görüntülenen ad; varsayılan olarak dizin adı. Bir _plugin_ skill'inde komutun son parçasını da belirler. Bir personal ya da project skill'de yazdığınız şeyi değiştir**mez**.                                                                                   |
+| `description`   | Skill'in ne yaptığı ve ne zaman kullanılacağı. Claude, skill'i ne zaman uygulayacağına bunu kullanarak karar verir. Ana kullanım durumunu öne koyun: `when_to_use` ile birleşince listede 1.536 karakterde kesilir.                                                                  |
+| `when_to_use`   | Ekstra tetikleyici bağlam — ifadeler, örnek istekler. Listede `description`'a eklenir ve aynı 1.536 karakter sınırına dahil olur.                                                                                                                                                    |
+| `argument-hint` | Beklenen argument'lar için autocomplete ipucu, örn. `[issue-number]` ya da `[filename] [format]`.                                                                                                                                                                                    |
+| `arguments`     | Gövdede `$name` ile yerine koymak için adlandırılmış konumsal [argument](/tr/playbook/glossary/#argument)'lar (bir skill ya da komut çağrılırken sonuna eklenen değer). Boşlukla ayrılmış bir string ya da bir YAML listesi; adlar sırayla konumlara eşlenir. Ders 03 bunu kullanır. |
+| `paths`         | **Otomatik etkinleşmeyi** sınırlayan glob desenleri: Claude, skill'i yalnızca eşleşen dosyalarla çalışırken otomatik olarak yükler. Path-specific kurallarla aynı biçim.                                                                                                             |
+
+**Çağrı kontrolü**
+
+| Alan                       | Ne değiştirir                                                                                                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `disable-model-invocation` | `true`, yalnızca sizin çağırabileceğiniz anlamına gelir. Ayrıca subagent önyüklemesinin ve prompt'u skill olan zamanlanmış task'ların dışında tutar. Varsayılan `false`. |
+| `user-invocable`           | `false`, yalnızca Claude'un çağırabileceği anlamına gelir: `/` menüsünden gizlidir ve `/ad` yazmak hiçbir şey yapmaz. Varsayılan `true`.                                 |
+
+İki alan, yalnızca kimin yazabileceğinden fazlasında farklılaşır — bağlamda ne durduğunda da farklılaşırlar:
+
+| Frontmatter                      | Siz çağırabilirsiniz | Claude çağırabilir | Bağlamda                                                              |
+| -------------------------------- | -------------------- | ------------------ | --------------------------------------------------------------------- |
+| (varsayılan)                     | Evet                 | Evet               | Description her zaman bağlamda; çağrıldığında tam skill yüklenir      |
+| `disable-model-invocation: true` | Evet                 | Hayır              | Description bağlamda **değil**; siz çağırdığınızda tam skill yüklenir |
+| `user-invocable: false`          | Hayır                | Evet               | Description her zaman bağlamda; çağrıldığında tam skill yüklenir      |
+
+O orta satır, `disable-model-invocation: true`'nun bir güvenlik anahtarı kadar bir token tasarrufu da olmasının nedenidir — bunu 06. derste gerçekleşirken izleyeceksiniz.
+
+**Tool'lar, model ve yürütme**
+
+| Alan               | Ne değiştirir                                                                                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `allowed-tools`    | Claude'un, **skill'i çağıran tur boyunca** sormadan kullanabileceği tool'lar. İzin bir sonraki mesajınızda temizlenir. Hiçbir şeyi kısıtlamaz.                |
+| `disallowed-tools` | Skill etkinken Claude'un havuzundan kaldırılan tool'lar; bu da bir sonraki mesajınızda temizlenir. Diğer tool'lar dururken `EndConversation`'ı kaldıramaz.    |
+| `model`            | Turun geri kalanı için model — `/model`'le aynı değerler ya da `inherit`. Ayarlara kaydedilmez. `context: fork` ile, forklanan subagent'ın modelini belirler. |
+| `effort`           | Skill etkinken effort seviyesi: `low`, `medium`, `high`, `xhigh`, `max`. Kullanılabilir seviyeler modele bağlıdır.                                            |
+| `context`          | `fork`, skill'i konuşma geçmişi olmadan izole bir subagent bağlamında çalıştırır (ders 05).                                                                   |
+| `agent`            | `context: fork` ayarlandığında hangi subagent türünün kullanılacağı — `Explore`, `Plan`, `general-purpose` ya da `.claude/agents/`'ten özel bir agent.        |
+| `background`       | Yalnızca `context: fork` ile. `false`, arka planda çalışmak yerine sonucu çağıran turda bekler. Varsayılan `true`; v2.1.218+ gerektirir.                      |
+| `hooks`            | Skill çağrıldığında Claude Code'un kaydettiği ve ardından oturumun geri kalanında çalışan hook'lar (`m07-hooks`).                                             |
+| `shell`            | `` !`command` `` ve ` ```! ` blokları için shell: `bash` (varsayılan) ya da `powershell`.                                                                     |
+
+**Kabul edilen ama etkisiz**
+
+`metadata`, kendi tooling'iniz için serbest biçimli bir YAML haritasıdır; Claude Code içeriğine göre hareket etmez. `license` ve `compatibility`, [Agent Skills](https://agentskills.io) spesifikasyonundan gelir — Claude Code bunları kabul eder ve hiçbir şey yapmaz.
+
+### Description her şeydir
+
+Claude Code, Claude'un neyin kullanılabilir olduğunu bilmesi için skill adları ve description'larının bir listesini bağlama yükler. Liste her zaman her adı içerir, ama birçok skill'iniz olduğunda, description'lar modelin bağlam penceresinin %1'i olan bir bütçeye sığacak şekilde kısaltılır — ve bütçe taştığında, Claude Code description'ları **en az çağırdığınız skill'lerden başlayarak** düşürür. Yani hiç kullanmadığınız skill, aynı zamanda description'ı ilk kaybolan skill'dir, bu da onu kullanılma ihtimalini daha da azaltır.
+
+Pratik sonuçlar: `description`'da ana kullanım durumunu öne koyun; `description` artı `when_to_use`'u 1.536 karakter sınırının epey altında tutun; ve bir skill tetiklenmiyorsa, düzeltilecek ilk şey gövdesi değil description'ıdır. `/context`, bütçe uygulandıktan sonra listenin boyutunu bildirir ve `skillListingBudgetFraction`, gerçekten daha fazlasına ihtiyacınız varsa bütçeyi yükseltir.
+
+İşte size düzenlemeye değer bir ilk taslak veren prompt şekli:
+
+```text
+Write .claude/skills/release-notes/SKILL.md for this repo. It should turn the
+commits since the last tag into release notes. Only I should be able to run it,
+and it must not need permission for `git log`. Keep the description under two
+lines and put the trigger phrase first.
+```
+
+### Claude Code dışında
+
+Claude Code yukarıdaki her alanı kabul eder. Diğer dağıtım yolları etmez:
+
+| Dağıtım yolu                                                   | Kullanabileceğiniz alanlar                                                     |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Plugin skill'leri dahil, her seviyedeki Claude Code skill'leri | Yukarıdaki tablolardaki her alan                                               |
+| claude.ai skill yüklemeleri, Skills API, `package_skill.py`    | `name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools` |
+
+Desteklenmeyen bir alan orada bir uyarı değil, sert bir hatadır: `Unexpected key(s) in SKILL.md frontmatter: argument-hint.` Bir skill her ikisine de gidecekse, frontmatter'ı o altı alanla sınırlayın.
+
+## Uygulamalı laboratuvar
+
+<Callout label="Not">
+  Bu laboratuvar kendi kendine yeterlidir — herhangi bir git deposu işi görür, lab-repo tag'i yok.
+  Ortada başka hiçbir şey yokken iki frontmatter alanının davranışı değiştirdiğini görebilmeniz için
+  iki atılabilir skill yazar.
+</Callout>
+
+<Callout label="Not">
+  Kaydedilen komutlar `--settings '&#123;"language":"English"&#125;'` taşıyor çünkü onları yakalayan
+  makinenin genel bir `language` tercihi Türkçe'ye ayarlı. O bayrağı bırakın; koşu hakkında başka
+  hiçbir şey değişmiyor.
+</Callout>
+
+<Lab
+  title="Laboratuvar · üç frontmatter alanının işini görün"
+  lessonId="tr/l2-intermediate/m06-skills/skill-md-anatomy"
+  repoTag="none"
+  steps={[
+    'Herhangi bir git deposunda `.claude/skills/lab-anatomy/SKILL.md`’yi oluşturun. Bir `description` verin, `effort: low` ekleyin ve hiç `name` alanı koymayın. Gövde: `Reply with exactly two lines and nothing else:` sonra `skill: lab-anatomy` ve `effort: ${CLAUDE_EFFORT}`.',
+    '`claude -p "/lab-anatomy " --output-format text --max-turns 6` çalıştırın. Komut adı dizinden geldi ve `${CLAUDE_EFFORT}`, `effort` alanının ayarladığı seviyeyi rapor ediyor.',
+    'Açılış `---`’ini bir boş satır aşağı taşıyın ve yeniden çalıştırın: frontmatter artık ayrıştırılmıyor, dolayısıyla `effort` uygulanmayı bırakıyor ve `---` işaretleri gövde metni olarak geliyor.',
+    'Dosyayı geri yükleyin. Şimdi `user-invocable: false` olan ve çalışsa belli olacak bir gövdesi olan `.claude/skills/lab-internal/SKILL.md`’yi oluşturun.',
+    '`claude -p "/lab-internal " --output-format json --max-turns 6` çalıştırın ve zarftaki `num_turns` ile `result`’ı okuyun.',
+  ]}
+  expected="/lab-anatomy, `skill: lab-anatomy` ve `effort: low` yazdırır. /lab-internal hiçbir şey üretmez: JSON zarfı num_turns 0 ve boş bir result rapor eder, çünkü bir user-invocable: false skill'i sizin tarafınızdan çağrılamaz."
+  checklist={[
+    'Komut adı, hiçbir `name` alanı olmadan dizin adıyla eşleşti',
+    '`${CLAUDE_EFFORT}`, `effort` alanıyla eşleşerek `low` yazdırdı',
+    'Açılış `---`’ini girintilemek frontmatter’ın ayrıştırılmasını durdurdu',
+    '`/lab-internal`, `num_turns: 0` ve `result: ""` döndürdü',
+    'Her iki atılabilir skill dizini de sonradan silindi',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/02-skill-md-anatomy/01-directory-name-and-effort.txt"
+    range="2-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/02-skill-md-anatomy/02-user-invocable-false.txt"
+    range="2-7"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/02-skill-md-anatomy/03-frontmatter-not-first-line.txt"
+    range="2-4"
+  />
+</Lab>
+
+Üçüncü kayıt, frontmatter kuralının işbaşında olduğu andır. Tek değişiklik açılış `---`'inin üstündeki bir boş satırdır: dosyanın içeriği aksi hâlde birebir aynıdır. `effort: low` uygulanmayı bırakır ve — bir frontmatter alanı olmadığı için her durumda yerine konan — `${CLAUDE_EFFORT}`, bunun yerine oturumun kendi effort'unu rapor eder. Hiçbir şey uyarmaz; skill yalnızca yapılandırmasını kaybeder.
+
+İkinci kayıt diğer ilginç olandır. Ne bir hata mesajı ne de modelden bir ret vardır — hiç model çağrısı da yoktur. `num_turns` `0`'dır, `result` boş bir string'dir ve koşu yine de `"subtype": "success"` rapor eder. `user-invocable: false`, modelin pazarlık edebileceği bir izin kontrolü değildir; çağrı basitçe gerçekleşmez.
+
+### Skill dizinlerini işletim sistemine göre oluşturmak
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+mkdir -p .claude/skills/lab-anatomy .claude/skills/lab-internal
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+mkdir -p .claude/skills/lab-anatomy .claude/skills/lab-internal
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+New-Item -ItemType Directory -Force .claude\skills\lab-anatomy, .claude\skills\lab-internal
+```
+
+  </Fragment>
+</OSTabs>
+
+## Anti-pattern'ler
+
+**Uygulamayı anlatan bir description.** "Scaffold betiğini çalıştırır ve store.ts'yi düzenler", Claude'a _ne zaman_ istediğiniz hakkında hiçbir şey söylemez. _Düzeltme:_ tetikleyiciyi öne koyun — "`src/store.ts`'e yepyeni bir işlem eklerken" — ve örnek ifadeleri `when_to_use`'a bırakın.
+
+**Frontmatter olmayan frontmatter.** Açılış `---`'inin üstünde bir yorum, boş bir satır ya da bir BOM ve Claude Code tüm dosyayı gövde olarak ele alır: `allowed-tools` uygulanmayı bırakır, `disable-model-invocation` uygulanmayı bırakır ve hiçbir şey uyarmaz. _Düzeltme:_ `---` her zaman 1. satırda.
+
+**Bir project skill'ini `name` ile yeniden adlandırmak.** Yalnızca liste etiketini değiştirir. _Düzeltme:_ dizini yeniden adlandırın.
+
+**`allowed-tools`'u bir sandbox sanmak.** Tool'ları önceden onaylar; asla hiçbirini kaldırmaz. Diğer her tool, normal permission ayarlarınız altında çağrılabilir kalır ve alan hiç güvenmediğiniz bir çalışma alanında bile geçerlidir — bu yüzden Claude Code'u orada çalıştırmadan önce bir depoya check in edilmiş skill'lerin `allowed-tools`'unu inceleyin. _Düzeltme:_ bir şeyi kaldırmanız gerektiğinde `disallowed-tools`, permission deny kuralları ya da bir hook kullanın.
+
+**Her yere `model` ve `effort` yığmak.** Her biri, turun geri kalanı için okuyucunun oturum seçimini sessizce geçersiz kılar. _Düzeltme:_ bunları yalnızca varsayılanın yanlış olduğuna dair kanıtınız olan yerde ayarlayın — ucuz, mekanik bir skill'de `model: haiku`, gerçekten zor bir tanesinde daha yüksek bir `effort`.
+
+**Alan listesini kontrol etmeden claude.ai'a da yüklenecek bir skill yazmak.** `argument-hint`, `context`, spesifikasyon setinin ötesindeki `allowed-tools` — paketleme tamamen başarısız olur. _Düzeltme:_ çift hedefli skill'leri `name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools` ile sınırlı tutun.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/skill-md-anatomy"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir SKILL.md'de hangi frontmatter alanları zorunludur?"
+  options={[
+    {
+      text: 'Hiçbiri — tüm alanlar isteğe bağlıdır, ama `description` önerilir',
+      correct: true,
+      explanation: '`description` olmadan, Claude Code gövdenin ilk paragrafına geri döner.',
+    },
+    { text: '`name` ve `description`', explanation: '`name` varsayılan olarak dizin adına döner.' },
+    {
+      text: '`name`, `description` ve `allowed-tools`',
+      explanation: 'Hiç tool’u olmayan bir skill tamamen geçerlidir — 04. derse bakın.',
+    },
+    {
+      text: '`description` ve `when_to_use`',
+      explanation: '`when_to_use` isteğe bağlı ekstra tetikleyici bağlamdır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/skill-md-anatomy"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir skill `user-invocable: false` ayarlıyor. Adını yazdığınızda ne olur?"
+  options={[
+    {
+      text: 'Hiçbir şey çalışmaz — hiç model çağrısı yoktur; bir -p koşusu num_turns 0 ve boş bir result rapor eder',
+      correct: true,
+      explanation: 'Skill `/` menüsünden gizlidir ve `/ad` yazmak onu çalıştırmaz.',
+    },
+    {
+      text: 'Claude önce onay ister',
+      explanation: 'Hiçbir istem yoktur; çağrı basitçe gerçekleşmez.',
+    },
+    {
+      text: 'Çalışır, ama hiç tool kullanılabilir olmadan',
+      explanation: 'Bu `disallowed-tools` olurdu ve tamamen farklı bir alandır.',
+    },
+    {
+      text: 'Claude Code, başlangıçta skill’i yüklemeyi reddeder',
+      explanation: 'Sorunsuz yüklenir — Claude yine de çağırabilir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/skill-md-anatomy"
+  questionId="q3"
+  lang="tr"
+  prompt="Depoya yirmi skill daha eklediğinizden beri skill'iniz tetiklenmiyor. En olası neden nedir?"
+  options={[
+    {
+      text: 'Skill listesi bütçesini aştı ve description’lar, en az çağrılan skill’lerden başlayarak düşürüldü',
+      correct: true,
+      explanation:
+        'Bütçe bağlam penceresinin %1’idir; `/context`, bütçe uygulandıktan sonra liste boyutunu gösterir.',
+    },
+    {
+      text: 'Claude Code bir dizindeki yalnızca ilk on skill’i yükler',
+      explanation: 'Her skill adı her zaman listededir; kesilen şey description’lardır.',
+    },
+    {
+      text: '`allowed-tools` süresi doldu',
+      explanation: 'O izin turluktur ve tetiklenmeyle hiçbir ilgisi yoktur.',
+    },
+    {
+      text: 'Birkaç skill var olduğunda `paths` alanı varsayılan olarak hiçbir şeye döner',
+      explanation: '`paths`, siz ayarlamadığınız sürece etkisizdir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/skill-md-anatomy"
+  questionId="q4"
+  lang="tr"
+  prompt="`allowed-tools` hakkında hangi ifade doğrudur?"
+  options={[
+    {
+      text: 'Listedeki tool’ları skill’i çağıran tur için önceden onaylar ve izin bir sonraki mesajınızda temizlenir',
+      correct: true,
+      explanation:
+        'Skill’i yeniden çağırmak onu yeniden uygular. Hangi tool’ların kullanılabilir olduğunu asla kısıtlamaz.',
+    },
+    {
+      text: 'Skill’i yalnızca o tool’larla sınırlar',
+      explanation:
+        'Her tool normal permission ayarlarınız altında çağrılabilir kalır; kaldıran alan `disallowed-tools`’tur.',
+    },
+    {
+      text: 'Skill çağrıldıktan sonra tüm oturum boyunca uygulanır',
+      explanation:
+        'Skill içeriği turlar arasında kalıcıdır; permission izni kalıcı değildir — bir sonraki mesajınızda temizlenir.',
+    },
+    {
+      text: 'Güvenmediğiniz bir çalışma alanında yok sayılır',
+      explanation:
+        'Workspace trust bu alanı kapatmaz, bu da tam olarak neden onu tanımadığınız bir depoda Claude Code çalıştırmadan önce okumanız gerektiğinin nedenidir.',
+    },
+  ]}
+/>
+
+**Sırada:** `03-arguments`, dosyaya değerler koyar — `$ARGUMENTS`, indeksli ve adlandırılmış argument'lar ve `${CLAUDE_*}` yerine koymaları — ve lab deposuna karşı `/commit-msg`'i inşa eder.

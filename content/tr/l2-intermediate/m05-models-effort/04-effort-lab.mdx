@@ -1,15 +1,15 @@
 ---
-title: 'Efor laboratuvarı'
-description: 'Tek hata, tek model, üç efor seviyesi: Sonnet 5 üzerinde low, medium ve high, gerçek JSON zarflarıyla ölçüldü — ve küçük, iyi tanımlanmış bir görevde kadranın ne kadar fark yarattığına dair dürüst bir cevap.'
+title: 'Effort laboratuvarı'
+description: 'Bir hata, bir model, üç effort seviyesi: Sonnet 5’te low, medium ve high, gerçek JSON zarflarıyla ölçüldü — ve kadranın küçük, iyi ifade edilmiş bir görevde gerçekte ne kadar fark yarattığına dair dürüst bir cevap.'
 level: 2
 module: 'm05-models-effort'
 order: 4
 duration_min: 25
 difficulty: core
-tags: ['effort', 'cost', 'headless', 'lab']
+tags: ['effort', 'maliyet', 'headless', 'lab']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Model configuration'
@@ -27,8 +27,246 @@ lab:
   repo_tag: 'lesson/m05-04-start'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l2-intermediate/m05-models-effort/04-effort-lab.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu lab, `lesson/m05-04-start` etiketindeki B2 hatasını (milisaniye ile saniyeyi karşılaştıran `isOverdue`) Sonnet 5 üzerinde üç efor seviyesinde çalıştırır. Model sabit tutulur, yalnızca `--effort` değişir. Eforun gerçekten bir şey değiştirdiğini gösteren alan, zarftaki `usage.output_tokens_details.thinking_tokens` değeridir. Sonuç bir "null result"tur ve dürüstçe böyle raporlanır: üç seviye de aynı tek satırlık düzeltmeyi üretti, maliyet farkı yaklaşık 1,15 kat kaldı ve süreler seviyeyle hiç orantılı çıkmadı. Düşünme token'ları low ve medium'da 14, high'ta 53 idi — yani başarısız bir testin işaret ettiği bu kadar net bir görevde adaptif akıl yürütme, düşünecek pek bir şey bulmadı. Ders, eforun ne zaman gerçekten işe yaradığını da söyler: belirsiz, testle sabitlenmemiş araştırma işleri.
+- Modeli sabit tutup yalnızca effort’u değiştirmek, böylece aldığınız sayılar effort hakkında olsun.
+- Bir zarftan `thinking_tokens`’ı okumak ve bunu bir seviyenin bir şeyi değiştirdiğinin doğrudan kanıtı olarak kullanmak.
+- Boş bir sonucu tanımak ve gürültüde bir hikâye bulmak yerine onu öyle raporlamak.
+- Effort’u yükseltmenin ne zaman muhtemelen kârlı olduğunu, ne zaman aynı paranın başka yerde daha iyi harcandığını söylemek.
+
+**Ön koşullar.** Seviyelerin kendisi için `03-effort-levels` dersi ve headless karşılaştırma yöntemi için `02-choosing-a-model` dersi — bu laboratuvar, modeli sabit tutarak onu yeniden kullanır.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Yarınki iş için bir seviye seçmek amacıyla bir effort taraması çalıştırmayın. Effort, model başına
+  ve görev şekli başına kalibre edilmiştir; tek satırlık bir hatada yapılan bir tarama, on iki dosya
+  arasındaki bir refactor hakkında hiçbir şey söylemez. Taramayı, belirli, tekrarlanabilir bir görev
+  sınıfı geçerli seviyenizde başarısız oluyorsa çalıştırın ve bir seviye çıtayı geçer geçmez durun.
+  Ve otomatik kontrolü olmayan bir görevde taramayın: sonrasında çalıştıracak bir testiniz yoksa,
+  daha iyi bir cevabı daha uzun bir cevaptan ayıramazsınız.
+</WhenNotToUse>
+
+## Kavram
+
+### Modeli sabit tutmak
+
+`02` dersi modeli değiştirdi ve her şeyi sabit tuttu. Bu ders tersini yapıyor: tek bir model — Sonnet 5 — ve üç seviye, `low`, `medium` ve `high`. Disiplin aynı. Aynı prompt, aynı başlangıç durumu, aynı `--max-turns`, aynı `--allowedTools`; koşular arasında çalışma ağacını sıfırlayın; sonucu modelin özetiyle değil `npm test` ile doğrulayın.
+
+Bunun ne olduğu konusunda dürüst olalım. Müfredat bir effort-model matrisi çağırıyor; aşağıda yakalanan onun bir satırı — bir modelde üç seviye. Bu, yöntemi göstermek ve gerçek bir bulgu üretmek için yeterli, ama effort ölçekleri ayrı kalibre edilen Opus’a ya da Fable’a genelleme yapmak için yeterli değil.
+
+### Effort’u görünür kılan alan
+
+Maliyet ve süre birçok nedenden oynar. _Effort yüzünden_ oynayan sayı, zarfın `usage.output_tokens_details.thinking_tokens`’ta bildirdiği thinking-token sayısıdır. Thinking token’lar çıktı token’ı olarak faturalandırılır, bu da daha yüksek bir seviyenin neden daha pahalıya mal olduğunun mekanizmasıdır.
+
+Üç seviyeyi tararsanız ve thinking-token sayıları neredeyse hiç oynamazsa, gerçek bir şey öğrenmişsinizdir: bu görevde model, fazladan düşünmeyi haklı bulmamıştır. Uyarlanabilir akıl yürütme, modelin adım adım hiç düşünüp düşünmeyeceğine karar vermesi demektir — seviye bütçeyi belirler, harcamayı değil.
+
+Bu dersin örnek prompt’u laboratuvarınkidir ve bilinçli olarak `02` dersiyle aynı biçimdedir, böylece iki karşılaştırma yan yana okunabilir:
+
+```text
+npm test fails two tests in test/overdue.test.ts. Find the root cause in src/ and
+fix it. Do not change any test file.
+```
+
+## Uygulamalı laboratuvar
+
+`lesson/m05-04-start` tag’i, `lesson/m02-05`’in arkasındaki commit’leri yeniden kullanır ve lab deposunun `BUGS.md`’sinden **B2** hatasını eker: `src/store.ts`’teki `isOverdue()`, `Date.parse(dueDate)`’i milisaniye cinsinden `now() / 1000`’e karşı saniye cinsinden karşılaştırıyor, dolayısıyla geçmişte vadesi gelen bir görev neredeyse hiç gecikmiş olarak bildirilmiyor. İki test başarısız oluyor.
+
+Bu tag’in bir özelliği sayıları okumak için önemli: commit’leri lab deposunun `.claude/` iskeletinden öncesine dayanıyor, dolayısıyla bu koşular için hiçbir proje `CLAUDE.md`’si yüklenmiyor. Her seviyenin çalıştığı bağlam, bu deponun ulaşabildiği en çıplak hâline yakın.
+
+<Lab
+  title="Laboratuvar · bir hatada üç effort seviyesi"
+  lessonId="tr/l2-intermediate/m05-models-effort/effort-lab"
+  repoTag="lesson/m05-04-start"
+  steps={[
+    'Lab deponuzun klonunda `git checkout lesson/m05-04-start` ve `npm ci` çalıştırın.',
+    '`npm test` çalıştırın ve `test/overdue.test.ts`’te iki testin başarısız olduğunu doğrulayın. Bu, her koşunun karşılaşması gereken durumdur.',
+    'Görevi düşük effort’ta çalıştırın: `claude -p "npm test fails two tests in test/overdue.test.ts. Find the root cause in src/ and fix it. Do not change any test file." --model sonnet --effort low --output-format json --max-turns 6 --permission-mode acceptEdits --allowedTools "Read Edit Grep Glob Bash(npm test*)"`',
+    '`git diff --stat` ve `npm test` ile kendiniz doğrulayın, sonra sıfırlayın: `git checkout -- . && git clean -fd`.',
+    '`--effort medium`, sonra `--effort high` ile tekrarlayın, her seferinde arada sıfırlayın.',
+    'Üç koşu için `num_turns`, `duration_ms`, `total_cost_usd` ve `usage.output_tokens_details.thinking_tokens`’ı, her biri için kendi test sonucunuzun yanına tablolaştırın.',
+  ]}
+  expected="Üç seviye de aynı kök nedeni buluyor ve src/store.ts’te aynı tek satırlık düzeltmeyi yapıyor; npm test her seferinde `2 failed | 13 passed`’dan `15 passed`’a geçiyor. Üç zarf da subtype success bildiriyor ve thinking-token sayıları 14, 14 ve 53 — küçük ve effort hakkındaki bir sezginin maliyeti sıralayacağı şekilde sıralı değil."
+  checklist={[
+    'Ağaç sıfırlandı ve her koşudan önce `npm test` yeniden başarısız oldu',
+    'Üç komut arasında yalnızca `--effort` değişti',
+    'Her koşunun diff’i `src/store.ts`’te tek bir satır',
+    '`thinking_tokens`, maliyetten çıkarım yapılarak değil her zarftan okundu',
+    'Yazdığınız sonuç, hiçbir etki göstermedikleri yerler dahil, sayılarla eşleşiyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/04-effort-lab/01-npm-test-before.txt"
+    range="2-6"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/04-effort-lab/02-effort-low.txt"
+    range="2-2"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/04-effort-lab/02-effort-low.txt"
+    range="99-107"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/04-effort-lab/03-effort-medium.txt"
+    range="99-107"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m05-models-effort/04-effort-lab/04-effort-high.txt"
+    range="99-107"
+  />
+</Lab>
+
+### Gerçek sayılar
+
+2026-09-07’de Claude Code 2.1.263’e karşı, Sonnet 5’te, low → medium → high sırasıyla yakalandı.
+
+| `--effort` | `subtype` | `num_turns` | `duration_ms` | `total_cost_usd` | Çıktı token’ı | Thinking token’ı | Sonrasında testler |
+| ---------- | --------- | ----------- | ------------- | ---------------- | ------------- | ---------------- | ------------------ |
+| `low`      | `success` | 6           | 68.737        | 0,1033           | 1.068         | 14               | 15 geçti           |
+| `medium`   | `success` | 5           | 37.849        | 0,0943           | 978           | 14               | 15 geçti           |
+| `high`     | `success` | 6           | 54.878        | 0,1081           | 1.275         | 53               | 15 geçti           |
+
+Her seviye `src/store.ts`’te aynı tek satırlık düzeltmeyi üretti — başıboş `/ 1000`’i kaldırarak — ve her koşu on beş testin tümü geçerek sona erdi.
+
+Bulgu boş bir sonuç ve derli toplu bir sonuçtan daha değerli. Üç seviye arasındaki maliyet farkı yaklaşık 1,15× — yaklaşık on sente mal olan bir görevde kabaca bir buçuk sent. Süredeki fark seviyeyi hiç takip etmiyor: en hızlı koşu `medium`, en yavaşı `low`’du, bu da bir kadranın iş yaptığının değil, olağan koşudan koşuya değişkenliğin imzasıdır.
+
+Thinking token’ları bunu açıklıyor. `low` ve `medium`’da model 14 thinking token harcadı; `high`’da 53. Bu kadar iyi işaretlenmiş bir hatada, varsayılan seviyede bile uyarlanabilir akıl yürütme, düşünülecek neredeyse hiçbir şey olmadığına karar verdi. Effort, modelin ne kadar sıkı çalışabileceğine bir tavan koyar, ne kadar sıkı çalışması gerektiğine bir taban değil — ve dosyayı adlandıran başarısız bir test, bir görevin alabileceği kadar belirsizlik içermez.
+
+Tabloda görünen ikinci dereceden bir etki daha var. `high`, en uzun cevabı (`low`’un 1.068’ine karşı 1.275 çıktı token’ı) ve en ayrıntılı kök-neden açıklamasını üretti. İhtiyacınız olan şey daha iyi bir _açıklama_ ise, effort size bir şey satın aldı. İhtiyacınız olan şey geçen bir testse, almadı.
+
+Yani: görev gerçekten belirsiz olduğunda effort’u yükseltin — bağlanacak başarısız testi olmayan bir kök-neden avı, mimari bir seçim, yalnızca bazen tekrarlanan bir hata. Bunun gibi bir görevde, dürüst tavsiye kadranı olduğu gibi bırakıp dikkatinizi prompt’a harcamaktır.
+
+### Dürüst bir uyarı
+
+Üç `result` dizesi Türkçe geliyor, çünkü yakalama makinesinin genel Claude Code tercihleri Türkçe istiyor. Bu gerçek bir çıktı; aynı şey `02` dersinde de oluyor. Sayılarla ilgili hiçbir şeyi değiştirmiyor ve kendi ayarlarınızın yaptığınız her koşuya eşlik ettiğinin sürekli bir hatırlatıcısı.
+
+## Anti-pattern’ler
+
+**Sonrasında çalıştıracak bir kontrol olmadan effort taramak.** `npm test` olmadan, üç koşu da "başarılı olur" ve sonunda nesir sıralarsınız. _Düzeltme:_ yalnızca otomatik geçme/kalma kontrolü olan görevlerde tarayın ve bunu kendi sütunu olarak kaydedin.
+
+**1,15× bir maliyet farkını bir eğilim olarak okumak.** Tekrarsız üç koşu, küçük bir etkiyi gürültüden ayıramaz — ve burada süreler seviyeyle bile monoton değil. _Düzeltme:_ fark önemliyse, her kolu birkaç kez tekrarlayın; değilse sonuçsuz olarak raporlayın.
+
+**Aynı anda iki şeyi değiştirmek.** Effort’u tararken aynı zamanda modelleri değiştirmek ya da ilk koşu zorlandığı için prompt’a bir ipucu eklemek, hiçbir şey hakkında sayılar üretir. _Düzeltme:_ tarama başına bir değişken.
+
+**Bir seviye adının başka bir modelde aynı şeyi ifade ettiğini varsaymak.** Effort ölçeği model başına kalibre edilir. Sonnet 5’teki `high`, Opus 5’teki `high` değildir. _Düzeltme:_ taramayı gerçekten kullanmayı düşündüğünüz modelde yeniden çalıştırın.
+
+**Bir boş sonuçtan "effort hiçbir şey yapmıyor" sonucuna varmak.** Bu görev küçük, iyi ifade edilmiş ve başarısız bir test tarafından işaret edilmişti — daha derin akıl yürütmeyi ödüllendirmesi en az muhtemel koşullar. _Düzeltme:_ herhangi bir yönde genelleme yapmadan önce taramayı belirsiz bir görevde yeniden çalıştırın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/effort-lab"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir effort seviyesinin modelin davranışını değiştirdiğine dair en doğrudan kanıt hangi zarf alanıdır?"
+  options={[
+    {
+      text: '`total_cost_usd`',
+      explanation:
+        'Maliyet birçok nedenden oynar — tur sayısı, tool çıktı boyutu, cache durumu — yalnızca effort değil.',
+    },
+    {
+      text: '`usage.output_tokens_details.thinking_tokens`',
+      correct: true,
+      explanation:
+        'Thinking token’lar effort’un bütçelediği şeydir ve çıktı token’ı olarak faturalandırılır — maliyet farkının arkasındaki mekanizma.',
+    },
+    {
+      text: '`duration_ms`',
+      explanation:
+        'Duvar saati süresi gürültülüdür; bu laboratuvarda seviyeye göre bile sıralı değildi.',
+    },
+    {
+      text: '`num_turns`',
+      explanation: 'Tur sayısı tool döngüsünü yansıtır, düşünme derinliğini değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/effort-lab"
+  questionId="q2"
+  lang="tr"
+  prompt="Bu laboratuvarda `low` ve `medium` 14 thinking token harcadı, `high` 53 harcadı ve üçü de hatayı düzeltti. Doğru sonuç nedir?"
+  options={[
+    {
+      text: 'Effort seviyeleri işe yaramıyor.',
+      explanation:
+        'Çok güçlü bir ifade: küçük, iyi işaretlenmiş tek bir görev, daha derin akıl yürütmeyi ödüllendirmesi en az muhtemel durumdur.',
+    },
+    {
+      text: 'Bu kadar iyi ifade edilmiş bir görevde, uyarlanabilir akıl yürütme her seviyede düşünülecek az şey buldu — dolayısıyla seviye burada neredeyse hiçbir şey satın almadı.',
+      correct: true,
+      explanation:
+        'Effort, modelin ne kadar sıkı çalışabileceğine bir tavan koyar, ne kadar sıkı çalışması gerektiğine bir taban değil.',
+    },
+    {
+      text: 'Sonnet 5, `--effort` bayrağını yok sayıyor.',
+      explanation: 'Yok saymıyor — thinking-token sayısı `high`’da gerçekten arttı.',
+    },
+    {
+      text: '`high` daha iyi bir düzeltme üretti.',
+      explanation: 'Düzeltme her seviyede aynı tek satırdı; yalnızca açıklama daha uzundu.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/effort-lab"
+  questionId="q3"
+  lang="tr"
+  prompt="Bu laboratuvar neden modeli Sonnet 5’te sabit tutuyor?"
+  options={[
+    {
+      text: 'Çünkü Sonnet, effort’u destekleyen tek modeldir.',
+      explanation:
+        'Fable 5.1/5, Opus 5, Opus 4.8, 4.7 ve 4.6 ile Sonnet 4.6’nın hepsi effort’u destekler; Haiku 4.5 desteklemez.',
+    },
+    {
+      text: 'Tek değişkenin effort olması için — ve effort ölçeği model başına kalibre edildiğinden, bir seviye adı modeller arasında anlamsızdır.',
+      correct: true,
+      explanation:
+        'Tarama başına bir değişken ve bir seviye adı yalnızca kendi modeline göre anlam taşır.',
+    },
+    {
+      text: 'Çünkü Opus headless çalışamaz.',
+      explanation: 'Çalışabilir — `02` dersi onu tam olarak bu şekilde çalıştırıyor.',
+    },
+    {
+      text: 'Üç koşu boyunca prompt cache’ini sıcak tutmak için.',
+      explanation:
+        'Çoğu modelde her effort seviyesinin kendi cache’i vardır, dolayısıyla koşular zaten birini paylaşmıyordu.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m05-models-effort/effort-lab"
+  questionId="q4"
+  lang="tr"
+  prompt="Effort seviyesini yükseltmek için en iyi aday hangi görevdir?"
+  options={[
+    {
+      text: 'Dosyayı ve iddiayı adlandıran başarısız bir birim testi.',
+      explanation: 'Tam olarak bu laboratuvarın görevi — seviye neredeyse hiçbir şey satın almadı.',
+    },
+    {
+      text: 'On iki dosyada bir sembolü yeniden adlandırmak.',
+      explanation:
+        'Mekanik genişlik. Bu bir düşünme problemi değil, bir tool-döngüsü ve tur-bütçesi problemidir.',
+    },
+    {
+      text: 'Yalnızca aralıklı olarak tekrarlanan, nedenine işaret eden bir testi olmayan bir hata.',
+      correct: true,
+      explanation:
+        'Belirsiz, araştırma ağırlıklı iş, daha derin akıl yürütmenin yapacak bir şeyi olduğu yerdir.',
+    },
+    {
+      text: 'Bir JSON fixture’ını yeniden biçimlendirmek.',
+      explanation: 'Belirlenimci bir cevabı ve hiç akıl yürütme içeriği olmayan bir görev.',
+    },
+  ]}
+/>
+
+**Sırada:** `05-fast-mode`, üçüncü kadranı ele alıyor — derinlik yerine gecikme satın almak — ve `/fast`’ın açılmayı reddettiği koşulları.

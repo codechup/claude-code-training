@@ -1,15 +1,15 @@
 ---
-title: 'Argümanlar ve değişken yerine koyma'
-description: "Bir skill'e değer geçirme: $ARGUMENTS, sıralı $0/$1, frontmatter'dan adlandırılmış argümanlar ve ${CLAUDE_*} değişkenleri — ardından lab deposunda /commit-msg kurulumu."
+title: 'Argument’lar ve yerine koymalar'
+description: 'Bir skill’e değer geçirme: $ARGUMENTS, indeksli $0/$1, frontmatter’dan adlandırılmış argument’lar ve ${CLAUDE_*} yerine koymaları — ardından lab deposuna karşı /commit-msg’i inşa edip bir scope ipucunun çıktıyı nasıl değiştirdiğini izleyin.'
 level: 2
 module: 'm06-skills'
 order: 3
 duration_min: 20
 difficulty: core
-tags: ['skills', 'arguments', 'lab']
+tags: ['skills', 'argument’lar', 'laboratuvar']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Extend Claude with skills'
@@ -27,6 +27,338 @@ lab:
   repo_tag: 'lesson/m06-03-start'
 ---
 
-**Not:** Bu dersin Türkçe çevirisi henüz yapılmadı; `draft: true` kaldığı sürece sayfa gezinmede görünmez. Çeviri `content/en/l2-intermediate/m06-skills/03-arguments.mdx` dosyasından üretilir (kurallar: `.claude/rules/i18n.md`, D016, D018).
+## Hedefler ve ön koşullar
 
-Bu ders bir skill'e değer geçirmenin yollarını gösterir: `$ARGUMENTS`, `$ARGUMENTS[N]` ve `$N` kısaltması, frontmatter'daki `arguments` listesiyle adlandırılmış argümanlar ve `${CLAUDE_SKILL_DIR}` gibi değişkenler. Uygulamada lab deposunda `/commit-msg` skill'i yazılır ve staged (hazırlanmış) diff'ten scope (kapsam) ipucuyla ve ipucusuz çalıştırılır.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Bir skill'e değer geçirmek ve onları `$ARGUMENTS`, `$ARGUMENTS[N]` ve `$N` kısaltmasıyla geri okumak.
+- Frontmatter'da adlandırılmış argument'lar bildirmek ve gövdede `$name` yer tutucuları kullanmak.
+- `${CLAUDE_SKILL_DIR}`, `${CLAUDE_PROJECT_DIR}`, `${CLAUDE_SESSION_ID}` ve `${CLAUDE_EFFORT}`'u kullanmak ve her birinin nerede yerine konduğunu söylemek.
+- Hiçbir yer tutucunun almadığı bir argument geçirdiğinizde ve bir yer tutucunun hiç argument'ı olmadığında ne olacağını tahmin etmek.
+- Lab deposuna karşı `/commit-msg`'i, bir scope ipucuyla ve ipucu olmadan inşa edip çalıştırmak.
+
+**Ön koşullar.** `01-skills-vs-commands` ve `02-skill-md-anatomy` dersleri. `claude-code-lab`'in bir klonu ve PATH'inizde git.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Argument'lar, her çalıştırmada değişen bir ya da iki değer içindir — bir issue numarası, bir
+  scope, bir yol. Bunlar bir yapılandırma sistemi değildir: skill'iniz sabit bir sırada beş
+  argument'a ihtiyaç duyuyorsa, hiç kimse sırayı hatırlamayacaktır ve `argument-hint` yalnızca siz
+  yazarken yardımcı olur. Sabit ayarları bunun yerine skill gövdesine ya da destekleyici bir dosyaya
+  koyun. Ve skill kendi ihtiyacını kendisi okuyabiliyorsa argument'lara hiç uzanmayın —
+  `/commit-msg`, diff'i sizin yapıştırmanızı istemek yerine `git diff --staged` çalıştırır.
+</WhenNotToUse>
+
+## Kavram
+
+### `$ARGUMENTS` ve indeksli biçimleri
+
+Bir skill'i çağırırken hem siz hem de Claude argument geçirebilir. Skill adından sonraki her şey argument string'i olur.
+
+| Yer tutucu      | Neye genişler                                                            |
+| --------------- | ------------------------------------------------------------------------ |
+| `$ARGUMENTS`    | Yazıldığı gibi geçirilen tüm argument'lar                                |
+| `$ARGUMENTS[N]` | 0 tabanlı indeksle belirli bir argument — `$ARGUMENTS[0]` ilkidir        |
+| `$N`            | `$ARGUMENTS[N]` için kısaltma: `$0` ilk argument, `$1` ikincisi          |
+| `$name`         | `arguments` frontmatter listesinde bildirilen adlandırılmış bir argument |
+
+İndeksli argument'lar shell tarzı tırnaklama kullanır, dolayısıyla `/my-skill "hello world" second`, `$0`'ı `hello world`'e, `$1`'i `second`'a genişletir. `$ARGUMENTS`, her zaman yazıldığı gibi tam argument string'ine genişler.
+
+Akılda tutulmaya değer iki uç durum:
+
+- **Argument'ı olmayan indeksli bir yer tutucu, birebir metin olarak kalır.** Yalnızca bir argument geçirildiğinde `$2`, Claude'a `$2` karakterleri olarak ulaşır.
+- **Argument'ı olmayan adlandırılmış bir yer tutucu, boş bir string'e genişler.** Bu tam tersi bir davranıştır ve "eğer `$scope` boşsa, çıkarım yap" gibi koşullu görünen talimatlar yazarken önem taşır.
+
+Argument geçirirseniz ama _hiçbir yer tutucu onları almazsa_, Claude Code skill içeriğinin sonuna `ARGUMENTS: <girdiniz>`'i ekler, böylece Claude yine de yazdığınızı görür. Adlandırılmış bir yer tutucu, konumu boş bile olsa bir tane almış sayılır; birebir metin olarak kalan indeksli bir yer tutucu sayılmaz.
+
+### Adlandırılmış argument'lar
+
+Bunları frontmatter'da boşlukla ayrılmış bir string ya da bir YAML listesi olarak bildirin; adlar sırayla konumlara eşlenir.
+
+<CodeBlock title=".claude/skills/migrate-component/SKILL.md">
+
+```yaml
+---
+name: migrate-component
+description: Migrate a component from one language to another
+arguments: [component, from-lang, to-lang]
+---
+Migrate the $component from $from-lang to $to-lang.
+Preserve all existing behavior and tests.
+```
+
+</CodeBlock>
+
+`/migrate-component SearchBar JavaScript TypeScript`, üçünü de doldurur. Aynı skill `$0`, `$1`, `$2` ile yazılsa aynı şekilde davranır — adlandırılmış argument'lar okunabilirlik satın alır, yetenek değil.
+
+### `${CLAUDE_*}` yerine koymaları
+
+| Değişken                | Neye genişler                                                                                       |
+| ----------------------- | --------------------------------------------------------------------------------------------------- |
+| `${CLAUDE_SESSION_ID}`  | Geçerli oturum ID'si — oturum başına log dosyaları için kullanışlı                                  |
+| `${CLAUDE_EFFORT}`      | Geçerli effort seviyesi: `low`, `medium`, `high`, `xhigh` ya da `max`                               |
+| `${CLAUDE_SKILL_DIR}`   | Bu `SKILL.md`'yi içeren dizin. Bir plugin skill'i için, plugin kökü değil skill'in kendi alt dizini |
+| `${CLAUDE_PROJECT_DIR}` | Proje kökü — hook'ların ve MCP server'ların aldığı aynı yol. v2.1.196 ya da sonrasını gerektirir    |
+| `${CLAUDE_PLUGIN_ROOT}` | Plugin'in kurulum dizini; yalnızca plugin skill'lerinde yerine konur                                |
+| `${CLAUDE_PLUGIN_DATA}` | Güncellemelerden sağ çıkan plugin'in kalıcı veri dizini; yalnızca plugin skill'leri                 |
+
+`${CLAUDE_SKILL_DIR}` ve `${CLAUDE_PROJECT_DIR}`, **iki** yerde yerine konur: skill gövdesi ve `allowed-tools` içindeki Bash kuralları. Aynı değişkeni her ikisinde de kullanmak, bir skill'in kendi paketlenmiş betiğini hiç permission istemi olmadan çalıştırmasının yoludur:
+
+<CodeBlock title="kendi betiğini istemeden çalıştıran bir skill">
+
+```yaml
+---
+name: render-chart
+description: Render a chart from a CSV file
+allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/render.sh *)
+---
+Run `${CLAUDE_SKILL_DIR}/scripts/render.sh <csv-file>` to render the chart.
+```
+
+</CodeBlock>
+
+Her iki görünüm de aynı mutlak yola genişler, dolayısıyla kural gövdenin istediği tam komutla eşleşir.
+
+### Kaçış ve bir yer tutucuya benzeyen metin
+
+Bir rakamdan önce, `ARGUMENTS`'tan önce ya da bildirilmiş bir argument adından önce birebir bir `$` yazmak için onu bir ters eğik çizgiyle kaçırın: `\$1.00`. Yalnızca token'ın hemen önündeki tek bir ters eğik çizgi onu kaçırır; `\\$1`, her iki ters eğik çizgiyi de bırakır ve yine de genişler. Kaçış yalnızca argument yer tutucularını kapsar — bir ters eğik çizgi bir `${CLAUDE_*}` yerine koymasını durdurmaz.
+
+Argument _değerleri_ birebir metin olarak eklenir ve asla yeniden genişletilmez. Bir skill gövdesi `Summarize $0` içeriyorsa ve `/summarize "$ARGUMENTS from yesterday"` çalıştırırsanız, Claude `Summarize $ARGUMENTS from yesterday` alır.
+
+### Yığma
+
+Bir mesajın başına birkaç skill koyabilirsiniz. `/write-tests /fix-issue 123` yazmak ikisini de yükler ve sondaki `123` metnini her birine `$ARGUMENTS` olarak geçirir. Claude Code ilk skill'i artı en fazla beş tane daha genişletir ve inline, kullanıcının çağırabileceği bir skill olmayan ilk token'da durur — forklanmış bir subagent olarak çalışan bir skill dahil, örneğin `/code-review`. O token ve sonrasındaki her şey argument metni olur.
+
+İşte bu dersin işlenmiş prompt'u — inşa etmek üzere olduğunuz skill'i almak için gerçekte yazacağınız şey:
+
+```text
+Add .claude/skills/commit-msg/SKILL.md to this repo. It should read the staged
+diff and print one conventional commit message. Treat $ARGUMENTS as an optional
+scope hint, and infer the scope from the changed paths when it is empty.
+Pre-approve only `git diff` and `git status`, and never run `git commit`.
+```
+
+## Uygulamalı laboratuvar
+
+<Callout label="Not">
+  Kaydedilen komutlar `--settings '&#123;"language":"English"&#125;'` taşıyor çünkü onları yakalayan
+  makinenin genel bir `language` tercihi Türkçe'ye ayarlı. O bayrağı bırakın; koşu hakkında başka
+  hiçbir şey değişmiyor.
+</Callout>
+
+<Lab
+  title="Laboratuvar · /commit-msg'i inşa edin ve ona bir scope besleyin"
+  lessonId="tr/l2-intermediate/m06-skills/arguments"
+  repoTag="lesson/m06-03-start"
+  steps={[
+    'Lab deposunu henüz klonlamadıysanız klonlayın, sonra `git checkout lesson/m06-03-start && npm ci`.',
+    '`.claude/skills/commit-msg/` dizinini oluşturun ve altındaki SKILL.md’yi yazın. `allowed-tools: Bash(git diff:*), Bash(git status:*)` ve `disable-model-invocation: true`’ya dikkat edin.',
+    'Küçük, gerçek bir değişiklik yapın: `src/store.ts`’te `addTask`’ın priority guard’ını `if (priority < 0)`’dan `if (priority < 0 || priority > 9)`’a çevirin ve hata mesajını `priority must be between 0 and 9` olarak güncelleyin.',
+    'Yalnızca o dosyayı stage’leyin: `git add src/store.ts`. `git diff --staged --stat` ile tam olarak bir dosyanın stage’li olduğunu doğrulayın.',
+    '`claude -p "/commit-msg store" --output-format text --max-turns 10` çalıştırın ve yazdırdığı mesajı okuyun.',
+    '`claude -p "/commit-msg " --output-format text --max-turns 10` çalıştırın — aynı diff, argument yok — ve karşılaştırın. Sondaki boşluğa dikkat edin.',
+    '`git log --oneline -1` ile hiçbir şeyin commit edilmediğini doğrulayın: skill yazdırır, commit etmez.',
+  ]}
+  expected="Her iki çalıştırma da stage'li değişiklik için tek bir conventional commit mesajı yazdırır, `store` scope'uyla — ilk çalıştırmada $ARGUMENTS tarafından sağlanan, ikincisinde değişen yoldan çıkarılan. Hiçbir commit oluşturulmaz."
+  checklist={[
+    'Skill dizininin adı `commit-msg`, dolayısıyla komut `/commit-msg`',
+    'Tam olarak bir dosya (`src/store.ts`) stage’li',
+    'İlk çalıştırma, `$ARGUMENTS` olarak geçirdiğiniz scope’u kullandı',
+    'İkinci çalıştırma hiç argument olmadan aynı scope’u çıkardı',
+    '`git log --oneline -1` hâlâ tag’in commit’ini gösteriyor — hiçbir şey commit edilmedi',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/03-arguments/01-commit-msg-scope.txt"
+    range="2-5"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/03-arguments/02-commit-msg-inferred-scope.txt"
+    range="2-5"
+  />
+</Lab>
+
+### Yazacağınız skill
+
+<CodeBlock title=".claude/skills/commit-msg/SKILL.md">
+
+```markdown
+---
+name: commit-msg
+description: Draft a conventional commit message for the currently staged diff. Prompt-only — reads the diff and $ARGUMENTS (an optional scope hint), writes nothing.
+when_to_use: Staged changes exist and you want a conventional-commit message drafted from them instead of writing one by hand.
+argument-hint: '[optional scope, e.g. cli or api]'
+allowed-tools: Bash(git diff:*), Bash(git status:*)
+disable-model-invocation: true
+model: haiku
+effort: low
+---
+
+# /commit-msg
+
+Run `git diff --staged` and `git status --short`. From the staged diff, write one
+conventional commit message: `type(scope): summary`, types `feat|fix|docs|chore|test|refactor`.
+
+- If `$ARGUMENTS` gives a scope, use it; otherwise infer one from the changed paths
+  (`cli`, `api`, `store`, `test`, `docs`).
+- Summary line under 72 characters, imperative mood ("add", not "added").
+- Add a body only if the diff needs one sentence of "why" beyond the summary.
+- Print the message only — do not run `git commit`.
+```
+
+</CodeBlock>
+
+(Bu sitenin formatter'ı YAML string'lerini tek tırnağa normalize eder; lab deposunun kopyası `argument-hint`'i çift tırnakla yazar. İkisi de aynı YAML string'idir.)
+
+`Bash(git diff:*)`, sondaki joker karakterin `:*` biçimidir — `Bash(git diff:*)` ve `Bash(git diff *)` aynı komutlarla eşleşir. `:*` soneki yalnızca bir desenin sonunda tanınır; `Bash(git:* push)`'ta iki nokta birebir bir karakterdir ve hiçbir işe yarar şeyle eşleşmez.
+
+### Laboratuvarı işletim sistemine göre kurmak
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git checkout lesson/m06-03-start && npm ci
+mkdir -p .claude/skills/commit-msg
+git add src/store.ts && git diff --staged --stat
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git checkout lesson/m06-03-start && npm ci
+mkdir -p .claude/skills/commit-msg
+git add src/store.ts && git diff --staged --stat
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git checkout lesson/m06-03-start; npm ci
+New-Item -ItemType Directory -Force .claude\skills\commit-msg
+git add src/store.ts; git diff --staged --stat
+```
+
+  </Fragment>
+</OSTabs>
+
+İki kaydın neyi kanıtladığına dikkat edin. İlk çalıştırma `store`'u `$ARGUMENTS` olarak aldı ve kullandı. İkincisi hiçbir şey geçirmedi, dolayısıyla `$ARGUMENTS` boş bir string'e genişledi ve skill scope'u değişen yoldan çıkarmaya geri düştü — fallback talimatının _gövdede_ olması gerekmesinin nedeni de budur. Boş bir yer tutucu, Claude Code'un rapor ettiği bir hata değildir; yalnızca boş bir string'dir ve skill'inizin onunla ne yapılacağını söylemesi gerekir.
+
+## Anti-pattern'ler
+
+**`argument-hint`'in bir şeyi zorlayacağına güvenmek.** Autocomplete sırasında gösterilen bir ipucudur. Hiçbir şey onu doğrulamaz ve hiçbir şey eksik bir argument'ı doldurmaz. _Düzeltme:_ varsayılanı gövdede belirtin — "eğer `$ARGUMENTS` boşsa, X yap".
+
+**İkiden fazla konumsal argument.** `$0 $1 $2 $3`, kimsenin kılavuzu olmadığı bir komut satırı arayüzüdür. _Düzeltme:_ gövde İngilizce gibi okunsun diye adlandırılmış argument'lar kullanın ve sayıyı düşük tutun.
+
+**Hiçbir şey geçirilmediğinde `$2`'nin boş olduğunu varsaymak.** Değildir: argument'ı olmayan indeksli bir yer tutucu, Claude'a birebir `$2` metni olarak ulaşır ve bu bir talimatın içinde gürültü gibi okunur. _Düzeltme:_ bir değer gerçekten isteğe bağlı olduğunda (boş bir string'e genişleyen) adlandırılmış argument'lar kullanın.
+
+**Gövdeye `${CLAUDE_SKILL_DIR}` yerine bir yol yazmak.** Göreli bir yol, Claude `cd` çalıştırdığında hareket eden oturumun geçerli çalışma dizinine göre çözülür. _Düzeltme:_ hem gövdede hem de `allowed-tools` kuralında `${CLAUDE_SKILL_DIR}`.
+
+**Skill'in kendisinin getirebileceği veriyi yapıştırmak.** Bir diff'i argument olarak geçirmek bağlamı yakar ve herhangi bir şey değiştiği anda eskir. _Düzeltme:_ skill'in `git diff --staged`'i kendisinin çalıştırmasına izin verin ya da onu `` !`git diff --staged` `` ile enjekte edin (ders 05).
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/arguments"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir skill gövdesi `Fix issue $1` diyor. Onu hiç argument olmadan çalıştırıyorsunuz. Claude ne alır?"
+  options={[
+    {
+      text: 'Birebir “Fix issue $1” metni',
+      correct: true,
+      explanation:
+        'Karşılık gelen bir argument’ı olmayan indeksli bir yer tutucu, içerikte değişmeden kalır.',
+    },
+    {
+      text: 'Boş bir string ile “Fix issue ”',
+      explanation:
+        'Bu, _adlandırılmış_ bir yer tutucunun yaptığı şeydir; indeksli olanlar birebir kalır.',
+    },
+    {
+      text: 'Hiçbir şey — çağrı başarısız olur',
+      explanation: 'Eksik argument’lar bir hata değildir.',
+    },
+    {
+      text: '$ARGUMENTS yazmış gibi tam argument string’i',
+      explanation: '$1 kesinlikle ikinci konumsal argument’tır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/arguments"
+  questionId="q2"
+  lang="tr"
+  prompt={'/my-skill "hello world" second çalıştırıyorsunuz. $0 neye genişler?'}
+  options={[
+    {
+      text: 'hello world',
+      correct: true,
+      explanation:
+        'İndeksli argument’lar shell tarzı tırnaklama kullanır, dolayısıyla tırnaklı çift tek bir argument’tır.',
+    },
+    { text: 'hello', explanation: 'Tırnaklar iki kelimeyi bir arada tutar.' },
+    {
+      text: '"hello world" second',
+      explanation: 'Bu, yazıldığı gibi tam string olan $ARGUMENTS’tır.',
+    },
+    { text: 'second', explanation: '$0 son değil, ilk argument’tır.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/arguments"
+  questionId="q3"
+  lang="tr"
+  prompt="Claude Code, ${CLAUDE_SKILL_DIR}'ı nerede yerine koyar?"
+  options={[
+    {
+      text: 'Skill’in markdown gövdesinde ve allowed-tools içindeki Bash kurallarında',
+      correct: true,
+      explanation:
+        'Onu her iki yerde de kullanmak, bir skill’in kendi paketlenmiş betiğini bir istem olmadan çalıştırmasının yoludur.',
+    },
+    {
+      text: 'Yalnızca markdown gövdesinde',
+      explanation: 'O zaman allowed-tools kuralı gövdenin istediği komutla asla eşleşemezdi.',
+    },
+    {
+      text: 'Yalnızca allowed-tools içinde',
+      explanation: 'Gövdede de yerine konur — komutun yazıldığı yer orasıdır.',
+    },
+    {
+      text: 'settings.json’da her yerde de',
+      explanation: 'Skill yerine koymaları skill dosyasına uygulanır, keyfi ayarlara değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m06-skills/arguments"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir skill'i bir argument'la çağırıyorsunuz, ama skill gövdesinde hiç yer tutucu yok. Ne olur?"
+  options={[
+    {
+      text: 'Claude Code, skill içeriğinin sonuna `ARGUMENTS: <girdiniz>`’i ekler',
+      correct: true,
+      explanation: 'Böylece Claude, yazdığınızı sessizce kaybetmek yerine yine de görür.',
+    },
+    {
+      text: 'Argument göz ardı edilir',
+      explanation: 'Bunun yerine eklenir — bilinçli bir güvenlik ağıdır.',
+    },
+    {
+      text: 'Claude Code onu gövdenin başına ekler',
+      explanation: 'Sona gider.',
+    },
+    {
+      text: 'Çağrı reddedilir',
+      explanation: 'Fazladan argument’lar hiçbir zaman bir hata değildir.',
+    },
+  ]}
+/>
+
+**Sırada:** `04-prompt-only-skills`, hiç betiği ve hiç düzenlemesi olmayan bir skill inşa eder — `/review-security` — ve en ucuz skill'lerin neden genellikle en çok kullanılanlar olduğunu gösterir.

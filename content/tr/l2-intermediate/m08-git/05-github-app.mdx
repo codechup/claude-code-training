@@ -6,10 +6,10 @@ module: 'm08-git'
 order: 5
 duration_min: 10
 difficulty: advanced
-tags: ['git', 'github', 'github-actions', 'automation']
+tags: ['git', 'github', 'github-actions', 'otomasyon']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Claude Code GitHub Actions'
@@ -27,8 +27,263 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l2-intermediate/m08-git/05-github-app.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders `/install-github-app` komutunun ne yaptığını anlatır: Claude GitHub App’i kurar, bir kimlik doğrulama secret’ı ayarlar (API key için `ANTHROPIC_API_KEY`, abonelik token’ı için `CLAUDE_CODE_OAUTH_TOKEN`), workflow dosyalarını içeren bir branch push eder ve tarayıcınızda oluşturulmaya hazır bir pull request açar. `@claude` ancak siz o PR’ı merge ettikten sonra çalışır. Ders, uygulamanın on bir izinlik ortak setini ve Claude Code GitHub Action’ın bunlardan yalnızca üçüne (Contents, Issues, Pull requests) dayandığını, hızlı kurulum ile manuel kurulum arasındaki seçimi, aynı adı paylaşan üç ürünü (GitHub Actions, yönetilen Code Review, web’de Claude Code) ve temiz kaldırma adımlarını kapsar. Bu derste lab repo etiketi yoktur: komut gerçek bir GitHub deposunu değiştirir.
+- `/install-github-app`'ın ne kurduğunu, hangi [secret](/tr/playbook/glossary/#secret)'ı (bir GitHub deposunda şifrelenmiş saklanan, workflow'ların kullanabildiği kimlik bilgisi) sakladığını ve size [merge](/tr/playbook/glossary/#merge) (bir branch'teki değişiklikleri başka bir branch'e birleştirme işlemi) etmeniz için ne bıraktığını söylemek.
+- Kontrol ettiği ön koşulları listelemek ve biri eksik olduğunda ne yaptığını söylemek.
+- Claude [GitHub App](/tr/playbook/glossary/#github-app)'in (bir GitHub deposuna kurulan, onun adına GitHub API'siyle konuşabilen entegrasyon uygulaması) izin tablosunu okumak ve bunun neden Claude Code GitHub Action'ın ihtiyaç duyduğundan daha geniş olduğunu açıklamak.
+- Hızlı kurulum, manuel kurulum ve özel bir GitHub App arasında seçim yapmak.
+- GitHub'da "Claude Code" adını paylaşan üç ürünü birbirinden ayırmak: GitHub Action, yönetilen Code Review ve web'de Claude Code.
+- Entegrasyonu temiz biçimde kaldırmak.
+
+**Ön koşullar.** 01–04. dersler, bağlanacağınız depoya **admin erişimi** ve kurulu, `gh auth login` ile kimliği doğrulanmış [GitHub CLI](https://cli.github.com). Claude Code `gh`'yi arar ve eksikse sizi uyarır.
+
+<WhenNotToUse label="Bunu ne zaman kullanmamalı">
+  Bu, başkalarının paylaştığı bir depoda yapılan bir değişikliktir, bu yüzden bu modülde başkasının
+  projesi üzerinde — bu kursun laboratuvar deposu dahil — pratik yapmamanız gereken tek derstir.
+  Claude Code'u yerelde çalıştırmadığınızda, workflow dosyalarının tam kontrolüne ihtiyaç
+  duyduğunuzda ya da kurumunuz uygulamanın tam izin setini kabul etmeyecekse hızlı kurulumu tamamen
+  atlayın: GitHub bir alt kümeyi kabul etmenize izin vermez, bu yüzden oradaki cevap yalnızca
+  Contents, Issues ve Pull requests içeren özel bir GitHub App'tir. Asıl istediğiniz şey push
+  etmeden önce bir inceleme olduğunda da atlayın — o, 04. dersteki `/code-review`'dır ve hiçbir
+  uygulamaya ihtiyaç duymaz.
+</WhenNotToUse>
+
+## Kavram
+
+### Komutun yaptığı
+
+Bağlanmak istediğiniz depoda, `claude` içinde `/install-github-app` çalıştırın ve istemleri izleyin. Dört adım gerçekleştirir:
+
+1. **Seçtiğiniz depoya Claude GitHub App'i kurar.**
+2. **Bir kimlik doğrulama secret'ı kurar.** Claude Code'un zaten bir API key'i varsa o anahtarı yeniden kullanır ve depoda ayarlıysa mevcut `ANTHROPIC_API_KEY` secret'ını korumayı önerir. Aksi halde, Claude aboneliğinizle uzun ömürlü bir [token](/tr/playbook/glossary/#token) (bir sistemde kimliğinizi doğrulamak için kullanılan gizli karakter dizisi) oluşturmak ile bir API key yapıştırmak arasında seçim yaparsınız. Bu, bir depo secret'ı olarak kaydedilir — bir API key için `ANTHROPIC_API_KEY`, bir abonelik token'ı için `CLAUDE_CODE_OAUTH_TOKEN`.
+3. **Seçtiğiniz, o secret'a zaten bağlanmış [workflow](/tr/playbook/glossary/#workflow) (GitHub Actions'ın belirli olaylarda otomatik çalıştırdığı adımlar dizisi) dosyalarıyla bir [branch](/tr/playbook/glossary/#branch) (bir deponun bağımsız bir geliştirme hattı) push eder.**
+4. **Tarayıcınızda, oluşturulmaya hazır bir [pull request](/tr/playbook/glossary/#pull-request) (bir branch'teki değişikliklerin gözden geçirilip ana koda alınması için açılan istek) ile GitHub'ı açar.**
+
+O pull request'i siz oluşturur ve merge edersiniz. Ardından depoda `@claude` çalışır.
+
+Uygulama kurulduktan sonra Claude Code, GitHub Actions kurulumuna devam edip etmeyeceğinizi sorar. **Skip for now**'ı seçmek yalnızca uygulama kuruluyken durur; workflow ve secret adımlarını tamamlamak için `/install-github-app`'ı daha sonra tekrar çalıştırın.
+
+### Ne kazanırsınız
+
+Etkileşimli workflow merge edildikten sonra, bir [issue](/tr/playbook/glossary/#issue) (bir GitHub deposunda açılan görev/hata kaydı) ya da pull request yorumunda — ya da yeni açılan bir issue'nun gövdesinde veya başlığında — `@claude`'dan bahsetmek bir çalıştırma başlatır. İlerleme ve sonuçlar, tetikleyen issue ya da PR üzerinde bir yorum olarak görünür. Bu dersin örnek prompt'u ortadaki satırdır: bir PR yorumunda sorulan, aynı thread'de yanıtlanan bir soru.
+
+<CodeBlock title="bir tetikleyici yorum nasıl görünür">
+
+```text
+@claude implement this feature based on the issue description
+@claude how should I implement user authentication for this endpoint?
+@claude fix the TypeError in the user dashboard component
+```
+
+</CodeBlock>
+
+Ayrıca review workflow'unu da seçerseniz Claude, her incelemeyi pull request'in kendisi üzerine gönderir — bulduğu her sorun için satır içi bir yorum, ya da hiçbir şey bulmadığında tek bir özet yorum. Bazı pull request'leri, taslaklar gibi, atlar.
+
+Claude başlamadan önce tetikleyen actor üzerinde iki kontrol çalışır ve ikisinden biri reddederse çalıştırma başarısız olur. Issue ve pull request olaylarında tetikleyen kullanıcının depoya **yazma erişimi** olması gerekir. Ve her olayda, `allowed_bots` içinde listelemediğiniz sürece bir **bot actor** reddedilir — bu, bot'ların Claude'u bir döngüde tetiklemesini engeller.
+
+### İzin seti
+
+Claude GitHub App, GitHub ile entegre olan her Claude özelliği tarafından paylaşılır, bu yüzden tek bir izin seti yalnızca Claude Code GitHub Action'ın kullandığından daha geniştir:
+
+| İzin             | Erişim         |
+| ---------------- | -------------- |
+| Actions          | Okuma ve yazma |
+| Checks           | Okuma ve yazma |
+| Contents         | Okuma ve yazma |
+| Discussions      | Okuma ve yazma |
+| Issues           | Okuma ve yazma |
+| Members          | Okuma          |
+| Metadata         | Okuma          |
+| Pull requests    | Okuma ve yazma |
+| Repository hooks | Okuma ve yazma |
+| Statuses         | Okuma          |
+| Workflows        | Okuma ve yazma |
+
+Claude Code GitHub Action'ın kendisi bunlardan yalnızca üçüne dayanır: **Contents** (depo dosyalarını değiştirir), **Issues** (issue'lara yanıt verir) ve **Pull requests** (PR oluşturur ve değişiklik push eder). Geri kalanı, uygulamayı paylaşan diğer özelliklere aittir. Uygulama daha önce sahip olmadığı bir izni istediğinde GitHub, hesap sahibinden onaylamasını ister ve kurulum, onlar onaylayana kadar eski izinlerini korur.
+
+### Hızlı kurulum ile manuel kurulum
+
+| Yol            | Ne zaman kullanılır                                                                                                          |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Hızlı kurulum  | Claude Code'u yerelde çalıştırıyorsanız ve uygulamanın, secret'ın ve workflow PR'ının sizin için hazırlanmasını istiyorsanız |
+| Manuel kurulum | Claude Code'u yerelde çalıştırmıyorsanız, komut başarısız oluyorsa ya da workflow dosyalarının tam kontrolünü istiyorsanız   |
+| Özel uygulama  | Kurumunuz yalnızca Contents, Issues ve Pull requests vermeye razıysa — yalnızca Action'ı kapsar, Code Review'ı değil         |
+
+Manuel kurulum, kendinizin yaptığı üç adımdır: [Claude GitHub App](https://github.com/apps/claude)'i kurun, bir `ANTHROPIC_API_KEY` ya da `CLAUDE_CODE_OAUTH_TOKEN` secret'ı ekleyin ve action'ın deposundan `examples/claude.yml`'yi `.github/workflows/` içine kopyalayın. `claude setup-token` ile bir abonelik token'ı üretin.
+
+Her iki yol da bir seferde tek bir depoyu yapılandırır. Bir kurum genelinde yaymak için uygulamayı kurum düzeyinde bir kez kurun, secret'ı kurum düzeyinde bir Actions secret'ı olarak saklayın ve workflow'u her depoya ekleyin ya da yeniden kullanılabilir bir workflow çağırın. Paylaşılan bir secret için bir OAuth token yerine bir API key tercih edin, çünkü bir OAuth token, `claude setup-token`'ı kim çalıştırdıysa onun aboneliğine bağlıdır.
+
+### Üç ürün, tek isim
+
+İnsanların burada kafası karışır, bu yüzden açıkça söylemekte fayda var:
+
+| Ürün                       | Nedir                                                                                                                      |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Claude Code GitHub Actions | `anthropics/claude-code-action@v1`, sahip olduğunuz workflow dosyalarıyla yapılandırılır. `/install-github-app` bunu kurar |
+| Code Review                | Hiçbir workflow dosyası olmadan PR'ları inceleyen yönetilen bir servis — research preview, Team ve Enterprise planları     |
+| Claude Code on the web     | Bir tarayıcıdan ya da telefondan Claude Code oturumları                                                                    |
+
+Üçü de aynı GitHub App'i kurar. `/install-github-app`'ın workflow dosyaları yazdığı yalnızca ilkidir.
+
+### Kaldırma
+
+Geçerli olan her parçayı geri alın: `.github/workflows/` içinden `anthropics/claude-code-action` kullanan workflow'ları silin (hızlı kurulum `claude.yml`'yi, review workflow'unu seçtiyseniz `claude-code-review.yml`'yi de yazar); `ANTHROPIC_API_KEY` ya da `CLAUDE_CODE_OAUTH_TOKEN` secret'ını hem depodan hem kurum secret'larından silin; ve Claude GitHub App'i **yalnızca** Code Review ya da web auto-fix gibi başka bir Claude özelliği için kullanmıyorsanız kaldırın. Bir secret'ı silmek, tuttuğu kimlik bilgisini geçersiz kılmaz — bir API key'i Console'da da emekliye ayırın.
+
+## Uygulamalı laboratuvar
+
+Bu ders için bir laboratuvar deposu tag'i yok, ve bu bilinçli: `/install-github-app` gerçek bir GitHub deposuna bir uygulama kurar, bir secret yazar ve bir pull request açar — bu, bir okuyucunun sahibi olmadığı paylaşılan bir depoda pratik yapması gereken bir şey değildir. `lab.repo_tag` `none`'dur, ve aşağıdaki adımlar kendi deponuza karşı çalışır.
+
+Kurulumun kendisi etkileşimli bir TUI akışıdır — `claude` içinde bir dizi istem ve tarayıcınıza bir devir — bu yüzden burada düz metin ve tam komutlarla anlatılıyor. Bunun için bir transcript yok, çünkü bir diyaloğun uydurma bir kaydı tam olarak D070'in yasakladığı şeydir ve gerçek bir kayıt bir depo adı ve bir secret içerirdi.
+
+<Lab
+  title="Laboratuvar · sahibi olduğunuz bir depoyu bağlayın"
+  lessonId="tr/l2-intermediate/m08-git/github-app"
+  repoTag="none"
+  steps={[
+    'Ön koşulları kontrol edin: `gh --version` bir sürüm yazdırır, ve `gh auth login` sizi kimliği doğrulanmış bırakır. Claude Code `gh`’yi arar ve eksikse sizi uyarır.',
+    'Değiştirmek üzere olduğunuz deponun admin’i olduğunuzu doğrulayın: `gh repo view --json nameWithOwner,viewerPermission`. `viewerPermission` `ADMIN` okumadıkça burada durun — dokümantasyon her iki kurulum yolu için de depoya admin erişimi ister.',
+    'O deponun içinden `claude` çalıştırın, ardından `/install-github-app`’ı çalıştırın ve istemleri izleyin: depoyu seçin, kimlik doğrulama yolunu seçin ve hangi workflow dosyalarını istediğinizi belirleyin.',
+    'Merge etmeden önce Claude Code’un push ettiği branch’i okuyun. Hazırladığı pull request’i tarayıcınızda açın, oluşturun ve diff’teki workflow dosyasını okuyun.',
+    'O pull request’i merge edin. Merge edilene kadar `@claude` hiçbir şey yapmaz.',
+    'Test edin: o depodaki bir issue ya da pull request’e `@claude how should I implement user authentication for this endpoint?` yorumunu yazın ve çalıştırmanın bir yorum olarak geri rapor vermesini izleyin.',
+    'Neyin yerleştiğini doğrulayın: `gh secret list`, `ANTHROPIC_API_KEY` ya da `CLAUDE_CODE_OAUTH_TOKEN`’ı gösterir, ve `ls .github/workflows`, `claude.yml`’i (review workflow’unu seçtiyseniz `claude-code-review.yml`’i de) gösterir.',
+  ]}
+  expected="`/install-github-app` uygulamayı kurar, bir secret saklar, bir workflow branch'i push eder ve tarayıcınızda bir pull request açar. Onu merge ettikten sonra, o depodaki bir `@claude` yorumu aynı issue ya da PR üzerinde Claude'dan bir yanıt yorumu üretir."
+  checklist={[
+    '`gh --version` bir sürüm yazdırdı ve `gh auth status` giriş yaptığınızı gösteriyor',
+    '`viewerPermission`, komutu çalıştırmadan önce `ADMIN` idi',
+    'Merge etmeden önce diff’teki workflow dosyasını okudunuz',
+    'Workflow pull request’i merge edildi',
+    '`gh secret list`, tam olarak bir Claude kimlik bilgisi gösteriyor',
+    'Bir `@claude` yorumu aynı issue ya da PR üzerinde bir yanıt üretti',
+  ]}
+/>
+
+Daha önceki bir sürümün oluşturduğu bir review workflow'unu güncellemek için `/install-github-app`'ı tekrar çalıştırın ve **Update workflow file with latest version**'ı seçin; Claude Code yeni kopyaları yeni bir branch'e push eder ve pull request'i açar, tıpkı ilk kurulumdaki gibi.
+
+## Anti-pattern'ler
+
+**Sahibi olmadığınız bir depoda çalıştırmak.** Komut bir uygulama kurar ve bir secret saklar. _Düzeltme:_ önce `viewerPermission`'ın `ADMIN` olduğunu kontrol edin ve onu asla paylaşılan bir laboratuvar ya da fixture deposuna yöneltmeyin.
+
+**İzin setini okumadan onaylamak.** Uygulama on bir izin verir çünkü birçok Claude özelliği tarafından paylaşılır, Action'ın hepsine ihtiyaç duymasından değil. _Düzeltme:_ tabloyu okuyun; kurumunuz itiraz ederse Contents, Issues ve Pull requests içeren özel bir uygulama oluşturun.
+
+**[CI](/tr/playbook/glossary/#ci)'ın (her push'ta ya da PR'da otomatik çalışan derleme/test hattı: sürekli entegrasyon) Claude'un [commit](/tr/playbook/glossary/#commit)'leri (bir değişiklik kümesinin depoya kaydedilen anlık görüntüsü) üzerinde çalışmasını beklemek.** GitHub, varsayılan `GITHUB_TOKEN` ile yapılan commit'lerde workflow'ları tetiklemez. _Düzeltme:_ action'ın Claude GitHub App olarak kimlik doğrulaması için `github_token: ${{ secrets.GITHUB_TOKEN }}`'ı kaldırın, ya da özel bir uygulama token'ı geçin.
+
+**Kimlik bilgisini commit'lemek.** _Düzeltme:_ o, `${{ secrets.ANTHROPIC_API_KEY }}` olarak referans verilen bir depo ya da kurum secret'ına aittir.
+
+**Action'ı kapatmak için uygulamayı kaldırmak.** Code Review ya da web auto-fix'i de kullanıyorsanız, uygulamayı kaldırmak onları da bozar. _Düzeltme:_ workflow dosyalarını silin; uygulamayı kurulu bırakın.
+
+<Callout variant="changed" label="Değişti">
+  Hâlâ `anthropics/claude-code-action@beta` üzerindeki workflow'lar dört düzenleme ister: `@beta` →
+  `@v1`, `mode`'u kaldırmak (action artık bunu kendisi tespit ediyor), `direct_prompt` → `prompt`,
+  ve `max_turns` ile `model` gibi CLI seçeneklerini `claude_args` içine taşımak.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/github-app"
+  questionId="q1"
+  lang="tr"
+  prompt="`/install-github-app` bittikten sonra, `@claude` depoda çalışıyor mu?"
+  options={[
+    {
+      text: 'Evet — komut kurulumun tamamını tamamlar.',
+      explanation: 'Bir pull request hazırlar; o PR merge edilene kadar workflow etkin değildir.',
+    },
+    {
+      text: 'Henüz değil — açtığı workflow pull request’ini hâlâ siz oluşturup merge etmelisiniz.',
+      correct: true,
+      explanation:
+        'Claude Code branch’i push eder ve GitHub’ı, PR oluşturulmaya hazır şekilde açar.',
+    },
+    {
+      text: 'Yalnızca admin ayarlarında Code Review’ı da etkinleştirdikten sonra.',
+      explanation: 'Code Review ayrı, yönetilen bir üründür.',
+    },
+    {
+      text: 'Yalnızca branch koruması kapalı depolarda.',
+      explanation: 'Branch koruması tetikleyiciyle ilgisizdir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/github-app"
+  questionId="q2"
+  lang="tr"
+  prompt="Uygulamanın izinlerinden hangi üçüne Claude Code GitHub Action gerçekten dayanır?"
+  options={[
+    {
+      text: 'Contents, Issues, Pull requests',
+      correct: true,
+      explanation:
+        'Dosyaları değiştirir, issue’lara yanıt verir, PR oluşturur ve değişiklik push eder.',
+    },
+    {
+      text: 'Actions, Checks, Statuses',
+      explanation: 'Bunlar, uygulamayı paylaşan diğer özelliklere aittir.',
+    },
+    {
+      text: 'Members, Metadata, Discussions',
+      explanation: 'Bunlar da paylaşılan setin parçası, Action’ın üçlüsü değil.',
+    },
+    {
+      text: 'Workflows, Repository hooks, Metadata',
+      explanation: 'Dokümante edilen üçlü bu değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/github-app"
+  questionId="q3"
+  lang="tr"
+  prompt="Kurumunuz birçok depo arasında tek bir secret paylaşıyor. Hangi kimlik bilgisi olmalı?"
+  options={[
+    {
+      text: 'Claude Console’dan bir API key',
+      correct: true,
+      explanation:
+        'Bir OAuth token, `claude setup-token`’ı kim çalıştırdıysa onun aboneliğine bağlıdır.',
+    },
+    {
+      text: 'Herhangi bir ekip üyesinin ürettiği bir CLAUDE_CODE_OAUTH_TOKEN',
+      explanation: 'Bu, her depoyu bir kişinin aboneliğine bağlar.',
+    },
+    {
+      text: 'Varsayılan GITHUB_TOKEN',
+      explanation: 'O, GitHub’a kimlik doğrular, Claude’a değil.',
+    },
+    {
+      text: 'Hiçbir secret — OIDC zorunludur',
+      explanation: 'İş yükü kimliği federasyonu bir seçenektir, bir zorunluluk değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l2-intermediate/m08-git/github-app"
+  questionId="q4"
+  lang="tr"
+  prompt="Action’ı durdurmak ama yönetilen Code Review’ı kullanmaya devam etmek istiyorsunuz. Neyi kaldırırsınız?"
+  options={[
+    {
+      text: 'anthropics/claude-code-action kullanan workflow dosyalarını ve secret’ı',
+      correct: true,
+      explanation: 'GitHub App’i kurulu bırakın — Code Review ve web auto-fix ona ihtiyaç duyar.',
+    },
+    {
+      text: 'Claude GitHub App’i',
+      explanation: 'Bu, Code Review’ı ve web auto-fix’i de bozar.',
+    },
+    { text: 'Claude aboneliğinizi', explanation: 'Entegrasyonla ilgisiz.' },
+    {
+      text: 'Hiçbirini — ikisi aynı üründür',
+      explanation: 'Bunlar, tek bir uygulamayı paylaşan farklı ürünlerdir.',
+    },
+  ]}
+/>
