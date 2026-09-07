@@ -1,0 +1,344 @@
+---
+title: 'Authenticating Claude Code'
+description: 'Sign in with a Claude subscription, a Console account with or without an API key, or a long-lived token for CI — and know which credential wins when you have several.'
+level: 1
+module: 'm01-start'
+order: 3
+duration_min: 10
+difficulty: intro
+tags: ['auth', 'setup', 'api-key']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Authentication'
+    url: 'https://code.claude.com/docs/en/authentication.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Advanced setup'
+    url: 'https://code.claude.com/docs/en/setup.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code CLI reference'
+    url: 'https://code.claude.com/docs/en/cli-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Troubleshoot installation and login'
+    url: 'https://code.claude.com/docs/en/troubleshoot-install.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Sign in to Claude Code with a Claude subscription, a Claude Console account, or your organisation's cloud provider.
+- Explain what keyless Console sign-in stores, and how it differs from creating an API key.
+- Generate a long-lived token with `claude setup-token` and use it in CI.
+- Recite the credential precedence order, and diagnose "why is it billing my API key instead of my subscription?".
+- Check your current state without starting a session, with `claude auth status`.
+
+**Prerequisites.** A working install (lesson `02-install`) and an account: Claude Pro, Max, Team or Enterprise, or a Claude Console account your admin has invited you to. The free Claude.ai plan does not include Claude Code.
+
+<WhenNotToUse>
+  Do not create an API key just to try Claude Code. If you already have a Pro or Max subscription,
+  signing in with it is both simpler and cheaper — an API key bills per token and, once approved,
+  takes precedence over your subscription, which is the single most common cause of surprise spend.
+  Do not use `claude setup-token` for daily work either: it exists for CI pipelines and scripts
+  where a browser login is impossible, and the token it prints cannot open Remote Control sessions
+  or fetch claude.ai connectors. And on a managed corporate machine, do not work around a login
+  method your admin enforced — the settings that pin it are there deliberately.
+</WhenNotToUse>
+
+## Concept
+
+### The account types
+
+You can authenticate with any of these:
+
+- **Claude Pro or Max subscription** — log in with your Claude.ai account.
+- **Claude for Teams or Enterprise** — log in with the Claude.ai account your team admin invited you to.
+- **Claude Console** — log in with your Console credentials, with or without creating an API key.
+- **Cloud providers** — Amazon Bedrock, Google Cloud's Agent Platform or Microsoft Foundry: set the required environment variables before running `claude`, or pick **3rd-party platform** at the login prompt. No browser login is needed.
+- **Cloud gateway** — if your organisation runs a self-hosted Claude apps gateway, sign in with corporate SSO through `/login`; the gateway-issued token is then the session's only credential.
+
+### The browser login flow
+
+The first time you run `claude`, it opens a browser window for you to log in. Three things are worth knowing before you are staring at it:
+
+- If the browser does not open, press `c` to copy the login URL to your clipboard and paste it in yourself.
+- If the browser shows a **login code** instead of returning you to the terminal, paste that code at the `Paste code here if prompted` prompt. This is normal in WSL2, SSH sessions and containers, where the browser cannot reach Claude Code's local callback server.
+- When it finishes, the terminal shows `Login successful` and asks you to press `Enter`.
+
+If `ANTHROPIC_API_KEY` is set in your environment, Claude Code skips the browser entirely and asks you once to approve the key instead.
+
+The same flows are available from the command line without entering a session:
+
+<CodeBlock title="log in and out">
+
+```bash
+claude auth login
+claude auth login --console
+claude auth logout
+```
+
+</CodeBlock>
+
+`--email` pre-fills your address, `--sso` forces SSO, and `--console` signs in with Anthropic Console for API-usage billing instead of a Claude subscription. Inside a running session the equivalents are `/login` and `/logout`. Logging out also resets your first-launch setup state, so the next `claude` walks you through login and setup again.
+
+### Console sign-in without an API key
+
+Since v2.1.242 you can sign in to a Console account **without creating an API key** — useful when your organisation does not let developers create them. Choose the Anthropic Console account at the `/login` prompt and Claude Code asks how you want to sign in:
+
+| Choice                                                | What Claude Code stores                                                                 |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| **Sign in with your Console account** (`recommended`) | The OAuth token from that sign-in, kept as an Anthropic profile. No API key is created. |
+| **Create an API key** (`legacy`)                      | A Console API key, stored with your other credentials.                                  |
+
+The practical difference: a profile holds an OAuth login that Claude Code refreshes for you, while an API key is a static credential. When a profile's refresh fails, requests fail with `Anthropic profile login expired` until you sign in again.
+
+You do not always get the choice. Claude Code creates an API key without asking when you run against a cloud provider, when any settings file sets `forceLoginOrgUUID` or sets `forceLoginMethod` to `"claudeai"` or `"console"`, or when a managed settings source exists but cannot be read. Unset `ANTHROPIC_API_KEY` before signing in without a key.
+
+### A long-lived token for CI
+
+For pipelines and scripts where an interactive browser login is impossible, generate a one-year OAuth token:
+
+<CodeBlock title="setup-token">
+
+```bash
+claude setup-token
+```
+
+</CodeBlock>
+
+It opens the same browser authorisation flow as `/login` and prints the token to the terminal after you approve access. It **does not save the token anywhere** — copy it, then set it wherever the pipeline needs it:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+export CLAUDE_CODE_OAUTH_TOKEN=your-token
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+export CLAUDE_CODE_OAUTH_TOKEN=your-token
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$env:CLAUDE_CODE_OAUTH_TOKEN = "your-token"
+```
+
+  </Fragment>
+</OSTabs>
+
+The token authenticates with your Claude subscription and needs a Pro, Max, Team or Enterprise plan. It can only make model requests, so it cannot establish Remote Control sessions or fetch claude.ai connectors; locally configured MCP servers still work. Treat it as a secret: it belongs in your CI provider's secret store, never in a committed file.
+
+### Which credential wins
+
+When several credentials are present, Claude Code picks one in this order:
+
+1. Cloud provider credentials, when `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX` or `CLAUDE_CODE_USE_FOUNDRY` is set.
+2. `ANTHROPIC_AUTH_TOKEN` — sent as an `Authorization: Bearer` header, for LLM gateways and proxies.
+3. `ANTHROPIC_API_KEY` — sent as `X-Api-Key`. In interactive mode you approve it once; in non-interactive mode (`-p`) it is always used when present.
+4. `apiKeyHelper` script output, for rotating credentials from a vault.
+5. `CLAUDE_CODE_OAUTH_TOKEN`, the token `claude setup-token` prints.
+6. Anthropic profile and federation credentials.
+7. Subscription OAuth credentials from `/login` — the default for Pro, Max, Team and Enterprise.
+
+A signed-in Claude apps gateway session sits outside the list and outranks all of it.
+
+This ordering is the answer to the most common billing surprise. If you have an active subscription **and** `ANTHROPIC_API_KEY` set in your shell profile, the key wins once approved, and every request bills your Console organisation. Run `unset ANTHROPIC_API_KEY` and check `/status`: the `Login method` row shows your subscription account, and an `API key` row appears whenever a key is in use.
+
+### The one example prompt
+
+Once you are signed in, this is a good first thing to type — it proves the credential works and costs almost nothing:
+
+```text
+In one sentence, what model are you and what account is this session billing to?
+Do not read or change any files.
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · sign in, then prove which credential is live"
+  lessonId="en/l1-beginner/m01-start/authenticate"
+  repoTag="none"
+  steps={[
+    'Run `claude auth status --text`. If it reports you are not logged in, it exits with code 1 — that is the check, not an error.',
+    'If you are not signed in, run `claude auth login` (or `claude auth login --console` for a Console account) and complete the browser flow. Press `c` if the browser does not open; paste the login code at the `Paste code here if prompted` prompt if the browser shows one.',
+    'Run `claude auth status --text` again and read the three lines: login method, organisation, e-mail.',
+    'Run `claude auth status` with no flag to get the same state as JSON — this is the form to use in a script, since it exits 0 when logged in and 1 when not.',
+    'Check your shell for a stray key: `echo $ANTHROPIC_API_KEY` (PowerShell: `$env:ANTHROPIC_API_KEY`). If it prints anything and you meant to use your subscription, unset it and re-run step 3.',
+  ]}
+  expected="`claude auth status --text` prints `Login method:`, `Organization:` and `Email:` and exits 0; the JSON form reports a `loggedIn` field set to true, with an `authMethod` and a `subscriptionType`."
+  checklist={[
+    '`claude auth status` exits 0',
+    'The login method shown is the account you intended to use',
+    'No unexpected `ANTHROPIC_API_KEY` is set in your shell',
+    'You can say which of the seven precedence entries your session is using',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m01-start/03-authenticate/01-auth-status-text.txt"
+    range="2-5"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m01-start/03-authenticate/02-auth-status-json.txt"
+    range="2-13"
+  />
+</Lab>
+
+<Callout>
+  The login itself is an interactive browser flow, so there is no transcript of it here and there
+  never will be: this site does not publish reconstructed terminal output (D070, D093). What is
+  recorded above is the part that is honestly capturable — the state of an already-signed-in
+  machine, with the account e-mail, organisation and local path redacted.
+</Callout>
+
+### Renewing a login before it breaks
+
+When a `/login` credential is within three days of expiring, Claude Code shows `Your login expires in 3 days · run /login to renew` at startup. The warning never blocks a request — authentication keeps working until the login actually expires, at which point every model request fails with `Login expired · Please run /login`. You can also see the state before it bites: `/status` shows a `Login` row reading `Expired — log in again`.
+
+Renewing early matters most for unattended sessions. A background session or a Remote Control session that outlives its login simply stops making progress.
+
+## Anti-patterns
+
+**Leaving `ANTHROPIC_API_KEY` in your shell profile "just in case".** It outranks your subscription, so every session silently bills the API instead — and if the key belongs to a disabled organisation, authentication fails for reasons that have nothing to do with your subscription. _Fix:_ `unset ANTHROPIC_API_KEY`, then confirm with `/status`.
+
+**Committing a `setup-token` output.** It is a one-year credential to your subscription printed in plain text on your terminal. _Fix:_ paste it straight into your CI provider's secret store, and never into a file the repository tracks.
+
+**Using `claude setup-token` as your normal login.** It only makes model requests: no Remote Control, no claude.ai connectors. _Fix:_ use `/login` locally and keep the token for CI.
+
+**Assuming `/logout` is harmless.** It also resets your first-launch setup state, so your next `claude` re-runs onboarding. _Fix:_ use it when you actually mean to switch accounts, and use `/status` when you only want to look.
+
+**Debugging a login failure by reinstalling.** Install method and credential are unrelated. _Fix:_ run `claude auth status`, read which method it reports, and work down the precedence list.
+
+<Callout variant="changed">
+  Keyless Console sign-in — signing in to a Console account without creating an API key — needs
+  Claude Code v2.1.242 or later; before that, a Console login always minted an API key. The
+  expiring-login warning arrives three days out as of v2.1.217 (five days before that) and needs
+  v2.1.203 or later to appear at all.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/authenticate"
+  questionId="q1"
+  lang="en"
+  prompt="You have a Claude Max subscription and ANTHROPIC_API_KEY exported in your shell profile. Which credential does Claude Code use?"
+  options={[
+    {
+      text: 'The subscription, because a paid plan always wins.',
+      explanation:
+        'The API key sits at position 3 in the precedence list; the subscription is last.',
+    },
+    {
+      text: 'The API key, once approved — so requests bill the API, not the subscription.',
+      correct: true,
+      explanation:
+        'Run `unset ANTHROPIC_API_KEY` and check `/status` to fall back to the subscription.',
+    },
+    {
+      text: 'Neither; Claude Code refuses to start with two credentials present.',
+      explanation: 'It resolves the conflict silently using the documented precedence order.',
+    },
+    {
+      text: 'Whichever was configured most recently.',
+      explanation: 'Precedence is by credential type, not by recency.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/authenticate"
+  questionId="q2"
+  lang="en"
+  prompt="What does `claude setup-token` do with the token it generates?"
+  options={[
+    {
+      text: 'Stores it in ~/.claude/.credentials.json for later sessions.',
+      explanation: 'It saves the token nowhere — that is why you must copy it immediately.',
+    },
+    {
+      text: 'Prints it to the terminal without saving it; you set it as CLAUDE_CODE_OAUTH_TOKEN yourself.',
+      correct: true,
+      explanation: 'It is a one-year OAuth token meant for CI pipelines and scripts.',
+    },
+    {
+      text: 'Writes it into your project settings file.',
+      explanation:
+        'It never writes a credential into a project file; that would be a secret in your repository.',
+    },
+    {
+      text: 'Exchanges it for an API key in the Console.',
+      explanation: 'It is an OAuth token against your subscription, not a Console API key.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/authenticate"
+  questionId="q3"
+  lang="en"
+  prompt="Your browser shows a login code instead of returning you to the terminal. What happened?"
+  options={[
+    {
+      text: 'Your account is not entitled to Claude Code.',
+      explanation: 'An entitlement problem produces an error, not a code to paste.',
+    },
+    {
+      text: "The browser could not reach Claude Code's local callback server — common in WSL2, SSH and containers. Paste the code at the prompt.",
+      correct: true,
+      explanation: 'The `Paste code here if prompted` prompt exists exactly for this case.',
+    },
+    {
+      text: 'ANTHROPIC_API_KEY is set, so Claude Code fell back to a code flow.',
+      explanation:
+        'With a key set, Claude Code asks you to approve the key instead of opening a browser.',
+    },
+    {
+      text: 'You must reinstall with the native installer.',
+      explanation: 'The install method has nothing to do with the callback server being reachable.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/authenticate"
+  questionId="q4"
+  lang="en"
+  prompt="Which command reports authentication state from a script, exiting 0 when logged in and 1 when not?"
+  options={[
+    {
+      text: 'claude auth status',
+      correct: true,
+      explanation: 'It prints JSON by default; add `--text` for the human-readable form.',
+    },
+    {
+      text: 'claude doctor',
+      explanation: 'That reports install and settings diagnostics, not which account is signed in.',
+    },
+    {
+      text: 'claude --version',
+      explanation: 'That prints only the installed version.',
+    },
+    {
+      text: '/status',
+      explanation:
+        'A slash command works inside a running session, not as a scriptable shell command.',
+    },
+  ]}
+/>
+
+**Next:** `04-first-session` puts the credential to work — a real session against the lab repository.

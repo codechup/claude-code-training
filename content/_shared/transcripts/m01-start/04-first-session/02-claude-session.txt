@@ -1,0 +1,9 @@
+# Captured 2026-09-07, Claude Code 2.1.263, lab repo at tag lesson/m01-04-start. Verbatim stdout of the headless session.
+› claude -p "npm test fails with three failures. Find the cause, fix it in src/, and run npm test again to prove it passes." --model sonnet --max-turns 12 --output-format text --permission-mode acceptEdits --allowedTools "Read,Edit,Glob,Grep,Bash(npm test)"
+Tüm 15 test artık geçiyor (4/4 test dosyası).
+
+**Kök neden:** `src/store.ts` içindeki `addTask` fonksiyonunda hiçbir girdi validasyonu yoktu — boş/boşluklu başlık ve negatif öncelik değerleri sessizce kabul ediliyordu. API katmanı (`src/api/server.ts`) zaten `InvalidTaskError`'ı yakalayıp 400 döndürecek şekilde hazırdı, ama `addTask` bu hatayı hiç fırlatmadığı için istek 201 ile başarılı sonuçlanıyordu.
+
+**Düzeltme** (`src/store.ts`, `addTask` içinde):
+- `title` trim edilip boşsa `InvalidTaskError` fırlatılıyor.
+- `priority` negatifse `InvalidTaskError` fırlatılıyor.

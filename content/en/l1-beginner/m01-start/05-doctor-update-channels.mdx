@@ -1,0 +1,330 @@
+---
+title: 'claude doctor, updates and release channels'
+description: 'Keep the install healthy: read a claude doctor report line by line, update on purpose with claude update, and choose between the latest and stable release channels — with a version floor if you need one.'
+level: 1
+module: 'm01-start'
+order: 5
+duration_min: 10
+difficulty: core
+tags: ['doctor', 'updates', 'release-channels', 'maintenance']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Advanced setup'
+    url: 'https://code.claude.com/docs/en/setup.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code CLI reference'
+    url: 'https://code.claude.com/docs/en/cli-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Troubleshooting'
+    url: 'https://code.claude.com/docs/en/troubleshooting.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Troubleshoot installation and login'
+    url: 'https://code.claude.com/docs/en/troubleshoot-install.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Read a `claude doctor` report line by line and say what each line is telling you.
+- Tell `claude doctor` and `/doctor` apart, and know which one can fix things.
+- Update deliberately with `claude update`, and recognise both of its outcomes.
+- Choose between the `latest` and `stable` release channels, and pin a floor with `minimumVersion`.
+- Turn auto-updates off — and say exactly what `DISABLE_AUTOUPDATER` does and does not stop.
+
+**Prerequisites.** Lessons `02-install` through `04-first-session`. You need a working install to diagnose.
+
+<WhenNotToUse>
+  `claude doctor` is a diagnostic, not a habit — running it before every session tells you nothing
+  you did not already know. Reach for it when something is actually wrong, when you have just
+  changed a settings file, or after an update that went badly. Do not switch to the `stable` channel
+  because "stable sounds safer" either: it is roughly a week behind, so every lesson, changelog
+  entry and error message you read may describe behaviour you do not have yet. And do not set
+  `DISABLE_AUTOUPDATER` on a machine you actually work on — a version you never update is a version
+  whose bugs you keep.
+</WhenNotToUse>
+
+## Concept
+
+### Two doctors
+
+| Command         | Where it runs                 | What it does                                                                                                                        |
+| --------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `claude doctor` | Your shell, without a session | Prints **read-only** install and settings diagnostics: install health, settings-file validation errors, Remote Control eligibility. |
+| `/doctor`       | Inside a running session      | A full setup checkup that **can also apply fixes**.                                                                                 |
+
+Reach for `claude doctor` first, because it starts nothing and changes nothing.
+
+Here is a healthy report, line by line:
+
+- `Running: native (2.1.263)` — the install method and version actually in use.
+- `Commit`, `Platform` — the build and the platform triple.
+- `Path` — where the launcher lives. A launcher the native installer did not create is reported here.
+- `Config install method` — what your configuration thinks you installed, which is how a second, conflicting install shows up.
+- `Search: OK (bundled)` — ripgrep is present. If search fails in a session, this is the line to read.
+- `Auto-updates` and `Auto-update channel` — whether background updates are on, and which channel they follow.
+- `Last update attempt` — the result of the most recent background update, with its version and date.
+- `Managed settings (remote)` and `Organization policy` — whether an admin policy applies to this machine.
+
+### Updating
+
+Native installations check for updates at startup and periodically while running. Updates download and install in the background, and **take effect the next time you start Claude Code** — which is why a version number can lag behind an update you saw succeed.
+
+To apply one immediately:
+
+<CodeBlock title="update now">
+
+```bash
+claude update
+```
+
+</CodeBlock>
+
+There are two outcomes, and both are worth recognising. When an update installs, the command reports `Successfully updated from <old version> to version <new version>`. When you are already current it reports `Claude Code is up to date (<version>)` — and installs managed by Homebrew, WinGet or apk report `Claude is up to date!` instead.
+
+Homebrew, WinGet, apt, dnf and apk installs do not auto-update at all. You can opt in for Homebrew and WinGet by setting `CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE` to `1`, after which Claude Code runs the upgrade in the background and prompts you to restart. On WinGet that upgrade can fail while Claude Code is running, because Windows locks the executable; Claude Code then shows you the manual command instead.
+
+### Release channels
+
+`autoUpdatesChannel` controls which channel both auto-updates and `claude update` follow:
+
+- `"latest"` (the default) — new features as soon as they are released.
+- `"stable"` — a version typically about one week old, skipping releases with major regressions.
+
+Set it from `/config` → **Auto-update channel**, or in `settings.json`:
+
+<CodeBlock title="settings.json">
+
+```json
+{
+  "autoUpdatesChannel": "stable"
+}
+```
+
+</CodeBlock>
+
+Homebrew ignores this setting and picks a channel by cask name instead: `claude-code` is stable, `claude-code@latest` is latest.
+
+`minimumVersion` establishes a floor. Background auto-updates and `claude update` refuse to install anything below it, so moving to `stable` does not downgrade a machine already on a newer `latest` build. Switching channel in `/config` prompts you to stay on your current version or allow the downgrade; choosing to stay sets `minimumVersion` to that version, and switching back to `latest` clears it.
+
+<CodeBlock title="settings.json — pin a floor explicitly">
+
+```json
+{
+  "autoUpdatesChannel": "stable",
+  "minimumVersion": "2.1.100"
+}
+```
+
+</CodeBlock>
+
+`minimumVersion` only constrains **updates**. To make Claude Code refuse to start outside a version range, an administrator uses the managed settings `requiredMinimumVersion` and `requiredMaximumVersion` instead.
+
+### Turning updates off
+
+<CodeBlock title="settings.json — stop the background check">
+
+```json
+{
+  "env": {
+    "DISABLE_AUTOUPDATER": "1"
+  }
+}
+```
+
+</CodeBlock>
+
+`DISABLE_AUTOUPDATER` stops only the background check: `claude update` and `claude install` still work. To block every update path including manual ones, set `DISABLE_UPDATES` instead — which is what you want when you distribute Claude Code through your own channels and need people on the version you ship.
+
+### The one example prompt
+
+`claude doctor` tells you what is wrong; a session can tell you what to do about it:
+
+```text
+Here is my `claude doctor` output. Explain each warning in one line, and tell me which one
+to fix first and why. Do not change any files.
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · read your own doctor report and update on purpose"
+  lessonId="en/l1-beginner/m01-start/doctor-update-channels"
+  repoTag="none"
+  steps={[
+    'Run `claude doctor` and read every line. Write down your install method, your auto-update channel, and the result of the last update attempt.',
+    'Compare `Running:` with `Config install method:`. If they disagree, you have more than one install — follow the conflicting-installations section of the troubleshooting page before anything else.',
+    'Run `claude --version` and confirm it matches the version `claude doctor` reported.',
+    'Run `claude update`. Read which of the two documented messages you get: an update was installed, or you were already current.',
+    'Open `/config` in a session and find **Auto-update channel**. Look at your current value; do not change it unless you have a reason to.',
+    'Optional: paste your `claude doctor` output into a session with the example prompt above and have it explain any warning you did not understand.',
+  ]}
+  expected="`claude doctor` ends with `No installation issues found.`; `claude update` reports either `Successfully updated from … to version …` or `Claude Code is up to date (<version>)`."
+  checklist={[
+    'You can name your install method and update channel from memory',
+    '`Running:` and `Config install method:` agree',
+    '`claude --version` matches the version in the doctor report',
+    '`claude update` completed and you recognised which of its two messages you got',
+    'You know whether an organisation policy applies to your machine',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m01-start/05-doctor-update-channels/01-doctor.txt"
+    range="2-22"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m01-start/05-doctor-update-channels/02-update.txt"
+    range="2-5"
+  />
+</Lab>
+
+<Callout>
+  The capture above is the already-current path, because the machine was on the newest published
+  release at capture time. The `Successfully updated from … to version …` message is quoted from the
+  official setup page rather than shown as a recording — this course does not stage terminal output
+  it did not produce (D070, D093).
+</Callout>
+
+## Anti-patterns
+
+**Reinstalling instead of reading the report.** `claude doctor` names the problem — a second install path, an unparseable settings file, a missing ripgrep. Installing again adds a third thing to reason about. _Fix:_ read `Running:`, `Path:` and `Config install method:` first.
+
+**Switching to `stable` and forgetting.** A week behind is fine until you read a changelog entry, try the feature and find it missing. _Fix:_ if you choose `stable`, remember it when a documented behaviour does not match yours; `claude doctor` prints your channel.
+
+**Treating `DISABLE_AUTOUPDATER` as "no updates".** It stops the background check only. `claude update` and `claude install` still run, which is usually what you actually wanted. _Fix:_ use `DISABLE_UPDATES` when you genuinely need every path blocked.
+
+**Expecting an update to apply to the running session.** Updates take effect the next time you start Claude Code. _Fix:_ exit and restart, then check `claude --version`.
+
+**Ignoring a disagreement between `Running:` and `Config install method:`.** That is the signature of two installs racing each other, and it produces version numbers that change depending on which terminal you opened. _Fix:_ remove the one you do not want, per the uninstall instructions for that method.
+
+<Callout variant="changed">
+  On macOS and Linux, a custom launcher at `~/.local/bin/claude` now survives updates: since
+  v2.1.207 auto-update and `claude update` install new versions under
+  `~/.local/share/claude/versions/` and leave your launcher alone, where earlier versions replaced
+  it with their own symlink on every update. With a custom launcher, Claude Code also keeps every
+  installed version on disk, and `claude doctor` reports the launcher it did not create.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/doctor-update-channels"
+  questionId="q1"
+  lang="en"
+  prompt="What is the difference between `claude doctor` and `/doctor`?"
+  options={[
+    {
+      text: 'They are aliases for the same thing.',
+      explanation:
+        'One runs in your shell, the other inside a session, and only one can apply fixes.',
+    },
+    {
+      text: '`claude doctor` prints read-only diagnostics from the shell without starting a session; `/doctor` is the in-session checkup that can also apply fixes.',
+      correct: true,
+      explanation: 'Reach for the read-only one first.',
+    },
+    {
+      text: '`claude doctor` updates you; `/doctor` only reports.',
+      explanation: 'Updating is `claude update`; `claude doctor` changes nothing.',
+    },
+    {
+      text: '`/doctor` works only on native installs.',
+      explanation: 'Neither command is limited to one install method.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/doctor-update-channels"
+  questionId="q2"
+  lang="en"
+  prompt='In `/config` you switch the auto-update channel to "stable" on a machine already running a newer `latest` build, and choose to stay on your current version. What happens?'
+  options={[
+    {
+      text: 'It downgrades immediately to the stable release.',
+      explanation:
+        'Switching in /config prompts you first, and choosing to stay sets minimumVersion to your current version.',
+    },
+    {
+      text: 'Nothing downgrades below your `minimumVersion` floor; updates simply follow the stable channel from there.',
+      correct: true,
+      explanation:
+        'minimumVersion is the floor that keeps a channel switch from moving you backwards.',
+    },
+    {
+      text: 'Claude Code refuses to start until the versions match.',
+      explanation:
+        'Refusing to start is what the managed requiredMinimumVersion/requiredMaximumVersion settings do.',
+    },
+    {
+      text: 'The setting is ignored on every install method.',
+      explanation: 'Only Homebrew ignores it — it picks the channel by cask name instead.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/doctor-update-channels"
+  questionId="q3"
+  lang="en"
+  prompt='`DISABLE_AUTOUPDATER` is set to "1". Which statement is true?'
+  options={[
+    {
+      text: 'No update can be installed by any means.',
+      explanation: 'That is DISABLE_UPDATES. DISABLE_AUTOUPDATER only stops the background check.',
+    },
+    {
+      text: 'The background check stops, but `claude update` and `claude install` still work.',
+      correct: true,
+      explanation: 'Use DISABLE_UPDATES when you need every path blocked.',
+    },
+    {
+      text: 'It also switches you to the stable channel.',
+      explanation: 'The channel is set by autoUpdatesChannel, independently.',
+    },
+    {
+      text: 'It only applies to Homebrew installs.',
+      explanation:
+        'Homebrew does not auto-update in the first place; the setting targets auto-updating installs.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/doctor-update-channels"
+  questionId="q4"
+  lang="en"
+  prompt="`claude doctor` reports `Running: native (2.1.263)` but `Config install method: npm`. What does that most likely mean?"
+  options={[
+    {
+      text: 'A harmless labelling quirk; ignore it.',
+      explanation:
+        'A disagreement between the two lines is exactly how a second, conflicting install shows up.',
+    },
+    {
+      text: 'You have more than one Claude Code installation, and which one runs depends on your PATH.',
+      correct: true,
+      explanation:
+        'Follow the conflicting-installations section of the troubleshooting page and remove the one you do not want.',
+    },
+    {
+      text: 'Your authentication is misconfigured.',
+      explanation: 'Neither line has anything to do with credentials.',
+    },
+    {
+      text: 'The stable channel is active.',
+      explanation: 'The channel is on its own `Auto-update channel` line.',
+    },
+  ]}
+/>
+
+**Next:** module `m02-interact` — how to talk to Claude Code so it does the right thing the first time.

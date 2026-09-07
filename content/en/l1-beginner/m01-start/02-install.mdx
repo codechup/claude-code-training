@@ -1,0 +1,415 @@
+---
+title: 'Installing Claude Code'
+description: 'Install Claude Code with the native installer, Homebrew, WinGet, a Linux package manager or npm — on macOS, Linux, Windows and WSL — then prove the install with claude --version.'
+level: 1
+module: 'm01-start'
+order: 2
+duration_min: 15
+difficulty: intro
+tags: ['install', 'setup', 'cli']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Advanced setup'
+    url: 'https://code.claude.com/docs/en/setup.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Quickstart'
+    url: 'https://code.claude.com/docs/en/quickstart.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Troubleshoot installation and login'
+    url: 'https://code.claude.com/docs/en/troubleshoot-install.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code CLI reference'
+    url: 'https://code.claude.com/docs/en/cli-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m01-02-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Check your machine against the published system requirements before you start.
+- Install Claude Code with the native installer on macOS, Linux, WSL, Windows PowerShell or Windows CMD.
+- Choose deliberately between the native installer, Homebrew, WinGet, an apt/dnf/apk repository and npm — and say what each one costs you in update behaviour.
+- Install a pinned version or the `stable` channel instead of `latest`.
+- Prove the install with `claude --version` and know where to look when it fails.
+
+**Prerequisites.** Lesson `01-what-claude-code-is`, a terminal, and a network connection. You do not need an account yet — signing in is the next lesson. On Windows, decide first whether you want native Windows or WSL; the Concept section below has the table that settles it.
+
+<WhenNotToUse>
+  Skip this lesson if `claude --version` already prints a version and you are happy with how your
+  install updates itself — reinstalling on top of a working install only creates a second copy to
+  keep track of. Skip the terminal entirely if you would rather use the Desktop app, which runs
+  Claude Code without a CLI install. And do not use this lesson to install Claude Code on a machine
+  you do not administer: the native installer writes into your home directory, but a corporate
+  device with managed settings may already have a policy about which install method and release
+  channel you are allowed to use.
+</WhenNotToUse>
+
+## Concept
+
+### What you are installing
+
+Every install method delivers the **same native binary**. The npm package is not a JavaScript build: it pulls the platform binary in through an optional dependency such as `@anthropic-ai/claude-code-darwin-arm64` and links it into place, and the installed `claude` does not itself invoke Node. So the choice between methods is not a choice about capability — it is a choice about **who is responsible for updates**.
+
+| Method           | Auto-updates?                                        | Manual upgrade command                                  |
+| ---------------- | ---------------------------------------------------- | ------------------------------------------------------- |
+| Native installer | Yes, in the background                               | `claude update`                                         |
+| Homebrew         | No                                                   | `brew upgrade claude-code`                              |
+| WinGet           | No                                                   | `winget upgrade Anthropic.ClaudeCode`                   |
+| apt / dnf / apk  | No (through your normal system upgrade)              | `sudo apt update && sudo apt upgrade claude-code` (apt) |
+| npm              | Yes, unless the npm global directory is not writable | `npm install -g @anthropic-ai/claude-code@latest`       |
+
+The native installer is the documented recommendation, and it is the one that keeps itself current.
+
+### System requirements
+
+- **Operating system:** macOS 13.0+, Windows 10 1809+ or Windows Server 2019+, Ubuntu 20.04+, Debian 10+, Alpine Linux 3.19+.
+- **Hardware:** 4 GB+ RAM, x64 or ARM64 processor.
+- **Network:** an internet connection.
+- **Shell:** Bash, Zsh, PowerShell, or CMD.
+- **Location:** one of the Anthropic supported countries.
+
+`ripgrep` normally ships inside Claude Code, so you do not install it separately — except on musl-based distributions, covered below.
+
+### Windows: native or WSL
+
+| Option         | Requires                             | Sandboxing    | When to use                                     |
+| -------------- | ------------------------------------ | ------------- | ----------------------------------------------- |
+| Native Windows | Nothing; Git for Windows is optional | Not supported | Windows-native projects and tools               |
+| WSL 2          | WSL 2 enabled                        | Supported     | Linux toolchains or sandboxed command execution |
+| WSL 1          | WSL 1 enabled                        | Not supported | If WSL 2 is unavailable                         |
+
+On native Windows, installing [Git for Windows](https://git-scm.com/downloads/win) is optional but changes which shell tool Claude gets: with it, Claude Code uses Git Bash for the `Bash` tool; without it, it runs shell commands through the `PowerShell` tool instead. Inside WSL you run the Linux installer and launch `claude` from the WSL terminal, never from PowerShell or CMD — which is exactly why the Windows (WSL) tab of every command block on this site shows the Linux command.
+
+If you are unsure which Windows shell you are in: your prompt shows `PS C:\` in PowerShell and `C:\` without the `PS` in CMD.
+
+### Choosing a version at install time
+
+The native installer takes a version number or a channel, and **the channel you choose at install time becomes your default for auto-updates**:
+
+- no argument — `latest`, new features as soon as they ship;
+- `stable` — a version typically about one week old, skipping releases with major regressions;
+- an explicit version such as `2.1.89`, when you need to reproduce a specific build.
+
+Homebrew makes the same choice by cask name instead: `claude-code` tracks stable, `claude-code@latest` tracks latest. Release channels get a lesson of their own — `05-doctor-update-channels`.
+
+### The one example prompt
+
+You have nothing to prompt yet, so this lesson's example prompt is the one you will type the moment the install finishes, in the next lesson's session:
+
+```text
+Give me a two-sentence tour of this repository: what it builds, and where the entry point is.
+Read only — do not change anything.
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · install Claude Code and prove it works"
+  lessonId="en/l1-beginner/m01-start/install"
+  repoTag="lesson/m01-02-start"
+  steps={[
+    'Check your OS, RAM and shell against the system requirements above. On Windows, decide native or WSL using the table.',
+    'Run the install command for your platform from the OS tabs below. You do not need Administrator or `sudo` for the native installer.',
+    'Close and reopen your terminal so the new `claude` on your PATH is picked up.',
+    'Run `claude --version`. A working install prints a version number followed by `(Claude Code)`.',
+    'Optional: clone the lab repository (`git clone https://github.com/codechup/claude-code-lab && cd claude-code-lab && git checkout lesson/m01-02-start`) so you have a real project to open in the next two lessons.',
+    'If `claude --version` fails with `command not found`, do not reinstall blindly — open the troubleshooting page linked in Sources and match your exact error message first.',
+  ]}
+  expected="`claude --version` prints a version number followed by `(Claude Code)` — for example `2.1.263 (Claude Code)`."
+  checklist={[
+    'The machine meets the OS, RAM and shell requirements',
+    'An install command ran without an error',
+    'The terminal was restarted after installing',
+    '`claude --version` prints a version and `(Claude Code)`',
+    'You know which method you used, and therefore who updates it',
+  ]}
+>
+  <Transcript src="content/_shared/transcripts/m01-start/02-install/01-version.txt" range="2-3" />
+</Lab>
+
+<Callout>
+  The `lesson/m01-02-start` tag is deliberately "process-only": its `-start` and `-solution` commits
+  are the same, because this lesson installs a tool rather than changing the lab's code. Checking it
+  out just gives you a real repository to point Claude Code at in lesson `04-first-session`.
+</Callout>
+
+### Install, per OS
+
+The commands below are copied character-for-character from the official setup page.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+<CodeBlock title="native installer (recommended)">
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+</CodeBlock>
+
+<CodeBlock title="Homebrew">
+
+```bash
+brew install --cask claude-code
+```
+
+</CodeBlock>
+
+  </Fragment>
+  <Fragment slot="linux">
+
+<CodeBlock title="native installer (recommended)">
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+</CodeBlock>
+
+<CodeBlock title="apt (Debian, Ubuntu) — stable channel">
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+sudo curl -fsSL https://downloads.claude.ai/keys/claude-code.asc \
+  -o /etc/apt/keyrings/claude-code.asc
+echo "deb [signed-by=/etc/apt/keyrings/claude-code.asc] https://downloads.claude.ai/claude-code/apt/stable stable main" \
+  | sudo tee /etc/apt/sources.list.d/claude-code.list
+sudo apt update
+sudo apt install claude-code
+```
+
+</CodeBlock>
+
+  </Fragment>
+  <Fragment slot="windows">
+
+<CodeBlock title="PowerShell — native installer (recommended)">
+
+```powershell
+irm https://claude.ai/install.ps1 | iex
+```
+
+</CodeBlock>
+
+<CodeBlock title="CMD — native installer">
+
+```batch
+curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd
+```
+
+</CodeBlock>
+
+<CodeBlock title="WinGet">
+
+```powershell
+winget install Anthropic.ClaudeCode
+```
+
+</CodeBlock>
+
+  </Fragment>
+</OSTabs>
+
+Two error messages tell you that you are in the wrong Windows shell: `The token '&&' is not a valid statement separator` means you ran the CMD command in PowerShell, and `'irm' is not recognized as an internal or external command` means you ran the PowerShell command in CMD.
+
+Before verifying the signing key on apt, confirm the fingerprint `gpg --show-keys /etc/apt/keyrings/claude-code.asc` prints is `31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE`. dnf and apk have their own repository setups; both are on the setup page.
+
+### npm, and Alpine
+
+<CodeBlock title="npm (global)">
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+</CodeBlock>
+
+As of v2.1.198 the npm package wants Node.js 22 or later. On an older Node.js, npm prints an `EBADENGINE` warning rather than failing — the install completes and `claude` still runs, because the binary it downloads does not use your Node.js at runtime. Never install it with `sudo npm install -g`.
+
+Alpine and other musl/uClibc distributions need `bash` and `curl` for the install command and `libgcc`, `libstdc++` and `ripgrep` at runtime, then `USE_BUILTIN_RIPGREP` set to `0` in `settings.json`:
+
+<CodeBlock title="Alpine prerequisites">
+
+```bash
+apk add bash curl libgcc libstdc++ ripgrep
+```
+
+</CodeBlock>
+
+### Install a specific version or channel
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash -s stable
+curl -fsSL https://claude.ai/install.sh | bash -s 2.1.89
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash -s stable
+curl -fsSL https://claude.ai/install.sh | bash -s 2.1.89
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```text
+& ([scriptblock]::Create((irm https://claude.ai/install.ps1))) stable
+& ([scriptblock]::Create((irm https://claude.ai/install.ps1))) 2.1.89
+```
+
+  </Fragment>
+</OSTabs>
+
+`claude --version` then prints exactly the version you asked for, such as `2.1.89 (Claude Code)`. The same job can be done after the fact with `claude install stable` or `claude install 2.1.118`.
+
+## Anti-patterns
+
+**Installing with `sudo npm install -g`.** The docs say not to, in capitals: it creates permission problems and a security risk. _Fix:_ use the native installer, or fix your npm global prefix so a normal user can write to it.
+
+**Installing a second time to fix a broken `claude`.** A `command not found` after installing is almost always a PATH or shell-restart problem, and a second install adds a second copy that `claude doctor` will later report as a conflict. _Fix:_ restart the terminal, then match your exact error on the troubleshooting page.
+
+**Assuming Homebrew or WinGet keep you current.** Neither auto-updates. A machine that has not run `brew upgrade claude-code` for two months is two months of releases behind, and the release notes you are reading will not match. _Fix:_ either upgrade on a schedule, set `CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE` to `1` so Claude Code runs the upgrade for you, or use the native installer.
+
+**Running the Linux installer from PowerShell for a WSL setup.** WSL is a Linux environment; installing on the Windows side gives you a Windows binary that cannot see your WSL filesystem the way you expect. _Fix:_ open the WSL distribution first, then run `curl -fsSL https://claude.ai/install.sh | bash` there.
+
+**Pinning a version and forgetting.** `claude install 2.1.89` is the right tool for reproducing a bug, and the wrong tool for daily work — you silently stop receiving fixes. _Fix:_ pin for the investigation, then `claude install latest` when you are done.
+
+<Callout variant="changed">
+  On macOS and Linux the native installer manages `~/.local/bin/claude` as a symlink into
+  `~/.local/share/claude/versions/`. Since v2.1.207, if you replace that launcher with your own
+  script, auto-update and `claude update` leave it in place and new versions install alongside it;
+  before v2.1.207 the auto-updater overwrote a custom launcher on every update.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/install"
+  questionId="q1"
+  lang="en"
+  prompt="You install Claude Code with Homebrew. What follows?"
+  options={[
+    {
+      text: 'You get a JavaScript build rather than the native binary.',
+      explanation:
+        'Every method — Homebrew, WinGet, npm, native — delivers the same native binary.',
+    },
+    {
+      text: 'It will not auto-update; you run `brew upgrade claude-code` yourself.',
+      correct: true,
+      explanation:
+        'Homebrew installs do not auto-update. Setting CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE to 1 makes Claude Code run the upgrade for you.',
+    },
+    {
+      text: 'You are locked to the latest release channel.',
+      explanation:
+        'Homebrew picks the channel by cask name: `claude-code` is stable, `claude-code@latest` is latest.',
+    },
+    {
+      text: 'You must also install ripgrep separately.',
+      explanation: 'ripgrep ships inside Claude Code except on musl-based distributions.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/install"
+  questionId="q2"
+  lang="en"
+  prompt="You are setting up on Windows and want sandboxed command execution. Which route do you take?"
+  options={[
+    {
+      text: 'Native Windows with Git for Windows installed.',
+      explanation:
+        'Git for Windows enables the Bash tool, but sandboxing is not supported on native Windows.',
+    },
+    {
+      text: 'WSL 2, installing with the Linux installer from inside the WSL terminal.',
+      correct: true,
+      explanation: 'WSL 2 is the only Windows option the docs list as supporting sandboxing.',
+    },
+    {
+      text: 'WSL 1, installing from PowerShell.',
+      explanation:
+        'WSL 1 does not support sandboxing, and you install from inside WSL, not PowerShell.',
+    },
+    {
+      text: 'winget install Anthropic.ClaudeCode.',
+      explanation: 'That is a native Windows install, which does not support sandboxing.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/install"
+  questionId="q3"
+  lang="en"
+  prompt="`claude --version` prints nothing but `command not found` right after a successful install. What is the first thing to do?"
+  options={[
+    {
+      text: 'Run the install command again with sudo.',
+      explanation:
+        'The docs explicitly warn against sudo installs, and a second install creates a conflicting copy.',
+    },
+    {
+      text: 'Close and reopen the terminal, then try again.',
+      correct: true,
+      explanation:
+        'A new PATH entry is only picked up by a new shell. If it still fails, match the exact error on the troubleshoot-install page.',
+    },
+    {
+      text: 'Switch to the npm install method.',
+      explanation:
+        'Changing methods does not diagnose a PATH problem; it just adds another install.',
+    },
+    {
+      text: 'Set ANTHROPIC_API_KEY.',
+      explanation: 'That is authentication, which cannot help a binary the shell cannot find.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/install"
+  questionId="q4"
+  lang="en"
+  prompt="Which command installs the stable channel with the native installer on macOS?"
+  options={[
+    {
+      text: 'curl -fsSL https://claude.ai/install.sh | bash -s stable',
+      correct: true,
+      explanation:
+        'The channel you pass at install time also becomes your default for auto-updates.',
+    },
+    {
+      text: 'curl -fsSL https://claude.ai/install.sh | bash --stable',
+      explanation: 'The channel is a script argument passed after `-s`, not a flag on bash.',
+    },
+    {
+      text: 'brew install --cask claude-code@latest',
+      explanation: 'That is Homebrew, and `@latest` is the latest channel, not stable.',
+    },
+    {
+      text: 'claude update --stable',
+      explanation:
+        '`claude update` takes no channel argument; the channel comes from the `autoUpdatesChannel` setting.',
+    },
+  ]}
+/>
+
+**Next:** `03-authenticate` signs you in — subscription, Console, API key or a long-lived token for CI.

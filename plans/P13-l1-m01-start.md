@@ -2,7 +2,7 @@
 id: P13
 title: "L1 Beginner module: Start (m01-start)"
 milestone: M1
-status: in_progress
+status: review
 owner: opus-p13-2026-09-07
 branch: plan/13-l1-m01-start
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T07:57:32Z
+updated_at: 2026-09-07T08:48:02Z
 open_questions: []
 ---
 
@@ -98,5 +98,29 @@ A reviewer opens `npm run dev`, visits each of the 5 lessons at `/en/l1-beginner
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+**Session:** `opus-p13-2026-09-07`, worktree `../cct-wt-13`, branch `plan/13-l1-m01-start`.
+
+**Written.** Four EN lessons (`02-install`, `03-authenticate`, `04-first-session`, `05-doctor-update-channels`) plus their `draft: true` TR twins. `01-what-claude-code-is` (P12) was left untouched — it already matches the D006 template and its "Next" line already points at `02-install`. Both module `index.mdx` files now link their lesson list items to the real routes (TR links only lesson 01, because a `draft: true` lesson has no route — `src/lib/nav.ts` filters drafts).
+
+**Slug delta (CURRICULUM wins, per Steps 1).** This plan's Deliverables list named `03-auth`, `04-first-session-and-tui-tour`, `05-doctor-update-and-release-channels` and `01-what-is-claude-code-and-how-it-works`. `docs/CURRICULUM.md` §2 names `01-what-claude-code-is`, `02-install`, `03-authenticate`, `04-first-session`, `05-doctor-update-channels`. The curriculum slugs were used.
+
+**Lab tag delta.** The lab repo's actual tags are `lesson/m01-02-start` / `lesson/m01-04-start` (module number without the `-start` suffix in the module id), not `lesson/m01-start-NN-start`. Verified with `git tag -l` in `../claude-code-lab`; the frontmatter uses the real tags. `03` and `05` are `repo_tag: 'none'` (no lab-repo state involved).
+
+**Transcripts (D093, D099).** 9 new captures under `content/_shared/transcripts/m01-start/`, each with a `#` provenance header and a folder `README.md`:
+- `02-install/`: `claude --version`.
+- `03-authenticate/`: `claude auth status --text`, `claude auth status` (JSON) — e-mail, org name/id and the profile path redacted.
+- `04-first-session/`: `npm test` (3 failures) → `claude -p … --model sonnet --allowedTools …` → `git diff` → `npm test` (15 passed), plus the same command **without** `--allowedTools` (exit 1, max turns). Run against a throwaway clone of `lesson/m01-04-start` in a scratch directory, so the shared `../claude-code-lab` checkout was never modified.
+- `05-doctor-update-channels/`: `claude doctor`, `claude update`.
+Install, browser login and `setup-token` are interactive or one-shot flows that cannot be captured honestly on an already-installed, already-signed-in machine; those are prose plus `<CodeBlock>`s of the exact commands, with the limitation stated in the lesson and in each transcript README. The `Successfully updated from … to version …` message is quoted from `setup.md`, attributed, never staged as a recording. Install commands were copied character-for-character from `https://code.claude.com/docs/en/setup.md` (fetched 2026-09-07).
+
+**Review counts (D071).** fact-checker: ~90 claims CONFIRMED across the four lessons, **0 WRONG**, 3 UNVERIFIABLE — all three fixed (Node.js requirement reworded to cite the lab repo's own `engines` field; the "diff is three lines" claim corrected to four lines / one replaced + three added; the headless-without-`--allowedTools` claim narrowed to the one outcome that has a committed recording). No drift found against `research/feature-inventory.md`. reviewer: 2 blockers + 2 majors + 1 minor, **all 5 addressed** — both blockers were unrecorded runs described as fact in `04-first-session`, now trimmed to what the embedded transcripts show; the `05` quiz stem was narrowed to the `/config` mechanism the Concept section actually establishes; TR frontmatter apostrophes normalised to the curly form lesson 01 already uses.
+
+**Deliberate deviations.**
+1. TR stubs carry a translated `title`/`description` and a one-paragraph Turkish `## Özet`, per the standing `docs/authoring/CONTENT-PLAN-BRIEF.md` §1.4, rather than this plan's older "leave `title`/`description` in English, EN-derived placeholder body" wording. All gate-compared fields (`level`, `module`, `order`, `duration_min`, `difficulty`, `verified_version`, `sources[]`, `lab.repo_tag`) are identical to the EN twin, and every stub stays `draft: true`. The reviewer flagged the divergence; recorded here as a decision for P25/P26/P40/P41 rather than reverted.
+2. `02-install.mdx`: the two `& ([scriptblock]::Create((irm …)))` install lines are fenced as `text` rather than `powershell`. Shiki's `powershell` grammar colours `scriptblock` at `#D73A49`, which axe reports as a serious colour-contrast violation on the code background; the commands themselves are byte-identical to the docs. **Follow-up for P05:** the light Shiki theme's type-name token fails AA against the code-block background.
+3. `/new-lesson` is not available to this session's skill set; the lesson files were created by hand from the shape of `01-what-claude-code-is.mdx`.
+
+**Sources registry.** Appended `docs-troubleshooting` and `repo-claude-code-lab`; added `m01-start` to the `modules` list of `docs-cli-reference` and `docs-interactive-mode`. Append-only, kept sorted by `id`, no existing entry rewritten.
+
+**Follow-ups / open questions raised.** (a) `research/feature-inventory.md`'s Headless row does not cover what a default-permission-mode `-p` run does when a tool it needs is not pre-granted; the two runs captured here produced two different outcomes (an approval-request message, and a max-turns exit), so the behaviour is worth pinning down for the m04/headless lessons. (b) The Shiki contrast issue in deviation 2. Neither blocks this module.
 

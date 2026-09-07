@@ -1,0 +1,294 @@
+---
+title: 'Your first session'
+description: 'Run a real session against the lab repository — ask, read, edit, run the tests — and learn to read the TUI: the prompt bar, permission modes, the transcript viewer and the shortcuts that matter.'
+level: 1
+module: 'm01-start'
+order: 4
+duration_min: 10
+difficulty: core
+tags: ['first-session', 'tui', 'lab']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Quickstart'
+    url: 'https://code.claude.com/docs/en/quickstart.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Interactive mode'
+    url: 'https://code.claude.com/docs/en/interactive-mode.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code CLI reference'
+    url: 'https://code.claude.com/docs/en/cli-reference.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'codechup/claude-code-lab — the course lab repository'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m01-04-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Start a session in a real project and give Claude a task it can verify itself.
+- Watch the full loop happen: read the failing tests, find the cause, edit the source, re-run the tests.
+- Read the TUI — the prompt bar, the permission-mode indicator, the task checklist, the transcript viewer.
+- Use the handful of keys that matter on day one: `Esc`, `Shift+Tab`, `Ctrl+O`, `Ctrl+T`, `Ctrl+C`, `Ctrl+D`, `!`, `@`, `?`.
+- Reproduce the same work headlessly with `claude -p`, so you have a capture you can paste into a PR.
+
+**Prerequisites.** Lessons `02-install` and `03-authenticate`: `claude --version` prints a version and `claude auth status` exits 0. For the lab repository you also need `git` and the Node.js version its `package.json` declares in `engines` — Node.js 24 or later at the time of writing.
+
+<WhenNotToUse>
+  Do not make your first session a large, unverifiable refactor of a repository you care about. The
+  loop's value comes from the check at the end, and a first session is also when you are least able
+  to tell a good result from a confident one. Do not start in a directory with uncommitted work you
+  cannot afford to lose, either — start where `git status` is clean, so `git diff` tells you exactly
+  what changed. And if you only want to read code rather than change it, you do not need a session
+  at all: `claude -p "…"` answers and exits.
+</WhenNotToUse>
+
+## Concept
+
+### What a first session should look like
+
+A good first task has three properties: it is small, it is in a repository you can throw away, and **it comes with its own check**. A failing test is the ideal shape — Claude can run it before, make a change, and run it again, and neither of you has to take the other's word for anything.
+
+The lab repository is built for exactly this. At the tag `lesson/m01-04-start`, `npm test` fails three times: `addTask()` in `src/store.ts` accepts an empty title and a negative priority without complaint, so two unit tests and one API test that expect a rejection all fail.
+
+### The one example prompt
+
+```text
+npm test fails with three failures. Find the cause, fix it in src/, and run npm test again
+to prove it passes.
+```
+
+Read what that does and does not say. It names the symptom (`npm test` fails), the scope (`src/`), and the proof (`npm test` passes). It does not name the file, the function or the fix — that is the part you are delegating.
+
+### Reading the TUI
+
+When you run `claude` in a project, you get a full-screen terminal interface. Four things on it earn your attention on day one:
+
+- **The prompt bar** at the bottom, where you type. A `/` at the start opens commands and skills, `@` triggers file-path autocomplete, `!` runs a shell command directly and adds its output to the session, and `?` on empty input toggles the shortcut help panel.
+- **The permission-mode indicator.** `Shift+Tab` cycles permission modes (on Windows, `Alt+M` when the runtime does not enable VT input mode). Which mode you are in decides whether Claude asks before each edit — the subject of a whole lesson in the next module.
+- **Claude's task checklist**, toggled with `Ctrl+T`: what it thinks the remaining steps are.
+- **The transcript viewer**, toggled with `Ctrl+O`: the full scrollback of the session, including tool calls you scrolled past.
+
+The keys worth memorising first:
+
+| Key         | What it does                               |
+| ----------- | ------------------------------------------ |
+| `Esc`       | Interrupt Claude, or close a dialog        |
+| `Esc` `Esc` | Clear the input draft, or rewind           |
+| `Ctrl+C`    | Interrupt, or clear input                  |
+| `Ctrl+D`    | Exit the session                           |
+| `Shift+Tab` | Cycle permission modes                     |
+| `Ctrl+O`    | Toggle the transcript viewer               |
+| `Ctrl+T`    | Toggle Claude's task checklist             |
+| `Ctrl+R`    | Reverse-search command history             |
+| `Ctrl+L`    | Redraw or clear the screen                 |
+| `Ctrl+G`    | Open the current input in your text editor |
+
+You do not have to stop Claude to steer it: typing a correction and pressing `Enter` while a tool is running queues the message, and `Esc` stops the action outright.
+
+Multi-line input has four routes, because terminals disagree: `\` then `Enter` works everywhere, `Ctrl+J` works in any terminal without configuration, `Shift+Enter` is native in iTerm2, WezTerm, Ghostty, Kitty, Warp, Apple Terminal and Windows Terminal, and `Option+Enter` works on macOS once you enable Option as Meta.
+
+### The same session, headlessly
+
+Everything above has a non-interactive twin. `claude -p "…"` runs the task and exits, which is what you want when you need a capture for a pull request, or when you are running the same task ten times to compare models. The transcripts below were produced that way — this course never publishes reconstructed output.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · fix three failing tests in the lab repository"
+  lessonId="en/l1-beginner/m01-start/first-session"
+  repoTag="lesson/m01-04-start"
+  steps={[
+    "Clone the lab repository and check out this lesson's tag: `git clone https://github.com/codechup/claude-code-lab && cd claude-code-lab && git checkout lesson/m01-04-start && npm ci`.",
+    'Run `npm test` yourself first. Three tests fail — read their names before you ask Claude anything.',
+    'Start a session with `claude`, then type the example prompt: `npm test fails with three failures. Find the cause, fix it in src/, and run npm test again to prove it passes.`',
+    'Watch the loop: Claude reads the failing tests, opens `src/store.ts`, proposes an edit, and re-runs `npm test`. Press `Ctrl+T` to see its checklist and `Ctrl+O` to scroll the full transcript.',
+    'Approve the edit when asked. Then leave the session with `Ctrl+D` and run `git diff` yourself — never take "it passes" on trust.',
+    'Run `npm test` one more time in your own shell. It should report 15 passed.',
+    'Optional: reproduce the whole thing headlessly with the `claude -p` command shown under the transcripts, and compare the diff.',
+  ]}
+  expected="`npm test` goes from 3 failed / 12 passed to 15 passed, and `git diff` shows a small change to `addTask()` in `src/store.ts` that throws `InvalidTaskError` for an empty title and for a negative priority."
+  checklist={[
+    '`npm test` failed three times before the session',
+    'You read the failing test names yourself before prompting',
+    'The change is confined to `src/` — no test file was edited to make it pass',
+    '`git diff` shows the validation added to `addTask()`',
+    '`npm test` reports 15 passed afterwards',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m01-start/04-first-session/01-npm-test-before.txt"
+    range="2-15"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m01-start/04-first-session/02-claude-session.txt"
+    range="2-9"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m01-start/04-first-session/03-git-diff.txt"
+    range="2-18"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m01-start/04-first-session/04-npm-test-after.txt"
+    range="2-13"
+  />
+</Lab>
+
+Three things in that recording are worth stopping on.
+
+**The answer is in Turkish.** The machine that captured it has global Claude Code preferences asking for Turkish, so the model answered in Turkish — the same effect lesson `01-what-claude-code-is` documents. Your standing memory and settings files shape every session, including a headless one you expected to be stateless, and that is worth knowing on day one.
+
+**One change fixed three tests.** Two of the failures were unit tests on `addTask()`; the third was an API test asserting `POST /tasks` returns 400 rather than 201 for an empty title. The API layer already translated `InvalidTaskError` into a 400 — it simply never received one. That is the kind of thing a session finds quickly and a reader guesses wrongly.
+
+**The diff is four lines** — one line replaced, three added. Reading it takes ten seconds and is the only step that actually verifies the work. Do it every time.
+
+### The headless equivalent
+
+<CodeBlock title="the same task, non-interactively">
+
+```bash
+claude -p "npm test fails with three failures. Find the cause, fix it in src/, and run npm test again to prove it passes." \
+  --model sonnet \
+  --max-turns 12 \
+  --output-format text \
+  --permission-mode acceptEdits \
+  --allowedTools "Read,Edit,Glob,Grep,Bash(npm test)"
+```
+
+</CodeBlock>
+
+`--allowedTools` is the part people leave off. A headless session has nobody to answer a permission prompt, so anything not granted up front is denied and the run cannot finish the job. Dropping that one flag from the command above gives this instead — every turn spent, nothing changed, exit code 1:
+
+<Transcript
+  src="content/_shared/transcripts/m01-start/04-first-session/05-no-allowedtools.txt"
+  range="2-3"
+/>
+
+That is the single most common surprise when moving a working interactive task to `-p`. Grant the tools, or set a permission mode wide enough for the job.
+
+## Anti-patterns
+
+**Prompting before you have looked.** Running `npm test` yourself first costs ten seconds and gives you the vocabulary to judge the answer. _Fix:_ read the failure, then delegate the cause.
+
+**Letting a test be edited to make it pass.** A task phrased as "make the tests pass" invites exactly that. _Fix:_ scope the change ("fix it in `src/`") and check `git diff` for test-file edits.
+
+**Accepting "all tests pass" without running them.** The claim is cheap; the output is not. _Fix:_ run `npm test` in your own shell after leaving the session.
+
+**Starting in a dirty repository.** If `git status` was not clean before, `git diff` afterwards cannot tell you what Claude changed. _Fix:_ commit or stash first.
+
+**Reaching for `Ctrl+C` to steer.** Interrupting throws away the tool call in flight. _Fix:_ type the correction and press `Enter` — the message is queued and delivered without stopping the run. Use `Esc` when you genuinely want the action to stop.
+
+<Callout variant="changed">
+  The word-motion keys (`Alt+B`, `Alt+F`, `Alt+D`, `Ctrl+W`) follow readline conventions in Claude
+  Code v2.1.261 and later. The `keybindingFlavor` setting that used to turn them on is deprecated
+  and now has no effect.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/first-session"
+  questionId="q1"
+  lang="en"
+  prompt="Which key toggles the transcript viewer — the full scrollback of a session, tool calls included?"
+  options={[
+    { text: 'Ctrl+T', explanation: "That toggles Claude's task checklist." },
+    {
+      text: 'Ctrl+O',
+      correct: true,
+      explanation: 'Ctrl+O toggles the transcript viewer.',
+    },
+    { text: 'Shift+Tab', explanation: 'That cycles permission modes.' },
+    { text: 'Ctrl+R', explanation: 'That is reverse search over command history.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/first-session"
+  questionId="q2"
+  lang="en"
+  prompt="Claude is running a command and you realise your instruction was ambiguous. What is the least destructive way to steer it?"
+  options={[
+    {
+      text: 'Press Ctrl+C to stop it, then re-prompt from scratch.',
+      explanation: 'That interrupts the tool call in flight and throws away work in progress.',
+    },
+    {
+      text: 'Type the correction and press Enter — the message is queued and delivered without stopping the run.',
+      correct: true,
+      explanation: 'Esc is there for when you genuinely want the action to stop.',
+    },
+    {
+      text: 'Press Ctrl+D.',
+      explanation: 'That exits the session entirely.',
+    },
+    {
+      text: 'Wait until it finishes and start a new session.',
+      explanation: 'Workable, but it wastes the turn — steering mid-run is supported.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/first-session"
+  questionId="q3"
+  lang="en"
+  prompt="A task that works interactively stops in `claude -p` with a message about needing approval. Why?"
+  options={[
+    {
+      text: 'Headless mode cannot use tools at all.',
+      explanation: 'It uses tools freely — it just cannot display a permission prompt to anyone.',
+    },
+    {
+      text: 'A headless session has nobody to answer a permission prompt, so the tools it may use must be granted up front with --allowedTools (or a permission mode).',
+      correct: true,
+      explanation: 'This is the most common surprise when moving an interactive task to -p.',
+    },
+    {
+      text: 'The model is different in headless mode.',
+      explanation: 'The model is whatever --model (or your default) says; it is unrelated.',
+    },
+    {
+      text: 'ANTHROPIC_API_KEY must be set for -p.',
+      explanation: 'A subscription login works headlessly too.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l1-beginner/m01-start/first-session"
+  questionId="q4"
+  lang="en"
+  prompt="Which of these first tasks is best shaped for a first session?"
+  options={[
+    {
+      text: '"Make this repository faster."',
+      explanation: 'No scope and no check — neither of you can tell whether it worked.',
+    },
+    {
+      text: '"npm test fails with three failures. Find the cause, fix it in src/, and run npm test again to prove it passes."',
+      correct: true,
+      explanation: 'Symptom, scope and proof — and the proof is a command, not an opinion.',
+    },
+    {
+      text: '"Open src/store.ts, go to line 24, and change it to trim the title."',
+      explanation:
+        'That dictates the steps, which turns an agent into a slow macro — you may as well type it.',
+    },
+    {
+      text: '"Rewrite the API layer in a different framework."',
+      explanation: 'Large, unverifiable, and in no way a first session.',
+    },
+  ]}
+/>
+
+**Next:** `05-doctor-update-channels` keeps the install you just used healthy — diagnostics, updates and release channels.
