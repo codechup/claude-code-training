@@ -1,0 +1,100 @@
+# Captured 2026-09-07, Claude Code 2.1.263, in a clean clone of codechup/claude-code-lab at main (npm ci run, npm test green).
+# Command: claude -p "<line 4>" --model sonnet --max-turns 6 --output-format json --settings en.json --allowedTools Read,Grep,Glob
+# en.json is {"language": "English"} — this machine has "language": "Turkish" in its user settings; nothing else was overridden.
+› Goal: add a 'labtrack overdue' subcommand that lists only overdue tasks. Do not edit any file. Read src/store.ts and src/cli.ts, then output a numbered plan: for each step, the file it touches, the change, and the test that would prove it works. Stop after the plan.
+{
+  "duration_api_ms": 22314,
+  "stop_reason": "end_turn",
+  "session_id": "19a1c966-8d79-4ed2-a39a-9ecd1113367c",
+  "total_cost_usd": 0.0944608,
+  "usage": {
+    "input_tokens": 8,
+    "cache_creation_input_tokens": 11452,
+    "cache_read_input_tokens": 148384,
+    "output_tokens": 1896,
+    "output_tokens_details": {
+      "thinking_tokens": 508
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 11452,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 849,
+        "cache_read_input_tokens": 41148,
+        "cache_creation_input_tokens": 1085,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 1085
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard"
+  },
+  "modelUsage": {
+    "claude-sonnet-5": {
+      "inputTokens": 8,
+      "outputTokens": 1896,
+      "cacheReadInputTokens": 148384,
+      "cacheCreationInputTokens": 11452,
+      "webSearchRequests": 0,
+      "costUSD": 0.0944608,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "thinkingTokens": 508,
+      "canonicalModel": "claude-sonnet-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "is_error": false,
+  "num_turns": 5,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "Good — this confirms `isOverdue(task, now?)` already exists and is tested (B5). Here's the plan, no files touched.\n\n## Plan: `labtrack overdue` subcommand\n\n**1. `src/store.ts` — add a `listOverdue` query function**\n- Change: add an exported function, e.g. `listOverdue(now: () => number = Date.now): Task[]`, that filters `tasks` with `isOverdue(t, now)` and returns them sorted by `createdAt` (same ordering convention as `listTasks`). Keeps the business logic in the store, per `.claude/rules/style.md` (\"Keep the CLI thin\") and reuses the existing, already-tested `isOverdue` rather than duplicating its date logic.\n- Test (new case in `test/overdue.test.ts` or `test/store.test.ts`): using `vi.useFakeTimers()` (same pattern as the existing B5 test at `test/overdue.test.ts:37-49`), add 2-3 tasks — one overdue, one done-but-past-due, one due in the future — call `listOverdue()`, and assert only the genuinely-overdue task is returned. Proves the filter excludes done tasks and future-due tasks, and respects the injectable clock (no real-timer flakiness).\n\n**2. `src/cli.ts` — add `runOverdue` and register the `overdue` command**\n- Change:\n  - Export a thin wrapper `runOverdue()` that calls `listOverdue()` from `store.ts` (mirrors the existing `runList`/`runShow` pattern at `src/cli.ts:61-72`), so tests can call it directly without spawning a process.\n  - In `buildProgram()`, register `program.command(\"overdue\").action(...)` that calls `runOverdue()`, prints `\"(no tasks)\"` if empty (matching `list`'s behavior at `src/cli.ts:103-106`), otherwise prints each task with the existing `printTask` helper.\n  - Add the new import (`listOverdue` or whatever name is chosen) to the `from \"./store.ts\"` import block at the top.\n- Test (new case in a CLI test file, following the existing pattern used for `runList`): seed a couple of tasks via `addTask` with fixed dates/fake timers, call `runOverdue()` directly, and assert the returned array contains exactly the expected overdue task(s) in the expected order. Optionally a second assertion capturing `console.log` output to verify the `\"(no tasks)\"` path when nothing is overdue.\n\nNo files were modified — this is plan-only, as requested.",
+  "ttft_ms": 1628,
+  "type": "result",
+  "duration_ms": 27087,
+  "uuid": "766becde-66c1-45fb-8f4b-1c68c2610375",
+  "ttft_stream_ms": 1011,
+  "time_to_request_ms": 54,
+  "first_content_frame_ms": 1627,
+  "queued_turn_count": 0
+}

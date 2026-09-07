@@ -1,0 +1,303 @@
+---
+title: 'Constraints, acceptance criteria and proof'
+description: 'An agent stops when the work looks done. Constraints tell it where not to go, acceptance criteria tell it when to stop, and a demanded proof turns "it works" into output you can read. Prove all three with two headless runs of one small task.'
+level: 2
+module: 'm09-prompting'
+order: 2
+duration_min: 15
+difficulty: core
+tags: ['prompting', 'constraints', 'verification', 'evidence']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Best practices for Claude Code'
+    url: 'https://code.claude.com/docs/en/best-practices.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'How Claude Code works'
+    url: 'https://code.claude.com/docs/en/how-claude-code-works.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run Claude Code programmatically'
+    url: 'https://code.claude.com/docs/en/headless.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Separate the three things a good prompt carries: constraints (where not to go), acceptance criteria (when to stop), and the proof you want back.
+- Write a prompt whose "done" condition a machine can evaluate, not one you have to eyeball.
+- Ask for evidence — the command and its output — instead of accepting an assertion that the work succeeded.
+- Show, from two headless envelopes, that an unconstrained version of the same task burns its whole turn budget without finishing.
+
+**Prerequisites.** Lesson `01-task-decomposition` in this module, and a working `claude -p` run. The lab edits files, so you need a scratch clone you do not mind changing.
+
+<WhenNotToUse>
+  Constraints narrow the search. When you genuinely do not know what good looks like — you are
+  exploring an unfamiliar module, or you want to see how Claude reads the problem before you box it
+  in — piling on acceptance criteria just encodes your current guess and hides the alternatives. Ask
+  the open question first, then constrain the follow-up. Constraints also cost nothing to state and
+  everything to state wrongly: a criterion that is not actually true of your project ("all tests
+  must pass") will send the agent chasing pre-existing failures that have nothing to do with your
+  task.
+</WhenNotToUse>
+
+## Concept
+
+### The three things that are not the same
+
+It is easy to collapse these into "be specific". They do different jobs.
+
+| Element                 | Answers                | Failure when missing                                           |
+| ----------------------- | ---------------------- | -------------------------------------------------------------- |
+| **Constraint**          | Where must you not go? | Scope creep — files you did not want touched, a new dependency |
+| **Acceptance criteria** | When are you finished? | The agent stops when the work _looks_ done                     |
+| **Proof**               | What must you show me? | You get "it works" and have to re-run the check yourself       |
+
+The official guidance is blunt about the middle one: Claude stops when the work looks done, and without a check it can run, "looks done" is the only signal available — which makes _you_ the verification loop, so every mistake waits for you to notice it. Give it something that returns a pass or fail and the loop closes on its own.
+
+The third one is a separate ask. The docs put it plainly: have Claude show evidence rather than asserting success — the test output, the command it ran and what it returned, or a screenshot of the result. Reviewing evidence is faster than re-running the verification yourself, and it works for sessions you were not watching.
+
+### What counts as a check
+
+Anything that returns a signal Claude can read in the conversation: a test suite, a build exit code, a linter, a script that diffs output against a fixture, or a browser screenshot compared against a design. "It reads better now" is not a check. "`npm test` reports 16 passed" is.
+
+The docs also rank how hard the check gates the stop, from cheapest to most reliable: asking for the check in the same prompt; setting it as a `/goal` condition that a separate evaluator re-checks after every turn; a `Stop` hook that blocks the turn from ending until a script passes; or a second opinion from a verification subagent. Every step trades setup for attention. This lesson is about the first one, which works on any task today.
+
+### This lesson's example prompt
+
+```text
+Add exactly one test to test/overdue.test.ts: isOverdue must return false when
+the task has no dueDate. Constraints: follow the injectable-clock style already
+used in that file, change nothing under src/, add no new dependency.
+Then run 'npm test' and quote its final summary lines as proof the whole suite
+still passes.
+```
+
+Every clause earns its place. "Exactly one test" and the named file are the target. "Change nothing under `src/`" and "no new dependency" are the constraints — the two ways this task most plausibly goes wrong. "Follow the injectable-clock style already used in that file" points at an existing pattern instead of describing one, which the docs list as its own strategy. And the last sentence is the proof: not "make sure the tests pass", but _quote the summary lines_.
+
+## Hands-on lab
+
+<Callout>
+  This module has no lab-repo tags yet (`repo_tag: 'none'`), so the lab runs against a fresh clone
+  of the lab repository's `main` branch. Both runs below used `--permission-mode acceptEdits
+  --allowedTools "Read,Grep,Glob,Edit,Write,Bash"`, so the only difference between them is the
+  prompt.
+</Callout>
+
+<Lab
+  title="Lab · one test, written twice"
+  lessonId="en/l2-intermediate/m09-prompting/constraints-and-evidence"
+  repoTag="none"
+  steps={[
+    'In a scratch clone of the lab repository at `main`, run `npm ci` and confirm `npm test` reports 15 passed.',
+    'Run the unconstrained version: `claude -p "add a test for isOverdue" --model sonnet --max-turns 6 --output-format json --permission-mode acceptEdits --allowedTools "Read,Grep,Glob,Edit,Write,Bash"`',
+    'Reset the tree: `git checkout -- . && git clean -fd`.',
+    'Run the constrained version with the same flags and the prompt from the Concept section above.',
+    'Read `subtype`, `is_error` and `num_turns` in both envelopes, then read the `result` field of whichever run has one.',
+  ]}
+  expected='The unconstrained run ends with "is_error": true, "subtype": "error_max_turns" and no result field at all — it exhausted the six-turn budget. The constrained run reports "subtype": "success" in five turns and its result quotes the vitest summary: 4 test files passed, 16 tests passed — one more than the suite had before the run.'
+  checklist={[
+    'The unconstrained envelope has an `errors` array reading "Reached maximum number of turns (6)"',
+    'The unconstrained envelope has no `result` key — there is nothing to hand back',
+    'The constrained run’s result names the file it edited and states that nothing under `src/` changed',
+    'The constrained run’s result contains the real vitest summary, not the claim that tests pass',
+    'The suite gained exactly one test (run `npm test` before you start and compare the counts yourself)',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/02-constraints-and-evidence/01-weak.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/02-constraints-and-evidence/01-weak.txt"
+    range="104-111"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/02-constraints-and-evidence/02-strong.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/02-constraints-and-evidence/02-strong.txt"
+    range="87-94"
+  />
+</Lab>
+
+"Add a test for `isOverdue`" is not an unreasonable sentence to say to a colleague — and that is why it is worth running. The agent has to decide which of the function's behaviours is untested, which file the test belongs in, what style to match, and whether to run anything afterwards. Six turns of deciding produced `error_max_turns` and, crucially, **no `result` field at all**. A script consuming that envelope gets an exit code of 1 and nothing to read.
+
+The constrained run made the same decisions in advance, and its `result` ends with the block the docs ask for — the actual output:
+
+```text
+ Test Files  4 passed (4)
+      Tests  16 passed (16)
+```
+
+That block is the run’s own output, not a claim about it — which is the difference between "the tests pass" and evidence. Run `npm test` yourself before step 2 and you can compare the counts directly.
+
+<Callout>
+  The turn budget is a real constraint too. Six turns was enough for the constrained run and not
+  enough for the unconstrained one — so `--max-turns` is worth setting deliberately in scripts, and
+  worth raising before you conclude a prompt failed. Lesson `03-iterative-refinement` shows a case
+  where the same prompt fails at 6 turns and succeeds at 10.
+</Callout>
+
+### Setting the lab up, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```text
+# PowerShell 5.1 — statements separated with ; instead of &&
+git clone https://github.com/codechup/claude-code-lab.git; cd claude-code-lab; npm ci
+git checkout -- .; git clean -fd
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1 has no `&&` operator, so the same steps are separated with `;` there. Inside WSL, use the Linux commands.
+
+## Anti-patterns
+
+Items below that name a documentation page are sourced from it; the rest are this site's own observations (D080).
+
+**Asserting instead of proving.** Accepting "I added the test and everything passes" leaves you with a claim. _Fix:_ ask for the command and its output, and read the output.
+
+**A criterion nobody can evaluate.** "Make it robust", "handle edge cases properly", "production-ready" — none of these has a pass/fail. _Fix:_ name the case and the expected value: `isOverdue` returns `false` when `dueDate` is undefined.
+
+**Constraints that arrive after the diff.** Saying "oh, and don't touch `src/`" once the edits exist means a rewrite. _Fix:_ constraints go in the first prompt; they are cheap to state and expensive to retrofit.
+
+**Confusing a constraint with a criterion.** "Don't add dependencies" never tells the agent it is finished. A prompt made only of prohibitions has no stopping condition. _Fix:_ pair every set of constraints with at least one criterion.
+
+**A criterion that was already failing.** "All tests must pass" in a repository with a known-red test sends the agent off fixing something you did not ask about. _Fix:_ scope the criterion to the suite or file your change affects, or fix the red test first.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/constraints-and-evidence"
+  questionId="q1"
+  lang="en"
+  prompt="Why does the official guidance say to give Claude a check it can run?"
+  options={[
+    {
+      text: 'Because Claude cannot read test output.',
+      explanation: 'It can — that is precisely why a check works.',
+    },
+    {
+      text: 'Because Claude stops when the work looks done, and without a check "looks done" is the only signal — which makes you the verification loop.',
+      correct: true,
+      explanation: 'That is the docs’ own framing, almost word for word.',
+    },
+    {
+      text: 'Because tests reduce token usage.',
+      explanation: 'Running a check usually costs turns; it buys correctness, not tokens.',
+    },
+    {
+      text: 'Because permission modes require it.',
+      explanation: 'Permission modes govern approvals, not verification.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/constraints-and-evidence"
+  questionId="q2"
+  lang="en"
+  prompt="In the lab, the unconstrained run's envelope had no `result` key. What caused that?"
+  options={[
+    {
+      text: 'The tool allowlist blocked every tool.',
+      explanation: 'Both runs used the same allowlist and the same permission mode.',
+    },
+    {
+      text: 'It hit the six-turn ceiling: subtype error_max_turns, is_error true, and an errors array instead of a result.',
+      correct: true,
+      explanation: 'The run never reached a final answer, so there was nothing to put in `result`.',
+    },
+    {
+      text: 'JSON output omits the result field for edit tasks.',
+      explanation: 'The constrained run edited files too and still returned a result.',
+    },
+    {
+      text: 'The prompt asked for no output.',
+      explanation: 'It asked for a test; it just never finished deciding which one.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/constraints-and-evidence"
+  questionId="q3"
+  lang="en"
+  prompt="Which clause in this lesson's example prompt is the acceptance criterion?"
+  options={[
+    {
+      text: '"change nothing under src/"',
+      explanation: 'A constraint — it says where not to go, not when to stop.',
+    },
+    {
+      text: '"isOverdue must return false when the task has no dueDate"',
+      correct: true,
+      explanation: 'A stated behaviour with a pass/fail a test can evaluate.',
+    },
+    {
+      text: '"add no new dependency"',
+      explanation: 'Also a constraint.',
+    },
+    {
+      text: '"follow the injectable-clock style already used in that file"',
+      explanation: 'A pointer to an existing pattern — useful, but not a stopping condition.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/constraints-and-evidence"
+  questionId="q4"
+  lang="en"
+  prompt="Which of these gates the stop most strictly, per the best-practices page?"
+  options={[
+    {
+      text: 'Asking for the check in the same prompt.',
+      explanation: 'The cheapest option — it works today, but nothing enforces it.',
+    },
+    {
+      text: 'A Stop hook that runs your check as a script and blocks the turn from ending until it passes.',
+      correct: true,
+      explanation:
+        'A deterministic gate. Claude Code overrides the hook and ends the turn after 8 consecutive blocks.',
+    },
+    {
+      text: 'Putting the criterion in CLAUDE.md.',
+      explanation: 'CLAUDE.md instructions are advisory, not deterministic.',
+    },
+    {
+      text: 'Adding --max-turns.',
+      explanation: 'A budget ceiling, not a correctness gate.',
+    },
+  ]}
+/>
+
+**Next:** `03-iterative-refinement` — what to say on the second turn, when the first attempt is close but wrong.

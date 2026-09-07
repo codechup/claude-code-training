@@ -1,0 +1,305 @@
+---
+title: 'Iterative refinement without drift'
+description: 'The second prompt matters more than the first. Learn what a useful correction contains, why "that is not right, try again" costs a whole turn budget for nothing, and when to stop refining and start over with a clean context.'
+level: 2
+module: 'm09-prompting'
+order: 3
+duration_min: 15
+difficulty: core
+tags: ['prompting', 'refinement', 'course-correction', 'context']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Best practices for Claude Code'
+    url: 'https://code.claude.com/docs/en/best-practices.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'How Claude Code works'
+    url: 'https://code.claude.com/docs/en/how-claude-code-works.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run Claude Code programmatically'
+    url: 'https://code.claude.com/docs/en/headless.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Write a correction that carries the defect, the requirement and the check — rather than a verdict.
+- Recognise the point at which refining costs more than restarting, and act on it with `/clear`.
+- Use `Esc`, `Esc Esc` / `/rewind` and "undo that" to steer without losing the useful part of a session.
+- Reproduce a refinement loop headlessly with `--resume` and `--fork-session`, so two different second turns start from exactly the same first turn.
+
+**Prerequisites.** Lessons `01-task-decomposition` and `02-constraints-and-evidence` in this module. The lab resumes a session by id, so you need a `claude -p --output-format json` run whose `session_id` you can capture.
+
+<WhenNotToUse>
+  Refinement assumes the first attempt left something worth keeping. When the agent solved the wrong
+  problem outright, or when you have already corrected the same issue twice, the context is now full
+  of failed approaches and every further correction competes with them. The docs are explicit: after
+  two failed corrections, run <code>/clear</code> and write a better initial prompt that
+  incorporates what you learned. A clean session with a better prompt almost always outperforms a
+  long session with accumulated corrections.
+</WhenNotToUse>
+
+## Concept
+
+### A correction is a prompt, not a verdict
+
+"That's not right" tells the agent that its output failed some test it cannot see. It has your judgement and none of your reasons, so its only rational moves are to guess or to ask — and in an unattended run, asking ends the turn with nothing done.
+
+A useful correction has the same shape as a good first prompt, minus the parts already established:
+
+| Part                | What it carries                              |
+| ------------------- | -------------------------------------------- |
+| **The defect**      | What is actually wrong with what it produced |
+| **The requirement** | What must be true instead                    |
+| **The check**       | The command whose output will settle it      |
+
+You do not always know the defect — that is fine. You can still state the requirement and the check, and let the agent find the gap itself. The lab below does exactly that.
+
+### Steering, cheaply
+
+Interactively you have controls that a headless run does not, and the docs recommend reaching for them early: the best results come from tight feedback loops, and correcting quickly generally produces better solutions faster.
+
+- **`Esc`** stops Claude mid-action. Context is preserved, so you can redirect.
+- **`Esc Esc` or `/rewind`** opens the rewind menu: restore the previous conversation and code state, or summarize from a selected message.
+- **"Undo that"** has Claude revert its own changes.
+- **`/clear`** resets context between unrelated tasks.
+
+Typing a correction and pressing `Enter` without stopping the running tool also works — Claude reads it as soon as the current action completes and adjusts before deciding its next step.
+
+### Sunk-cost drift
+
+The failure this lesson is named after: you have invested twenty turns, so you keep refining rather than restarting, and each correction adds another failed approach to the context that the next correction has to compete with. The docs describe both the symptom and the threshold — if you have corrected Claude more than twice on the same issue in one session, the context is cluttered with failed approaches. Two is the number to remember.
+
+### This lesson's example prompt
+
+```text
+Not done yet. Two requirements: (1) 'labtrack list --json' must print valid JSON
+and nothing else on stdout. (2) Prove it: run the command and pipe stdout through
+node -e "JSON.parse(require('fs').readFileSync(0,'utf8'));console.log('parsed ok')",
+then quote the exact output you got.
+```
+
+Notice that it never says what is wrong. It states the requirement and hands over an executable check — which is enough, because the check can find the defect that you could not name.
+
+## Hands-on lab
+
+<Callout>
+  Both second turns below are forks of the **same** first turn (`--resume &lt;session id&gt;
+  --fork-session`), run against a working tree reset to the first turn's state. Only the wording of
+  the follow-up differs. This module has no lab-repo tags yet, so the lab runs on a fresh clone of
+  the lab repository's `main`.
+</Callout>
+
+<Lab
+  title="Lab · two second turns from one first turn"
+  lessonId="en/l2-intermediate/m09-prompting/iterative-refinement"
+  repoTag="none"
+  steps={[
+    'In a scratch clone of the lab repo at `main` (`npm ci` run), make the first pass and keep its session id: `claude -p "In src/cli.ts, add a --json option to the existing \'list\' command: when it is set, print JSON.stringify of the task array instead of the formatted lines. Edit src/cli.ts only." --model sonnet --max-turns 6 --output-format json --permission-mode acceptEdits --allowedTools "Read,Grep,Glob,Edit,Write,Bash"` — read `session_id` out of the envelope.',
+    'Snapshot the resulting tree so both follow-ups can start from it (`git add -A && git commit -m "first pass"`).',
+    'Fork the session with the vague correction: `claude -p "that\'s not right, try again" --resume "$session_id" --fork-session` plus the same model, turn, format and permission flags.',
+    'Reset the tree to the snapshot, then fork again with the specific correction from the Concept section above, same flags.',
+    'Compare the two envelopes. Then re-run the specific correction once more with `--max-turns 10` and compare that to its own six-turn run.',
+  ]}
+  expected="The first pass succeeds in 4 turns. The vague correction also reports success in 4 turns but changes nothing — its result is three clarifying questions. The specific correction hits the ceiling at --max-turns 6 (subtype error_max_turns) and, given --max-turns 10, finishes in 7 turns with the piped JSON.parse output quoted verbatim."
+  checklist={[
+    'Both follow-ups were forked from the same session id and the same tree state',
+    'The vague correction produced no edit and no verdict — only questions',
+    'The specific correction ran out of its six-turn budget before returning a result',
+    'The ten-turn run’s result quotes `parsed ok` and the raw JSON line it parsed',
+    'You can point at the exact field (`subtype`) that distinguishes "ran out of room" from "failed"',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/03-iterative-refinement/01-first-pass.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/03-iterative-refinement/01-first-pass.txt"
+    range="87-94"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/03-iterative-refinement/02-weak-refinement.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/03-iterative-refinement/02-weak-refinement.txt"
+    range="124-131"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/03-iterative-refinement/03-strong-refinement.txt"
+    range="87-94"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/03-iterative-refinement/04-strong-refinement-10-turns.txt"
+    range="87-94"
+  />
+</Lab>
+
+Three things in those recordings are worth stopping on.
+
+**The vague correction returned questions, not code.** Its `result` lists three readings of "that's not right" — which array, which format, which empty-case behaviour — and says it does not want to guess and rework the wrong thing. That is the correct behaviour and a wasted turn: in a headless run there is nobody to answer, and four turns bought you a clarifying question you could have answered in the prompt.
+
+**The recording mentions a commit that is not the agent's.** The vague run's result begins by noting that the `tmp first pass` commit is not its own, since it never ran `git commit`. That commit is the snapshot from step 2 of the lab — the harness that lets both follow-ups start from identical state. It is left in the transcript because a captured session is never edited to look tidier (D070, D093); it is also a genuine lesson in how much of your environment an agent notices.
+
+**Running out of turns is not failing.** The specific correction hit `error_max_turns` at `--max-turns 6`: it exhausted the budget before returning a result, so its envelope carries an `errors` array and no `result`. The same fork with `--max-turns 10` finished in seven turns — two more than the ceiling that had stopped it — and quoted the check’s output:
+
+```text
+parsed ok
+```
+
+along with the raw `list --json` line it had parsed. Before you conclude a correction was wrong, check whether it simply ran out of room: `subtype` tells you which happened.
+
+### Setting the lab up, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```text
+# PowerShell 5.1 — statements separated with ; instead of &&
+git clone https://github.com/codechup/claude-code-lab.git; cd claude-code-lab; npm ci
+git checkout -- .; git clean -fd
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1 has no `&&` operator, so the same steps are separated with `;` there. Inside WSL, use the Linux commands.
+
+## Anti-patterns
+
+Items below that name a documentation page are sourced from it; the rest are this site's own observations (D080).
+
+**Correcting with a verdict.** "Nope", "still wrong", "try again" transfer your conclusion and none of your evidence. _Fix:_ state the requirement and the check even when you cannot name the defect.
+
+**Refining past the second correction.** Three corrections on the same issue means the context now contains three failed approaches, and each one competes with your next instruction. _Fix:_ `/clear` and rewrite the initial prompt with what you learned.
+
+**Re-reading the whole file in every follow-up.** Pasting the current state back into a follow-up doubles the context for information the session already holds. _Fix:_ refer to what changed; the session remembers the rest.
+
+**Treating `error_max_turns` as a bad answer.** A run stopped by its own ceiling looks like a failed prompt and is not one. _Fix:_ read `subtype`, raise `--max-turns`, and re-run before you rewrite anything.
+
+**Refining a task that should have been restarted.** If the first attempt solved a different problem, no correction repairs the framing. _Fix:_ `/rewind` or `/clear`, and write the prompt you should have written.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/iterative-refinement"
+  questionId="q1"
+  lang="en"
+  prompt="After how many failed corrections on the same issue do the docs recommend clearing context and starting over?"
+  options={[
+    { text: 'One.', explanation: 'A single correction is normal and usually productive.' },
+    {
+      text: 'Two.',
+      correct: true,
+      explanation:
+        'After two failed corrections, /clear and write a better initial prompt incorporating what you learned.',
+    },
+    { text: 'Five.', explanation: 'By then the context is dominated by failed approaches.' },
+    {
+      text: 'Never — refining always beats restarting.',
+      explanation:
+        'The docs say the opposite: a clean session with a better prompt almost always wins.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/iterative-refinement"
+  questionId="q2"
+  lang="en"
+  prompt="In the lab, the vague correction reported subtype: success. Why is that not a good outcome?"
+  options={[
+    {
+      text: 'Because success always means the tests failed.',
+      explanation: 'subtype: success only means the run reached a final answer.',
+    },
+    {
+      text: 'Because the run finished cleanly while producing no change — the answer was a set of clarifying questions nobody was there to answer.',
+      correct: true,
+      explanation: 'A clean exit and a useful outcome are different things.',
+    },
+    {
+      text: 'Because it forked the session.',
+      explanation: 'Both follow-ups forked; that was the controlled part of the experiment.',
+    },
+    {
+      text: 'Because it used more turns than the specific correction.',
+      explanation: 'It used fewer — four against seven.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/iterative-refinement"
+  questionId="q3"
+  lang="en"
+  prompt="You want two different second turns to start from exactly the same first turn. Which flags do that?"
+  options={[
+    {
+      text: '--resume <session id> --fork-session',
+      correct: true,
+      explanation:
+        'Forking copies the history into a new session id, leaving the original unchanged, so both branches share one starting point.',
+    },
+    {
+      text: '--continue twice',
+      explanation:
+        '--continue appends to the same conversation, so the second follow-up would see the first.',
+    },
+    {
+      text: '--output-format stream-json',
+      explanation: 'An output format, not a session control.',
+    },
+    { text: '--max-turns 10', explanation: 'A turn budget, unrelated to session branching.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/iterative-refinement"
+  questionId="q4"
+  lang="en"
+  prompt="Which correction is most likely to make progress without you knowing the defect?"
+  options={[
+    { text: '"That output is wrong."', explanation: 'A verdict with no requirement and no check.' },
+    {
+      text: '"list --json must print valid JSON and nothing else; prove it by piping stdout through JSON.parse and quoting the output."',
+      correct: true,
+      explanation: 'The check finds the defect for you.',
+    },
+    {
+      text: '"Please be more careful this time."',
+      explanation: 'Carries no information the agent can act on.',
+    },
+    {
+      text: '"Read the whole repository again and think harder."',
+      explanation: 'Unbounded exploration — the infinite-exploration failure pattern.',
+    },
+  ]}
+/>
+
+**Next:** `04-prompt-library` — the patterns other people already wrote down, and how to adapt them to your project.

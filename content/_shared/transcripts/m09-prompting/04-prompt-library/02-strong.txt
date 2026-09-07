@@ -1,0 +1,100 @@
+# Captured 2026-09-07, Claude Code 2.1.263, in a clean clone of codechup/claude-code-lab at main (npm ci run, npm test green).
+# Command: claude -p "<line 4>" --model sonnet --max-turns 6 --output-format json --settings en.json --allowedTools Read,Grep,Glob
+# en.json is {"language": "English"} — this machine has "language": "Turkish" in its user settings; nothing else was overridden.
+› explain what src/store.ts does and how data flows through it. write it up as a markdown table of exported functions with their inputs, what they mutate, and their callers
+{
+  "duration_api_ms": 31036,
+  "stop_reason": "end_turn",
+  "session_id": "91baa2e6-1b89-4c98-bc6b-f40bfa2466e0",
+  "total_cost_usd": 0.1141242,
+  "usage": {
+    "input_tokens": 10,
+    "cache_creation_input_tokens": 12365,
+    "cache_read_input_tokens": 188121,
+    "output_tokens": 2702,
+    "output_tokens_details": {
+      "thinking_tokens": 958
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 12365,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 1986,
+        "cache_read_input_tokens": 42781,
+        "cache_creation_input_tokens": 365,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 365
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard"
+  },
+  "modelUsage": {
+    "claude-sonnet-5": {
+      "inputTokens": 10,
+      "outputTokens": 2702,
+      "cacheReadInputTokens": 188121,
+      "cacheCreationInputTokens": 12365,
+      "webSearchRequests": 0,
+      "costUSD": 0.1141242,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "thinkingTokens": 958,
+      "canonicalModel": "claude-sonnet-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "is_error": false,
+  "num_turns": 5,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "## `src/store.ts` overview\n\nIt's the single source of truth for task data: an in-memory array (`tasks: Task[]`) plus pure/near-pure functions to read, mutate, and (de)persist it. `src/cli.ts` and `src/api/server.ts` never touch `tasks` directly — they only call these exports, per the \"thin wrappers\" convention in `.claude/CLAUDE.md`.\n\n**Data flow:** on CLI startup, `loadFromDisk` reads the JSON file and `replaceAllTasks` hydrates the in-memory array; the API has no such hydration step, so it starts with an empty store each run. Mutating calls (`addTask`, `markDone`, `removeTask`) change `tasks` in place; the CLI then re-reads the current state via `listTasks` and calls `saveToDisk` to persist it. Read-only calls (`listTasks`, `getTask`, `paginate`, `isOverdue`) never touch disk.\n\n| Function | Input | Mutates | Callers |\n|---|---|---|---|\n| `resetTasks()` | — | Empties `tasks` | Test suite only (per-test setup/teardown) |\n| `replaceAllTasks(items)` | `items: Task[]` | Replaces `tasks` contents | `cli.ts` `loadStateForCli` (startup hydration) |\n| `addTask(input)` | `{ title, priority?, dueDate? }` | Pushes a new `Task` onto `tasks` | `cli.ts` `runAdd`; `api/server.ts` `POST /tasks` |\n| `listTasks(opts?)` | `{ status?: \"all\"\\|\"open\"\\|\"done\" }` | None (reads `tasks`, returns a new sorted array) | `cli.ts` `runAdd` (to get the full list to save), `runList`; `api/server.ts` `GET /tasks` |\n| `paginate(items, page, pageSize)` | generic array + page/pageSize | None | `cli.ts` `runList`; `api/server.ts` `GET /tasks` |\n| `getTask(id)` | `id: string` | None | `cli.ts` `runShow`; `api/server.ts` `GET /tasks/:id`, `POST /tasks/:id/render-note` |\n| `markDone(id)` | `id: string` | Sets `task.done = true` on the matching item in `tasks` | `cli.ts` `done` command; `api/server.ts` `POST /tasks/:id/done` |\n| `removeTask(id)` | `id: string` | Splices the matching item out of `tasks` | `cli.ts` `rm` command |\n| `isOverdue(task, now?)` | a `Task` + injectable clock fn | None | `cli.ts` `runShow`; `api/server.ts` `GET /tasks/:id` |\n| `saveToDisk(items, file, persister?)` | `Task[]`, file path, `Persister` | Writes to disk (via `persister.write`); doesn't touch `tasks` | `cli.ts` `runAdd`, `done`, `rm` commands |\n| `loadFromDisk(file, persister?)` | file path, `Persister` | None (reads disk) | `cli.ts` `loadStateForCli` |\n\nNote: `api/server.ts` never calls `saveToDisk`/`loadFromDisk` — its store is in-memory-only per process (no persistence wiring on the HTTP side).",
+  "ttft_ms": 1687,
+  "type": "result",
+  "duration_ms": 37138,
+  "uuid": "5f837c4d-09a3-4d65-9e68-6199f6d10fd2",
+  "ttft_stream_ms": 1119,
+  "time_to_request_ms": 57,
+  "first_content_frame_ms": 1684,
+  "queued_turn_count": 0
+}

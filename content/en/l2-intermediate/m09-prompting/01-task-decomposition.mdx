@@ -1,0 +1,303 @@
+---
+title: 'Decompose a task into verifiable steps'
+description: 'A goal an agent can verify beats a goal it has to guess at. Learn to split work into steps that each name a file and a check, ask for the plan before the diff, and prove the difference with two headless runs of the same task.'
+level: 2
+module: 'm09-prompting'
+order: 1
+duration_min: 15
+difficulty: core
+tags: ['prompting', 'planning', 'decomposition']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Best practices for Claude Code'
+    url: 'https://code.claude.com/docs/en/best-practices.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'How Claude Code works'
+    url: 'https://code.claude.com/docs/en/how-claude-code-works.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Common workflows'
+    url: 'https://code.claude.com/docs/en/common-workflows.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Choose a permission mode'
+    url: 'https://code.claude.com/docs/en/permission-modes.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Turn a one-line request into a numbered set of steps that each name a file, a change and a check.
+- Decide when to ask for a plan first and when planning is pure overhead.
+- Enter plan mode deliberately, from a keybinding or from the command line.
+- Run the same task twice — once with a vague prompt, once with a decomposed one — and read the difference out of a `claude -p --output-format json` envelope instead of arguing about it.
+
+**Prerequisites.** You can run `claude` in a project directory and you have seen a headless run (`claude -p`) at least once — L1 `m01-start` covers both. You do not need the course lab repository checked out at a tag: this module has no lesson tags yet, so its labs run against a fresh clone of the lab repo's `main` branch.
+
+<WhenNotToUse>
+  Decomposition costs you the time it takes to write the steps, and it narrows what Claude will
+  consider. Skip it when the scope is clear and the fix is small — the docs say plainly that if you
+  could describe the diff in one sentence, skip the plan. Skip it too when you are exploring rather
+  than building: a deliberately open prompt like "what would you improve in this file?" surfaces
+  things you would not have thought to ask about, and a decomposed version of that prompt can only
+  return the answers you already imagined.
+</WhenNotToUse>
+
+## Concept
+
+### Why an agent needs steps, not a wish
+
+Claude Code works a loop: **gather context, take action, verify results**, repeating until the task is done. The loop needs two things from you that a chat window does not: something concrete to act on, and something to check the action against. A request like "improve the task tracker" gives it neither. The model can gather context all day and never reach a point where it can say the work is finished.
+
+The official guidance names the two halves separately. "Give Claude a way to verify its work" is about the check; "Provide specific context in your prompts" is about the target. Decomposition is what you do when a task is too big to satisfy both in one sentence — you cut it into pieces that each have a target and a check.
+
+A decomposed step has three parts:
+
+| Part   | Question it answers           | Example                                                   |
+| ------ | ----------------------------- | --------------------------------------------------------- |
+| Target | Which file or symbol changes? | `src/store.ts`, the `listTasks` filter                    |
+| Change | What is different afterwards? | accepts a new `"overdue"` status value                    |
+| Check  | What proves it worked?        | a new case in `test/store.test.ts` with an injected clock |
+
+If a step cannot name a check, it is not a step yet — it is a wish, and it belongs in the plan-first phase below.
+
+### Ask for the plan before the diff
+
+The docs recommend a four-phase workflow: **explore, plan, implement, commit**. The first two happen in plan mode, where Claude reads files and proposes a plan but makes no edits until you approve. Enter it by pressing `Shift+Tab` until the status bar shows `⏸ plan mode on`, or start the session with `claude --permission-mode plan`.
+
+Plan mode is the interactive route. The route this lesson's lab uses is simpler and works anywhere: ask for the plan in the prompt itself, and forbid edits in the same breath. "Do not edit any file … output a numbered plan … stop after the plan" is a decomposition request that a headless run can satisfy and that you can read in one screen.
+
+Planning is most useful when you are uncertain about the approach, when the change spans several files, or when you do not know the code being modified. Those three conditions are also exactly when decomposition pays for itself.
+
+### This lesson's example prompt
+
+```text
+Goal: add a 'labtrack overdue' subcommand that lists only overdue tasks.
+Do not edit any file. Read src/store.ts and src/cli.ts, then output a numbered
+plan: for each step, the file it touches, the change, and the test that would
+prove it works. Stop after the plan.
+```
+
+Read it against the table above: the goal is one sentence, the boundary (`do not edit`) is explicit, the entry points are named so exploration cannot sprawl, and the output shape — file, change, test, per step — forces every step to carry its own check.
+
+## Hands-on lab
+
+<Callout>
+  `m09-prompting` has no lab-repo tags yet, so this module's frontmatter carries `repo_tag: 'none'`
+  and its labs run against a fresh clone of the lab repository's `main` branch, where `npm test` is
+  green. Every transcript below was captured that way.
+</Callout>
+
+<Lab
+  title="Lab · the same task, a vague prompt and a decomposed one"
+  lessonId="en/l2-intermediate/m09-prompting/task-decomposition"
+  repoTag="none"
+  steps={[
+    'Clone the lab repository into a scratch directory and install it: `git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci`. Confirm `npm test` is green before you start.',
+    'Run the vague prompt headlessly and keep the whole envelope: `claude -p "improve the task tracker" --model sonnet --max-turns 6 --output-format json --allowedTools "Read,Grep,Glob"`',
+    'Reset the working tree (`git checkout -- . && git clean -fd`) so the second run starts from the same state.',
+    'Run the decomposed prompt with every other flag identical: `claude -p "Goal: add a \'labtrack overdue\' subcommand that lists only overdue tasks. Do not edit any file. Read src/store.ts and src/cli.ts, then output a numbered plan: for each step, the file it touches, the change, and the test that would prove it works. Stop after the plan." --model sonnet --max-turns 6 --output-format json --allowedTools "Read,Grep,Glob"`',
+    'Compare the two envelopes field by field — `num_turns`, `subtype`, and above all `result`. Ask of each result: could I hand this to someone and have them start work?',
+  ]}
+  expected="Both runs report subtype: success and num_turns: 5. The vague run spends those turns orienting and ends by asking you which direction you meant — a question a headless run can never answer. The decomposed run ends with a numbered plan naming src/store.ts and src/cli.ts, the change in each, and the test that would prove each step."
+  checklist={[
+    'Both runs used the same model, turn budget, tool allowlist and starting tree',
+    'The vague run’s `result` contains a question back to you, not a plan',
+    'The decomposed run’s `result` names a file, a change and a test for every step',
+    'You noticed `num_turns` is the same for both — the difference is in the result, not the effort',
+    'Neither run modified a file (`git status` is clean)',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/01-task-decomposition/01-weak.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/01-task-decomposition/01-weak.txt"
+    range="110-117"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/01-task-decomposition/02-strong.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/01-task-decomposition/02-strong.txt"
+    range="87-94"
+  />
+</Lab>
+
+The two envelopes report the same `num_turns` — five apiece. That is the point worth keeping. Decomposition did not make the run cheaper or shorter; it made the five turns land somewhere useful. The vague run read the repository, correctly worked out that `main` is the clean baseline, and then stopped to ask which of three directions you meant. In a terminal you would answer. In a `-p` run, nobody is there, and the turn budget is simply spent.
+
+The decomposed run's `result` is a plan you could hand to a colleague: a `listOverdue` query in `src/store.ts` reusing the existing `isOverdue`, a thin `runOverdue` wrapper plus a registered `overdue` command in `src/cli.ts`, and for each of them the test that would prove it — with the existing fake-timer pattern in `test/overdue.test.ts` named as the model to follow. Nothing was edited, exactly as the prompt required.
+
+Both envelopes also record a `permission_denials` array. The vague run has two entries in it, both `Bash` calls trying to run `npm test` — the allowlist for this lab was `Read,Grep,Glob`, so they were denied. That is worth noticing for two reasons: the run reached for a check nobody had asked it for, and the transcript shows the denial rather than hiding it, so you can always tell what a run tried to do and was stopped from doing.
+
+### Setting the lab up, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```text
+# PowerShell 5.1 — statements separated with ; instead of &&
+git clone https://github.com/codechup/claude-code-lab.git; cd claude-code-lab; npm ci
+git checkout -- .; git clean -fd
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1 has no `&&` operator, so the same steps are separated with `;` there. Inside WSL, use the Linux commands.
+
+### Entering plan mode instead
+
+When you are working interactively rather than headlessly, plan mode does the same job with less typing.
+
+`claude --permission-mode plan` starts a session in it, on every platform. Mid-session, press `Shift+Tab` until the status bar shows `⏸ plan mode on`; `Ctrl+G` opens the proposed plan in your editor so you can cut steps before Claude proceeds.
+
+## Anti-patterns
+
+Items below that name a documentation page are sourced from it; the rest are this site's own observations (D080).
+
+**Asking for an improvement instead of a change.** "Improve the task tracker", "clean this up", "make it better" — the agent has no target and no check, so it either guesses or asks. _Fix:_ name the behaviour that should be different afterwards.
+
+**Decomposing into steps with no checks.** A numbered list is not a decomposition if the numbers are just phases ("1. understand the code 2. write the code 3. test"). _Fix:_ every step names a file, a change and the check that proves it.
+
+**Planning a one-line change.** Plan mode and plan-first prompts add a round trip. On a typo, a log line or a rename they buy nothing. _Fix:_ if you could describe the diff in one sentence, ask for the diff.
+
+**Leaving the exploration unbounded.** "Read the codebase, then plan" invites the agent to read everything; the docs call this the infinite exploration failure. _Fix:_ name the entry points — `src/store.ts` and `src/cli.ts` in this lesson's prompt — or delegate the exploration to a subagent.
+
+**Letting the plan drift into edits.** Without an explicit boundary, a plan request often ends with files already changed, and you lose the review step you asked for. _Fix:_ say "do not edit any file" and "stop after the plan", or use plan mode, which enforces it.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/task-decomposition"
+  questionId="q1"
+  lang="en"
+  prompt="Which of these is a properly decomposed step?"
+  options={[
+    {
+      text: 'Understand how the task store works.',
+      explanation: 'No change and no check — this is a phase, not a step.',
+    },
+    {
+      text: 'Add a listOverdue() query to src/store.ts that filters with the existing isOverdue, proven by a new case in test/overdue.test.ts using the injected clock.',
+      correct: true,
+      explanation: 'Target, change and check, all three named.',
+    },
+    {
+      text: 'Improve the overdue handling.',
+      explanation: 'No target and nothing to verify against.',
+    },
+    {
+      text: 'Make the CLI thinner.',
+      explanation: 'A direction, not a change; there is no way to tell when it is done.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/task-decomposition"
+  questionId="q2"
+  lang="en"
+  prompt="According to the official best-practices guidance, when should you skip planning?"
+  options={[
+    {
+      text: 'Whenever the change touches more than one file.',
+      explanation: 'That is when planning helps most, not least.',
+    },
+    {
+      text: 'When you are unfamiliar with the code being modified.',
+      explanation: 'Also a case for planning, not against it.',
+    },
+    {
+      text: 'When the scope is clear and the fix is small — if you could describe the diff in one sentence.',
+      correct: true,
+      explanation: 'The docs give exactly that rule of thumb.',
+    },
+    {
+      text: 'Never — plan mode should be on for every session.',
+      explanation: 'The docs are explicit that plan mode adds overhead.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/task-decomposition"
+  questionId="q3"
+  lang="en"
+  prompt="In the lab, both runs reported num_turns: 5. What does that tell you?"
+  options={[
+    {
+      text: 'The two prompts were equally good.',
+      explanation: 'The results differ completely; only the turn count matched.',
+    },
+    {
+      text: 'Turn count measures effort spent, not whether the effort produced something usable — the result field is the evidence.',
+      correct: true,
+      explanation:
+        'The vague run spent five turns to arrive at a question; the decomposed run spent five to arrive at a plan.',
+    },
+    {
+      text: 'The decomposed prompt hit the turn limit.',
+      explanation: 'Neither run did; both reported subtype: success.',
+    },
+    {
+      text: 'The vague prompt was cheaper.',
+      explanation:
+        'Cost is reported separately in total_cost_usd, and a wasted run is not a saving.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/task-decomposition"
+  questionId="q4"
+  lang="en"
+  prompt="How do you enter plan mode?"
+  options={[
+    {
+      text: 'Press Shift+Tab until the status bar shows ⏸ plan mode on, or start with claude --permission-mode plan.',
+      correct: true,
+      explanation: 'Both routes are documented in the permission-modes reference.',
+    },
+    {
+      text: 'Run /plan-mode on.',
+      explanation: 'Not a documented command for entering the mode.',
+    },
+    {
+      text: 'Pass --output-format plan.',
+      explanation: 'Output formats are text, json and stream-json.',
+    },
+    {
+      text: 'Set draft: true in CLAUDE.md.',
+      explanation: 'CLAUDE.md holds project context, not permission modes.',
+    },
+  ]}
+/>
+
+**Next:** `02-constraints-and-evidence` takes the other half of the pair — what to say so the agent knows when it is finished, and how to make it show you the proof.

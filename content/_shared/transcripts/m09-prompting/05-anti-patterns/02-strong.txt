@@ -1,0 +1,100 @@
+# Captured 2026-09-07, Claude Code 2.1.263, in a clean clone of codechup/claude-code-lab at main (npm ci run, npm test green).
+# Command: claude -p "<line 4>" --model sonnet --max-turns 6 --output-format json --settings en.json --allowedTools Read,Grep,Glob
+# en.json is {"language": "English"} — this machine has "language": "Turkish" in its user settings; nothing else was overridden.
+› Scope: src/api/server.ts only. List every HTTP route it defines as a markdown table with method, path, and the status codes it can return. Do not read any other file, and do not suggest changes.
+{
+  "duration_api_ms": 7570,
+  "stop_reason": "end_turn",
+  "session_id": "609be5ca-4fab-412f-8248-eb5a044ff1ec",
+  "total_cost_usd": 0.049330399999999996,
+  "usage": {
+    "input_tokens": 4,
+    "cache_creation_input_tokens": 7716,
+    "cache_read_input_tokens": 66692,
+    "output_tokens": 512,
+    "output_tokens_details": {
+      "thinking_tokens": 25
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 7716,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 356,
+        "cache_read_input_tokens": 35911,
+        "cache_creation_input_tokens": 2586,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 2586
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard"
+  },
+  "modelUsage": {
+    "claude-sonnet-5": {
+      "inputTokens": 4,
+      "outputTokens": 512,
+      "cacheReadInputTokens": 66692,
+      "cacheCreationInputTokens": 7716,
+      "webSearchRequests": 0,
+      "costUSD": 0.049330399999999996,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "thinkingTokens": 25,
+      "canonicalModel": "claude-sonnet-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "permission_denials": [],
+  "terminal_reason": "completed",
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "subagent_stats": {
+    "spawned": 0,
+    "requested": {
+      "background": 0,
+      "foreground": 0,
+      "unset": 0
+    },
+    "started_in_background": 0,
+    "max_depth": 0,
+    "spawned_by_subagents": 0,
+    "completed": 0,
+    "failed": 0,
+    "killed": {
+      "parent": 0,
+      "user": 0,
+      "system": 0
+    },
+    "refused": {
+      "depth_limit": 0,
+      "concurrency_limit": 0,
+      "budget": 0
+    },
+    "by_type": {}
+  },
+  "is_error": false,
+  "num_turns": 2,
+  "subtype": "success",
+  "api_error_status": null,
+  "result": "| Method | Path | Status Codes |\n|---|---|---|\n| GET | `/` | 200 |\n| GET | `/health` | 200 |\n| GET | `/tasks` | 200, 400, 500 |\n| POST | `/tasks` | 201, 400, 500 |\n| GET | `/tasks/:id` | 200, 404, 500 |\n| POST | `/tasks/:id/done` | 200, 400, 404*, 500 |\n| POST | `/tasks/:id/render-note` | 200, 404, 400, 500 |\n| * (unmatched) | any other path | 404 |\n\nNotes:\n- `500` comes from the generic `catch` for any unhandled error; `400` comes from `InvalidTaskError` being caught there.\n- On `POST /tasks/:id/done`, a missing task isn't explicitly checked before `markDone` is called, so a 404 (via a thrown error caught as 400/500) depends on `markDone`'s behavior in `store.ts` — not read per scope restriction, so its exact status is unconfirmed from this file alone.",
+  "ttft_ms": 1873,
+  "type": "result",
+  "duration_ms": 9894,
+  "uuid": "74ea75c3-3030-4975-8c68-42a884ffaee8",
+  "ttft_stream_ms": 1200,
+  "time_to_request_ms": 62,
+  "first_content_frame_ms": 1486,
+  "queued_turn_count": 0
+}

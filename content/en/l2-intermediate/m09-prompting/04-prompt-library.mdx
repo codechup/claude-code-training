@@ -1,0 +1,305 @@
+---
+title: 'Prompt library patterns, adapted'
+description: 'The official prompt library is 52 copy-paste prompts organised by phase and task, most of them templates with slots. Learn to read the pattern behind a template, fill its slots for your project, and see what filling them buys you.'
+level: 2
+module: 'm09-prompting'
+order: 4
+duration_min: 15
+difficulty: core
+tags: ['prompting', 'prompt-library', 'patterns', 'templates']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Prompt library'
+    url: 'https://code.claude.com/docs/en/prompt-library.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Common workflows'
+    url: 'https://code.claude.com/docs/en/common-workflows.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Best practices for Claude Code'
+    url: 'https://code.claude.com/docs/en/best-practices.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Navigate the official prompt library by phase and category, and say where its prompts come from.
+- Read a templated prompt as a pattern — a verb, a target slot and an output-shape slot — rather than as a sentence to copy.
+- Fill a template's slots for your own project without losing the part that made it work.
+- Show, from two headless runs, what the filled template buys over the bare verb.
+
+**Prerequisites.** Lessons `01`–`03` of this module. Some familiarity with a codebase you can point a prompt at.
+
+<WhenNotToUse>
+  A library prompt is a starting point that someone else's project shaped. Do not reach for one when
+  your task is genuinely specific to your codebase — the closest-matching template will quietly push
+  you toward the task it was written for. And never paste a template with its example slot values
+  still in it: <code>src/scheduler/queue.ts</code> is the library's placeholder, not a file in your
+  repository, and a prompt naming a file that does not exist starts the session with a contradiction
+  to resolve.
+</WhenNotToUse>
+
+## Concept
+
+### What the library actually is
+
+The prompt library is a page of **copy-paste prompts for Claude Code, tagged by task and role**. As verified on 2026-09-07 it carries **52 prompts**, grouped into five software-lifecycle phases — Discover, Design, Build, Ship, Operate — and then by category within each: Onboard, Understand, Plan, Prototype, Implement, Test, Refactor, Review, Steer, Git, Release, Debug, Incident, Data, Automate. Some are additionally tagged for non-engineering roles (pm, design, docs, marketing, data, ops, security).
+
+Each entry also records where it came from. Counted on 2026-09-07 the breakdown is: Common workflows 23, an Anthropic teams-usage article 13, Best practices 10, and six more from three smaller sources. A library prompt is therefore usually a workflow recipe compressed into one line, which is why Common workflows and Best practices are cited alongside the library here.
+
+### The anatomy of a template
+
+Most entries are not fixed sentences. They contain **slots**, written in braces, with an example value attached. Here is one, verbatim from the library:
+
+```text
+explain what {path} does and how data flows through it. write it up as {format}
+```
+
+with the library's own example slot values `path: src/scheduler/queue.ts` and `format: an HTML page with a diagram, then open it in my browser`.
+
+Three things are doing work, and it is worth naming them separately:
+
+| Element             | In this template                | Why it matters                                               |
+| ------------------- | ------------------------------- | ------------------------------------------------------------ |
+| A verb with a scope | `explain what {path} does`      | Bounds the exploration to one file instead of the repository |
+| A second question   | `and how data flows through it` | Asks for relationships, not just a description               |
+| An output shape     | `write it up as {format}`       | Fixes the form of the answer, so the result is usable as-is  |
+
+The pattern generalises past this one entry: **verb + bounded target + explicit output shape**. That is the shape you are borrowing. The words are incidental.
+
+### Adapting rather than copying
+
+Filling slots well means substituting _your_ values for all three parts:
+
+- **Target:** a real path in your repository. `src/store.ts`, not the library's `src/scheduler/queue.ts`.
+- **Output shape:** something you can act on. The library suggests an HTML page with a diagram; if you only want to read the answer in your terminal, ask for a markdown table and say what its columns are.
+- **Anything the library could not know:** your project's conventions, the constraint that matters here, the reviewer you are writing for.
+
+Other entries reward the same reading. `where do we {behavior}?` is a search bounded by domain language. `what would break if I deleted {target}?` is an impact analysis with a built-in stopping condition. `look through the commit history of {path} and summarize how it evolved and why` points at a source — the git history — rather than asking the model to speculate, which the best-practices page lists as its own strategy.
+
+### This lesson's example prompt
+
+```text
+explain what src/store.ts does and how data flows through it. write it up as a
+markdown table of exported functions with their inputs, what they mutate, and
+their callers
+```
+
+Every slot is filled with something real: a file that exists, and an output shape whose columns are named. The columns are the interesting part — "what they mutate" and "their callers" are questions about the file's relationships, and naming them as columns forces the answer to contain them.
+
+## Hands-on lab
+
+<Callout>
+  This module has no lab-repo tags yet (`repo_tag: 'none'`), so the lab runs against a fresh clone
+  of the lab repository's `main` branch. Both runs are read-only: `--allowedTools "Read,Grep,Glob"`,
+  same model, same six-turn budget.
+</Callout>
+
+<Lab
+  title="Lab · the bare verb against the filled template"
+  lessonId="en/l2-intermediate/m09-prompting/prompt-library"
+  repoTag="none"
+  steps={[
+    'In a scratch clone of the lab repository at `main` (`npm ci` run), open the prompt library and find the "Explain unfamiliar code" entry under Discover · Understand. Note its two slots.',
+    'Run the bare verb first: `claude -p "explain the code" --model sonnet --max-turns 6 --output-format json --allowedTools "Read,Grep,Glob"`',
+    'Fill the template for this repository and run it with identical flags: `claude -p "explain what src/store.ts does and how data flows through it. write it up as a markdown table of exported functions with their inputs, what they mutate, and their callers" …`',
+    'Compare `subtype`, `is_error` and `num_turns`, then read the `result` of whichever run produced one.',
+    'Repeat with a second library template of your choice — `what would break if I deleted {target}?` is a good one — and check whether the same pattern holds.',
+  ]}
+  expected='The bare verb exhausts the six-turn budget: "is_error": true, "subtype": "error_max_turns", no result field. The filled template returns in five turns with a markdown table of src/store.ts’s exports, their inputs, what each mutates and which callers use it, plus a prose paragraph on the data flow.'
+  checklist={[
+    'Both runs used the same model, turn budget and tool allowlist',
+    'The bare-verb envelope carries an `errors` array, not a `result`',
+    'The filled template’s result contains the table columns you asked for, in that order',
+    'The result mentions relationships (callers, mutation) you did not have to ask about twice',
+    'Neither run edited a file',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/04-prompt-library/01-weak.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/04-prompt-library/01-weak.txt"
+    range="87-94"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/04-prompt-library/02-strong.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/04-prompt-library/02-strong.txt"
+    range="87-94"
+  />
+</Lab>
+
+"Explain the code" has a verb and nothing else — no target, no output shape — and it spent all six turns deciding what "the code" meant, ending in `error_max_turns` with no result to return.
+
+The filled template came back in five turns with the table it was asked for. Read its content and you can see each slot paying off: the target slot kept the reading to one file plus the call sites it needed, and the output-shape slot produced columns — inputs, what is mutated, callers — that turned a description into something you could review. It also volunteered the data-flow paragraph the middle clause asked for: that the CLI hydrates the in-memory array from disk at startup while the API starts empty each run.
+
+That is the general lesson of the library. The prompts are not magic words; they are a reminder to always supply a bounded target and an output shape.
+
+### Setting the lab up, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```text
+# PowerShell 5.1 — statements separated with ; instead of &&
+git clone https://github.com/codechup/claude-code-lab.git; cd claude-code-lab; npm ci
+git checkout -- .; git clean -fd
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1 has no `&&` operator, so the same steps are separated with `;` there. Inside WSL, use the Linux commands.
+
+## Anti-patterns
+
+Items below that name a documentation page are sourced from it; the rest are this site's own observations (D080).
+
+**Copying a template with its example slots intact.** Asking about `src/scheduler/queue.ts` in a repository that has no such file starts the session with a contradiction. _Fix:_ substitute a real path before you press Enter.
+
+**Treating the library as an incantation list.** Hunting for "the right prompt" instead of writing a bounded one for the task in front of you. _Fix:_ borrow the shape — verb, bounded target, output shape — and write your own sentence.
+
+**Dropping the output shape.** The slot that most often gets cut is `{format}`, and it is the one that makes the answer usable. _Fix:_ always say what form you want the answer in, and for tables name the columns.
+
+**Picking the nearest template instead of the right pattern.** A Debug-phase prompt applied to a Design-phase question drags the session toward symptoms. _Fix:_ pick the phase first — Discover, Design, Build, Ship, Operate — then the category.
+
+**Citing a community prompt collection as if it were the official one.** Unofficial lists drift from current behaviour and can name flags that no longer exist. _Fix:_ start from the official library, and check any borrowed prompt's flags against the docs.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/prompt-library"
+  questionId="q1"
+  lang="en"
+  prompt="How is the official prompt library organised?"
+  options={[
+    {
+      text: 'Alphabetically by prompt text.',
+      explanation: 'It is grouped, not alphabetised.',
+    },
+    {
+      text: 'By software-lifecycle phase — Discover, Design, Build, Ship, Operate — then by category, with some entries also tagged by role.',
+      correct: true,
+      explanation:
+        'That is the page’s own grouping, and roles such as pm, ops and security are extra tags.',
+    },
+    {
+      text: 'By model: one section per Claude model.',
+      explanation: 'Model choice is a separate topic entirely.',
+    },
+    {
+      text: 'By permission mode.',
+      explanation: 'Permission modes are unrelated to how the library is grouped.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/prompt-library"
+  questionId="q2"
+  lang="en"
+  prompt="What are the braces in `explain what {path} does and how data flows through it. write it up as {format}`?"
+  options={[
+    {
+      text: 'Slots — placeholders you replace with your own values; the library ships an example value for each.',
+      correct: true,
+      explanation: 'The example values are illustrations, not defaults to keep.',
+    },
+    {
+      text: 'Shell variable expansion that Claude Code performs.',
+      explanation: 'Claude Code does not expand braces in a prompt.',
+    },
+    {
+      text: 'A JSON schema fragment.',
+      explanation: 'Schemas are supplied with --json-schema, not inside prompt text.',
+    },
+    {
+      text: 'Optional clauses you can delete.',
+      explanation:
+        'They are the parts you must fill in; deleting them removes the target and the output shape.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/prompt-library"
+  questionId="q3"
+  lang="en"
+  prompt="In the lab, why did `explain the code` end with subtype: error_max_turns?"
+  options={[
+    {
+      text: 'The allowlist denied the Read tool.',
+      explanation: 'Read, Grep and Glob were allowed in both runs.',
+    },
+    {
+      text: 'It had a verb but no bounded target and no output shape, so the whole budget went on deciding what to explain.',
+      correct: true,
+      explanation: 'Same flags, same repository — only the prompt differed.',
+    },
+    {
+      text: 'The repository is too large for six turns.',
+      explanation: 'The filled template covered the same repository in five.',
+    },
+    {
+      text: 'JSON output caps the number of turns.',
+      explanation: 'The cap came from --max-turns 6, which both runs shared.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/prompt-library"
+  questionId="q4"
+  lang="en"
+  prompt="Which adaptation of `what would break if I deleted {target}?` is best for your own repository?"
+  options={[
+    {
+      text: 'what would break if I deleted {target}?',
+      explanation: 'The slot is still unfilled — there is no target.',
+    },
+    {
+      text: 'what would break if I deleted the retryWithBackoff helper?',
+      explanation:
+        'That is the library’s own example value; it names a helper your project may not have.',
+    },
+    {
+      text: 'what would break if I deleted paginate() from src/store.ts? list the call sites and the tests that would fail.',
+      correct: true,
+      explanation: 'A real target plus an output shape you can act on.',
+    },
+    {
+      text: 'what would break if I deleted anything?',
+      explanation: 'Unbounded — the infinite-exploration failure pattern.',
+    },
+  ]}
+/>
+
+**Next:** `05-anti-patterns` collects the ten prompting mistakes that waste the most sessions, each with its fix and its source.

@@ -1,0 +1,343 @@
+---
+title: 'The ten prompting anti-patterns'
+description: 'Ten ways a prompt wastes a session, each with the fix and the source it comes from. Nine are named in the official documentation; the tenth is this site’s own observation, captured from a headless run.'
+level: 2
+module: 'm09-prompting'
+order: 5
+duration_min: 15
+difficulty: core
+tags: ['prompting', 'anti-patterns', 'context', 'verification']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Best practices for Claude Code'
+    url: 'https://code.claude.com/docs/en/best-practices.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'How Claude Code works'
+    url: 'https://code.claude.com/docs/en/how-claude-code-works.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run Claude Code programmatically'
+    url: 'https://code.claude.com/docs/en/headless.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Name ten prompting anti-patterns, recognise each from its symptom, and apply its fix.
+- Say, for any one of them, whether it comes from the official documentation or from this site's own observation — and why that distinction matters.
+- Demonstrate the most expensive of them, unbounded exploration, and its fix, from two headless envelopes.
+
+**Prerequisites.** Lessons `01`–`04` of this module. The anti-patterns are the same catalogue read backwards, so the fixes will already be familiar.
+
+<WhenNotToUse>
+  A list of anti-patterns is a diagnostic aid, not a style guide. Do not run every prompt through
+  all ten before sending it — most prompts are one sentence to a colleague and the cost of getting
+  one wrong is one more sentence. Reach for the list when a session went badly and you want to know
+  why, or when a prompt is going into a script where nobody will be watching. The official guidance
+  makes the same point about its own patterns: they are starting points that work well in general,
+  not rules, and sometimes a vague prompt is exactly right because you want to see how Claude
+  interprets the problem before constraining it.
+</WhenNotToUse>
+
+## Concept
+
+### How to read this list
+
+Every entry below carries its source, per this site's sourcing rule (D080). Nine are named in the official documentation, with the page they come from. One is marked **observation**: it is this site's own finding, captured from the real runs in this module, and it is not claimed to be official guidance.
+
+| #   | Anti-pattern                    | Source                      |
+| --- | ------------------------------- | --------------------------- |
+| 1   | The kitchen sink session        | best-practices              |
+| 2   | Correcting over and over        | best-practices              |
+| 3   | The over-specified CLAUDE.md    | best-practices              |
+| 4   | The trust-then-verify gap       | best-practices              |
+| 5   | The infinite exploration        | best-practices              |
+| 6   | No verification criteria        | best-practices              |
+| 7   | Symptom instead of root cause   | best-practices              |
+| 8   | Chasing every reviewer finding  | best-practices              |
+| 9   | Dictating instead of delegating | how-claude-code-works       |
+| 10  | The unanswerable question       | **observation** (this site) |
+
+### 1. The kitchen sink session
+
+_Source: best-practices, "Avoid common failure patterns"._ You start with one task, ask something unrelated, then go back to the first task. Context is now full of irrelevant information.
+
+**Fix:** `/clear` between unrelated tasks.
+
+### 2. Correcting over and over
+
+_Source: best-practices._ Claude does something wrong, you correct it, it is still wrong, you correct again. Context is polluted with failed approaches.
+
+**Fix:** after two failed corrections, `/clear` and write a better initial prompt incorporating what you learned.
+
+### 3. The over-specified CLAUDE.md
+
+_Source: best-practices._ If your `CLAUDE.md` is too long, Claude ignores half of it because important rules get lost in the noise. The tell: Claude keeps doing something you have a rule against.
+
+**Fix:** prune ruthlessly. For each line ask whether removing it would cause a mistake; if not, cut it, or convert it into a hook — hooks are deterministic where `CLAUDE.md` instructions are advisory.
+
+### 4. The trust-then-verify gap
+
+_Source: best-practices._ Claude produces a plausible-looking implementation that does not handle edge cases, and you accept the claim rather than the proof.
+
+**Fix:** always provide verification — tests, scripts, screenshots. If you cannot verify it, do not ship it.
+
+### 5. The infinite exploration
+
+_Source: best-practices._ You ask Claude to "investigate" something without scoping it; it reads hundreds of files and fills the context.
+
+**Fix:** scope investigations narrowly, or delegate them to a subagent so the exploration does not consume your main context. The lab below measures this one.
+
+### 6. No verification criteria
+
+_Source: best-practices, the "Give Claude a way to verify its work" table._ "Implement a function that validates email addresses" states a goal with no pass/fail.
+
+**Fix:** supply the cases and the check in the same prompt, the way the docs' own "after" column does — name the example inputs and their expected results, and say to run the tests after implementing.
+
+### 7. Symptom instead of root cause
+
+_Source: best-practices, the same table._ "The build is failing" hands over a symptom and invites a fix that suppresses it.
+
+**Fix:** paste the error, say what "fixed" looks like, and ask explicitly for the root cause rather than a suppression.
+
+### 8. Chasing every reviewer finding
+
+_Source: best-practices, the callout under "Add an adversarial review step"._ A reviewer prompted to find gaps will usually report some, even when the work is sound, because that is what it was asked to do. Fixing all of them leads to over-engineering: extra abstraction layers, defensive code, and tests for cases that cannot happen.
+
+**Fix:** tell the reviewer to flag only gaps that affect correctness or the stated requirements, and treat the rest as optional.
+
+### 9. Dictating instead of delegating
+
+_Source: how-claude-code-works, "Delegate, don't dictate"._ Listing which files to open and which commands to run turns an agent into a slow macro, and throws away the part it is good at.
+
+**Fix:** think of delegating to a capable colleague — give context and direction, then let Claude work out the details. The docs' own example gives the symptom, the area of the code, and nothing else.
+
+### 10. The unanswerable question
+
+_**Observation** — this site's own finding, from the runs captured in this module; not official guidance._ In an unattended run, a prompt vague enough to make Claude ask you a clarifying question ends the turn with nothing done, because there is nobody to answer. It does not look like a failure: the envelope reports `"subtype": "success"`. Two lessons in this module recorded it — `01`'s vague prompt spent five turns and closed with "which direction do you want?", and `03`'s "that's not right, try again" spent four turns and closed with three clarifying questions.
+
+**Fix:** before a prompt goes into a script, ask what the agent would need to ask you — and answer it in the prompt. Interactively the same prompt is fine; the question is cheap when someone is there to answer it.
+
+### This lesson's example prompt
+
+```text
+Scope: src/api/server.ts only. List every HTTP route it defines as a markdown
+table with method, path, and the status codes it can return. Do not read any
+other file, and do not suggest changes.
+```
+
+This is anti-pattern 5's fix written out: a scope with a boundary, an output shape, and two explicit prohibitions.
+
+## Hands-on lab
+
+<Callout>
+  This module has no lab-repo tags yet (`repo_tag: 'none'`), so the lab runs against a fresh clone
+  of the lab repository's `main` branch. Both runs are read-only, same model, same six-turn budget;
+  only the prompt differs.
+</Callout>
+
+<Lab
+  title="Lab · unbounded exploration, and the same question scoped"
+  lessonId="en/l2-intermediate/m09-prompting/anti-patterns"
+  repoTag="none"
+  steps={[
+    'In a scratch clone of the lab repository at `main` (`npm ci` run), run the unscoped investigation: `claude -p "investigate this repo" --model sonnet --max-turns 6 --output-format json --allowedTools "Read,Grep,Glob"`',
+    'Read the envelope: note `subtype`, `is_error`, the `errors` array, and the absence of a `result`.',
+    'Run the scoped version with identical flags and the prompt from the Concept section above.',
+    'Compare `num_turns` between the two runs, and read the scoped run’s `result`.',
+    'Pick one more anti-pattern from the list and write its before/after pair for your own project. Run both. Keep the envelopes.',
+  ]}
+  expected='The unscoped run exhausts its six-turn budget and reports "is_error": true, "subtype": "error_max_turns", with an errors array reading "Reached maximum number of turns (6)" and no result. The scoped run answers in two turns with a markdown table of the API’s routes, methods and status codes — and flags the one status code it could not confirm without reading another file.'
+  checklist={[
+    'The unscoped envelope has no `result` field',
+    'The scoped run used two turns against the unscoped run’s seven',
+    'The scoped result is a table with the three columns you asked for',
+    'The scoped result says explicitly which claim it could not confirm within the scope you set',
+    'You can name which anti-pattern each prompt demonstrates',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/05-anti-patterns/01-weak.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/05-anti-patterns/01-weak.txt"
+    range="120-127"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/05-anti-patterns/02-strong.txt"
+    range="4-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m09-prompting/05-anti-patterns/02-strong.txt"
+    range="87-94"
+  />
+</Lab>
+
+Seven turns and nothing to show, against two turns and a table. (The envelope reports `num_turns: 7` for a run capped at `--max-turns 6`: the count observed in these captures runs one ahead of the ceiling that stops it, so read `subtype`, not the number, to tell what happened.) That ratio is the whole argument for scoping.
+
+The scoped result is worth reading closely for a second reason. Its last note says that for `POST /tasks/:id/done` a missing task is not explicitly checked before `markDone` is called, so the exact status code depends on behaviour in `store.ts` — "not read per scope restriction, so its exact status is unconfirmed from this file alone". The boundary you set was respected, and the answer told you where the boundary limited it. A scoped prompt that reports its own blind spot is doing exactly what you want; a scoped prompt whose answer silently omits the uncertainty is worse than an unscoped one.
+
+### Setting the lab up, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git && cd claude-code-lab && npm ci
+git checkout -- . && git clean -fd    # between the two runs
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```text
+# PowerShell 5.1 — statements separated with ; instead of &&
+git clone https://github.com/codechup/claude-code-lab.git; cd claude-code-lab; npm ci
+git checkout -- .; git clean -fd
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows PowerShell 5.1 has no `&&` operator, so the same steps are separated with `;` there. Inside WSL, use the Linux commands.
+
+## Anti-patterns
+
+The ten above are the subject of this lesson. These are the mistakes people make with the list itself.
+
+**Running every prompt through all ten.** Turning a diagnostic aid into a checklist makes ordinary requests expensive to write. _Fix:_ use it after a bad session, or before a prompt goes into a script.
+
+**Treating "vague" as always wrong.** The docs say a vague prompt can be exactly right when you are exploring and can afford to course-correct. _Fix:_ ask whether anyone is there to course-correct. If not, the vagueness is the bug.
+
+**Citing an observation as official guidance.** Anti-pattern 10 is this site's finding, not Anthropic's; presenting it as documented weakens the nine that are. _Fix:_ keep the label when you quote it.
+
+**Fixing the prompt when the problem is the context.** A polluted session makes good prompts behave badly, and no rewording repairs it. _Fix:_ check `/context`, then `/clear`.
+
+**Learning the list and not the reason.** The ten collapse into two ideas — bound the work, and give it something to verify against. _Fix:_ if you can state which of the two an anti-pattern violates, you will recognise the eleventh when you meet it.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/anti-patterns"
+  questionId="q1"
+  lang="en"
+  prompt="Which anti-pattern does 'investigate this repo' demonstrate, and what is its documented fix?"
+  options={[
+    {
+      text: 'The infinite exploration — scope investigations narrowly, or delegate them to a subagent.',
+      correct: true,
+      explanation: 'Both halves of the fix are in the best-practices failure-pattern list.',
+    },
+    {
+      text: 'The kitchen sink session — /clear between tasks.',
+      explanation: 'That one is about mixing unrelated tasks in one session.',
+    },
+    {
+      text: 'The trust-then-verify gap — always provide verification.',
+      explanation: 'That is about accepting a plausible implementation without proof.',
+    },
+    {
+      text: 'The over-specified CLAUDE.md — prune the file.',
+      explanation: 'Unrelated to how a single prompt is scoped.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/anti-patterns"
+  questionId="q2"
+  lang="en"
+  prompt="Which of the ten is labelled as this site's own observation rather than official guidance?"
+  options={[
+    {
+      text: 'The unanswerable question — a prompt vague enough to trigger a clarifying question wastes an unattended run, while still reporting subtype: success.',
+      correct: true,
+      explanation: 'Captured from this module’s own runs and labelled as an observation (D080).',
+    },
+    {
+      text: 'The kitchen sink session.',
+      explanation: 'Named in the best-practices failure-pattern list.',
+    },
+    {
+      text: 'Dictating instead of delegating.',
+      explanation: 'From the how-claude-code-works page, "Delegate, don’t dictate".',
+    },
+    {
+      text: 'Chasing every reviewer finding.',
+      explanation: 'From the callout under "Add an adversarial review step".',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/anti-patterns"
+  questionId="q3"
+  lang="en"
+  prompt="A reviewer subagent returns eleven findings on a small, sound diff. What do the docs advise?"
+  options={[
+    {
+      text: 'Fix all eleven — a finding is a finding.',
+      explanation: 'That is the over-engineering trap the docs warn about.',
+    },
+    {
+      text: 'A reviewer asked to find gaps usually reports some even when the work is sound; tell it to flag only gaps affecting correctness or the stated requirements, and treat the rest as optional.',
+      correct: true,
+      explanation: 'Straight from the adversarial-review callout.',
+    },
+    {
+      text: 'Stop using reviewer subagents.',
+      explanation:
+        'The docs recommend the adversarial review step; they just scope what counts as a finding.',
+    },
+    {
+      text: 'Re-run the reviewer until it returns none.',
+      explanation: 'That optimises the reviewer, not the code.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m09-prompting/anti-patterns"
+  questionId="q4"
+  lang="en"
+  prompt="Your CLAUDE.md has a rule that Claude keeps ignoring. What does the best-practices page suggest?"
+  options={[
+    {
+      text: 'The file is probably too long and the rule is getting lost — prune it, or convert the rule into a hook, which is deterministic.',
+      correct: true,
+      explanation:
+        'Emphasis such as IMPORTANT helps on one line only; if you emphasise many, none stands out.',
+    },
+    {
+      text: 'Repeat the rule in several places in the file.',
+      explanation: 'That makes the file longer, which is the cause rather than the cure.',
+    },
+    {
+      text: 'Move the rule into every prompt.',
+      explanation: 'Persistent rules belong in CLAUDE.md or a hook, not in every prompt.',
+    },
+    {
+      text: 'Switch models.',
+      explanation: 'The docs attribute this to file length, not to model choice.',
+    },
+  ]}
+/>
+
+**Next:** the Playbook's `04-anti-pattern-catalogue` page collects every anti-pattern in the course, with its fix and its source, as a one-page reference you can keep open while you work.
