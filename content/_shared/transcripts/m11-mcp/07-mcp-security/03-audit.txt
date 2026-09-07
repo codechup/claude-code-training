@@ -1,0 +1,12 @@
+# Captured 2026-09-07, Claude Code 2.1.263, Windows 11 with Git Bash, Node 24.18.0. Absolute scratch-directory paths were replaced with <scratch>, the home directory with ~, and terminal hyperlink escape codes were stripped; nothing else was changed.
+# Command: claude -p "<the audit prompt>" --model sonnet --max-turns 5 --output-format text --settings en.json --allowedTools "Read"
+# en.json is {"language": "English"} — this machine has "language": "Turkish" in its user settings; nothing else was overridden.
+Here's the full inventory of `.mcp.json` (one server defined, no connections made):
+
+## `reporting`
+- **Transport:** HTTP
+- **Connects to:** `${REPORTING_MCP_URL:-https://mcp.example.com/mcp}` — an env var with a fallback default of `https://mcp.example.com/mcp`
+- **Credentials needed:** `REPORTING_MCP_TOKEN`, sent as `Authorization: Bearer ${REPORTING_MCP_TOKEN}`
+- **Literal secrets:** None. Both the URL and the token are `${VAR}`-style references, not hardcoded values. The URL has a literal *fallback default* (`https://mcp.example.com/mcp`) baked into the `${VAR:-default}` syntax, but that's a fallback endpoint, not a credential.
+
+Note: the system context confirms this matches reality — the `reporting` server is configured but currently fails to connect (`ENOTFOUND mcp.example.com`), consistent with the fallback URL being a placeholder/example domain rather than a real endpoint.

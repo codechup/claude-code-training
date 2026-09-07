@@ -1,0 +1,323 @@
+---
+title: 'Adding, listing and removing servers: scopes and OAuth'
+description: 'claude mcp add, list, get and remove, the three installation scopes, what a project .mcp.json does to the person who clones your repo, ${VAR} expansion for secrets, and the OAuth sign-in flow for hosted servers.'
+level: 3
+module: 'm11-mcp'
+order: 2
+duration_min: 20
+difficulty: core
+tags: ['mcp', 'cli', 'scopes', 'oauth']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Connect to MCP servers'
+    url: 'https://code.claude.com/docs/en/mcp-quickstart.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Connect Claude Code to tools via MCP'
+    url: 'https://code.claude.com/docs/en/mcp.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m11-02-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Add a server over stdio or HTTP with `claude mcp add`, and read the `Added …` line it prints.
+- Read the health status `claude mcp list` reports, and get the failure detail with `claude mcp get <name>`.
+- Choose between `local`, `project` and `user` scope, and say which file each one writes to.
+- Explain the approval prompt a project-scoped `.mcp.json` triggers, and why it exists.
+- Keep a secret out of a committed config with `${VAR}` and `${VAR:-default}` expansion.
+- Sign a hosted server in with `/mcp` or `claude mcp login`, and remove a server cleanly.
+
+**Prerequisites.** Lesson 01. A clone of the lab repository at `lesson/m11-02-start` and Node.js (the repository's `.nvmrc` pins Node 24).
+
+<WhenNotToUse>
+  Do not use `--scope project` for anything with a credential in it, or for a server only you want:
+  `.mcp.json` is checked into version control, and everyone who clones the repository is prompted to
+  run it. Do not use `--scope user` for a server that only makes sense inside one repository — it
+  will load in every project you open and cost context in all of them. And do not reach for `claude
+  mcp add` at all when your organisation deploys a `managed-mcp.json`: the command fails with an
+  enterprise-policy error, which lesson 07 covers.
+</WhenNotToUse>
+
+## Concept
+
+### Four commands
+
+```text
+claude mcp add     # register a server
+claude mcp list    # every server for this project, with a health status
+claude mcp get     # one server: scope, status, failure detail, command or URL, headers
+claude mcp remove  # delete the entry (and, for remote servers, the stored OAuth tokens)
+```
+
+Inside a session the equivalent is the `/mcp` panel, which additionally lets you authenticate, reconnect, disable a server, and clear its stored credentials.
+
+The `add` command has two shapes. For a remote server you pass a transport and a URL. For a local one you pass the command after a `--` separator:
+
+<CodeBlock title="the two shapes of claude mcp add">
+
+```bash
+# remote, over HTTP
+claude mcp add --transport http notion https://mcp.notion.com/mcp
+
+# local, over stdio — everything after -- is the command Claude Code runs
+claude mcp add --env AIRTABLE_API_KEY=YOUR_KEY --transport stdio airtable -- npx -y airtable-mcp-server
+```
+
+</CodeBlock>
+
+The `--` is not decoration. It separates Claude's own options — `--transport`, `--env`, `--scope` — from the command and arguments that run the server; everything after it is passed to the server untouched. Without it, Claude Code would try to parse the server's own flags, such as a `--port 8080`, as its own.
+
+One more placement rule: `--env` accepts multiple `KEY=value` pairs, so if the server name comes directly after `--env` the CLI reads the name as another pair and rejects it. Put at least one other option between `--env` and the server name, as the example above does.
+
+### The three scopes
+
+| Scope             | Loads in             | Shared with team         | Stored in                   |
+| ----------------- | -------------------- | ------------------------ | --------------------------- |
+| `local` (default) | Current project only | No                       | `~/.claude.json`            |
+| `project`         | Current project only | Yes, via version control | `.mcp.json` in project root |
+| `user`            | All your projects    | No                       | `~/.claude.json`            |
+
+Local scope is the default and is stored in `~/.claude.json` under the current project's path — which is why a local server added in one repository does not appear in another. Note the naming trap the docs call out: MCP "local scope" lives in `~/.claude.json` in your home directory, not in the project's `.claude/settings.local.json`.
+
+A server's scope is fixed when you add it. Changing scope means `claude mcp remove` followed by `claude mcp add` at the new one.
+
+When the same name is defined in more than one place, Claude Code connects once, using the highest-precedence definition, and the **entire** entry from that source is used — fields are not merged. The order is local, then project, then user, then plugin-provided servers, then claude.ai connectors. The three scopes match duplicates by name; plugins and connectors match by endpoint.
+
+### Project scope and the approval prompt
+
+Adding at `--scope project` writes `.mcp.json` at the project root, in a standardised format you can also write by hand. Commit it and everyone on the team gets the same servers.
+
+Because that file can start processes on a teammate's machine, Claude Code prompts for approval in interactive sessions before using project-scoped servers. Until it is approved, `claude mcp list` shows the server as ``⏸ Pending approval (run `claude` to approve)`` — a configuration decision, reported without connecting to the server. Reset those choices with `claude mcp reset-project-choices`.
+
+Two exceptions matter for automation. In `claude -p` runs, Agent SDK sessions and cloud sessions there is no prompt to show, so project-scoped servers load without asking. To keep one out anyway, add it to `disabledMcpjsonServers`, exclude project settings with `--setting-sources`, or start the session with `--strict-mcp-config` so only servers passed with `--mcp-config` load.
+
+### Keeping secrets out of a shared config
+
+`.mcp.json` supports environment variable expansion, in `command`, `args`, `env`, `url` and `headers`:
+
+- `${VAR}` expands to the value of `VAR`.
+- `${VAR:-default}` expands to `VAR` if set, otherwise to `default`.
+
+That is what makes a committed config safe: the file names the variable, each developer's environment supplies the value. If a referenced variable is not set and has no default, the config still loads — Claude Code reports a missing-variable warning for that server in `claude mcp list` output and uses the unexpanded `${VAR}` text as-is.
+
+### OAuth for hosted servers
+
+Many hosted servers sit behind OAuth 2.0. You add the URL, then sign in through a browser. Claude Code marks a server as needing authentication when it answers `401 Unauthorized` or `403 Forbidden`, and `claude mcp list` shows `! Needs authentication`.
+
+Two ways to complete it:
+
+<CodeBlock title="signing in to a hosted server">
+
+```bash
+claude mcp add --transport http sentry https://mcp.sentry.dev/mcp
+
+# either: start a session and open the MCP panel
+claude
+# then type /mcp, select sentry, choose Authenticate
+
+# or, from v2.1.186, straight from the shell
+claude mcp login sentry
+claude mcp logout sentry     # clears the stored credentials
+```
+
+</CodeBlock>
+
+On a machine with no browser — an SSH session, or Linux with no display server — `claude mcp login` prints the authorization URL instead of opening a browser, and you paste the redirect URL back at the prompt; `--no-browser` forces that path. Tokens are stored securely and refreshed automatically. Servers that use a static token instead take it at add time with `--header "Authorization: Bearer <token>"` — lesson 03 works through that shape.
+
+Removing a remote server also deletes the OAuth tokens and client registration Claude Code stored for it.
+
+Here is this lesson's example prompt — the point of all this wiring:
+
+```text
+Use the claude-code-docs server to look up what MCP_TIMEOUT does.
+```
+
+Naming the server is not normally necessary; it is how you prove, on a first connection, that the answer came through the server rather than from the model's own knowledge.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · add, inspect and remove servers at two scopes"
+  lessonId="en/l3-advanced/m11-mcp/add-list-remove-scopes"
+  repoTag="lesson/m11-02-start"
+  steps={[
+    'Check out the start tag in your clone of the lab repository: `git checkout lesson/m11-02-start`. Work only inside this checkout so nothing you add pollutes your other projects.',
+    'Add a local stdio server at the default scope. Claude Code ships one you already have: `claude mcp add --scope local cc-tools -- claude mcp serve`.',
+    'Run `claude mcp list`. Confirm the health check reports `✔ Connected`.',
+    'Run `claude mcp get cc-tools` and read the four things it tells you: the scope, the status, the transport and the command with its arguments.',
+    'Now add a remote server at project scope: `claude mcp add --scope project --transport http claude-code-docs https://code.claude.com/docs/mcp`. Read the `File modified:` line — it wrote `.mcp.json`, not `~/.claude.json`.',
+    '`cat .mcp.json`, then run `claude mcp list` again. The project-scoped server reports `⏸ Pending approval`, because you have not approved it interactively in this folder.',
+    'Edit `.mcp.json` by hand to reference environment variables instead of literals: put the URL behind `${DOCS_MCP_URL:-https://code.claude.com/docs/mcp}` and add a `headers.Authorization` of `Bearer ${DOCS_MCP_TOKEN}`. Do not set `DOCS_MCP_TOKEN`.',
+    'Run `claude mcp list` once more and read the diagnostics block at the bottom.',
+    'Clean up: `claude mcp remove cc-tools` and `claude mcp remove claude-code-docs`, then `claude mcp list` to confirm nothing is left behind.',
+  ]}
+  expected="cc-tools connects at local scope and is written to ~/.claude.json; claude-code-docs is written to .mcp.json and sits at Pending approval; after the hand edit, claude mcp list prints the URL unexpanded and warns `Missing environment variables: DOCS_MCP_TOKEN`; both removes report the file they changed and the final list says no servers are configured."
+  checklist={[
+    '`claude mcp add` printed an `Added …` line naming the transport and the target config',
+    '`claude mcp get` showed the scope as "Local config (private to you in this project)"',
+    'The project-scoped server wrote `.mcp.json` in the repository root, not the home directory',
+    '`claude mcp list` reported ⏸ Pending approval for the project-scoped server',
+    'The missing-variable warning named `DOCS_MCP_TOKEN` without printing any value',
+    'After both removes, `claude mcp list` reports no servers configured',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/02-add-list-remove-scopes/01-add-list.txt"
+    range="2-20"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/02-add-list-remove-scopes/02-project-scope.txt"
+    range="2-19"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/02-add-list-remove-scopes/03-variable-expansion.txt"
+    range="14-27"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/02-add-list-remove-scopes/04-remove.txt"
+    range="2-11"
+  />
+</Lab>
+
+Three things in that recording repay a second look.
+
+`claude mcp add` prints a `File modified:` line every time, and it is the fastest way to confirm you got the scope you meant: the local add names `~/.claude.json` with the project path in brackets, the project add names `.mcp.json` in the repository.
+
+The `⏸ Pending approval` status is not a failure. Claude Code did not try to connect: the status reports a configuration decision, and it clears when you run `claude` in the folder and approve the server.
+
+The last capture is the missing-variable warning. Notice what it does _not_ print — the value. It names the field, `mcpServers.claude-code-docs`, and the variable, `DOCS_MCP_TOKEN`. That is the behaviour that makes `${VAR}` safe to commit.
+
+## Anti-patterns
+
+**Forgetting the `--` before a stdio command.** Claude Code then parses the server's flags as its own and the entry is wrong. The symptom is a `✘ Failed to connect` whose command, shown by `claude mcp get`, is not what you typed. _Fix:_ `claude mcp add <name> -- <command> [args...]`, always.
+
+**Committing a token in `.mcp.json`.** It is a shared file in version control; a literal `Bearer sk-…` there is a leaked credential, and `claude mcp get` prints it back in plain text. _Fix:_ `"Authorization": "Bearer ${SERVICE_TOKEN}"` and let each developer set the variable.
+
+**Treating `Added …` as "it works".** The `add` command saves configuration without validating credentials or contacting the server. _Fix:_ follow every add with `claude mcp list` or `claude mcp get <name>` and read the status.
+
+**Putting a personal server at project scope.** Everyone who clones the repo now gets an approval prompt for a server they do not need. _Fix:_ `--scope local` for personal servers, `--scope user` for ones you want everywhere.
+
+**Trying to "move" a server between scopes by editing one file.** The definitions match by name and the highest-precedence one wins outright, so you end up with two and a scope-conflict warning. _Fix:_ `claude mcp remove <name> --scope <old>` first, then add at the new scope.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/add-list-remove-scopes"
+  questionId="q1"
+  lang="en"
+  prompt="Where does `claude mcp add --scope local` write the server entry?"
+  options={[
+    {
+      text: '`~/.claude.json`, under the entry for the current project',
+      correct: true,
+      explanation:
+        'Local scope is stored in the home-directory config keyed by project path — which is why the server does not appear in your other projects.',
+    },
+    {
+      text: '`.claude/settings.local.json` in the project',
+      explanation:
+        'That is where general local *settings* live. MCP local scope is a different file; the docs flag the naming collision explicitly.',
+    },
+    {
+      text: '`.mcp.json` in the project root',
+      explanation: 'That is project scope, the one you commit.',
+    },
+    {
+      text: 'A managed system path outside your home directory',
+      explanation: 'That is `managed-mcp.json`, deployed by an administrator.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/add-list-remove-scopes"
+  questionId="q2"
+  lang="en"
+  prompt="`claude mcp list` shows a project server as ⏸ Pending approval. What happened?"
+  options={[
+    {
+      text: 'The server failed its health check',
+      explanation:
+        'No connection was attempted. Pending approval is a configuration status, printed without contacting the server.',
+    },
+    {
+      text: 'You have not approved the .mcp.json server interactively in this folder yet',
+      correct: true,
+      explanation:
+        'Run `claude` in the project and approve it. The prompt exists so a cloned repository cannot launch processes without your consent.',
+    },
+    {
+      text: 'The server requires OAuth sign-in',
+      explanation: 'That status is `! Needs authentication`.',
+    },
+    {
+      text: 'An administrator blocked the server',
+      explanation:
+        'A policy rejection shows as `✘ Rejected (see disabledMcpjsonServers in settings)`.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/add-list-remove-scopes"
+  questionId="q3"
+  lang="en"
+  prompt="A committed .mcp.json references ${API_KEY}, and the variable is not set on your machine. What happens?"
+  options={[
+    {
+      text: 'Claude Code refuses to start',
+      explanation: 'A missing variable is a warning, not a fatal error.',
+    },
+    {
+      text: 'The whole .mcp.json is ignored',
+      explanation: 'Only that server is affected, and it still loads.',
+    },
+    {
+      text: 'The server loads with the literal text ${API_KEY}, and claude mcp list warns which variable is missing',
+      correct: true,
+      explanation:
+        'Exactly what the lab captured. Set the variable, or give it a `${API_KEY:-default}` fallback.',
+    },
+    {
+      text: 'Claude Code prompts you for the value',
+      explanation: 'There is no interactive prompt for variable expansion.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/add-list-remove-scopes"
+  questionId="q4"
+  lang="en"
+  prompt="You want to sign in to an OAuth-protected HTTP server without starting an interactive session. Which command?"
+  options={[
+    {
+      text: 'claude mcp login sentry',
+      correct: true,
+      explanation:
+        'Available from v2.1.186; it runs the OAuth flow from the shell, and prints the URL instead of opening a browser when there is none.',
+    },
+    {
+      text: 'claude mcp auth sentry',
+      explanation: 'Not a command.',
+    },
+    {
+      text: 'claude mcp add --oauth sentry',
+      explanation: 'There is no --oauth flag; OAuth discovery is automatic for HTTP servers.',
+    },
+    {
+      text: 'claude -p "/mcp"',
+      explanation:
+        'Non-interactive mode has no /mcp panel, so it cannot run the OAuth flow for you.',
+    },
+  ]}
+/>
+
+**Next:** `03-github-mcp` connects the first real service — GitHub over HTTP with a personal access token — and reads what `claude mcp list` says when the token is wrong.

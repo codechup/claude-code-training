@@ -1,0 +1,18 @@
+# Captured 2026-09-07, Claude Code 2.1.263, Windows 11 with Git Bash, Node 24.18.0. Absolute scratch-directory paths were replaced with <scratch>, the home directory with ~, and terminal hyperlink escape codes were stripped; nothing else was changed.
+# Command: Same command as 02-query.txt, with a prompt asking the model to send one DELETE through the server so the server's read-only rejection is visible.
+# en.json is {"language": "English"} — this machine has "language": "Turkish" in its user settings; nothing else was overridden.
+Ignoring 5 permissions.allow entries from .claude/settings.json: this workspace has not been trusted. Run Claude Code interactively here once and accept the trust dialog, or set projects["<scratch>/lab05-start"].hasTrustDialogAccepted: true in ~/.claude.json.
+Confirmed the read-only guard works as intended:
+
+1. **Baseline**: `SELECT COUNT(*) FROM tasks` → **4** rows
+2. **Attempted `DELETE FROM tasks WHERE done = 1`** → server rejected it, exact response:
+   ```json
+   {
+     "success": false,
+     "error": "Read-only mode is enabled. Only the following SQL operations are allowed: select, with, explain, pragma",
+     "code": "READONLY_VIOLATION"
+   }
+   ```
+3. **Post-check**: `SELECT COUNT(*) FROM tasks` → still **4** rows, unchanged.
+
+The db MCP server enforces read-only at the statement level (allow-listing `select`, `with`, `explain`, `pragma`) and blocked the DELETE outright before it could touch the data.

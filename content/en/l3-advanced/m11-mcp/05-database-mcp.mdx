@@ -1,0 +1,270 @@
+---
+title: 'A database MCP server'
+description: 'Point Claude at a real SQLite database over MCP with DBHub: discover the schema, run a query you asked for in English, and make the server itself reject every statement that is not a read.'
+level: 3
+module: 'm11-mcp'
+order: 5
+duration_min: 20
+difficulty: core
+tags: ['mcp', 'database', 'sqlite', 'postgres', 'least-privilege']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Connect Claude Code to tools via MCP'
+    url: 'https://code.claude.com/docs/en/mcp.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'DBHub — universal database MCP server'
+    url: 'https://github.com/bytebase/dbhub'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m11-05-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Connect a database to Claude Code over MCP with DBHub, against SQLite or PostgreSQL.
+- Ask a schema question in English and get back the SQL that was actually run.
+- Configure the server so it physically cannot write, and prove it by watching it refuse.
+- Explain why a read-only credential and a read-only server configuration are two different controls, and why you want both.
+- Diagnose the most common silent failure: a relative SQLite path that opens the wrong database.
+
+**Prerequisites.** Lessons 01, 02 and 04 (for `--allowedTools`). A clone of the lab repository at `lesson/m11-05-start`, Node.js 18 or later (`@bytebase/dbhub` runs through `npx`), and Python or any tool that can create a small SQLite file.
+
+<WhenNotToUse>
+  Never point a database MCP server at production with a credential that can write. Even read access
+  to production is a decision, not a default: the rows come back into a model's context, and
+  everything in them is then part of the conversation — customer emails included. Do not use MCP at
+  all when a checked-in migration or a saved query answers the question; those are reviewable and
+  repeatable, and an ad-hoc agent query is neither. The good case is exploration against a
+  development or analytics replica, where "what does this schema even look like" is a real question
+  and the answer's blast radius is zero.
+</WhenNotToUse>
+
+## Concept
+
+### DBHub
+
+**DBHub** (`@bytebase/dbhub`) is the database server the Claude Code docs use in their PostgreSQL example. It connects Claude to a relational database through a connection string, and it speaks several dialects — the DSN forms it prints in its own help are:
+
+```text
+postgres:   postgres://postgres:password@localhost:5432/postgres?sslmode=require
+sqlserver:  sqlserver://username:password@localhost:1433/database?sslmode=disable&instanceName=INSTANCE1
+sqlite:     sqlite:///path/to/database.db
+mysql:      mysql://root:password@localhost:3306/mysql?sslmode=require
+mariadb:    mariadb://root:password@localhost:3306/db?sslmode=require
+```
+
+The docs' PostgreSQL example passes the DSN on the command line, and pairs it with the rule that matters most:
+
+<CodeBlock title="the documented PostgreSQL shape">
+
+```bash
+claude mcp add --transport stdio db -- npx -y @bytebase/dbhub \
+  --dsn "postgresql://readonly:pass@prod.db.com:5432/analytics"
+```
+
+</CodeBlock>
+
+Note the username. Use a **read-only database user** in the connection string so the queries Claude runs cannot modify data. That is the control your database enforces, and it is the one that survives every bug in every layer above it.
+
+### Two independent read-only controls
+
+There is a second control, in the server rather than the database, and this lesson uses both. DBHub takes a TOML configuration file where you declare your sources and then mark a tool read-only:
+
+<CodeBlock title="dbhub.toml — a read-only SQLite source">
+
+```toml
+[[sources]]
+id = "labtrack"
+dsn = "sqlite:///absolute/path/to/labtrack.db"
+
+[[tools]]
+name = "execute_sql"
+source = "labtrack"
+readonly = true
+```
+
+</CodeBlock>
+
+With that in place, the server rejects any statement outside its allow-list before it reaches the database. Belt and braces: the credential says what the connection _may_ do, the server configuration says what this _tool_ may do. Neither replaces the other — a read-only server on a read-write credential is one config edit away from being read-write, and a read-only credential with a permissive server still lets a confused model run an expensive `SELECT` over everything.
+
+### The relative-path trap
+
+SQLite DSNs take an absolute path (`sqlite:///path/to/database.db` — three slashes, then the path). With a relative form such as `sqlite://labtrack.db`, this lesson's recording session observed DBHub connecting to an empty database instead of the seeded one. Nothing errors: the server starts, `claude mcp list` reports `✔ Connected`, and every query returns zero rows — Claude reported that `sqlite_master` was empty and `tasks` did not exist. If Claude tells you your tables do not exist, check the DSN before you check your data.
+
+### Asking in English, reading in SQL
+
+The point of a database server is not that Claude writes SQL — it is that you can ask a question, and still see the SQL. This lesson's example prompt:
+
+```text
+Use the db MCP server: list the tables, then run
+SELECT title, due_date FROM tasks WHERE done = 0 AND due_date < '2026-09-07'.
+Report the SQL and the rows.
+```
+
+Asking for the SQL back is the habit worth building. It is your only check that the question you asked is the question that was answered.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · query a real SQLite database over MCP, and make it refuse to write"
+  lessonId="en/l3-advanced/m11-mcp/database-mcp"
+  repoTag="lesson/m11-05-start"
+  steps={[
+    'Check out `lesson/m11-05-start`. Create a scratch `labtrack.db` in the checkout with one `tasks` table (id, title, priority, done, due_date) and four rows — two of them not done with a due date in the past, one done, one not yet due. Any SQLite tool will do; a five-line Python script is enough.',
+    'Write `dbhub.toml` next to it, with one `[[sources]]` entry whose `dsn` is `sqlite:///` followed by the **absolute** path to `labtrack.db`, and one `[[tools]]` entry setting `name = "execute_sql"`, `source` to your source id, and `readonly = true`.',
+    'Register the server: `claude mcp add --scope local db -- npx -y @bytebase/dbhub --config=dbhub.toml`, then `claude mcp get db` and confirm `✔ Connected`.',
+    'Write a one-server `mcp-db.json` describing the same command, so the query runs can use `--strict-mcp-config` and ignore the `.mcp.json` this tag ships. That keeps the capture reproducible and stops the repo’s `github` entry from being started.',
+    'Run the read query headlessly: `claude -p "Use the db MCP server: list the tables, then run SELECT title, due_date FROM tasks WHERE done = 0 AND due_date < \'2026-09-07\'. Report the SQL and the rows." --model sonnet --max-turns 10 --output-format text --mcp-config mcp-db.json --strict-mcp-config --allowedTools "mcp__db__execute_sql,ToolSearch"`.',
+    'Check the rows against the data you seeded. If you get zero rows and "no such table", your DSN is relative — fix it to the absolute form and re-run.',
+    'Now prove the read-only configuration. Ask, in the same shape, for one `DELETE FROM tasks WHERE done = 1` to be sent through the server, and for the server’s exact response plus a `SELECT COUNT(*)` afterwards.',
+    'Clean up: `claude mcp remove db`, and delete the scratch database.',
+  ]}
+  expected="claude mcp get db reports ✔ Connected. The read query returns the two overdue, unfinished rows and echoes the SQL that produced them. The DELETE is rejected by the server with a READONLY_VIOLATION error naming the allowed operations (select, with, explain, pragma), and the row count is unchanged."
+  checklist={[
+    'The DSN is the absolute `sqlite:///…` form',
+    '`dbhub.toml` sets `readonly = true` on the `execute_sql` tool',
+    '`claude mcp get db` reported ✔ Connected',
+    'The query answer includes the SQL that was actually run',
+    'The rows match the data you seeded, not an empty database',
+    'The DELETE came back as READONLY_VIOLATION and the row count did not change',
+    'The server was removed and the scratch database deleted',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/05-database-mcp/01-add-and-status.txt"
+    range="2-15"
+  />
+  <Transcript src="content/_shared/transcripts/m11-mcp/05-database-mcp/02-query.txt" range="5-17" />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/05-database-mcp/03-readonly.txt"
+    range="5-18"
+  />
+</Lab>
+
+The middle capture does the thing that makes this worth doing: the answer contains both the rows and the statement. `SELECT title, due_date FROM tasks WHERE done = 0 AND due_date < '2026-09-07'` is checkable at a glance — you can see that "not done" was read as `done = 0` and that the date bound is the one you meant.
+
+The third capture is the lesson. The server's own words:
+
+```json
+{
+  "success": false,
+  "error": "Read-only mode is enabled. Only the following SQL operations are allowed: select, with, explain, pragma",
+  "code": "READONLY_VIOLATION"
+}
+```
+
+The refusal came from the server, not from the model's judgement and not from Claude Code's permission system. That distinction is the whole design principle of this lesson: a control you can _see refuse_ is worth more than a control you are assured exists. (For the record, on a first attempt with a plainer prompt the model declined to run the `DELETE` on its own — a good instinct, and exactly why the lab has to ask explicitly for the statement to be sent before the server's guard is visible.)
+
+One more thing in the first capture, easy to skim past: `claude mcp get db` prints the full command, including `--config=dbhub.toml`. If the DSN had been on the command line, as in the docs' PostgreSQL example, the database password would be printed there too — which is a reason to prefer the config file.
+
+## Anti-patterns
+
+**A read-write credential "because it is just a dev database".** Dev databases get restored from production. _Fix:_ a read-only database user in the DSN, always, and read-only in the server config as well.
+
+**Putting the DSN with its password on the command line.** It lands in `~/.claude.json`, in `claude mcp get` output, and in your shell history. _Fix:_ a config file the server reads, or `${DB_DSN}` expansion in `.mcp.json`.
+
+**Trusting a relative SQLite path.** It connects, reports healthy, and answers every question about an empty database. _Fix:_ absolute `sqlite:///…` paths.
+
+**Taking the rows without the SQL.** You cannot tell a wrong answer from a right one if you never see the question. _Fix:_ ask for the statement in the same breath as the result.
+
+**Selecting everything into context.** `SELECT * FROM users` on a real table blows through the MCP output limit — Claude Code warns above 10,000 tokens and caps at 25,000 by default — and puts personal data in a transcript. _Fix:_ ask for aggregates and `LIMIT`ed samples, and raise `MAX_MCP_OUTPUT_TOKENS` only deliberately.
+
+<Callout variant="changed">
+  DBHub's `--readonly` command-line flag is gone. Running it now prints `ERROR: --readonly flag is
+  no longer supported. Use dbhub.toml with [[tools]] configuration instead:` followed by the TOML
+  shown above. Verified against `@bytebase/dbhub` on 2026-09-07; configure read-only in
+  `dbhub.toml`, not on the command line.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/database-mcp"
+  questionId="q1"
+  lang="en"
+  prompt="Your SQLite-backed server reports ✔ Connected but every query says the table does not exist. Most likely cause?"
+  options={[
+    {
+      text: 'The DSN is relative, so the server opened a different, empty database',
+      correct: true,
+      explanation:
+        'sqlite:// takes the next segment as a host. Use the absolute `sqlite:///path/to/file.db` form.',
+    },
+    {
+      text: 'Read-only mode blocks SELECT',
+      explanation: 'Read-only mode allows select, with, explain and pragma.',
+    },
+    {
+      text: 'The server needs OAuth',
+      explanation: 'A local stdio server against a file has nothing to sign in to.',
+    },
+    {
+      text: 'Claude Code stripped the query because of the output limit',
+      explanation:
+        'Output limits truncate or persist large results; they do not make tables vanish.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/database-mcp"
+  questionId="q2"
+  lang="en"
+  prompt="Which pair of controls does this lesson recommend for a database server?"
+  options={[
+    {
+      text: 'A read-only database user AND a read-only tool configuration in the server',
+      correct: true,
+      explanation:
+        'The credential bounds the connection, the server bounds the tool. Each covers a failure the other does not.',
+    },
+    {
+      text: 'A read-only database user, and a prompt telling Claude not to write',
+      explanation: 'An instruction is not an enforcement mechanism.',
+    },
+    {
+      text: 'bypassPermissions mode, so the prompts stop',
+      explanation: 'That removes a control rather than adding one.',
+    },
+    {
+      text: 'A read-write user with careful review of each query',
+      explanation:
+        'Review is valuable and not sufficient; give the connection no ability to do the thing you do not want.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/database-mcp"
+  questionId="q3"
+  lang="en"
+  prompt="Claude Code warns you that an MCP tool's output is large. What are the default numbers?"
+  options={[
+    {
+      text: 'A warning above 10,000 tokens, and a default maximum of 25,000, adjustable with MAX_MCP_OUTPUT_TOKENS',
+      correct: true,
+      explanation:
+        'Tools can also declare their own bigger limit for text content with the anthropic/maxResultSizeChars annotation.',
+    },
+    {
+      text: 'A warning above 1,000 tokens and a hard 4,000 limit',
+      explanation: 'Not the documented values.',
+    },
+    {
+      text: 'No warning; results are always truncated silently',
+      explanation: 'Claude Code warns, and oversized results are persisted to disk and referenced.',
+    },
+    {
+      text: 'A warning above 25,000 tokens with no maximum',
+      explanation: 'The 25,000 is the default maximum, not the warning threshold.',
+    },
+  ]}
+/>
+
+**Next:** `06-write-your-own-server` stops connecting other people's servers and writes one — about a hundred lines of TypeScript, one tool, one transport.

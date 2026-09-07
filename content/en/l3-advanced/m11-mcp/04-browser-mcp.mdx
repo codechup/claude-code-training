@@ -1,0 +1,267 @@
+---
+title: 'The Playwright and Chrome browser MCP servers'
+description: 'Give Claude a real browser over MCP: add the Playwright server as a local stdio process, read its tool list, and have Claude open a page you just changed and report its title, content and console errors.'
+level: 3
+module: 'm11-mcp'
+order: 4
+duration_min: 20
+difficulty: core
+tags: ['mcp', 'browser', 'playwright', 'ui-checks']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Connect to MCP servers'
+    url: 'https://code.claude.com/docs/en/mcp-quickstart.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Connect Claude Code to tools via MCP'
+    url: 'https://code.claude.com/docs/en/mcp.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'Playwright MCP server'
+    url: 'https://github.com/microsoft/playwright-mcp'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m11-04-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Add the Playwright MCP server as a local stdio process and confirm it connected.
+- List the tools a connected server exposes, and read the `mcp__<server>__<tool>` naming convention.
+- Have Claude open a page, read its accessibility snapshot and report its console errors, without touching the page.
+- Scope a headless browser run with `--allowedTools` so it can navigate and read but not act.
+- Say when a browser server is the right check and when a test is.
+
+**Prerequisites.** Lessons 01 and 02. A clone of the lab repository at `lesson/m11-04-start`, Node.js 18 or later (`@playwright/mcp` runs through `npx`), and a Chrome installed on your machine.
+
+<WhenNotToUse>
+  A browser server is an *observation* tool, not a test suite. If the check is one you want to run
+  on every commit, write a Playwright test and run it in CI: it is deterministic, it fails loudly,
+  and it costs no tokens. Reach for the MCP server when the loop is exploratory — "does this page
+  still look right after my change", "walk through the steps in this bug report", "what is in the
+  console on that screen" — where a human would otherwise be clicking. Do not point it at a
+  production site you are signed in to, and do not let it drive an authenticated session you would
+  not hand to a stranger: the browser inherits whatever access the profile it drives has.
+</WhenNotToUse>
+
+## Concept
+
+### Two browser servers
+
+There are two ways to give Claude Code a browser, and they answer different questions.
+
+The **Playwright MCP server** (`@playwright/mcp`) is a local stdio server that drives a browser Playwright controls. It needs no account, runs through `npx`, and requires Node.js 18 or later. It drives whichever Chrome is already installed on your machine; append `--browser firefox` (after the package name) to use another. This is the one to learn first, and the one this lab uses.
+
+**Claude in Chrome** is a different thing: an extension that drives _your_ existing Chrome session, with your logins and your tabs, gated on per-site permissions you grant in the extension. It is covered in the platforms module (`m15-platforms`). The rule of thumb: Playwright for a clean browser under automation, Claude in Chrome for the browser you are already sitting in.
+
+### Adding it
+
+<CodeBlock title="add the Playwright MCP server">
+
+```bash
+claude mcp add playwright -- npx -y @playwright/mcp@latest
+```
+
+</CodeBlock>
+
+Three things differ from the HTTP servers of lesson 03. There is no `--transport` flag, because local servers use the default `stdio` transport. Everything after `--` is the command Claude Code runs to start the server. And `-y` tells `npx` to install the package without prompting.
+
+The first `claude mcp list` after adding can report `✘ Failed to connect` while `npx` downloads the package — wait a moment and run it again. If it still fails after a couple of retries, run the configured command directly (`npx -y @playwright/mcp@latest`): if it starts and waits for input, the server is fine and the problem is your configuration; if it errors, the message names what is missing, usually Node.js or a browser.
+
+### What its tools are called
+
+Every MCP tool reaches Claude under a generated name: `mcp__<server>__<tool>`. The server part is the name _you_ chose in `claude mcp add`, which is why naming a server well pays off — it is the prefix on every permission rule and every `--allowedTools` entry you will write.
+
+That naming is what makes a headless browser run safe to script. `--allowedTools` takes the exact tool names, so you can allow navigation and reading while withholding anything that clicks, types or evaluates code:
+
+<CodeBlock title="a read-only browser run">
+
+```bash
+claude -p "Open http://localhost:4429/ and report the page title, the h1 text and any console errors." \
+  --model sonnet --max-turns 10 --output-format text \
+  --allowedTools "mcp__playwright__browser_navigate,mcp__playwright__browser_snapshot,mcp__playwright__browser_console_messages,mcp__playwright__browser_close"
+```
+
+</CodeBlock>
+
+Note what is _not_ in that list: `browser_click`, `browser_type`, `browser_fill_form`, `browser_evaluate` and `browser_run_code_unsafe`. In `claude -p` there is nobody to answer a permission prompt, so a call to a tool you did not allow is simply blocked — the lab captures Claude reporting exactly that. The run is bounded by the flag rather than by hoping the model behaves.
+
+One caveat the lab makes you discover: an allowlist is only as narrow as the tools in it actually are. `browser_navigate`'s own result carries the page snapshot and the console messages, so allowing navigation alone still answers a question about console errors. Read what a tool returns before assuming its name bounds it.
+
+### How Claude reads a page
+
+Claude does not look at a screenshot by default. `browser_snapshot` returns an **accessibility snapshot** — the page's structure, roles and text — which is cheaper, more reliable to reason over, and the same tree a screen reader would walk. `browser_take_screenshot` exists for when the question is genuinely visual. `browser_console_messages` and `browser_network_requests` are the two that turn a browser into a debugging instrument rather than a viewer.
+
+This lesson's example prompt:
+
+```text
+Open http://localhost:4429/ and tell me the page title, the h1 text,
+and any console errors. Do not change anything.
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · check a page with a real browser"
+  lessonId="en/l3-advanced/m11-mcp/browser-mcp"
+  repoTag="lesson/m11-04-start"
+  steps={[
+    'Check out `lesson/m11-04-start`. Its `.mcp.json` already carries a `playwright` entry — read it, then add the server at local scope so this lab does not depend on approving the project file: `claude mcp add playwright -- npx -y @playwright/mcp@latest`.',
+    'Run `claude mcp list`. If the first check reports `✘ Failed to connect`, wait for the `npx` download to finish and run it again.',
+    'Ask Claude, headlessly, to list the tools the server exposes without calling any of them: `claude -p "List the tool names the playwright MCP server exposes, one per line, sorted. Do not call any of them and do not open a browser." --model sonnet --max-turns 4 --output-format text --allowedTools "ToolSearch"`. Note the `mcp__playwright__` prefix on every name.',
+    'Serve a page to look at. Create `site/index.html` with a `<title>`, an `<h1>`, and a `<script>` that calls `console.error(...)` once, then run a static server on port 4429 from that folder (`python -m http.server 4429`, or any equivalent).',
+    'Run the read-only check: `claude -p "<the prompt above>" --model sonnet --max-turns 10 --output-format text --allowedTools "mcp__playwright__browser_navigate,mcp__playwright__browser_snapshot,mcp__playwright__browser_console_messages,mcp__playwright__browser_close"`. A browser window opens so you can watch it work.',
+    'Read the answer against the page you wrote. Did it find the console error you planted? Did it find one you did not plant?',
+    'Narrow the allowlist to `--allowedTools "mcp__playwright__browser_navigate,ToolSearch"` and re-run the same prompt. Predict what happens first, then read the answer — it is not what most people expect.',
+    'Now allow no browser tool at all (`--allowedTools "ToolSearch"`) and ask again, telling Claude to name the tool it could not use. This is what a blocked MCP tool looks like in a headless run.',
+    'Clean up: `claude mcp remove playwright`, and stop the static server.',
+  ]}
+  expected="claude mcp list reports playwright as ✔ Connected; the tool listing shows 24 tools, all prefixed mcp__playwright__; the browser run reports the page title, the h1 text and both console errors — the one you planted and the browser's own 404 for favicon.ico — and states that nothing was changed. Narrowing the allowlist to browser_navigate alone still answers the whole question; removing every browser tool makes Claude report that mcp__playwright__browser_navigate was blocked because permission was not granted."
+  checklist={[
+    'The server was added with `--` and no `--transport` flag',
+    '`claude mcp list` eventually reported ✔ Connected',
+    'Every tool name in the listing starts with `mcp__playwright__`',
+    'The browser run reported the title and h1 that are actually in your HTML',
+    'It reported the console error you planted',
+    'The narrowed re-run still answered — you saw that one tool’s result can carry more than its name suggests',
+    'With no browser tool allowed, Claude named `mcp__playwright__browser_navigate` as blocked',
+    'The server was removed afterwards',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/04-browser-mcp/01-add-and-status.txt"
+    range="2-9"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/04-browser-mcp/02-tool-list.txt"
+    range="6-29"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/04-browser-mcp/03-page-check.txt"
+    range="5-12"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/04-browser-mcp/04-narrow-allowlist.txt"
+    range="4-12"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/04-browser-mcp/05-tool-denied.txt"
+    range="4-6"
+  />
+</Lab>
+
+The third capture is the one to read twice. The recorded page had exactly one `console.error` in it — `labtrack: failed to load /api/tasks` — and the run reports **two** errors: that one, and `Failed to load resource: the server responded with a status of 404 (File not found)` for `favicon.ico`, which nobody wrote and which the browser generated on its own.
+
+That is the whole argument for a browser server in one line. A test asserts what you thought to assert. A browser reports what the page actually did, including the thing you did not know to look for. It is also a warning: half of what a real page logs is noise, and you are the one who has to decide which half.
+
+The last two captures are the ones that will change how you write `--allowedTools`. Narrowing to `browser_navigate` alone did **not** stop Claude answering the console question: `browser_navigate` returns the page snapshot and the console messages in its own result, so one allowed tool covered three questions. Take away every browser tool and the boundary appears immediately — `The mcp__playwright__browser_navigate tool call was blocked because permission wasn't granted for it.` An allowlist is a real control; it is just not as fine-grained as the tool names make it look.
+
+The tool listing is worth keeping too, as a map of what this server can do — navigation, snapshot, console and network reads, clicks, typing, form filling, file upload, tabs, screenshots, and `browser_run_code_unsafe`, whose name is its own documentation.
+
+## Anti-patterns
+
+**Running a browser server unrestricted in headless mode.** `claude -p` with no `--allowedTools` denies MCP tools outright; with a blanket allow, it can click and type on whatever it navigated to. _Fix:_ list the exact tools the task needs, and leave the acting ones out for read-only checks.
+
+**Pointing it at a signed-in production site.** The browser has whatever access the profile it drives has, and a page can contain instructions aimed at the agent reading it. _Fix:_ local dev servers and throwaway accounts; treat page content as untrusted input.
+
+**Replacing tests with browser sessions.** A prompt that "checks the page" is not a regression test — it is not deterministic and it will not run in CI. _Fix:_ once a browser session finds a bug, write the test that would have caught it.
+
+**Re-adding the server per project by hand.** A browser is a general-purpose tool, not a project dependency. _Fix:_ `--scope user` once, if you use it everywhere.
+
+**Reading `✘ Failed to connect` on the first try as broken.** The first run downloads the package. _Fix:_ wait, run `claude mcp list` again, and only then run the server command by hand to see the real error.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/browser-mcp"
+  questionId="q1"
+  lang="en"
+  prompt="Why does `claude mcp add playwright -- npx -y @playwright/mcp@latest` need no --transport flag?"
+  options={[
+    {
+      text: 'Because stdio is the default transport for local servers',
+      correct: true,
+      explanation:
+        'Everything after `--` is the command Claude Code runs; the server is a local process, so stdio applies without saying so.',
+    },
+    {
+      text: 'Because npx servers always negotiate their own transport',
+      explanation:
+        'The transport is a client-side configuration decision, not something npx negotiates.',
+    },
+    {
+      text: 'Because Playwright uses WebSocket internally',
+      explanation:
+        'How Playwright talks to the browser is its business; Claude Code talks to the server over stdio.',
+    },
+    {
+      text: 'Because --transport only applies to servers that need OAuth',
+      explanation: '--transport applies to http and sse; stdio is simply the default.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/browser-mcp"
+  questionId="q2"
+  lang="en"
+  prompt="You want a headless run that can look at a page but must not click or type. What do you pass?"
+  options={[
+    {
+      text: '--permission-mode plan',
+      explanation:
+        'Plan mode is about edits and execution generally; it is not how you pick which MCP tools exist.',
+    },
+    {
+      text: '--allowedTools with the exact read-only tool names, e.g. mcp__playwright__browser_navigate and mcp__playwright__browser_snapshot',
+      correct: true,
+      explanation:
+        'Tool names are `mcp__<server>__<tool>`, and in `claude -p` a call to a tool you did not allow is blocked outright — there is no prompt to answer.',
+    },
+    {
+      text: '--allowedTools "mcp__playwright__*" and a polite instruction in the prompt',
+      explanation:
+        'A wildcard re-admits browser_click, browser_type and browser_run_code_unsafe; an instruction is not an enforcement mechanism.',
+    },
+    {
+      text: 'Nothing — MCP tools are read-only by default',
+      explanation:
+        'They are whatever the server implements; this one clicks, types and uploads files.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/browser-mcp"
+  questionId="q3"
+  lang="en"
+  prompt="What does browser_snapshot return?"
+  options={[
+    {
+      text: 'A PNG of the viewport',
+      explanation: 'That is browser_take_screenshot.',
+    },
+    {
+      text: 'An accessibility snapshot of the page — its structure, roles and text',
+      correct: true,
+      explanation:
+        'Cheaper and more reliable to reason over than an image, and the same tree a screen reader walks.',
+    },
+    {
+      text: 'The raw HTML source as served',
+      explanation:
+        'It is the live accessibility tree, after scripts have run — not the served source.',
+    },
+    {
+      text: 'The network waterfall',
+      explanation: 'That is browser_network_requests.',
+    },
+  ]}
+/>
+
+**Next:** `05-database-mcp` connects a database over MCP, and makes the server itself refuse to write.

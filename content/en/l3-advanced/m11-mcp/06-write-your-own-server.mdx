@@ -1,0 +1,320 @@
+---
+title: 'Writing a minimal MCP server'
+description: 'Write an MCP server of your own with the TypeScript SDK: one tool, one stdio transport, a zod input schema. Then verify it by hand with three JSON-RPC lines, register it, and watch Claude call it headlessly.'
+level: 3
+module: 'm11-mcp'
+order: 6
+duration_min: 30
+difficulty: advanced
+tags: ['mcp', 'typescript', 'sdk', 'stdio', 'tools']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Connect Claude Code to tools via MCP'
+    url: 'https://code.claude.com/docs/en/mcp.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'MCP TypeScript SDK'
+    url: 'https://github.com/modelcontextprotocol/typescript-sdk'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Connect to MCP servers'
+    url: 'https://code.claude.com/docs/en/mcp-quickstart.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m11-06-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Write a stdio MCP server with the TypeScript SDK: `McpServer`, `registerTool`, `StdioServerTransport`.
+- Describe a tool's inputs with a schema, and write a description that tells Claude when to call it.
+- Verify the server without a client, using three JSON-RPC lines and `printf`.
+- Register it with `claude mcp add` and prove Claude calls it in a headless run.
+- Say which SDK major version you are on and what changed in the other one.
+
+**Prerequisites.** Lessons 01, 02 and 05. A clone of the lab repository at `lesson/m11-06-start`, **Node 24** — the version its `.nvmrc` pins, and the one this lesson was recorded on; the server has no build step, so Node runs the `.ts` file directly — and enough TypeScript to read a hundred-line file.
+
+<WhenNotToUse>
+  Do not write a server for something a shell command already does well. A tool that shells out to a
+  CLI you have installed is a wrapper you now have to maintain, install and trust — Claude can just
+  run the CLI. Write a server when the capability is genuinely not reachable from the command line
+  in one step: a system with only an SDK, an internal API with a bespoke auth scheme, a query that
+  needs real logic around it. Also stop before you write a server that returns *everything*: a tool
+  whose output is a database dump is a context-window problem wearing a protocol.
+</WhenNotToUse>
+
+## Concept
+
+### The whole shape
+
+An MCP server is smaller than it sounds. The TypeScript SDK's own minimal example is a server object, one registered tool, and a transport:
+
+<CodeBlock title="the shape of a stdio server">
+
+```typescript
+const server = new McpServer({ name: 'labtrack-mcp', version: '1.0.0' });
+
+server.registerTool(
+  'labtrack_status',
+  {
+    title: 'labtrack status',
+    description: 'Summarizes the labtrack task file: total/open/done/overdue counts.',
+    inputSchema: {
+      dataFile: z.string().optional().describe('Path to the labtrack data file.'),
+    },
+  },
+  async ({ dataFile }) => {
+    // ... do the work ...
+    return { content: [{ type: 'text', text: JSON.stringify(summary, null, 2) }] };
+  },
+);
+
+const transport = new StdioServerTransport();
+await server.connect(transport);
+```
+
+</CodeBlock>
+
+Four parts, and each maps onto something you already saw in the lesson 01 handshake:
+
+- **`new McpServer({ name, version })`** — what comes back in `serverInfo` on `initialize`.
+- **`registerTool(name, spec, handler)`** — one entry in the `tools/list` response.
+- **`inputSchema`** — turned into the JSON Schema Claude Code sends to the model.
+- **`StdioServerTransport` + `connect`** — the loop reading JSON-RPC lines from stdin and writing them to stdout.
+
+The handler returns `content`, an array of blocks. A text block is the common case; returning JSON as text is fine and often clearer than prose, because the model reads it as data.
+
+### The description is the interface
+
+The thing that decides whether your tool ever gets used is not the code — it is the `description`. With tool search on (the default), Claude sees tool names and the server's instructions at session start and _searches_ for definitions when a task looks relevant. A description that says what the tool does, on what, and when to reach for it, is what makes that search hit. Claude Code truncates tool descriptions and server instructions at 2 KB each, so keep them tight and put the critical part first.
+
+The same goes for naming. The tool in the lab is `labtrack_status`, not `status`: it reads as a sentence in a tool call, and it will not collide with the four other `status` tools someone connects later.
+
+### Print to stderr, never to stdout
+
+The one rule that catches everyone: **stdout is the protocol**. A stray `console.log` in a stdio server injects a non-JSON line into the stream and breaks the connection. Diagnostics go to `console.error`, which is stderr, which Claude Code logs. The lab's server does exactly this in its failure path.
+
+### Two SDK major versions
+
+The lab's server is built on the SDK's 1.x line: the package is `@modelcontextprotocol/sdk`, `McpServer` is imported from `@modelcontextprotocol/sdk/server/mcp.js`, the transport from `.../server/stdio.js`, and `inputSchema` is an object of zod validators (a "raw shape"), not a `z.object(...)`.
+
+Claude Code connects to stdio servers with its v1 client behaviour unless you set `MCP_PROTOCOL_NEGOTIATION` to `auto`, so a 1.x server is a first-class citizen here, not a legacy artefact.
+
+If you start a new server on v2 instead, three things move: the import becomes `from '@modelcontextprotocol/server'`, the stdio transport lives at `@modelcontextprotocol/server/stdio`, and `inputSchema` takes a Standard Schema object — a `z.object(...)` from Zod v4, or Valibot or ArkType — rather than the raw shape 1.x expects. Everything else in this lesson is unchanged.
+
+### This lesson's example prompt
+
+```text
+Use the labtrack MCP server's labtrack_status tool to report how many tasks
+are total, open, done and overdue in this project. Do not read any file yourself.
+```
+
+The second sentence is doing real work. Without it, Claude will happily `cat` the JSON file and answer correctly — proving nothing about your server.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · write, verify and connect your own MCP server"
+  lessonId="en/l3-advanced/m11-mcp/write-your-own-server"
+  repoTag="lesson/m11-06-start"
+  steps={[
+    'Check out `lesson/m11-06-start` and run `npm ci` at the repository root.',
+    'Create a `mcp/` directory with its own `package.json` (`"type": "module"`, dependencies `@modelcontextprotocol/sdk` and `zod`) and `tsconfig.json`. Keeping it a separate package means adding a server never touches the root project’s `npm test` or `npm run typecheck`.',
+    'Write `mcp/src/index.ts`: import `McpServer` from `@modelcontextprotocol/sdk/server/mcp.js` and `StdioServerTransport` from `@modelcontextprotocol/sdk/server/stdio.js`; register one tool, `labtrack_status`, taking an optional `dataFile` string; in the handler, read the JSON file the labtrack CLI persists to (`.labtrack-data.json` by default, overridable with `LABTRACK_DATA_FILE`), and return `{ total, open, done, overdue }` as a text block of JSON. Treat a missing file as an empty task list, not an error. Log failures with `console.error`, never `console.log`.',
+    'Run `npm install` inside `mcp/`.',
+    'Give the server something to report on: from the repository root, add three tasks with the CLI (`node src/cli.ts add "…" --priority 1 --due 2026-08-01`, and so on), then mark one done with `node src/cli.ts done <full-id>` and check `node src/cli.ts list`.',
+    'Verify the server with no client at all: pipe three JSON-RPC lines — `initialize`, `notifications/initialized`, `tools/list` — into `node mcp/src/index.ts` and read the two responses.',
+    'Register it: `claude mcp add --scope local labtrack -- node mcp/src/index.ts`, then `claude mcp list` and confirm `✔ Connected`.',
+    'Write a one-server `mcp-labtrack.json` describing the same command — `{"mcpServers":{"labtrack":{"type":"stdio","command":"node","args":["mcp/src/index.ts"]}}}` — so the next step can run with `--strict-mcp-config` and ignore the `.mcp.json` this tag ships, the same trick as lesson 05.',
+    'Prove Claude calls it, headlessly and with nothing else allowed: `claude -p "Use the labtrack MCP server\'s labtrack_status tool to report how many tasks are total, open, done and overdue in this project. Do not read any file yourself." --model sonnet --max-turns 6 --output-format text --mcp-config mcp-labtrack.json --strict-mcp-config --allowedTools "mcp__labtrack__labtrack_status,ToolSearch"`.',
+    'Compare the numbers with `node src/cli.ts list`. Then clean up with `claude mcp remove labtrack`.',
+  ]}
+  expected="The hand-driven handshake returns serverInfo {name: labtrack-mcp, version: 1.0.0} and a tools/list entry for labtrack_status with a JSON Schema derived from the zod shape. claude mcp list reports labtrack as ✔ Connected. The headless run answers 3 total — 2 open, 1 done, 1 overdue, matching the tasks you seeded, without reading any file itself."
+  checklist={[
+    'mcp/ is its own package and the root project’s typecheck and tests are untouched',
+    'The initialize response names your server and version',
+    'tools/list shows labtrack_status with a description and an inputSchema',
+    'claude mcp list reports ✔ Connected',
+    'The headless run’s counts match `node src/cli.ts list`',
+    'Nothing was written to stdout except JSON-RPC',
+    'The server was removed at the end',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/06-write-your-own-server/01-seed.txt"
+    range="2-11"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/06-write-your-own-server/02-handshake.txt"
+    range="3-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/06-write-your-own-server/03-register.txt"
+    range="2-11"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/06-write-your-own-server/04-tool-call.txt"
+    range="5-5"
+  />
+</Lab>
+
+Four short captures, and each proves a different thing.
+
+The seed capture is the ground truth: three tasks added through the CLI, one of them later marked done. Note that `node src/cli.ts done` wants the **full** id, not the eight-character prefix `list` prints — copy it from the `added …` line.
+
+The handshake capture is your server answering before any client is involved. Read the `inputSchema` it produced: `{"type":"object","properties":{"dataFile":{"type":"string","description":"…"}},"additionalProperties":false}`. You wrote a zod shape; the SDK turned it into the JSON Schema the model is given. That translation is the reason to describe every field — the `.describe(...)` text is what the model reads.
+
+The register capture shows something the lab did not ask for and is more instructive for it: alongside `labtrack: ✔ Connected`, the two servers from the repository's committed `.mcp.json` sit at `⏸ Pending approval`, and the diagnostics block warns `[github] mcpServers.github: Missing environment variables: GITHUB_TOKEN`. That is a realistic project: your own server working, a shared config waiting on approval, and a variable nobody set.
+
+The last capture is one line — `Task status for this project: 3 total — 2 open, 1 done, 1 overdue.` — and it is the point of the lesson. The counts are your server's, computed from the file the CLI wrote, delivered through a protocol you now understand end to end.
+
+### Scaffolding one instead
+
+If you would rather not start from a blank file, the docs point at an official plugin that generates a server for you:
+
+<CodeBlock title="scaffold a server with the official plugin">
+
+```text
+/plugin install mcp-server-dev@claude-plugins-official
+/mcp-server-dev:build-mcp-server
+```
+
+</CodeBlock>
+
+Claude asks about your use case and scaffolds a remote HTTP or local stdio server. If the install reports `Marketplace "claude-plugins-official" not found`, add the marketplace with `/plugin marketplace add anthropics/claude-plugins-official` and retry; if the summary says `Run /reload-plugins to activate.`, run that.
+
+## Anti-patterns
+
+**`console.log` in a stdio server.** It writes a non-JSON line into the protocol stream and the connection dies with no obvious cause. _Fix:_ `console.error` for everything diagnostic.
+
+**A vague tool description.** `"Gets status"` tells Claude nothing about when to search for it, and the tool sits unused while Claude reads your files instead. _Fix:_ say what it does, what it reads, and what it returns — within 2 KB, important part first.
+
+**Returning the whole dataset.** Above the default limits Claude Code warns, and oversized results are persisted to disk and replaced with a file reference. _Fix:_ return summaries and counts; add parameters for the detail, and only annotate `anthropic/maxResultSizeChars` for tools that genuinely need it.
+
+**Throwing on the empty case.** A fresh checkout with no data file is not an error. _Fix:_ handle `ENOENT` as "no items", and let real errors surface.
+
+**Putting the server inside the host project's package.** Now the root `npm test` and `tsc` see the SDK and its types. _Fix:_ a separate `package.json` and `tsconfig.json` under `mcp/`, as the lab does.
+
+<Callout variant="changed">
+  The TypeScript SDK's stable line is now v2 — `@modelcontextprotocol/server` and
+  `@modelcontextprotocol/client`, for the 2026-07-28 MCP spec — while v1.x keeps receiving bug fixes
+  and security updates for at least six months after v2's release. This lesson teaches the 1.x code
+  that was actually run. Verified against the SDK repository's README on 2026-09-07.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/write-your-own-server"
+  questionId="q1"
+  lang="en"
+  prompt="Your stdio server connects, then drops as soon as it does any work. What is the first thing to check?"
+  options={[
+    {
+      text: 'Whether the handler writes anything to stdout besides the protocol',
+      correct: true,
+      explanation:
+        'stdout is the JSON-RPC channel. A single console.log corrupts the stream. Diagnostics go to stderr.',
+    },
+    {
+      text: 'Whether the tool description is under 2 KB',
+      explanation: 'Truncation affects discovery, not the connection.',
+    },
+    {
+      text: 'Whether OAuth tokens expired',
+      explanation: 'A local stdio server has no OAuth.',
+    },
+    {
+      text: 'Whether MAX_MCP_OUTPUT_TOKENS is too low',
+      explanation: 'That truncates or persists results; it does not drop the connection.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/write-your-own-server"
+  questionId="q2"
+  lang="en"
+  prompt="Which three JSON-RPC messages verify a stdio server without any client?"
+  options={[
+    {
+      text: 'initialize, notifications/initialized, tools/list',
+      correct: true,
+      explanation: 'Exactly what the lab pipes in with printf; the server answers ids 1 and 2.',
+    },
+    {
+      text: 'handshake, auth, list',
+      explanation: 'Not MCP methods.',
+    },
+    {
+      text: 'tools/list, tools/call, shutdown',
+      explanation: 'You cannot list tools before the handshake.',
+    },
+    {
+      text: 'connect, tools/list, disconnect',
+      explanation: '`connect` is an SDK method name, not a protocol message.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/write-your-own-server"
+  questionId="q3"
+  lang="en"
+  prompt="You wrote the server against `@modelcontextprotocol/sdk` v1.x. What is true?"
+  options={[
+    {
+      text: 'v2 ships as @modelcontextprotocol/server with Standard Schema input schemas; v1.x keeps getting fixes for at least six months after v2’s release',
+      correct: true,
+      explanation:
+        'Straight from the SDK README. The concepts — server, tool, transport — are the same in both.',
+    },
+    {
+      text: 'v1.x is unsupported and Claude Code cannot connect to it',
+      explanation:
+        'Claude Code connects to stdio servers with v1 behaviour unless MCP_PROTOCOL_NEGOTIATION is set to auto.',
+    },
+    {
+      text: 'v2 removed stdio in favour of HTTP only',
+      explanation: 'v2 ships a stdio transport at @modelcontextprotocol/server/stdio.',
+    },
+    {
+      text: 'The package name is unchanged between the two major versions',
+      explanation: 'v2 splits into @modelcontextprotocol/server and @modelcontextprotocol/client.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/write-your-own-server"
+  questionId="q4"
+  lang="en"
+  prompt="Why does the lab prompt say “Do not read any file yourself”?"
+  options={[
+    {
+      text: 'Because reading files is disallowed for MCP labs',
+      explanation: 'It is not; the constraint is about what the run proves.',
+    },
+    {
+      text: 'So that a correct answer can only have come through your server',
+      correct: true,
+      explanation:
+        'Claude could `cat` the JSON and answer correctly, proving nothing. The constraint makes the run evidence.',
+    },
+    {
+      text: 'To save tokens',
+      explanation: 'A minor side effect, not the reason.',
+    },
+    {
+      text: 'Because the file is not readable at that point',
+      explanation: 'It is — the CLI wrote it in an earlier step.',
+    },
+  ]}
+/>
+
+**Next:** `07-mcp-security` asks the question the whole module has been circling: what exactly are you trusting when you connect a server, and what can an administrator do about it?

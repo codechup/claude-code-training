@@ -2,7 +2,7 @@
 id: P28
 title: "L3 Advanced module: MCP (m11-mcp)"
 milestone: M2
-status: in_progress
+status: review
 owner: opus-p28-2026-09-07
 branch: plan/28-l3-m11-mcp
 model_hint: opus
@@ -15,8 +15,11 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T10:55:12Z
-open_questions: []
+updated_at: 2026-09-07T19:09:00Z
+open_questions:
+  - "Lab repo (P22 owns it): the `.mcp.json` shipped at tags lesson/m11-03-start..m11-06-start launches `@modelcontextprotocol/server-github`, which npm marks deprecated ('Package no longer supported', version 2025.4.8). The live docs teach the remote HTTP server at https://api.githubcopilot.com/mcp/ with a PAT header. Suggest re-tagging with an HTTP `github` entry using `${GITHUB_TOKEN}` in a header."
+  - "Lab repo (P22 owns it): `node src/cli.ts done <id>` rejects the 8-character id prefix that `node src/cli.ts list` prints, and exits with an unhandled InvalidTaskError stack trace rather than a message. Not listed in BUGS.md as a seeded defect; if unintended, worth a fix or a BUGS.md entry."
+  - "research/ owner: expand the MCP row of research/feature-inventory.md (line 37) — see Handoff notes for the specific gaps." 
 ---
 
 ## Goal
@@ -100,5 +103,27 @@ A reviewer opens `npm run dev`, visits each of the 7 lessons at `/en/l3-advanced
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+**Shipped.** 7 EN lessons under `content/en/l3-advanced/m11-mcp/`, 7 TR `draft: true` stubs (translated title/description + a Turkish summary paragraph with glossary links, per the content-plan brief), 22 real transcripts under `content/_shared/transcripts/m11-mcp/<NN-slug>/`, and 3 new `repo` entries plus one module tag appended to `content/_shared/sources.json` (additive diff only).
+
+**Deltas from this plan's text** (CURRICULUM and the standing brief win, per the brief's step 1):
+
+- **Slugs.** `docs/CURRICULUM.md` §2 names `01-mcp-concepts`, `02-add-list-remove-scopes`, `03-github-mcp`, `04-browser-mcp`, `05-database-mcp`, `06-write-your-own-server`, `07-mcp-security`. This plan's Deliverables listed longer names; the CURRICULUM slugs shipped.
+- **Transcript layout.** The brief's `content/_shared/transcripts/<module>/<NN-slug>/<kk>-<name>.txt` with a `# ` provenance header, not this plan's single `NN-<slug>.md`.
+- **TR stubs.** The brief asks for a translated title and a one-paragraph Turkish summary; this plan said leave them English. The brief was followed.
+
+**Labs — what was actually run** (D093/D099). Every command was executed on 2026-09-07 against Claude Code 2.1.263, Node 24.18.0, Windows 11 + Git Bash, in throwaway copies of the `lesson/m11-0N-start` trees; every MCP server added at `--scope local` was removed afterwards, so this machine's `~/.claude.json` is unchanged. No real credential was used and nothing was created on any remote service: lesson 03 adds GitHub's documented HTTP server with a visibly fake token and captures the server's own `HTTP 400` rejection, plus Sentry's `! Needs authentication` for contrast. Lesson 04 runs a real browser against a local static page on port 4429. Lesson 05 runs a real `@bytebase/dbhub` server over a scratch SQLite file and captures both a real query and a real `READONLY_VIOLATION`. Lesson 06 writes, hand-verifies and calls the lab's own TS server.
+
+**Drift found against the live docs and packages:**
+
+- `@modelcontextprotocol/server-github` (version `2025.4.8`) is marked deprecated on npm ("Package no longer supported"). The lab tags `m11-03`..`m11-06` ship a `.mcp.json` whose `github` entry launches it over stdio. The lessons teach the documented remote HTTP server (`https://api.githubcopilot.com/mcp/`) instead and carry a "Changed" callout. See `open_questions`.
+- DBHub's `--readonly` flag is gone: it now errors with `--readonly flag is no longer supported. Use dbhub.toml with [[tools]] configuration instead:`. Lesson 05 teaches the `dbhub.toml` form and carries a "Changed" callout. The docs' PostgreSQL example (which does not use `--readonly`) is unaffected.
+- A relative SQLite DSN (`sqlite://file.db`) connects successfully but against an empty database; the absolute `sqlite:///…` form is required. Taught as the lesson's headline failure mode.
+- The MCP TypeScript SDK's stable line is now v2 (`@modelcontextprotocol/server`, Standard Schema, 2026-07-28 spec); the lab's server is 1.x. Lesson 06 teaches the 1.x code that was run and carries a "Changed" callout.
+- `research/feature-inventory.md`'s MCP row (line 37) is accurate but much thinner than the live `mcp.md` — it omits scope precedence, tool-search defaults, `MCP_TIMEOUT`/`MAX_MCP_OUTPUT_TOKENS`, `claude mcp login`/`logout`, `managed-mcp.json` and the `anthropic/requiresUserInteraction`/`maxResultSizeChars` annotations, all of which these lessons take from direct doc fetches. Worth expanding by whichever plan owns `research/`.
+- Lab tags `lesson/m11-02-start`..`m11-06-start` were pushed to `origin` during this session and were verified present with `git ls-remote --tags` before commit.
+
+**Review counts.** `fact-checker`: 0 claims contradicted across all 7 lessons; ~19 flagged "unverifiable" purely because that session's `WebFetch` was denied `github.com` and `npmjs.com` — every one of them was verified in this session by direct `curl` of the SDK README, `npm view`, or the lesson's own real command output, and the two it thought unsourced ("2 KB truncation of tool descriptions and server instructions", "no fixed per-server tool cap") are both in `mcp.md`'s tool-search section. `reviewer`: 3 blockers + 2 majors + 4 minors, all fixed — "Changed" callouts moved to their D006 slot after Anti-patterns (matching the m01/m07 precedent; no `## Changed` heading exists anywhere in this repo), lesson 01's lab and OS tabs rewritten to the server the recording actually used, lesson 06 step 8 given the `--mcp-config`/`--strict-mcp-config` flags that were really run plus a step creating that file, TR stubs given glossary links, the `--settings en.json` provenance line added to the eight headless recordings, and the example token changed to `EXAMPLE-TOKEN-DO-NOT-COMMIT` (re-captured, not edited) so no `sk-`-shaped string ships.
+
+**Two lab steps were rewritten because reality disagreed with the draft.** Narrowing lesson 04's allowlist to `browser_navigate` alone still answers a console-error question, because that tool's own result carries the snapshot and the console messages — so the step now teaches that, with a second capture showing what a genuinely blocked MCP tool looks like. And lesson 05's read-only proof needed an explicit instruction: on a plainer prompt the model refused the `DELETE` on its own judgement before the server's guard was ever exercised.
+
 

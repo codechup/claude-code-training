@@ -1,0 +1,248 @@
+---
+title: 'The GitHub MCP server'
+description: 'Connect GitHub over HTTP with a fine-grained personal access token, read the connection status Claude Code reports when the token is wrong, and understand when an MCP server beats the gh CLI for issues and pull requests.'
+level: 3
+module: 'm11-mcp'
+order: 3
+duration_min: 20
+difficulty: core
+tags: ['mcp', 'github', 'tokens', 'oauth']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Connect Claude Code to tools via MCP'
+    url: 'https://code.claude.com/docs/en/mcp.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Connect to MCP servers'
+    url: 'https://code.claude.com/docs/en/mcp-quickstart.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m11-03-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Add GitHub's remote MCP server with a fine-grained personal access token passed as a header.
+- Tell the three remote-server statuses apart — `✔ Connected`, `! Needs authentication`, `✘ Failed to connect` — and get the failure detail out of `claude mcp get`.
+- Decide when a GitHub MCP server earns its place over a `gh` command in a Bash call.
+- Keep the token out of anything you commit.
+
+**Prerequisites.** Lessons 01 and 02. A clone of the lab repository at `lesson/m11-03-start`.
+
+<Callout>
+  This lab deliberately does **not** authenticate against a real GitHub account and creates nothing
+  on GitHub. You will add the server exactly as the docs describe, with a token placeholder, and
+  read the real status Claude Code reports. To use it for real afterwards, swap in your own token —
+  the commands do not change.
+</Callout>
+
+<WhenNotToUse>
+  You already have a GitHub client: `gh`. If the work is "read this PR", "open an issue", "list my
+  review requests", a Bash call to `gh` is faster, needs no extra server in context, and leaves a
+  command in the transcript you can audit at a glance. The MCP server earns its keep when the task
+  weaves GitHub into other systems — read the issue, query the database it describes, then open the
+  PR — because Claude can then move between them without you brokering each step. It is also the
+  wrong tool when your token would have to be broader than the task: a server with write access to
+  every repository is a bigger blast radius than one `gh` invocation you approved.
+</WhenNotToUse>
+
+## Concept
+
+### The server and its credential
+
+GitHub's remote MCP server is an HTTP server that authenticates with a GitHub personal access token passed as a header. Get one from your GitHub token settings — generate a **fine-grained** token with access only to the repositories you want Claude to work with — then add the server:
+
+<CodeBlock title="add the GitHub MCP server">
+
+```bash
+claude mcp add --transport http github https://api.githubcopilot.com/mcp/ \
+  --header "Authorization: Bearer YOUR_GITHUB_PAT"
+```
+
+</CodeBlock>
+
+Replace `YOUR_GITHUB_PAT` with the token. Two properties of that command matter more than they look:
+
+`claude mcp add` saves the configuration without validating credentials. A placeholder is accepted at add time and the server fails to connect later. So the `Added …` line means "written to disk", never "authenticated".
+
+The header is stored, and `claude mcp get` prints it back in full. The `add` command masks it in its own output — the capture below shows `"Authorization": "[REDACTED]"` — but `get` does not. Treat the config file as a credential store, and never put a literal token into a `.mcp.json` you commit; use `${GITHUB_TOKEN}` and let the environment supply it (lesson 02).
+
+### Reading the status
+
+Once added, `claude mcp list` health-checks each server. For a remote server there are three answers you will meet constantly:
+
+| Status                   | What it means                                               | What to do                                                     |
+| ------------------------ | ----------------------------------------------------------- | -------------------------------------------------------------- |
+| `✔ Connected`            | The server answered and its tools were listed               | Nothing                                                        |
+| `! Needs authentication` | Reachable, but it wants a browser sign-in you have not done | `/mcp` → Authenticate, or `claude mcp login <name>`            |
+| `✘ Failed to connect`    | It answered with an error, or did not answer                | Read the failure detail on the status line or `claude mcp get` |
+
+The distinction between the last two is precise and worth internalising. A server you have not signed in to is flagged for OAuth. But for a server whose `Authorization` header **you** configured, a `401` or `403` while connecting does _not_ flag it for sign-in: the credential to fix is the one you configured, so Claude Code reports the connection as failed instead. If you configured a header and the server rejects it, Claude Code does not silently fall back to OAuth.
+
+Since v2.1.219, `claude mcp list` appends the failure detail to the status line and `claude mcp get <name>` shows it on an `Issue:` line — the HTTP status or error code plus any error text the server returned. Claude Code redacts credential-like text from that detail and never includes the expanded server URL, which can carry secrets.
+
+### Working through it
+
+With the server connected, GitHub work is described, not scripted. This lesson's example prompt:
+
+```text
+Review PR #456 and suggest improvements
+```
+
+Other shapes from the docs: `Create a new issue for the bug we just found`, `Show me all open PRs assigned to me`. Tool calls appear in Claude's output labelled with the server name, which is how you confirm the answer came through the server.
+
+Claude Code also exposes anything the server publishes as **resources** through `@` mentions — `Can you analyze @github:issue://123 and suggest a fix?` — and any **prompts** it publishes in the `/` menu, for example `/mcp__github__pr_review 456`.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · connect GitHub and read the connection status"
+  lessonId="en/l3-advanced/m11-mcp/github-mcp"
+  repoTag="lesson/m11-03-start"
+  steps={[
+    'Check out `lesson/m11-03-start`. It ships a `.mcp.json` with a `github` entry whose token comes from `${GITHUB_TOKEN}` — read it first; that entry is what a shared, committed config looks like.',
+    'Add the documented remote server at local scope with a deliberately invalid token, so nothing authenticates against a real account: `claude mcp add --transport http github https://api.githubcopilot.com/mcp/ --header "Authorization: Bearer NOT_A_REAL_TOKEN"`.',
+    'Note what the `add` output shows for the header, and what the `File modified:` line names.',
+    'Run `claude mcp list` and read the failure detail appended to the status line.',
+    'Run `claude mcp get github`. Compare the `Issue:` line with the list output, and look at what the `Headers:` block prints.',
+    'For contrast, add a server that uses OAuth rather than a header: `claude mcp add --transport http sentry https://mcp.sentry.dev/mcp`, then `claude mcp list` again. Do not sign in.',
+    'Clean up: `claude mcp remove github` and `claude mcp remove sentry`.',
+    'To use the server for real afterwards, repeat step 2 with a fine-grained personal access token scoped to the repositories you want Claude to reach, then confirm `✔ Connected` before prompting.',
+  ]}
+  expected="The github server is added with the header masked as [REDACTED], and both list and get report ✘ Failed to connect with the HTTP 400 detail the server returned; claude mcp get prints the configured header in plain text. The sentry server, which uses OAuth and has no configured header, reports ! Needs authentication instead."
+  checklist={[
+    '`claude mcp add` masked the Authorization header in its own output',
+    'The status line carried the server’s own error text, not just a bare failure',
+    '`claude mcp get` showed the same detail on an `Issue:` line',
+    '`claude mcp get` printed the configured token in full — you saw why a committed literal is a leak',
+    'The OAuth server reported `! Needs authentication`, not `✘ Failed to connect`',
+    'Both servers were removed and `claude mcp list` is clean',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/03-github-mcp/01-add-and-status.txt"
+    range="2-24"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/03-github-mcp/02-oauth-status.txt"
+    range="2-10"
+  />
+</Lab>
+
+Two observations from that recording.
+
+The failure text is the _server's_, not Claude Code's: `HTTP 400: Error POSTing to endpoint: bad request: Authorization header is badly formatted`. GitHub rejected the token's shape before it ever checked whether the token existed. That is exactly the kind of detail that used to be invisible — before v2.1.219 both commands showed only the bare failure status.
+
+And the two servers in the last capture differ in one thing only: whether a header was configured. `github` has one, so its rejection is a failed connection you must fix in configuration. `sentry` has none, so its `401` becomes an invitation to sign in.
+
+## Anti-patterns
+
+**Committing the token.** A literal `Bearer ghp_…` in `.mcp.json` is a credential in your git history, and `claude mcp get` prints it back to anyone at the terminal. _Fix:_ `Bearer ${GITHUB_TOKEN}` in the file, the real value in your environment.
+
+**A classic personal access token with every scope.** The server can do whatever the token can do, on every repository the token can reach. _Fix:_ a fine-grained token limited to the repositories the task needs.
+
+**Reading `Added …` as "connected".** Configuration was written; nothing was validated. _Fix:_ always follow with `claude mcp list` and read the status.
+
+**Chasing an OAuth flow for a header failure.** If you configured `headers.Authorization` and the server rejects it, Claude Code will not fall back to OAuth, and re-running sign-in changes nothing. _Fix:_ check the token is valid for the MCP endpoint, or remove the header to use the OAuth flow instead.
+
+**Using the server as a slower `gh`.** One-step GitHub reads do not need a connected server and its context cost. _Fix:_ keep it for tasks that cross systems.
+
+<Callout variant="changed">
+  The `@modelcontextprotocol/server-github` npm package that older configs launch over stdio is
+  marked deprecated on npm: `npm view @modelcontextprotocol/server-github` reports version
+  `2025.4.8` and `deprecated = 'Package no longer supported.'` (checked 2026-09-07). The current
+  documented route is the remote HTTP server at `https://api.githubcopilot.com/mcp/` with a personal
+  access token — verified against `mcp.md` for Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/github-mcp"
+  questionId="q1"
+  lang="en"
+  prompt="`claude mcp add` printed `Added HTTP MCP server github …`. What has been proven?"
+  options={[
+    {
+      text: 'The token is valid and the server is reachable',
+      explanation: 'The command saves configuration without validating credentials.',
+    },
+    {
+      text: 'Only that the configuration was written to a file',
+      correct: true,
+      explanation:
+        'Which is why a placeholder token is accepted at add time and the failure only shows up in `claude mcp list`.',
+    },
+    {
+      text: 'The server’s tools have been loaded into your context',
+      explanation: 'Nothing was contacted; with tool search, names load at session start anyway.',
+    },
+    {
+      text: 'The server was approved for project scope',
+      explanation:
+        'Approval applies to `.mcp.json` servers, and this one was added at local scope.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/github-mcp"
+  questionId="q2"
+  lang="en"
+  prompt="You configured headers.Authorization for a remote server and it returns 401. What does Claude Code show?"
+  options={[
+    {
+      text: '! Needs authentication, so you can complete an OAuth sign-in',
+      explanation:
+        'That is for servers you have not signed in to. A rejected header you configured is not fixed by signing in.',
+    },
+    {
+      text: '✘ Failed to connect — the credential to fix is the one you configured',
+      correct: true,
+      explanation:
+        'Claude Code reports the connection as failed rather than falling back to OAuth.',
+    },
+    {
+      text: '⏸ Pending approval',
+      explanation: 'That status is only for unapproved project-scoped servers.',
+    },
+    {
+      text: 'The server is removed automatically',
+      explanation: 'Nothing is removed; the entry stays and keeps failing.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/github-mcp"
+  questionId="q3"
+  lang="en"
+  prompt="Which token is the right one for a GitHub MCP server your team shares a config for?"
+  options={[
+    {
+      text: 'A fine-grained token limited to the repositories Claude should reach, supplied per developer through ${GITHUB_TOKEN}',
+      correct: true,
+      explanation:
+        'Least privilege, and no credential in the committed file — the two rules that survive contact with a real team.',
+    },
+    {
+      text: 'One shared classic token with full repo scope, written into .mcp.json',
+      explanation: 'A committed credential with maximum blast radius: both failure modes at once.',
+    },
+    {
+      text: 'No token — the server discovers your gh CLI login',
+      explanation: 'It does not; the remote server authenticates with the header you pass.',
+    },
+    {
+      text: 'Your GitHub password in the Authorization header',
+      explanation: 'Not a supported credential for this endpoint.',
+    },
+  ]}
+/>
+
+**Next:** `04-browser-mcp` connects a server that drives a real browser, and uses it to check a page you just changed.

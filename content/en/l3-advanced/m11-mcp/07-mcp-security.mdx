@@ -1,0 +1,312 @@
+---
+title: 'MCP security and supply chain'
+description: 'What you actually trust when you connect an MCP server: trust verification, prompt injection through tool results, credentials in shared configs, least-privilege tool allowlists, and the managed-mcp.json controls an administrator can deploy.'
+level: 3
+module: 'm11-mcp'
+order: 7
+duration_min: 15
+difficulty: advanced
+tags: ['mcp', 'security', 'supply-chain', 'managed-settings', 'prompt-injection']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Security'
+    url: 'https://code.claude.com/docs/en/security.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Control MCP server access for your organization'
+    url: 'https://code.claude.com/docs/en/managed-mcp.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Connect Claude Code to tools via MCP'
+    url: 'https://code.claude.com/docs/en/mcp.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- State precisely what Anthropic does and does not do about the MCP servers you connect.
+- Name the four risks a connected server introduces: code execution, prompt injection through tool results, credential exposure, and context leakage.
+- Keep a credential out of a shared config, and prove it with `claude mcp get`.
+- Scope a server's tools with permission rules and `--allowedTools`, and explain when trust verification does not happen.
+- Read the administrator side: `managed-mcp.json`, `allowedMcpServers`/`deniedMcpServers`, `allowManagedMcpServersOnly`, and what a blocked server looks like to a user.
+
+**Prerequisites.** The rest of this module. Level 2's permissions material helps.
+
+<WhenNotToUse>
+  This lesson is not a substitute for your organisation's review process, and none of these controls
+  make an untrusted server safe to run. If you cannot say who wrote a server, what it talks to, and
+  what happens when it is compromised, the answer is not "add it with a narrow allowlist" — it is
+  "do not add it". The controls below reduce blast radius; they do not establish trust.
+</WhenNotToUse>
+
+## Concept
+
+### What you are trusting
+
+Start with the sentence that should shape everything else. From the security docs, on MCP:
+
+> We encourage either writing your own MCP servers or using MCP servers from providers that you trust. […] Anthropic reviews connectors against its listing criteria before adding them to the Anthropic Directory, but does not security-audit or manage any MCP server.
+
+Directory listing is a review, not an audit, and it says nothing at all about a server you found on npm. A stdio server is a program you have agreed to run on your machine, with your environment, on every session start. A remote server is a third party you are handing queries — and sometimes credentials — to.
+
+### The four risks
+
+**Code execution.** `claude mcp add … -- npx -y some-package` runs whatever that package resolves to, now and at every future startup, with your user's privileges. `@latest` means "whatever they publish next".
+
+**Prompt injection through tool results.** Everything a server returns enters the conversation. A malicious or compromised server — or a benign server relaying an attacker-controlled issue title, page or row — can carry instructions aimed at the model. The docs are explicit that servers which fetch external content can expose you to prompt injection risk. Claude Code's defences here are real but partial: the permission system, context-aware analysis of the full request, a separate context window for web fetches, and command-injection detection. The docs' own summary is the right posture — while these protections significantly reduce risk, no system is completely immune.
+
+**Credential exposure.** A token in `.mcp.json` is a token in version control. `claude mcp get` prints configured headers back in plain text. A DSN on the command line lands in `~/.claude.json` and in shell history.
+
+**Context leakage.** Whatever a tool returns is in the transcript: rows from a database, a page of an internal wiki, a customer's email address. That is a data-handling decision, not a technical one.
+
+### The controls, from cheapest to strongest
+
+**Trust verification.** First-time codebase runs and new MCP servers require trust verification, and a project-scoped `.mcp.json` prompts for approval before its servers are used — the prompt exists so a repository you clone cannot launch processes on your machine without your consent. Two gaps to know by heart: trust verification is **disabled when running non-interactively with the `-p` flag**, and in `claude -p`, Agent SDK and cloud sessions project-scoped servers load without asking. Automation is where this control is absent, which is exactly where it would matter most. Keep a server out with `disabledMcpjsonServers`, `--setting-sources`, or `--strict-mcp-config`.
+
+**Secrets by reference.** Never a literal. `${VAR}` and `${VAR:-default}` expand in `command`, `args`, `env`, `url` and `headers`; a missing variable produces a named warning and no value in the output.
+
+**Least privilege at every layer.** A fine-grained token instead of a classic one (lesson 03). A read-only database user _and_ a read-only server configuration (lesson 05). And on the Claude Code side, tool-level rules: MCP tools are named `mcp__<server>__<tool>`, so they can be allowed or denied like any other tool, in `permissions` or with `--allowedTools` on a headless run.
+
+**Removal.** Each connected server takes space in the context window because its tool names and server instructions load into every session — and each one is a dependency. Removing servers you no longer use keeps that space free, and shrinks the attack surface for nothing.
+
+### If you are writing a server
+
+Two annotations are worth knowing. `_meta["anthropic/requiresUserInteraction"]: true` on a tool makes Claude Code show that tool's permission prompt on **every** call, even in `acceptEdits`, `auto` and `bypassPermissions` modes, with no "don't ask again" option, and allow rules do not skip it; in `dontAsk` mode the call is denied instead. Use it where the prompt is the point — a consent or access-grant step where auto-approval would mean no human ever agreed. And `_meta["anthropic/maxResultSizeChars"]` raises a specific tool's result threshold, up to a hard ceiling of 500,000 characters, for tools whose output is genuinely large.
+
+### The administrator side
+
+Organisations do not have to rely on individual judgement. Claude Code offers a spectrum, deployed through managed settings:
+
+| Pattern          | What it does                                              | Configure                                                |
+| ---------------- | --------------------------------------------------------- | -------------------------------------------------------- |
+| Disable MCP      | No servers load at all                                    | `managed-mcp.json` with an empty server map              |
+| Fixed deployment | Everyone gets the same servers and can add none           | `managed-mcp.json` with the servers you want             |
+| Approved catalog | Users add from a published list; anything else is blocked | `allowedMcpServers` + `allowManagedMcpServersOnly: true` |
+| Soft allowlist   | An allowlist users can broaden in their own settings      | `allowedMcpServers` alone                                |
+| Denylist only    | Block known-bad servers, allow everything else            | `deniedMcpServers`                                       |
+
+`managed-mcp.json` is a standalone file at a system path — `/Library/Application Support/ClaudeCode/managed-mcp.json` on macOS, `/etc/claude-code/managed-mcp.json` on Linux and WSL, `C:\Program Files\ClaudeCode\managed-mcp.json` on Windows — deployed by MDM, Group Policy or equivalent, and it cannot be delivered through server-managed settings. When it is present, Claude Code loads only the servers it defines, and `claude mcp add` fails with `Cannot add MCP server: enterprise MCP configuration is active and has exclusive control over MCP servers`.
+
+Three details that decide whether a policy actually holds:
+
+- Matching is by `serverUrl` (exact or with `*` wildcards), `serverCommand` (every argument, in order, exactly) or `serverName`. **`serverName` is not a security control** — the name is a label the user chose, so anyone can call any server `github`. Enforce with `serverCommand` or `serverUrl`.
+- The denylist always wins, and always merges from every settings scope. The allowlist merges from every scope too — so a user can broaden it — unless `allowManagedMcpServersOnly: true` is set in a managed source.
+- `allowedMcpServers` **unset** means all servers allowed; set to an empty array `[]` means none. They are different states.
+
+Finally, know what a user sees, because two of these are silent. A blocked `claude mcp add` reports `Cannot add MCP server "<name>": server is explicitly blocked by enterprise policy` or `… not allowed by enterprise policy`. But a previously configured server that becomes blocked **silently disappears** from `/mcp` and `claude mcp list` with no warning. Tell affected users which servers are blocked when you roll out a restriction. To see what your organisation actually uses, configure OpenTelemetry export and set `OTEL_LOG_TOOL_DETAILS=1` to include MCP server and tool names in tool events.
+
+This lesson's example prompt is an audit, not a task:
+
+```text
+Read .mcp.json and list every server it defines: transport, what it connects to,
+which credentials it needs, and whether any value is a literal secret rather than
+a ${VAR} reference. Do not connect to anything.
+```
+
+## Hands-on lab
+
+<Callout>
+  This lab has no lab-repo tag. Run it in a scratch directory: you are deliberately writing a bad
+  configuration in order to look at it, and you do not want it in a repository.
+</Callout>
+
+<Lab
+  title="Lab · audit a config, then fix the credential"
+  lessonId="en/l3-advanced/m11-mcp/mcp-security"
+  repoTag="none"
+  steps={[
+    'Make an empty scratch directory and write a `.mcp.json` in it defining one HTTP server called `reporting`, pointing at `https://mcp.example.com/mcp`, with a `headers.Authorization` of `Bearer EXAMPLE-TOKEN-DO-NOT-COMMIT`. This is the mistake, written down on purpose.',
+    'Run `claude mcp get reporting` and read every line. Note the scope, the status, and — the point of the exercise — what the `Headers:` block prints.',
+    'Ask yourself the three audit questions for this entry: who runs the code, what credential does it carry, and who can read that credential once the file is committed?',
+    'Fix it. Replace the URL with `${REPORTING_MCP_URL:-https://mcp.example.com/mcp}` and the header with `Bearer ${REPORTING_MCP_TOKEN}`. Do not set `REPORTING_MCP_TOKEN`.',
+    'Run `claude mcp get reporting` again, then `claude mcp list`. Read the diagnostics block at the bottom.',
+    'Now run the audit prompt from the Concept section against the fixed file, with `claude -p "<the audit prompt>" --model sonnet --max-turns 5 --output-format text --allowedTools "Read"` so nothing connects. Read what it reports about the `${VAR:-default}` fallback.',
+    'Finally, look at the status both captures report: `⏸ Pending approval`. Say out loud why a `.mcp.json` server is not live until you approve it interactively — and what that means for a `claude -p` run, where the prompt cannot be shown.',
+  ]}
+  expected="Before the fix, claude mcp get prints the literal token in full. After it, both the URL and the header show as unexpanded ${VAR} references, and claude mcp list adds a diagnostics block warning `Missing environment variables: REPORTING_MCP_TOKEN` — naming the variable and never the value."
+  checklist={[
+    '`claude mcp get` printed the literal secret, so you have seen the leak first-hand',
+    'After the fix, no secret appears in any command output',
+    'The missing-variable warning names the variable, not the value',
+    'Both runs show ⏸ Pending approval — nothing was connected during the audit',
+    'You can state why `claude -p` skips the approval prompt and what to use instead (disabledMcpjsonServers, --setting-sources, --strict-mcp-config)',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/07-mcp-security/01-secret-in-config.txt"
+    range="2-11"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/07-mcp-security/02-variable-reference.txt"
+    range="2-24"
+  />
+  <Transcript src="content/_shared/transcripts/m11-mcp/07-mcp-security/03-audit.txt" range="4-12" />
+</Lab>
+
+Put the two captures side by side. The only difference in the file is `EXAMPLE-TOKEN-DO-NOT-COMMIT` becoming `${REPORTING_MCP_TOKEN}`. The difference in what a terminal, a screen share, a bug report and a git history now contain is total.
+
+And notice what the second capture's warning does _not_ say. It names the field and the variable — `[reporting] mcpServers.reporting: Missing environment variables: REPORTING_MCP_TOKEN` — and prints no value. Claude Code applies the same discipline elsewhere: it redacts credential-like text from failure details, never includes the expanded server URL in them, and quotes scope-conflict endpoints with `${VAR}` references unexpanded.
+
+The third capture is the audit itself, and it makes a distinction worth stealing: the fallback in `${REPORTING_MCP_URL:-https://mcp.example.com/mcp}` is a literal, but it is a literal **endpoint**, not a literal credential. A default URL in a shared config is fine and often useful. A default token never is — which is why the token in the fixed file has no `:-default` at all, and why the missing-variable warning is the correct outcome rather than a nuisance.
+
+## Anti-patterns
+
+**"It is in the Directory, so it is audited."** Anthropic reviews connectors against listing criteria before adding them to the Directory, but does not security-audit or manage any MCP server. _Fix:_ do your own review, and prefer servers you or your organisation wrote.
+
+**Pinning nothing.** `npx -y package@latest` runs whatever the publisher pushes next, on every session start, on every machine that has your config. _Fix:_ pin a version you reviewed and update deliberately. (The docs' own examples use `@latest` for convenience; convenience is not the constraint you are optimising for here.)
+
+**Relying on the trust prompt in automation.** Trust verification is disabled with `-p`, and project-scoped servers load without asking in headless, SDK and cloud sessions. _Fix:_ `--strict-mcp-config` with an explicit `--mcp-config`, or `disabledMcpjsonServers`, in anything that runs unattended.
+
+**A `serverName` allowlist.** The name is a label the user picked; anyone can call their server `github`. _Fix:_ `serverCommand` or `serverUrl` entries for anything you rely on for enforcement.
+
+**Treating tool output as trusted.** A row, an issue title or a page fetched through a server is attacker-influenceable text arriving in your model's context. _Fix:_ review commands before approval, do not pipe untrusted content directly to Claude, prefer read-only scopes, and keep the risky work in a sandbox or VM.
+
+**Keeping servers you stopped using.** Every one costs context and remains a dependency you have to trust. _Fix:_ `claude mcp remove`, and re-add when you next need it.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/mcp-security"
+  questionId="q1"
+  lang="en"
+  prompt="What does listing in the Anthropic Directory tell you about an MCP server?"
+  options={[
+    {
+      text: 'It was reviewed against listing criteria, but Anthropic does not security-audit or manage it',
+      correct: true,
+      explanation: 'The security docs say exactly this. Review remains yours.',
+    },
+    {
+      text: 'It has passed a security audit by Anthropic',
+      explanation: 'Explicitly not the case.',
+    },
+    {
+      text: 'It is sandboxed by Claude Code at runtime',
+      explanation: 'A stdio server is an ordinary local process with your privileges.',
+    },
+    {
+      text: 'Its tool results are treated as trusted input',
+      explanation: 'The opposite: server-fetched content is a prompt-injection vector.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/mcp-security"
+  questionId="q2"
+  lang="en"
+  prompt="A CI job runs `claude -p` in a repository whose committed .mcp.json defines a server you do not want to run. What actually stops it?"
+  options={[
+    {
+      text: 'The interactive approval prompt',
+      explanation:
+        'There is none: in `claude -p`, Agent SDK and cloud sessions, project-scoped servers load without asking, and trust verification is disabled with -p.',
+    },
+    {
+      text: '--strict-mcp-config with an explicit --mcp-config, or a disabledMcpjsonServers entry',
+      correct: true,
+      explanation:
+        'Both are documented ways to keep the server out; --setting-sources excluding project settings also works.',
+    },
+    {
+      text: 'Running with --permission-mode plan',
+      explanation: 'Permission modes govern actions, not which servers load.',
+    },
+    {
+      text: 'Nothing — a committed .mcp.json always loads everywhere',
+      explanation: 'It does not: three documented mechanisms keep a server out.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/mcp-security"
+  questionId="q3"
+  lang="en"
+  prompt="An administrator sets allowedMcpServers to an empty array [] in managed settings. What happens?"
+  options={[
+    {
+      text: 'No servers are allowed',
+      correct: true,
+      explanation:
+        'Unset means all servers allowed; an empty array means none. The two states are deliberately different.',
+    },
+    {
+      text: 'All servers are allowed, since nothing is listed',
+      explanation: 'That is the *unset* behaviour.',
+    },
+    {
+      text: 'Only plugin-provided servers load',
+      explanation: 'That is the strictPluginOnlyCustomization pattern.',
+    },
+    {
+      text: 'The setting is ignored as invalid',
+      explanation: 'It is a valid, meaningful configuration.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/mcp-security"
+  questionId="q4"
+  lang="en"
+  prompt="Why is a serverName entry a weak basis for an MCP allowlist?"
+  options={[
+    {
+      text: 'Because the name is a label the user assigns, so any server can be called `github`',
+      correct: true,
+      explanation:
+        'The docs warn it is not a security control; enforce with serverCommand or serverUrl instead.',
+    },
+    {
+      text: 'Because names are case-sensitive',
+      explanation: 'Not the issue; allowlist names match literally and never expand.',
+    },
+    {
+      text: 'Because names change every session',
+      explanation: 'They do not; they are whatever is in the configuration.',
+    },
+    {
+      text: 'Because Claude Code ignores serverName entries entirely',
+      explanation:
+        'It honours them — in an allowlist a name match counts when there are no command/URL entries of the matching kind — which is precisely why relying on them is risky.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/mcp-security"
+  questionId="q5"
+  lang="en"
+  prompt="A user's previously working MCP server stops appearing in `claude mcp list` after a policy rollout. What did they see?"
+  options={[
+    {
+      text: 'Nothing — a server blocked by policy silently disappears from /mcp and claude mcp list',
+      correct: true,
+      explanation:
+        'Which is why the docs tell administrators to announce which servers a new restriction blocks.',
+    },
+    {
+      text: 'A startup error naming the policy',
+      explanation:
+        'That message appears when they try to `claude mcp add`, or when they hit Reconnect in /mcp.',
+    },
+    {
+      text: 'A ⏸ Pending approval status',
+      explanation: 'That is the unapproved .mcp.json state, not a policy block.',
+    },
+    {
+      text: 'A prompt asking them to request an exception',
+      explanation: 'No such flow exists.',
+    },
+  ]}
+/>
+
+**Next:** `m12-plugins` packages the skills, hooks, agents and `.mcp.json` from the last three modules into something a team can install in one command.

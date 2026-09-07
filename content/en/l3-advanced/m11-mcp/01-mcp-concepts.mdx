@@ -1,0 +1,320 @@
+---
+title: 'MCP concepts and transports'
+description: 'MCP is the open standard that lets Claude Code use tools it did not ship with. Learn what a server exposes — tools, resources, prompts — and which transport (stdio, HTTP, WebSocket) to pick, then watch a real handshake over stdio.'
+level: 3
+module: 'm11-mcp'
+order: 1
+duration_min: 15
+difficulty: core
+tags: ['mcp', 'transports', 'protocol']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Connect Claude Code to tools via MCP'
+    url: 'https://code.claude.com/docs/en/mcp.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Connect to MCP servers'
+    url: 'https://code.claude.com/docs/en/mcp-quickstart.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'MCP TypeScript SDK'
+    url: 'https://github.com/modelcontextprotocol/typescript-sdk'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say what MCP is and what a server adds to a Claude Code session that the built-in tools cannot.
+- Name the three things a server can expose — tools, resources, prompts — and say how each one reaches you in a session.
+- Choose between the stdio, HTTP and WebSocket transports for a given server, and explain why SSE is not on that list any more.
+- Read a raw MCP handshake: `initialize`, `notifications/initialized`, `tools/list`.
+- Explain what tool search does to your context window when you connect several servers.
+
+**Prerequisites.** A working Claude Code install (`claude --version` prints `2.1.263` or later for everything in this module), Node.js on your PATH (Node 24 for the lab repository, whose `.nvmrc` pins it; Node 18 or later is enough for the `npx`-launched servers in lessons 04 and 05), and the level 1 and 2 material: you should be comfortable with the built-in tools, permission modes and headless `claude -p` runs.
+
+<WhenNotToUse>
+  MCP is for reaching systems outside your working directory. Do not add a server for something the
+  built-in tools already do: reading a file, grepping the repo, running a script, calling a CLI you
+  already have installed. A `gh` command in a Bash tool call is cheaper and easier to audit than a
+  GitHub MCP server, and a `psql` invocation beats a database server when you only need one query.
+  Every connected server also costs context and adds a supply-chain dependency — if you cannot name
+  the specific thing you are currently copying and pasting into the session by hand, you do not need
+  the server yet.
+</WhenNotToUse>
+
+## Concept
+
+### What MCP is
+
+The **Model Context Protocol** is an open standard for AI-tool integrations. An **MCP server** is a program that speaks that protocol and offers capabilities to a client; Claude Code is the client. The docs put the trigger for reaching for one plainly: connect a server when you find yourself copying data into chat from another tool, like an issue tracker or a monitoring dashboard. Once connected, Claude can read and act on that system directly instead of working from what you paste.
+
+Servers are not Claude-specific. The same server that a colleague uses from another MCP client works here, which is why a server's setup instructions often show a JSON block for a different application rather than a `claude mcp add` command — lesson 02 covers translating one into the other.
+
+Here is this lesson's example prompt, the shape a task takes once a server is connected:
+
+```text
+Check what our reporting database says about signups in the last 7 days,
+then open the corresponding dashboard page and tell me whether the two agree.
+```
+
+Nothing in that prompt names a tool. You describe the goal; Claude picks tools from whichever servers are connected.
+
+### What a server exposes
+
+A server can offer three kinds of thing, and each reaches you differently:
+
+| Capability    | What it is                                | How you use it                                                                   |
+| ------------- | ----------------------------------------- | -------------------------------------------------------------------------------- |
+| **Tools**     | Functions Claude can call                 | Claude calls them itself; they appear in the session as `mcp__<server>__<tool>`  |
+| **Resources** | Readable content the server can hand over | You `@`-mention them: `@github:issue://123`, alongside files in the autocomplete |
+| **Prompts**   | Canned prompt templates                   | They appear in the `/` menu as `/servername:promptname (MCP)`, with arguments    |
+
+Tools are the part you will use every day. Resources are fetched and attached when referenced, and can hold any content the server provides. Prompts are dynamically discovered from connected servers, so a server can add one without you reconfiguring anything.
+
+### Transports
+
+A transport is how the client and server talk. Claude Code supports four, and the interesting question is only ever "where does this server run?".
+
+| Transport     | The server is…                              | Add it with                                     |
+| ------------- | ------------------------------------------- | ----------------------------------------------- |
+| **stdio**     | a local process Claude Code starts for you  | `claude mcp add <name> -- <command> [args...]`  |
+| **HTTP**      | a service at a URL (the recommended remote) | `claude mcp add --transport http <name> <url>`  |
+| **WebSocket** | a remote holding a persistent connection    | `claude mcp add-json <name> '{"type":"ws", …}'` |
+| **SSE**       | a remote exposing only an SSE endpoint      | `claude mcp add --transport sse <name> <url>`   |
+
+Pick **stdio** for anything that needs your machine: your filesystem, a local database socket, a browser, a script you wrote. Claude Code launches the process, talks to it over its standard input and output, and shuts it down with the session. It also sets `CLAUDE_PROJECT_DIR` in the spawned server's environment to the project root, so a stdio server can resolve project-relative paths without depending on its working directory.
+
+Pick **HTTP** for hosted services. It is the most widely supported transport for cloud-based services, and it is the only one that supports OAuth sign-in. In JSON configuration the `type` field accepts `streamable-http` as an alias for `http`, so a config copied from a server's own documentation works unmodified.
+
+Pick **WebSocket** only when the server needs to push events to Claude unprompted. The docs are explicit about the trade: use HTTP instead when your server only responds to requests, since HTTP supports OAuth and the `--transport` flag, while WebSocket supports neither. WebSocket servers also do not appear in `claude mcp list` — check them with `claude mcp get <name>` or the `/mcp` panel.
+
+### What the protocol actually looks like
+
+MCP is JSON-RPC 2.0 over the transport. A stdio server reads one JSON object per line on stdin and writes one per line on stdout. That is the whole surface, which means you can drive a server by hand with `printf` — no client, no Claude Code — and see exactly what Claude Code sees.
+
+The exchange is always: the client sends `initialize`, the server answers with its protocol version and capabilities, the client sends the `notifications/initialized` notification, and then the client can ask `tools/list`.
+
+### Tool search and your context window
+
+Every connected server costs context, because its tool names and server instructions load into every session. Claude Code softens that with **tool search**, which is on by default: only tool names and server instructions load at session start, and full tool definitions are fetched when Claude needs them. Adding more servers therefore has minimal impact on your context window, and Claude Code imposes no fixed per-server tool cap — the practical limit is your context budget.
+
+Two consequences worth remembering now. First, in a session with tool search you will see a `ToolSearch` step before an MCP tool is called; that is normal. Second, if you are writing a server, its **server instructions** field is what tells Claude when to go looking for your tools — Claude Code truncates tool descriptions and server instructions at 2 KB each, so put the critical details first.
+
+## Hands-on lab
+
+<Callout>
+  This lab has no lab-repo tag: it runs against any local stdio MCP server. If you would rather use
+  the module's own server, the one in `lesson/m11-06-start`'s solution, jump to lesson 06 and come
+  back — the handshake below is the same in either case.
+</Callout>
+
+<Lab
+  title="Lab · speak MCP by hand"
+  lessonId="en/l3-advanced/m11-mcp/mcp-concepts"
+  repoTag="none"
+  steps={[
+    'Get a local stdio MCP server to talk to. The one recorded below is this module’s own, from lesson 06 (`node mcp/src/index.ts` in the `lesson/m11-06-solution` checkout). Claude Code also ships one: `claude mcp serve` runs Claude Code itself as an MCP server over stdio — it answers the same three lines, but its `tools/list` is the whole built-in tool set, which is a lot to read.',
+    'Send it three JSON-RPC lines with `printf` and pipe them into the server process. The lines are `initialize`, the `notifications/initialized` notification, and `tools/list` — in that order, one JSON object per line.',
+    'Read the first response: `protocolVersion`, the `capabilities` object, and `serverInfo` with the server name and version.',
+    'Read the second response: the `tools` array. Each entry has a `name`, a `description` and an `inputSchema` — a JSON Schema object describing the arguments.',
+    'Compare that `inputSchema` with the tool description. The description is what Claude reads to decide whether to call the tool; the schema is what constrains the arguments it sends.',
+  ]}
+  expected="Two JSON lines come back on stdout: an initialize result carrying protocolVersion, capabilities and serverInfo, then a tools/list result carrying one entry per tool with its name, description and inputSchema."
+  checklist={[
+    'The initialize response names the server and its version',
+    'The capabilities object says which of tools / resources / prompts the server offers',
+    'Every tool in tools/list has a name, a description and an inputSchema',
+    'Nothing came back before you sent `initialize` — the handshake is mandatory',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/01-mcp-concepts/01-handshake.txt"
+    range="3-4"
+  />
+</Lab>
+
+The transcript above is the module's own server (lesson 06) answering three hand-written lines. Two details are worth stopping on. The server reports `"capabilities":{"tools":{"listChanged":true}}` — it offers tools, no resources or prompts, and it promises to send `list_changed` notifications when its tool list changes. Claude Code supports those notifications and refreshes a server's capabilities without a reconnect. And the tool's `inputSchema` is plain JSON Schema, generated in this case from a zod schema in the server's source; that is the contract Claude Code passes to the model.
+
+### Driving a stdio server by hand, per OS
+
+The commands below pipe into `node mcp/src/index.ts`, the lesson-06 server the transcript above was recorded from. Swap that last part for `claude mcp serve` to drive Claude Code itself instead — the handshake is identical, and its `tools/list` answer is the full built-in tool set rather than one entry.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+printf '%s\n%s\n%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"by-hand","version":"0.0.0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+  | node mcp/src/index.ts
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+printf '%s\n%s\n%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"by-hand","version":"0.0.0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+  | node mcp/src/index.ts
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$lines = @(
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"by-hand","version":"0.0.0"}}}',
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}',
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+)
+$lines | node mcp/src/index.ts
+```
+
+  </Fragment>
+</OSTabs>
+
+## Anti-patterns
+
+**Adding a server for something a CLI already does.** A server you configure, trust, authenticate and keep in context is a lot of machinery to replace `gh pr view 456`. _Fix:_ reach for MCP when the alternative is copying data between two windows by hand, not when a command already exists.
+
+**Choosing WebSocket because it sounds more modern.** WebSocket supports neither OAuth nor `claude mcp add --transport`, and its servers do not appear in `claude mcp list`. _Fix:_ use HTTP unless the server genuinely pushes events at you.
+
+**Writing a `url` entry with no `type` in JSON.** Claude Code reads an entry with no `type` as a stdio server, skips it, and reports `MCP server "<name>" has a "url" but no "type"; add "type": "http" (or "sse" / "ws") to this entry`. _Fix:_ always set `type` when you hand-write a remote entry.
+
+**Assuming a connected server is a used server.** Tools are offered, not forced. If Claude answers from its own knowledge instead of your server, the description or the server instructions are not telling it when to look. _Fix:_ name the server in the prompt to confirm the wiring, then fix the description.
+
+**Connecting ten servers "to be ready".** Even with tool search, names and instructions load every session, and each server is code you now depend on. _Fix:_ connect what this project needs and remove the rest — lesson 02 covers `claude mcp remove`.
+
+<Callout variant="changed">
+  The SSE (Server-Sent Events) transport is deprecated; use HTTP servers instead, where available.
+  `--transport sse` still works for services that expose only an SSE endpoint, and a deprecated
+  transport is not a reason to rewrite a working config — but do not choose it for something new.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/mcp-concepts"
+  questionId="q1"
+  lang="en"
+  prompt="You are connecting a server that runs a local browser on your machine. Which transport?"
+  options={[
+    {
+      text: 'stdio — Claude Code starts the server as a local process',
+      correct: true,
+      explanation:
+        'Stdio servers are ideal for tools that need direct system access, such as a browser, your filesystem or a database socket.',
+    },
+    {
+      text: 'HTTP, because it is the recommended transport',
+      explanation:
+        'HTTP is recommended for remote, cloud-hosted servers. A browser on your machine is a local process.',
+    },
+    {
+      text: 'WebSocket, because a browser session is long-lived',
+      explanation:
+        'WebSocket is for remote servers that push events unprompted, and it supports neither OAuth nor --transport.',
+    },
+    {
+      text: 'SSE, because it streams',
+      explanation: 'SSE is deprecated; use HTTP where a remote server offers it.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/mcp-concepts"
+  questionId="q2"
+  lang="en"
+  prompt="Which sequence is a correct MCP session over stdio?"
+  options={[
+    {
+      text: 'tools/list, then initialize',
+      explanation: 'The handshake comes first; a server has not agreed a protocol version yet.',
+    },
+    {
+      text: 'initialize, notifications/initialized, tools/list',
+      correct: true,
+      explanation:
+        'Exactly the three lines in the lab: handshake, the initialized notification, then capability discovery.',
+    },
+    {
+      text: 'connect, authenticate, tools/list',
+      explanation:
+        'Those are not MCP methods; authentication is a transport concern, not a JSON-RPC step.',
+    },
+    {
+      text: 'initialize, tools/call, tools/list',
+      explanation:
+        'You cannot call a tool before discovering it, and the initialized notification is skipped here.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/mcp-concepts"
+  questionId="q3"
+  lang="en"
+  prompt="With tool search on (the default), what loads into context when a session starts?"
+  options={[
+    {
+      text: 'Every tool definition from every connected server',
+      explanation:
+        'That is what tool search avoids — it is the behaviour you get with ENABLE_TOOL_SEARCH=false.',
+    },
+    {
+      text: 'Only tool names and server instructions; full definitions are fetched on demand',
+      correct: true,
+      explanation:
+        'Which is why adding more servers has minimal impact on the context window, and why server instructions matter.',
+    },
+    {
+      text: 'Nothing — servers are only contacted when you type their name',
+      explanation:
+        'Claude Code discovers a server’s tool names at startup so Claude knows they exist.',
+    },
+    {
+      text: 'The full text of every MCP resource the server exposes',
+      explanation: 'Resources are fetched when you @-mention them, not loaded at startup.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m11-mcp/mcp-concepts"
+  questionId="q4"
+  lang="en"
+  prompt="A server exposes an MCP prompt called pr_review. How do you run it?"
+  options={[
+    {
+      text: 'Type /servername:pr_review from the slash-command menu',
+      correct: true,
+      explanation:
+        'MCP prompts appear in the / menu as /servername:promptname (MCP); /mcp__servername__pr_review also works.',
+    },
+    {
+      text: 'Reference it with @servername:pr_review',
+      explanation: '@ mentions are for MCP resources, not prompts.',
+    },
+    {
+      text: 'Run claude mcp prompt servername pr_review',
+      explanation: 'There is no such subcommand.',
+    },
+    {
+      text: 'Ask Claude to call the pr_review tool',
+      explanation: 'Prompts are not tools; Claude cannot invoke them on its own.',
+    },
+  ]}
+/>
+
+**Next:** `02-add-list-remove-scopes` turns the theory into three commands and three scopes, and shows what a project-scoped `.mcp.json` does to a teammate who clones your repository.
