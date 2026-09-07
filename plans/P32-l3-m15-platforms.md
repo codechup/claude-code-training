@@ -2,8 +2,8 @@
 id: P32
 title: "L3 Advanced module: Platforms (m15-platforms)"
 milestone: M2
-status: todo
-owner: null
+status: in_progress
+owner: opus-p32-2026-09-07
 branch: plan/32-l3-m15-platforms
 model_hint: opus
 effort_hint: high
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-07T11:17:10Z
 open_questions: []
 ---
 

@@ -2,8 +2,8 @@
 id: P31
 title: "L3 Advanced module: Security (m14-security)"
 milestone: M2
-status: todo
-owner: null
+status: in_progress
+owner: opus-p31-2026-09-07
 branch: plan/31-l3-m14-security
 model_hint: opus
 effort_hint: high
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-07T11:17:06Z
 open_questions: []
 ---
 
