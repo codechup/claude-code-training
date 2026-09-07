@@ -2,8 +2,8 @@
 id: P15
 title: "L1 Beginner module: Memory (m03-memory)"
 milestone: M1
-status: todo
-owner: null
+status: in_progress
+owner: opus-p15-2026-09-07
 branch: plan/15-l1-m03-memory
 model_hint: opus
 effort_hint: high
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-07T07:57:33Z
 open_questions: []
 ---
 

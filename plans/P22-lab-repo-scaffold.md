@@ -2,7 +2,7 @@
 id: P22
 title: Lab repository scaffold (codechup/claude-code-lab)
 milestone: M1
-status: review
+status: done
 owner: sonnet-p22-2026-09-07
 branch: plan/22-lab-repo-scaffold
 model_hint: sonnet
@@ -12,7 +12,7 @@ owned_paths:
   - docs/lab/**
 shared_paths: []
 estimate: M
-updated_at: 2026-09-07T07:47:56Z
+updated_at: 2026-09-07T07:57:31Z
 open_questions:
   - 'Tag coverage is M1-only (m01-m09, 23 lesson pairs / 46 tags), not every hands-on lesson in
     docs/CURRICULUM.md as the plan Scope literally asks (nearly every module through m21). A

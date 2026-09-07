@@ -2,7 +2,7 @@
 id: P23
 title: Sources registry
 milestone: M1
-status: review
+status: done
 owner: haiku-p23-2026-09-07
 branch: plan/23-sources-registry
 model_hint: haiku
@@ -12,7 +12,7 @@ owned_paths:
   - content/_shared/sources.json
 shared_paths: []
 estimate: S
-updated_at: 2026-09-07T07:21:28Z
+updated_at: 2026-09-07T07:57:31Z
 open_questions: []
 ---
 

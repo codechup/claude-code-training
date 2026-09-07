@@ -2,8 +2,8 @@
 id: P13
 title: "L1 Beginner module: Start (m01-start)"
 milestone: M1
-status: todo
-owner: null
+status: in_progress
+owner: opus-p13-2026-09-07
 branch: plan/13-l1-m01-start
 model_hint: opus
 effort_hint: high
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-07T07:57:32Z
 open_questions: []
 ---
 
