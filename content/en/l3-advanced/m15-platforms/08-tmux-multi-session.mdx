@@ -1,0 +1,330 @@
+---
+title: 'Terminal multiplexers and several sessions side by side'
+description: 'Run Claude Code sessions that survive a dropped SSH connection and sit next to each other: the three ~/.tmux.conf lines Claude Code needs, --worktree and --tmux, background sessions, and when a multiplexer is the wrong answer.'
+level: 3
+module: 'm15-platforms'
+order: 8
+duration_min: 10
+difficulty: advanced
+tags: ['platforms', 'tmux', 'terminal', 'worktrees']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Configure your terminal for Claude Code'
+    url: 'https://code.claude.com/docs/en/terminal-config.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Continue local sessions from any device with Remote Control'
+    url: 'https://code.claude.com/docs/en/remote-control.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Platforms and integrations'
+    url: 'https://code.claude.com/docs/en/platforms.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say exactly what breaks when Claude Code runs inside tmux, and add the three `~/.tmux.conf` lines that fix it.
+- Explain why `/terminal-setup` must be run in the host terminal, not inside tmux or screen.
+- Start several sessions side by side with `claude --worktree` and `--tmux`, and say what each flag does.
+- Keep a session alive across a dropped SSH connection, and know when Remote Control or a background session is the better answer.
+- Decide between a multiplexer, `claude --bg`, Desktop parallel sessions and cloud sessions for a given job.
+
+**Prerequisites.** A terminal, `tmux` installed (`tmux -V`), and a git repository. On Windows this means running inside WSL, since tmux is not a PowerShell program; Claude Code's own tmux guidance assumes a `~/.tmux.conf`, which is the POSIX side of a Windows machine. Lesson `05-remote-control-mobile` is useful background: the two solve overlapping problems differently.
+
+<WhenNotToUse>
+  A multiplexer is a terminal window manager, not a scheduler and not a supervisor. Reach for
+  something else when you want work that continues with your machine off (a cloud session), when you
+  want to steer a running session from your phone (Remote Control), when you want a session detached
+  from any terminal at all with a Claude-managed id (`claude --bg`, then `claude attach`), or when
+  the reason you want two panes is that two tasks would collide in one working tree — in that case
+  the fix is a worktree, not a pane. And do not add tmux to a local desktop workflow just to see two
+  sessions: Desktop's sidebar and the split view already do that with git isolation per session.
+</WhenNotToUse>
+
+## Concept
+
+### What tmux breaks, and the fix
+
+Claude Code works in any terminal without configuration — but **inside tmux, two things break by default**:
+
+1. `Shift+Enter` submits instead of inserting a newline.
+2. Desktop notifications and the progress bar never reach the outer terminal; tmux swallows them.
+
+Three lines fix both:
+
+<CodeBlock title="~/.tmux.conf">
+
+```bash
+set -g allow-passthrough on
+set -s extended-keys on
+set -as terminal-features 'xterm*:extkeys'
+```
+
+</CodeBlock>
+
+Then apply them to the running server without restarting it:
+
+<CodeBlock title="apply without restarting tmux">
+
+```bash
+tmux source-file ~/.tmux.conf
+```
+
+</CodeBlock>
+
+`allow-passthrough` lets notifications and progress updates reach the outer terminal. The two `extended-keys` lines let tmux distinguish `Shift+Enter` from plain `Enter`.
+
+Two related gotchas:
+
+- **`Shift+Enter` inside tmux needs this configuration even when the outer terminal already supports it.** Ghostty, Kitty, iTerm2, WezTerm, Warp, Apple Terminal and Windows Terminal all handle `Shift+Enter` natively — but not through tmux without the lines above.
+- **Run `/terminal-setup` in the host terminal, not inside tmux or screen**, because it writes to the host terminal's configuration file. (`/terminal-setup` does detect iTerm2 even from inside tmux, for the clipboard setting it enables there.)
+
+If you would rather not configure anything, `Ctrl+J` inserts a newline in every terminal with no setup, as does typing `\` then `Enter`.
+
+Notifications are worth a second line. Claude Code sends desktop notifications by default only in Ghostty, Kitty and iTerm2. Everywhere else, set `preferredNotifChannel` to `"terminal_bell"`:
+
+<CodeBlock title="~/.claude/settings.json">
+
+```json
+{
+  "preferredNotifChannel": "terminal_bell"
+}
+```
+
+</CodeBlock>
+
+The desktop notification does reach your local machine over SSH, so a remote session can still alert you — provided passthrough is on.
+
+### Sessions side by side
+
+The reason to want several sessions at once is almost never "more panes". It is that two tasks would fight over the same working tree. Claude Code has a first-class answer:
+
+<CodeBlock title="a session in its own git worktree">
+
+```bash
+claude --worktree
+claude --worktree api-refactor
+```
+
+</CodeBlock>
+
+And, on top of that, a flag that lays the worktree's session out in a multiplexer:
+
+<Transcript
+  src="content/_shared/transcripts/m15-platforms/08-tmux-multi-session/01-help-tmux.txt"
+  range="2-9"
+/>
+
+Read that carefully: **`--tmux` requires `--worktree`.** It uses iTerm2 native panes when available; `--tmux=classic` forces traditional tmux. So the shape is `claude --worktree <name> --tmux`, not `--tmux` on its own.
+
+Doing it by hand is the same idea with more typing, and it is worth doing once so you understand what the flag automates:
+
+<CodeBlock title="two sessions, two worktrees, one tmux session">
+
+```bash
+git worktree add ../lab-api feature/api
+git worktree add ../lab-cli feature/cli
+tmux new-session -d -s cc -n api -c ../lab-api
+tmux new-window -t cc -n cli -c ../lab-cli
+tmux send-keys -t cc:api 'claude' Enter
+tmux send-keys -t cc:cli 'claude' Enter
+tmux attach -t cc
+```
+
+</CodeBlock>
+
+This lesson's worked example prompt is the kind of task that earns a second worktree — one you would not want interleaved with anything else in the same tree:
+
+```text
+Rename the pagination helper across the whole codebase and update every call
+site and test. Do not touch anything outside src/ and test/.
+```
+
+### Surviving a dropped connection
+
+This is the classic reason to reach for tmux, and the Remote Control documentation names it explicitly: **to keep a session running on a remote machine after you disconnect from SSH, start it inside `tmux` or `screen`.** Remote Control runs as a local process — close the terminal or quit the client and the session goes offline within seconds. A multiplexer keeps the process alive; `tmux attach` brings you back to it.
+
+The two combine well. Start `claude remote-control` inside tmux on the remote box, detach, close the laptop, and drive the session from your phone: tmux keeps the process alive, Remote Control gives you the interface.
+
+### The alternatives, honestly
+
+| You want                                                 | Reach for                                      |
+| -------------------------------------------------------- | ---------------------------------------------- |
+| Two tasks that must not share a working tree             | `claude --worktree` (optionally with `--tmux`) |
+| A session that survives your SSH connection dropping     | tmux or screen on the remote machine           |
+| A detached session with an id you can reattach to        | `claude --bg`, then `claude attach <id>`       |
+| To drive a running local session from a phone or browser | Remote Control                                 |
+| Work that continues with your machine off                | A cloud session                                |
+| Parallel sessions with git isolation and a GUI           | The Desktop app's sidebar                      |
+
+`claude --bg` deserves a mention because it solves the "keep it running" half without a multiplexer at all: it starts the session in the background and prints an id that `claude attach`, `logs`, `stop` and `rm` take, and `claude agents` lists them. If all you wanted was detachment, that is simpler than tmux.
+
+One more terminal note that belongs here: if the display flickers or the scroll position jumps while Claude works, `/tui fullscreen` switches to the fullscreen renderer and saves the preference. Inside a multiplexer that often matters more than it does in a bare terminal.
+
+## Hands-on lab
+
+Parts of this one _are_ capturable, because tmux is a CLI tool. The transcript below is a real run of step 4 and the cleanup in step 8, and the flag capture in the Concept section is real too. The rest — editing `~/.tmux.conf`, `/terminal-setup`, the two `claude --worktree` sessions, the Shift+Enter test and the detach/reattach — you perform and observe yourself; nothing here stands in for them.
+
+<Lab
+  title="Lab · two worktrees, two sessions, one tmux window"
+  lessonId="en/l3-advanced/m15-platforms/tmux-multi-session"
+  repoTag="none"
+  steps={[
+    'Confirm tmux is installed: `tmux -V`. On Windows, do this inside WSL — tmux does not run under PowerShell.',
+    'Create `~/.tmux.conf` with the three lines from the Concept section, then run `tmux source-file ~/.tmux.conf`.',
+    'Outside tmux, in your host terminal, run `claude` and then `/terminal-setup` once. Confirm it reports installing a Shift+Enter binding (or that one is already configured).',
+    'Start a tmux session with two named windows and confirm they exist: `tmux new-session -d -s cc-lab -n api && tmux new-window -t cc-lab -n web && tmux list-windows -t cc-lab`.',
+    'Attach with `tmux attach -t cc-lab`. In the `api` window run `claude --worktree api-lab`, and in the `web` window (switch with your tmux prefix followed by `n`, `Ctrl+b n` by default) run `claude --worktree web-lab`. Confirm with `git worktree list` that each session has its own tree.',
+    'In one of the sessions, press Shift+Enter in the prompt box and confirm it inserts a newline instead of submitting.',
+    'Detach with `Ctrl+b d`, close the terminal window, open a new one, and run `tmux attach -t cc-lab`. Confirm both sessions are still there.',
+    'Clean up: exit both Claude sessions, `tmux kill-session -t cc-lab`, then `git worktree remove` each worktree you created.',
+  ]}
+  expected="`tmux list-windows` reports two windows; Shift+Enter inserts a newline inside tmux after sourcing the config; `git worktree list` shows a separate tree per session; detaching and reattaching leaves both Claude Code sessions running."
+  checklist={[
+    '`tmux -V` prints a version',
+    'The three lines are in ~/.tmux.conf and were sourced into the running server',
+    '`/terminal-setup` was run in the host terminal, not inside tmux',
+    'Two named tmux windows exist, each with a Claude Code session in its own worktree',
+    'Shift+Enter inserts a newline inside tmux',
+    'Detaching and reattaching left both sessions running',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m15-platforms/08-tmux-multi-session/02-tmux-session.txt"
+    range="2-9"
+  />
+</Lab>
+
+## Anti-patterns
+
+**Adding panes instead of worktrees.** Two sessions in one working tree will overwrite each other's edits, no matter how the terminal is arranged. _Fix:_ `claude --worktree`, and add `--tmux` only if you also want the layout.
+
+**Passing `--tmux` on its own.** It requires `--worktree`. _Fix:_ `claude --worktree <name> --tmux`.
+
+**Running `/terminal-setup` inside tmux.** It writes to the host terminal's configuration file and cannot see it from inside the multiplexer. _Fix:_ run it in the host terminal once, then use tmux.
+
+**Blaming Claude Code when notifications stop inside tmux.** tmux swallows them without `allow-passthrough on`. _Fix:_ the three config lines, plus `preferredNotifChannel: "terminal_bell"` if your terminal is not Ghostty, Kitty or iTerm2.
+
+**Using tmux as a scheduler.** It keeps a process alive; it does not start work, retry it, or run it when you are away. _Fix:_ cloud routines or Desktop scheduled tasks for scheduled work; `claude --bg` for detachment with a managed id.
+
+**Reaching for tmux to "watch two sessions" on your own desktop.** Desktop's sidebar and split view already do that, with a git worktree per session. _Fix:_ use the surface built for it, and keep tmux for remote and SSH work.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/tmux-multi-session"
+  questionId="q1"
+  lang="en"
+  prompt="Which line in ~/.tmux.conf is what lets desktop notifications and the progress bar reach the outer terminal?"
+  options={[
+    {
+      text: '`set -g allow-passthrough on`',
+      correct: true,
+      explanation: 'The two `extended-keys` lines are for Shift+Enter, not notifications.',
+    },
+    {
+      text: '`set -s extended-keys on`',
+      explanation: 'That lets tmux distinguish Shift+Enter from Enter.',
+    },
+    {
+      text: "`set -as terminal-features 'xterm*:extkeys'`",
+      explanation: 'Also part of the Shift+Enter fix.',
+    },
+    {
+      text: '`set -g mouse on`',
+      explanation: 'Not part of the documented configuration.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/tmux-multi-session"
+  questionId="q2"
+  lang="en"
+  prompt="You run `claude --tmux` in a repository and it refuses. Why?"
+  options={[
+    {
+      text: '`--tmux` requires `--worktree`; it creates a tmux session *for the worktree*.',
+      correct: true,
+      explanation: 'The shape is `claude --worktree <name> --tmux`.',
+    },
+    {
+      text: 'tmux is only supported on macOS with iTerm2.',
+      explanation: 'It uses iTerm2 native panes when available and classic tmux otherwise.',
+    },
+    {
+      text: 'You must run it from inside an existing tmux session.',
+      explanation: 'The flag creates the session for you.',
+    },
+    {
+      text: '`--tmux` was removed in 2.1.263.',
+      explanation: 'It is present in this version’s `claude --help`.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/tmux-multi-session"
+  questionId="q3"
+  lang="en"
+  prompt="Your SSH connection to a build box drops while a long Claude Code task is running there. What would have kept it alive?"
+  options={[
+    {
+      text: 'Starting the session inside tmux or screen on that machine.',
+      correct: true,
+      explanation:
+        'The Remote Control docs name exactly this: a multiplexer keeps the local process running after you disconnect.',
+    },
+    {
+      text: 'Remote Control on its own.',
+      explanation:
+        'Remote Control runs as a local process; if the process stops, the session goes offline within seconds.',
+    },
+    {
+      text: '`--teleport` before disconnecting.',
+      explanation:
+        'Teleport pulls a cloud session into a terminal; it does not protect a local one.',
+    },
+    {
+      text: 'Setting `preferredNotifChannel` to `terminal_bell`.',
+      explanation: 'That changes notifications, not process lifetime.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/tmux-multi-session"
+  questionId="q4"
+  lang="en"
+  prompt="Shift+Enter submits instead of inserting a newline inside tmux, even though your terminal supports it natively. What is true?"
+  options={[
+    {
+      text: 'tmux needs the extended-keys configuration regardless of what the outer terminal supports.',
+      correct: true,
+      explanation: 'Ctrl+J, or `\\` then Enter, works everywhere with no setup as a fallback.',
+    },
+    {
+      text: 'Your terminal is on the list that needs `/terminal-setup`.',
+      explanation: 'Possible, but the tmux layer is the documented cause here.',
+    },
+    {
+      text: 'Shift+Enter is never available inside a multiplexer.',
+      explanation: 'It works once tmux can distinguish the key.',
+    },
+    {
+      text: 'You must remap `chat:newline` in the keybindings file.',
+      explanation:
+        'That is an option for changing the binding, not the fix for tmux swallowing it.',
+    },
+  ]}
+/>
+
+That closes the platform tour: the same engine, the same `CLAUDE.md`, the same tools — in the editor, on the desktop, in the cloud, on your phone, in the browser, in team chat, and side by side in a terminal.

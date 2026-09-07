@@ -1,0 +1,310 @@
+---
+title: 'Remote Control and the mobile app'
+description: 'Keep execution on your machine while you drive the session from claude.ai/code or the Claude app: server mode versus an interactive session, connecting from another device, push notifications, and the commands that stay local-only.'
+level: 3
+module: 'm15-platforms'
+order: 5
+duration_min: 10
+difficulty: core
+tags: ['platforms', 'remote-control', 'mobile']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Continue local sessions from any device with Remote Control'
+    url: 'https://code.claude.com/docs/en/remote-control.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code on mobile'
+    url: 'https://code.claude.com/docs/en/mobile.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Platforms and integrations'
+    url: 'https://code.claude.com/docs/en/platforms.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Start Remote Control three ways — `claude remote-control` (server mode), `claude --remote-control` (interactive), `/remote-control` inside a running session — and pick the right one.
+- Connect from a phone or browser by URL, QR code or the session list, and read the four-step rule that names the session.
+- Turn on auto-connect for every session, and say why a project-level `true` is ignored while a project-level `false` is honoured.
+- Enable mobile push notifications and name the two `/config` toggles.
+- List the commands that stay local-only, and how `/model`, `/effort` and `/config` behave from a device.
+
+**Prerequisites.** A Pro, Max, Team or Enterprise plan (on Team and Enterprise an Owner must enable the Remote Control toggle in Claude Code admin settings first), a claude.ai sign-in — API keys are not supported — and the Claude app for iOS or Android if you want the phone half. Lesson `04-web-and-cloud-sessions` first: the two features are constantly confused and the contrast is the fastest way to fix that.
+
+<WhenNotToUse>
+  Remote Control keeps the work on your machine, so it is the wrong tool whenever your machine will
+  be off, asleep or closed — use a cloud session for that. It will not start at all if you point
+  `ANTHROPIC_BASE_URL` at anything other than `api.anthropic.com`, if you use Amazon Bedrock, Google
+  Cloud's Agent Platform or Microsoft Foundry, if you sign in through an enterprise Claude apps
+  gateway, or if `DISABLE_TELEMETRY`, `DO_NOT_TRACK`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` or
+  `DISABLE_GROWTHBOOK` is set, because each of those disables the feature-flag evaluation it depends
+  on. And it is the wrong shape for delegating a whole task from your phone with no session already
+  running: that is Dispatch (Pro and Max) or a cloud session.
+</WhenNotToUse>
+
+## Concept
+
+### What it actually is
+
+Remote Control connects `claude.ai/code` or the Claude mobile app to a Claude Code session **running on your machine**. Claude keeps running locally the entire time, so code execution and filesystem access stay on your machine: your files, your MCP servers, your tools, your project configuration, and `@` autocompleting file paths from your local project. The conversation and the progress of subagents and dynamic workflows stay in sync across every connected device, so you can send messages from the terminal, the browser and the phone interchangeably.
+
+Set against the previous lesson: **Claude Code on the web executes in the cloud; Remote Control executes on your machine.** Both use the same claude.ai/code interface, which is exactly why they get mixed up.
+
+### Three ways to start it
+
+<CodeBlock title="server mode: one process, many sessions">
+
+```bash
+claude remote-control
+```
+
+</CodeBlock>
+
+The process stays running in your terminal waiting for connections, prints a session URL, and toggles a QR code when you press spacebar. Its flags are real and inspectable:
+
+<Transcript
+  src="content/_shared/transcripts/m15-platforms/05-remote-control-mobile/02-remote-control-help.txt"
+  range="2-33"
+/>
+
+Three of those decide how you use server mode. `--spawn <mode>` decides how the server creates sessions — `same-dir` (the default; all sessions share the working directory and can conflict), `worktree` (each on-demand session gets its own git worktree), or `session` (serves exactly one and exits when it ends). Press `w` at runtime to toggle between `same-dir` and `worktree`. `--capacity <N>` caps concurrent sessions at 32 by default. And `--create-session-in-dir` is on by default so one session is pre-created and you have somewhere to type immediately.
+
+<CodeBlock title="interactive session, or from inside one">
+
+```bash
+claude --remote-control
+claude --remote-control "My Project"
+```
+
+</CodeBlock>
+
+```text
+/remote-control
+/rc
+```
+
+The interactive form (`--rc` is the alias) gives you a normal terminal session you can _also_ drive remotely — unlike server mode, you can type locally. `/remote-control` from inside a session carries your existing conversation history over. In the VS Code extension, `/remote-control` works too, but it takes no name argument and shows no QR code.
+
+The interactive flag, and the naming prefix that goes with it, are in this version's help (the
+`/remote-control` command is a slash command, so it cannot appear in `claude --help`):
+
+<Transcript
+  src="content/_shared/transcripts/m15-platforms/05-remote-control-mobile/01-help-remote-control.txt"
+  range="2-6"
+/>
+
+### Connecting from another device
+
+Three routes: open the **session URL** in any browser; **scan the QR code** to open it in the Claude app; or open claude.ai/code or the Claude app and find it by name — in the mobile app, tap **Code**. Remote Control sessions show a computer icon with a green status dot when online. No Claude app yet? Run `/mobile` (aliases `/ios`, `/android`) to display a download QR code.
+
+The session title is chosen in this order: the name you passed to `--name`, `--remote-control` or `/remote-control`; then a title set with `/rename`; then the last meaningful message in the conversation; then an auto-generated `myhost-graceful-unicorn`, where `myhost` is your machine's hostname or the `--remote-control-session-name-prefix` value.
+
+A connected device sees the conversation as it happens, plus a few things worth knowing:
+
+- **Compaction and `/clear`** are reflected on the device; `/clear` resets the conversation there too.
+- **`/resume`** does not send the switched-to conversation's title or earlier history to the device, but new messages in both directions follow whatever conversation is open in your terminal.
+- **The diff pane** shows your uncommitted changes; the device requests it and _your machine computes it_. With a clean tree it shows the branch's changes since it diverged from the default branch.
+- **Model and effort** picked from a device apply to the session on your machine. A pick from the device's model control lasts for the current session only; `/model <name>` sent as text also sets your default for new sessions.
+
+Attachments work both ways too. Photos attached in the Claude app are seen directly _and_ saved under `~/.claude/uploads/` with the path given to Claude, so Claude can copy the image into files it creates. Other files are downloaded to your machine and passed as `@` file references.
+
+This lesson's worked example prompt is the one that makes Remote Control worth setting up — a long local job you want to walk away from:
+
+```text
+Run the full test suite, fix whatever fails, and notify me when the tests finish.
+```
+
+### Auto-connect
+
+Remote Control only activates when you ask for it, unless auto-connect is on. Turn it on with `/config` → **Enable Remote Control for all sessions**, in Desktop under **Settings > Claude Code > Enable remote control by default**, in the VS Code extension's command menu Settings section, or with `remoteControlAtStartup` in settings.
+
+The precedence rule is worth reading twice: in project or local settings (`.claude/settings.json`, `.claude/settings.local.json`) Claude Code **honours a `false` and ignores a `true`** — so a checked-in file can turn Remote Control off for a repository but can never turn it on for everyone who clones it. A `false` in project or local settings also wins over a managed `true`.
+
+With auto-connect on, each interactive process registers one remote session. For several concurrent sessions from one process, use server mode.
+
+### Push notifications
+
+When Remote Control is active, Claude can push to your phone. **Claude decides when** — typically when a long task finishes or when it needs a decision — and you can also request one in the prompt (`notify me when the tests finish`). Beyond two toggles there is no per-event configuration. Install the app, sign in with the same account and organisation, accept the OS notification prompt, then in `/config` enable **Push when Claude decides**, **Push when actions required**, or both.
+
+If nothing arrives: `/config` showing **No mobile registered** means you should open the Claude app so it refreshes its push token; on iOS check Focus modes and notification summaries; on Android exempt Claude from battery optimisation. Claude Code also deliberately skips pushes while you are typing in or focused on the connected terminal — and `CLAUDE_CLIENT_PRESENCE_FILE` extends that to a marker file you create when your screen unlocks.
+
+### Limits you will hit
+
+- **The local process must keep running.** Close the terminal or quit VS Code and the session goes offline within seconds. To keep one alive on a remote machine after you disconnect from SSH, start it inside `tmux` or `screen` — the subject of `08-tmux-multi-session`.
+- **One remote session per interactive process**, outside server mode.
+- **Some commands are local-only.** `/plugin` and `/resume` work only from the local CLI. From mobile and web you get the text-output commands (`/compact`, `/clear`, `/context`, `/usage`, `/exit`, `/recap`, …) and argument forms of the pickers: `/model sonnet`, `/effort high`. `/config` from mobile takes `key=value`; on the web it opens the settings section and ignores text after it.
+- **Permission modes from a device**: Remote Control sessions offer Manual, Accept edits and Plan. You cannot select Auto for a Remote Control session, and you cannot select Bypass permissions from the app at all.
+- **Stopping the server does not archive the sessions**, and you have roughly four hours to bring them back with `claude remote-control` (all of them), `--continue` (the one it started with) or `--session-id <id>`.
+
+### Which away-from-terminal tool?
+
+| Feature            | Claude runs on             | Trigger                                    | Best for                                      |
+| ------------------ | -------------------------- | ------------------------------------------ | --------------------------------------------- |
+| **Remote Control** | Your machine (CLI/VS Code) | Drive a running session from web or phone  | Steering in-progress local work               |
+| **Cloud session**  | Cloud VM                   | Submit a task from web, phone or `--cloud` | Work that must continue with your laptop shut |
+| **Dispatch**       | Your machine (Desktop)     | Message a task in the Claude app           | Delegating while away; Pro and Max only       |
+
+## Hands-on lab
+
+Half of this lab is on a phone, so it is a step list with an explicit expected result. The only captures are the two real `--help` outputs already embedded above; nothing here pretends to be a screenshot.
+
+<Lab
+  title="Lab · drive a local session from your phone"
+  lessonId="en/l3-advanced/m15-platforms/remote-control-mobile"
+  repoTag="none"
+  steps={[
+    'In a project directory, run `claude` once and accept the workspace trust dialog. (The trust dialog never saves trust for your home directory, so start from a project.)',
+    'Confirm you are signed in with a claude.ai account and not an API key: run `/status` and read the login method it reports, then `/login` if it is not a claude.ai account.',
+    'Install the Claude app for iOS or Android. From a session, run `/mobile` and scan the download QR code if you do not have it yet.',
+    'Start server mode: `claude remote-control --name "cc-lab"`. Press spacebar to show the QR code and scan it with your phone.',
+    'From the phone, send a prompt that has to touch your local filesystem, such as `list the top-level files in this repo and tell me what the project does`. Confirm the answer reflects your machine, not a fresh clone.',
+    'Run `/config` on your machine and enable **Push when Claude decides** and **Push when actions required**. Then from the phone, send: `Run the full test suite, fix whatever fails, and notify me when the tests finish.` Lock the phone and wait for the push.',
+    'From the phone, send `/model sonnet` and confirm the terminal’s `/status` shows the same model. Then send `/resume` and confirm it is refused as a local-only command.',
+    'Press `Ctrl+C` to stop the server. Within four hours, run `claude remote-control --continue` in the same directory and confirm the session comes back rather than starting a new one.',
+  ]}
+  expected="The phone drives a session whose answers reflect your local filesystem; a push notification arrives when the test run finishes; `/model sonnet` from the phone changes the model the terminal reports; `/resume` is refused from the device; `claude remote-control --continue` brings the same session back after Ctrl+C."
+  checklist={[
+    'The workspace trust dialog was accepted from a project directory',
+    '`/status` shows a claude.ai login method',
+    'A phone connected via the QR code and the session appeared with a green status dot',
+    'An answer from the phone reflected the local filesystem',
+    'A push notification arrived after a long-running task finished',
+    '`/model sonnet` from the phone changed the session model on the machine',
+    '`claude remote-control --continue` restored the session after Ctrl+C',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m15-platforms/05-remote-control-mobile/02-remote-control-help.txt"
+    range="2-9"
+  />
+</Lab>
+
+## Anti-patterns
+
+**Closing the laptop and expecting the session to continue.** Remote Control runs as a local process; the session goes offline within seconds of the process exiting. _Fix:_ use a cloud session for work that must survive a closed lid, or run the local session inside `tmux` on a machine that stays up.
+
+**Committing `remoteControlAtStartup: true` to a repository.** Project and local settings ignore a `true`, deliberately. _Fix:_ turn auto-connect on in _your_ user settings; use the project file only to turn it off.
+
+**Blaming push notifications when you are sitting at the machine.** Claude Code skips pushes while you are focused on the connected terminal. _Fix:_ test from a locked phone, or set `CLAUDE_CLIENT_PRESENCE_FILE` and check the marker file's state.
+
+**Setting `DISABLE_TELEMETRY` (or `DO_NOT_TRACK`) and then debugging why Remote Control will not start.** Each of those disables the feature-flag evaluation Remote Control availability depends on. _Fix:_ unset it in your shell _and_ in any `settings.json` `env` block.
+
+**Using `--remote-control` when you meant `--cloud`.** One exposes a local session; the other creates a cloud one. _Fix:_ ask where you want the code to execute, and pick from that.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/remote-control-mobile"
+  questionId="q1"
+  lang="en"
+  prompt="You want several concurrent Remote Control sessions from one terminal process, each in its own git worktree. What do you run?"
+  options={[
+    {
+      text: '`claude remote-control --spawn worktree`',
+      correct: true,
+      explanation:
+        'Server mode serves many sessions; --spawn worktree gives each on-demand session its own worktree.',
+    },
+    {
+      text: '`claude --remote-control --worktree`',
+      explanation: 'The interactive form supports one remote session per process.',
+    },
+    {
+      text: '`/remote-control` several times in one session.',
+      explanation: 'That toggles Remote Control on the one session you are in.',
+    },
+    {
+      text: '`claude --cloud` three times.',
+      explanation: 'Those are cloud sessions, not Remote Control.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/remote-control-mobile"
+  questionId="q2"
+  lang="en"
+  prompt="A teammate sets `remoteControlAtStartup` to true in the repository’s `.claude/settings.json`. What happens when you open the repo?"
+  options={[
+    {
+      text: 'Nothing — project and local settings ignore a `true` for this setting.',
+      correct: true,
+      explanation:
+        'A checked-in file cannot turn Remote Control on for everyone; a `false` there is honoured, though, even over a managed `true`.',
+    },
+    {
+      text: 'Every session you start auto-connects to Remote Control.',
+      explanation: 'Only user or managed settings can turn it on.',
+    },
+    {
+      text: 'Claude Code refuses to start until you remove it.',
+      explanation: 'It is ignored, not fatal.',
+    },
+    {
+      text: 'It applies but only to sessions started after a restart.',
+      explanation: 'It does not apply at all from project scope.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/remote-control-mobile"
+  questionId="q3"
+  lang="en"
+  prompt="Which statement about Remote Control versus Claude Code on the web is correct?"
+  options={[
+    {
+      text: 'Both use the claude.ai/code interface; Remote Control executes on your machine and the web executes in the cloud.',
+      correct: true,
+      explanation: 'Same interface, different execution location — which is why they are confused.',
+    },
+    {
+      text: 'Remote Control is the mobile-only version of cloud sessions.',
+      explanation: 'It works from any browser too, and the code runs locally.',
+    },
+    {
+      text: 'Remote Control requires a GitHub connection.',
+      explanation: 'That is cloud sessions; Remote Control needs no GitHub.',
+    },
+    {
+      text: 'Cloud sessions keep your local MCP servers available.',
+      explanation: 'They do not — the VM has only what the environment provides.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/remote-control-mobile"
+  questionId="q4"
+  lang="en"
+  prompt="From the Claude app you send `/resume`. What happens?"
+  options={[
+    {
+      text: 'It does not work — `/resume` is one of the terminal-only commands.',
+      correct: true,
+      explanation: '`/plugin` is the other classic example.',
+    },
+    {
+      text: 'It opens the session picker on your phone.',
+      explanation: 'The picker is terminal UI and is not forwarded.',
+    },
+    {
+      text: 'It resumes the most recent local session silently.',
+      explanation: 'The command is local-only, argument or not.',
+    },
+    {
+      text: 'It returns a text list of sessions, like `/mcp` does.',
+      explanation: '`/mcp` has a text form from mobile; `/resume` does not.',
+    },
+  ]}
+/>
+
+**Next:** `06-chrome` gives Claude your browser — with your logged-in sessions, which is both the power and the hazard.

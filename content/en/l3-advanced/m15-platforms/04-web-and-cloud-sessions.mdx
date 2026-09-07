@@ -1,0 +1,350 @@
+---
+title: 'claude.ai/code, cloud environments, --teleport and ultrareview'
+description: 'Run Claude Code on Anthropic-managed VMs: connect GitHub, understand cloud environments and network access levels, push work out with --cloud, pull it back with --teleport, and run a verified multi-agent review with /code-review ultra.'
+level: 3
+module: 'm15-platforms'
+order: 4
+duration_min: 15
+difficulty: core
+tags: ['platforms', 'cloud', 'teleport', 'ultrareview']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Use Claude Code on the web'
+    url: 'https://code.claude.com/docs/en/claude-code-on-the-web.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Get started with Claude Code on the web'
+    url: 'https://code.claude.com/docs/en/web-quickstart.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure cloud environments'
+    url: 'https://code.claude.com/docs/en/cloud-environments.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Find bugs with ultrareview'
+    url: 'https://code.claude.com/docs/en/ultrareview.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Connect GitHub to Claude Code on the web, from the browser or with `/web-setup`, and say what each method actually grants.
+- Explain what a cloud environment is and pick a network access level (**None**, **Trusted**, **Full**, **Custom**) for a project.
+- Start a cloud session from your terminal with `claude --cloud "…"`, and queue a follow-up into a running one with `claude -p "…" --cloud <session-id>`.
+- Pull a cloud session into your terminal with `--teleport`, and list the four requirements teleport checks.
+- Run `/code-review ultra` and say how it differs from a local `/code-review` in signal, cost and duration.
+
+**Prerequisites.** A Pro, Max, Team or Enterprise plan (Claude Code on the web is in research preview for Pro, Max and Team, and for Enterprise users with premium seats or Chat + Claude Code seats), a claude.ai sign-in in the CLI — not an API key — and a GitHub repository. Lesson `03-desktop-app` is useful context but not required.
+
+<WhenNotToUse>
+  Cloud sessions clone your repository into a fresh VM, so they are the wrong choice whenever the
+  work needs your local config, tools, environment or an MCP server that only exists on your
+  machine. They are also unavailable through third-party providers (Amazon Bedrock, Google Cloud's
+  Agent Platform, Microsoft Foundry), to organisations with Zero Data Retention enabled, and — for
+  Anthropic-hosted sessions — to organisations with IP allowlisting turned on, where every session
+  fails with an authentication error. Repository cloning and PR creation require GitHub; GitLab and
+  Bitbucket repositories can be sent as a local bundle but the session cannot push back. And skip
+  ultrareview for quick feedback while iterating: it costs usage credits and takes 5 to 10 minutes.
+</WhenNotToUse>
+
+## Concept
+
+### Where the work runs
+
+Claude Code on the web runs tasks on Anthropic-managed cloud infrastructure at `claude.ai/code`, or on your organisation's self-hosted environment when routed there. The session persists after you close the browser, and you can monitor it from the Claude mobile app.
+
+The lifecycle of an Anthropic-hosted session is four steps: **clone and prepare** (your repository is cloned to a managed VM and your setup script runs), **configure network** (based on the environment's access level), **work** (Claude analyses, edits, runs tests, checks itself), **push the branch**. Pushing the branch does not close the session — PR creation and further edits all happen in the same conversation.
+
+### Connecting GitHub
+
+Two ways, and they are not equivalent in effort but _are_ equivalent in reach:
+
+| Method       | How                                                                        | Best for                                     |
+| ------------ | -------------------------------------------------------------------------- | -------------------------------------------- |
+| GitHub App   | Authorise the Claude GitHub App during browser onboarding.                 | Browser onboarding; teams that want Auto-fix |
+| `/web-setup` | Run `/web-setup` in the CLI to sync your local `gh` token to your account. | Developers who already use `gh`              |
+
+The nuance that matters for security review: **with either method, a cloud session can access any repository the connecting GitHub account can see** — not only the ones the Claude GitHub App is installed on. App installation enables PR webhooks for Auto-fix; it is not a session-level access control. To restrict what your team can reach, restrict it on GitHub.
+
+On Team and Enterprise plans `/web-setup` is hidden by default: an Owner must turn on the **Quick web setup** toggle at Admin settings → Claude Code first. Organisations with Zero Data Retention cannot use `/web-setup` or other cloud session features at all.
+
+### Cloud environments
+
+Every cloud session runs in a **cloud environment** — the saved configuration controlling network access, environment variables and setup scripts. The same environments apply everywhere a cloud session can start: the web, `claude --cloud`, Claude Tag, routines, and the mobile and Desktop apps.
+
+The **Network access** field takes one of four levels:
+
+| Level       | Outbound connections                                             |
+| ----------- | ---------------------------------------------------------------- |
+| **None**    | No outbound network access through the session's network         |
+| **Trusted** | Allowlisted domains only: package registries, GitHub, cloud SDKs |
+| **Full**    | Any domain                                                       |
+| **Custom**  | Your own allowlist, optionally including the defaults            |
+
+Four things bypass that allowlist at every level, because each takes a different path: GitHub (through its own proxy), MCP connectors you enable (through Anthropic's servers), the hosts listed on the environment's API credentials, and the Anthropic API itself — **even at None**, which is why the docs are explicit that running with network access disabled may still allow data to leave the VM.
+
+A setup script runs before Claude starts working, and there is a roughly five-minute budget for building the environment cache. If sessions hang during setup, that budget is usually the reason: parallelise installs with `&` and a final `wait`, move the biggest downloads into a background `SessionStart` hook, and drop long retry sleeps.
+
+### Terminal to cloud
+
+<CodeBlock title="start a cloud session from the terminal">
+
+```bash
+claude --cloud "Fix the authentication bug in src/auth/login.ts"
+```
+
+</CodeBlock>
+
+Three details that catch people out. **The cloud VM clones your current directory's GitHub remote at your current branch, not your local checkout** — push first if you have local commits. `--cloud` works on one repository at a time. And the older `--remote` spelling still works as a deprecated alias.
+
+If the repository is not connected to GitHub, Claude Code bundles it and uploads it instead: full history across all branches plus uncommitted changes to tracked files, under 100 MB, untracked files excluded. On macOS, Linux and WSL it leaves out uncommitted changes to files that look like credentials (`.env`, `*.tfvars`, `id_rsa`, `*.pem`) and names what it skipped. Force this path with `CCR_FORCE_BUNDLE=1`.
+
+To steer a session that is already running, from any machine you are logged into:
+
+<CodeBlock title="queue a message into a running cloud session">
+
+```bash
+claude -p "also update the changelog" --cloud session_01DiUkqY2kzbUbDmW1w96rfi
+```
+
+</CodeBlock>
+
+That posts one message and exits; `--output-format json` gives you `{ok, session_id, url}`. `--cloud` without `-p` and with a session id is an error, not an attach.
+
+Both flags are real in this version:
+
+<Transcript
+  src="content/_shared/transcripts/m15-platforms/04-web-and-cloud-sessions/01-help-cloud-teleport.txt"
+  range="2-8"
+/>
+
+### Cloud back to terminal
+
+`--teleport` pulls a cloud session and its branch into your terminal. Five ways in: `claude --teleport` for a picker, `claude --teleport <session-id>` for a specific one, `/teleport` (or `/tp`) inside a running session, `t` from the `/tasks` list, or **Open in > Terminal** from the web session menu. Typing `/teleport` inside the cloud session itself prints the exact command to run.
+
+Teleport checks four things before it resumes: a **clean git state** (it offers to stash), the **correct repository** (a checkout of the same repo, not a fork), the **branch available** on the remote, and the **same account** you used in the cloud.
+
+Two distinctions worth memorising, because the names are close:
+
+- `--teleport` pulls a cloud session and its branch. `--resume` reopens a conversation from this machine's local history and does not list cloud sessions at all.
+- `--cloud` creates cloud sessions. `--remote-control` exposes a _local_ session for driving from the web — an unrelated feature, covered in the next lesson.
+
+**After teleporting, the terminal gets its own copy of the session.** New work there stays local and does not appear in the cloud session on claude.ai or the mobile app. To keep steering from your phone afterwards, start `/remote-control` in the local session.
+
+### Working in a cloud session
+
+Most built-in commands work, but the ones that only exist as terminal UI do not: `/plugin` and `/resume` are unavailable, and `/clear` is not either — start a new session from the sidebar. Commands that normally open a picker take an argument instead: `/model sonnet`, `/effort …`, `/fast`, `/color`, `/rename`. `/config` on the web opens your settings page rather than setting a value, and text after it is ignored — to configure a cloud session, use environment variables or commit settings files to the repository.
+
+Permission modes offered are **Auto**, **Accept edits** and **Plan**; Manual and Bypass permissions are not available in cloud sessions.
+
+Diffs show as a `+42 -18` indicator; open it, comment on specific lines, and the comments are bundled with your next message so Claude sees `at src/auth.ts:47, don't catch the error here` alongside the instruction.
+
+**Auto-fix** subscribes Claude to a PR's GitHub activity so it responds to CI failures and review comments. Turn it on from the CI status bar in a web session, with `/autofix-pr` on the PR's branch in the terminal, from the mobile app, or by pasting a PR URL into a session. Claude may reply to review threads on GitHub **using your GitHub account** — labelled as coming from Claude Code, but posted under your username, which can trigger comment-driven automation like Atlantis or `issue_comment` workflows. Review your repository's automation before enabling it.
+
+Cloud sessions stop after a period of inactivity and the VM is reclaimed. Reopening from claude.ai provisions a fresh VM with the conversation history restored — but background work that was running, such as subagents and shell commands, is not restored.
+
+### Ultrareview
+
+Ultrareview is a deep, multi-agent code review that runs on the same cloud infrastructure. The command is `/code-review ultra`; `/ultrareview` is an alias when the feature is available to your account.
+
+```text
+/code-review ultra
+```
+
+Against a different base: `/code-review ultra develop`. Against a PR: `/code-review ultra 1234`. In plain words: `/code-review ultra check my auth changes` (more than one word, and not a branch name or PR reference).
+
+Compared with a local `/code-review`, ultrareview gives higher signal (every finding is independently reproduced and verified), broader coverage (a larger fleet of reviewer agents in parallel) and no local resource use. It costs: Pro and Max get **three free runs, one-time, non-refreshing**; Team and Enterprise get none; after that it bills as usage credits, typically **\$5 to \$25** per review. A run counts once the cloud session starts, even if you stop it early. It takes roughly **5 to 10 minutes** and runs as a background task — watch it with `/tasks`.
+
+A branch review can include up to **500 changed files and 8,000 changed lines** by default; the refusal names the limits in effect and your diff's size. Non-interactively there is a subcommand that blocks until findings arrive:
+
+<Transcript
+  src="content/_shared/transcripts/m15-platforms/04-web-and-cloud-sessions/02-help-ultrareview.txt"
+  range="2-6"
+/>
+
+This lesson's worked example prompt is the shape cloud sessions are built for — well defined, verifiable, and not needing you to hover:
+
+```text
+The pagination helper returns one row too many at the last page.
+Reproduce it with a failing test, fix it, run the suite, and push the branch.
+```
+
+## Hands-on lab
+
+Everything below is real terminal and browser work against a repository you own; the transcripts are the two flag captures already shown, because the cloud parts of this lab spend usage credits and start real sessions on your own account.
+
+<Lab
+  title="Lab · push a task to the cloud, pull it back, then review it"
+  lessonId="en/l3-advanced/m15-platforms/web-and-cloud-sessions"
+  repoTag="none"
+  steps={[
+    'Confirm you are signed in with a claude.ai account and not an API key: run `claude`, then `/status`, and check that the **Login method** row shows a claude.ai account. If not, run `/login`.',
+    'Connect GitHub. Either finish browser onboarding at claude.ai/code, or — if you use the `gh` CLI and your organisation allows it — run `gh auth login` then `/web-setup` in the CLI and look for `Connected as <your-github-username>`.',
+    'Open the environment settings at claude.ai/code and read your **Default** environment. Note its **Network access** level; leave it on **Trusted** for this lab.',
+    'From a pushed branch of a GitHub repository you own, run: `claude --cloud "Add a short CONTRIBUTING.md describing how to run the tests"`. Watch the provisioning checklist.',
+    'Run `/tasks` in your terminal to see the session. Then queue a follow-up from a different shell: `claude -p "also mention the Node version" --cloud <session-id>` and confirm it prints the session ID and a view link.',
+    'Open the session at claude.ai/code, click the `+N -M` diff indicator, leave an inline comment on one line, and send it with a message.',
+    'When Claude has pushed its branch, run `claude --teleport` from a clean checkout of the same repository and pick the session. Confirm the branch is checked out and the conversation history is present.',
+    'Verify the one-way rule: send a message in the teleported terminal session, then reload the session on claude.ai and confirm your new message is not there.',
+    'Optional, and it spends a free run or usage credits: run `/code-review ultra` on the branch and watch it in `/tasks`. Read the confirmation dialog’s cost estimate before confirming.',
+  ]}
+  expected="`claude --cloud` creates a session that clones your pushed branch and works without your terminal; `claude -p --cloud <id>` reports that the message was sent and prints a session ID and a view link; `--teleport` checks out the cloud branch and restores the conversation; work done after teleporting does not appear in the web session."
+  checklist={[
+    '`/status` shows a claude.ai login method, not an API key',
+    'GitHub is connected (browser onboarding or `Connected as <username>` from /web-setup)',
+    'A cloud session was created with `--cloud` from a pushed branch',
+    'A follow-up was queued with `claude -p "…" --cloud <session-id>`',
+    'An inline diff comment reached Claude with the next message',
+    '`--teleport` checked out the branch and restored the history',
+    'Post-teleport work stayed local and did not appear on claude.ai',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m15-platforms/04-web-and-cloud-sessions/01-help-cloud-teleport.txt"
+    range="2-8"
+  />
+</Lab>
+
+## Anti-patterns
+
+**Running `--cloud` with unpushed commits.** The VM clones your GitHub remote at your current branch, not your working tree. Your local commits are simply not there. _Fix:_ push first, or accept the bundle fallback deliberately.
+
+**Treating GitHub App installation as an access control.** A session reaches any repository the connected account can see. _Fix:_ restrict on GitHub — team and repository membership for the connected accounts.
+
+**Assuming `--teleport` keeps the two sides in sync.** It does not; the terminal gets its own copy. _Fix:_ if you need to keep steering from your phone, start `/remote-control` locally after teleporting.
+
+**Confusing `--cloud` with `--remote-control`.** One creates a cloud session; the other exposes a local session to the web. _Fix:_ read them as _"send the work away"_ versus _"keep the work here and drive it from elsewhere"_.
+
+**Setting network access to None and calling the session offline.** Claude Code still reaches the Anthropic API, and GitHub, MCP connectors and API-credential hosts all bypass the allowlist. _Fix:_ treat access levels as controls on _the session's own network_, not as a data-exfiltration guarantee.
+
+**Turning on Auto-fix for a repository where a PR comment can deploy.** Claude's replies post under your GitHub account and can trigger `issue_comment` automation. _Fix:_ audit the repository's workflows first.
+
+**Reaching for `/code-review ultra` on every branch.** Free runs do not refresh, and after them each review is roughly \$5 to \$25 in usage credits. _Fix:_ local `/code-review` while iterating; ultra before merging something substantial.
+
+<Callout variant="changed">
+  `--remote` is a deprecated alias for `--cloud`. It still works, but write `--cloud` — verified
+  against `claude-code-on-the-web.md` for Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/web-and-cloud-sessions"
+  questionId="q1"
+  lang="en"
+  prompt="You run `claude --cloud` with a task description while you have three unpushed local commits. What does the cloud VM see?"
+  options={[
+    {
+      text: 'Your GitHub remote at your current branch — the unpushed commits are missing.',
+      correct: true,
+      explanation:
+        'The VM clones the remote, not your local checkout, which is why the docs say push first.',
+    },
+    {
+      text: 'A byte-for-byte copy of your working directory.',
+      explanation:
+        'Only the bundle fallback uploads local state, and only when GitHub access is unavailable.',
+    },
+    {
+      text: 'Nothing — the command refuses until you push.',
+      explanation: 'It runs; it just runs against the remote.',
+    },
+    {
+      text: 'The default branch, ignoring your current one.',
+      explanation: 'It clones at your current branch.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/web-and-cloud-sessions"
+  questionId="q2"
+  lang="en"
+  prompt="An environment is set to **None** network access. Which of these can the session still reach?"
+  options={[
+    {
+      text: 'The Anthropic API, GitHub through its proxy, enabled MCP connectors, and the environment’s API-credential hosts.',
+      correct: true,
+      explanation:
+        'Each of those takes a path that does not go through the session’s network allowlist.',
+    },
+    {
+      text: 'Nothing at all — that is what None means.',
+      explanation:
+        'None blocks outbound access *through the session’s network*, not those four paths.',
+    },
+    {
+      text: 'Only package registries.',
+      explanation: 'That is Trusted.',
+    },
+    {
+      text: 'Any domain you listed in an allowlist.',
+      explanation: 'That is Custom.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/web-and-cloud-sessions"
+  questionId="q3"
+  lang="en"
+  prompt="Which is NOT one of the four requirements teleport checks?"
+  options={[
+    {
+      text: 'A clean git state, with a prompt to stash if needed.',
+      explanation: 'It is one of the four.',
+    },
+    {
+      text: 'A checkout of the same repository, not a fork.',
+      explanation: 'It is one of the four.',
+    },
+    {
+      text: 'The Claude GitHub App installed on the repository.',
+      correct: true,
+      explanation:
+        'App installation enables Auto-fix webhooks; teleport does not require it. The fourth check is being signed in to the same claude.ai account.',
+    },
+    {
+      text: 'The cloud session’s branch pushed to the remote.',
+      explanation: 'It is one of the four; teleport fetches and checks it out.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/web-and-cloud-sessions"
+  questionId="q4"
+  lang="en"
+  prompt="You are iterating on a branch and want fast feedback on your working diff. Which command fits?"
+  options={[
+    {
+      text: '`/code-review`, locally.',
+      correct: true,
+      explanation:
+        'Seconds to a few minutes, counts toward normal usage, and reviews your working diff.',
+    },
+    {
+      text: '`/code-review ultra`, because it has higher signal.',
+      explanation:
+        'Higher signal, but 5 to 10 minutes and roughly $5–$25 per run after the free ones. Save it for pre-merge.',
+    },
+    {
+      text: '`claude ultrareview --json` in a loop.',
+      explanation: 'The subcommand is for CI or scripts, and each run still bills.',
+    },
+    {
+      text: '`/autofix-pr`.',
+      explanation:
+        'That watches an open PR for CI failures and review comments; it is not a review command.',
+    },
+  ]}
+/>
+
+**Next:** `05-remote-control-mobile` inverts the direction — the code stays on your machine while the conversation moves to your phone.

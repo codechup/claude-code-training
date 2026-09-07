@@ -1,0 +1,294 @@
+---
+title: 'Claude Tag in Slack: setup, connections, scheduled jobs'
+description: 'Run @Claude in your team’s Slack channels as the organisation’s shared identity: how an Owner pairs the workspace and attaches connections, how channel access differs from user access, how billing works, and how to set up routines from a channel.'
+level: 3
+module: 'm15-platforms'
+order: 7
+duration_min: 10
+difficulty: advanced
+tags: ['platforms', 'slack', 'claude-tag']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Claude Tag'
+    url: 'https://code.claude.com/docs/en/claude-tag.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Work with Claude Tag'
+    url: 'https://claude.com/docs/claude-tag/overview'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Set up routines (Claude Tag)'
+    url: 'https://claude.com/docs/claude-tag/users/proactivity'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code in Slack'
+    url: 'https://code.claude.com/docs/en/slack.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Tell Claude Tag apart from the earlier Claude Code in Slack, and say which one applies on which plan.
+- Describe the Owner setup path: pair the workspace, attach connections, grant repositories, set a spend limit, launch.
+- Explain the rule that decides what Claude can reach in a given channel — and why a DM is the exception.
+- Say how channel work is billed and how a spend limit interacts with the usage balance.
+- Set up a routine (scheduled job, channel watch, PR subscription) from a channel and list or disable it.
+
+**Prerequisites.** Claude Tag is available on **Team and Enterprise plans only**, on Anthropic's first-party service. Setting it up requires being an **Owner** in your Claude organisation and pairing a Slack workspace. If you are on Pro or Max, Claude Tag is not available to you; the earlier Claude Code in Slack remains the setup path, and the differences are covered below.
+
+<WhenNotToUse>
+  Claude Tag is for team work in shared channels. It is the wrong tool for personal work on your own
+  files — that is Claude Code or Cowork. It is not available on individual plans (Free, Pro, Max) or
+  for third-party deployments. It runs in an ephemeral sandbox rather than on your computer, so it
+  cannot touch your local checkout, your local MCP servers or your uncommitted work. And because
+  everything a channel member says is context Claude may act on, do not put it in a channel where
+  untrusted people can post: Claude may follow directions from other messages in the conversation.
+</WhenNotToUse>
+
+## Concept
+
+### Two different Slack integrations
+
+This is the first thing to get straight, because both are `@Claude` in Slack and they behave differently.
+
+|                         | **Claude Tag**                                   | **Claude Code in Slack** (earlier)        |
+| ----------------------- | ------------------------------------------------ | ----------------------------------------- |
+| Identity doing the work | Your organisation's shared identity              | Each individual user's own Claude account |
+| Access configured by    | An Owner, per scope (channel, workspace, org)    | Each user's own connected repositories    |
+| Plans                   | Team and Enterprise                              | Pro, Max, Team, Enterprise                |
+| Billing                 | An organisation usage balance with a spend limit | The individual user's plan limits         |
+| Setup per user          | None — everyone in the channel can use it        | Each user connects their own account      |
+
+Anthropic is retiring the earlier version for Team and Enterprise workspaces in favour of Claude Tag; the existing Slack app and `@Claude` handle stay, and your account team can tell you the cutover date. On Pro and Max, Claude Tag is not available, so the earlier page remains the setup path.
+
+### Where it runs
+
+Claude Tag works in Slack. You write in a channel, thread or DM and it replies there; **mention `@Claude` to guarantee it picks the message up.** It posts a checklist into the thread as it goes, so the whole exchange stays visible to the channel.
+
+When it works on a task it runs in an **ephemeral sandbox** — created when a conversation starts, holding any code or files it is working with, discarded when the conversation goes idle. Nothing runs on your computer.
+
+Claude Tag channel sessions use **organisation-level** cloud environments only: either organisation-shared environments or self-hosted ones. This is a common setup failure — an environment created at claude.ai/code belongs to your personal account, and channel sessions started in it fail immediately, with retries not helping. An Owner has to recreate it as an organisation-shared environment.
+
+### Access follows the channel, not the person
+
+The rule to memorise: **what Claude Tag can reach depends on the channel you are in, not on who you are.** An Owner attaches connections — repositories, ticketing systems, data warehouses, custom tools — per scope, and the set of tools attached to a workspace or channel is called an **Access bundle**. Claude Tag starts with no access to your external systems until those connections exist.
+
+The fastest way to find out what a channel can reach is to ask:
+
+```text
+@Claude what can you access from this channel?
+```
+
+Or, signed in to your Claude organisation, click **Configure** in the footer of a Claude reply to see the channel's connections. Replies in org-shared channels have no Configure link.
+
+**The one exception is a DM**, where Claude runs on _your own_ claude.ai account instead of the channel's setup. Owners can disable DMs organisation-wide.
+
+### Setup, once, by an Owner
+
+Setup happens at `claude.ai/admin-settings/claude-tag`, and the page walks through it:
+
+1. **Pair your Slack workspace** — send `@Claude connect` in Slack to get a pairing code, then enter it on the setup page.
+2. **Connect the services Claude will work in** — for each one, create an account for Claude and enter its credential.
+3. **Grant repositories** — choose which repositories the Claude GitHub App can reach.
+4. **Set a monthly spend limit and launch.**
+
+Once you launch, everyone in a channel Claude is in can use it immediately, with no per-user setup.
+
+### Billing
+
+Adding Claude to Slack does **not** add a per-seat charge. Channel and thread work is billed by usage, drawing from a **usage balance** — an amount in your organisation's billing currency that an Owner funds — and a **spend limit** caps how much of that balance Claude Tag can use each billing period. Direct messages are the exception again: a DM runs on the sender's own claude.ai account and follows that seat's usual usage limits, so the organisation spend limit does not apply to it.
+
+The recommended way to size it is a pilot with a spend limit set, watching the per-channel breakdown on the usage page in admin settings.
+
+### Routines: standing work from a channel
+
+Standing work set up from a channel is called a **routine**, and you create one by describing it in a message. It runs with **that channel's connections**, with the same permissions as a typed request.
+
+This lesson's worked example prompt is a scheduled job, written the way the docs recommend — schedule, work, and output format all in one message:
+
+```text
+@Claude every weekday at 9am Pacific, read the open threads in this channel,
+check the tickets and pull requests linked in them, and post a one-line status
+per item. Skip anything with a ✅ reaction.
+```
+
+Three shapes of routine:
+
+- **Scheduled jobs** — describe the schedule and the work together. Name the output format so recurring posts stay scannable.
+- **Channel watching** — `@Claude watch #product-announce, #eng-announce, and #design-announce. Once a day, post here if anything is relevant to user education. Skip days with nothing.` Naming both the channels and the topic is what keeps a watch useful.
+- **Pull request subscriptions** — `@Claude subscribe to PR #482 in acme/data-pipeline. When CI finishes or a review lands, post here, and tag me if anything failed.` A subscription is **the one way Claude reacts to GitHub events**: it wakes on activity on that specific PR. You cannot set up a routine from Slack that fires on other repository events, such as every new pull request.
+
+Managing them is open to anyone in the channel: ask _"what routines do you have set up in this channel?"_ or send `@Claude !routines` (add a real channel mention, picked from Slack's autocomplete, to list another channel's). Describe a change to edit one; name the job to disable it, as in _"disable the Friday rollup"_.
+
+Four boundaries that decide whether a routine behaves:
+
+- **Schedules default to UTC.** Say "9am Pacific", not "9am", or Claude may guess. Confirm with _"what triggers do you have set up?"_.
+- Claude can post a job's output into **another public channel in the same workspace** only if the job's own channel is public and Claude has been added to the target. It labels the message with the channel it came from.
+- Claude does **not** post job output to private channels, DMs, group DMs or externally shared channels, and does not message people directly. The one exception is the completion or failure notice to whoever set up the routine, and only when their Slack account is connected to their Claude account.
+- A channel's routines keep running if their creator leaves the channel or the organisation, and anyone still in the channel can disable them. Routines set up in a DM belong to that person's account and are turned off when they are removed.
+
+## Hands-on lab
+
+Claude Tag lives entirely in Slack and requires Owner rights on a Team or Enterprise organisation, so there is nothing this course can capture headlessly. This lab is a step list with an explicit expected result — and if your organisation does not have Claude Tag, do the read-only steps and stop at step 4.
+
+<Lab
+  title="Lab · verify a channel’s access, then create and retire one routine"
+  lessonId="en/l3-advanced/m15-platforms/slack-claude-tag"
+  repoTag="none"
+  steps={[
+    'Confirm your plan: Claude Tag is Team and Enterprise only. On Pro or Max, read `slack.md` instead and stop here.',
+    'In a Slack channel Claude is already in, send `@Claude what can you access from this channel?` and read the answer. Write down which connections it names.',
+    'Compare that with the Configure link in the footer of Claude’s reply (available when you are signed in to your Claude organisation, and absent in org-shared channels).',
+    'Send `@Claude !routines` and note what standing work already exists in the channel.',
+    'Create a scheduled job with an explicit timezone and output format, for example: `@Claude every weekday at 9am Pacific, post a summary of open threads in this channel and anything that looks like it is waiting on someone.`',
+    'Confirm the schedule landed as you meant it: `@Claude what triggers do you have set up?` Check that the time it reports matches the timezone you named.',
+    'Ask a teammate in the same channel to run `@Claude !routines` and confirm they see your job — standing work is visible to the channel, not private to its creator.',
+    'Disable it by name: `@Claude disable the weekday standup summary`, then re-run `@Claude !routines` to confirm it is gone.',
+  ]}
+  expected="Claude names the channel’s connections rather than your personal ones; `!routines` lists the channel’s standing work for any member; the scheduled job is created and reported back at the timezone you named; disabling it by name removes it from the list."
+  checklist={[
+    'The access answer described channel connections, not your own claude.ai connectors',
+    '`@Claude !routines` listed the channel’s standing work',
+    'A scheduled job was created with an explicit timezone and a named output format',
+    '`what triggers do you have set up?` reported the time you intended',
+    'A teammate saw the same routine in the same channel',
+    'The routine was disabled by name and no longer appears',
+  ]}
+/>
+
+## Anti-patterns
+
+**Assuming Claude Tag can see what _you_ can see.** Access follows the channel's Access bundle, not your Slack or GitHub permissions. _Fix:_ ask `@Claude what can you access from this channel?` before assuming a task is possible.
+
+**Creating the channel's cloud environment from claude.ai/code.** That environment belongs to your personal account and channel sessions fail immediately in it. _Fix:_ an Owner recreates it as an organisation-shared environment from admin settings.
+
+**Writing a schedule with no timezone.** Schedules default to UTC and Claude may guess. _Fix:_ say "9am Pacific" and verify with _"what triggers do you have set up?"_.
+
+**Tagging Claude into an untrusted channel.** Claude is given the conversation context and may follow directions from other messages in it. _Fix:_ use it in channels whose participants you trust, and keep sensitive work out of shared channels.
+
+**Expecting a routine to fire on every new pull request.** Only a subscription to one specific PR reacts to GitHub events from Slack. _Fix:_ use Code Review or a GitHub Actions workflow for repository-wide triggers.
+
+**Treating DMs like channel work.** A DM runs on your own account, under your own usage limits, with your own setup — the organisation spend limit does not apply. _Fix:_ do team work in the channel, where it is visible and billed to the organisation.
+
+<Callout variant="changed">
+  For Team and Enterprise workspaces, Anthropic is retiring the earlier Claude Code in Slack — where
+  each session ran under an individual user's account — in favour of Claude Tag, which runs
+  `@Claude` as the organisation's shared identity. The Slack app and the `@Claude` handle stay; ask
+  your account team for the cutover date. On Pro and Max, `slack.md` is still the setup path.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/slack-claude-tag"
+  questionId="q1"
+  lang="en"
+  prompt="Who or what determines which external services Claude Tag can reach in a given Slack channel?"
+  options={[
+    {
+      text: 'The Access bundle an Owner attached to that channel or workspace.',
+      correct: true,
+      explanation: 'Access follows the channel, not the person asking.',
+    },
+    {
+      text: 'The connectors the asking user set up in their own claude.ai account.',
+      explanation: 'That is true only in a DM, which runs on the sender’s own account.',
+    },
+    {
+      text: 'The asker’s GitHub permissions.',
+      explanation: 'Repository access comes from the connections an admin granted.',
+    },
+    {
+      text: 'Slack workspace admin roles.',
+      explanation: 'Slack admins control app installation, not Claude’s connections.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/slack-claude-tag"
+  questionId="q2"
+  lang="en"
+  prompt="How is Claude Tag billed?"
+  options={[
+    {
+      text: 'No per-seat charge; channel and thread work draws from an organisation usage balance capped by a spend limit, while DMs run on the sender’s own account.',
+      correct: true,
+      explanation: 'Which is why the organisation spend limit does not apply to a DM.',
+    },
+    {
+      text: 'A per-seat charge for everyone in a channel Claude is in.',
+      explanation: 'Adding Claude to Slack adds no per-seat charge.',
+    },
+    {
+      text: 'Everything bills to the individual who tagged Claude.',
+      explanation: 'That is the earlier Claude Code in Slack.',
+    },
+    {
+      text: 'It is free during the public beta with no limits.',
+      explanation:
+        'There may be a launch usage credit, but the balance and spend-limit model still applies.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/slack-claude-tag"
+  questionId="q3"
+  lang="en"
+  prompt="You want Claude to post in your channel whenever any new pull request opens in a repository. Can a Slack routine do that?"
+  options={[
+    {
+      text: 'No — a subscription to one specific pull request is the only way Claude reacts to GitHub events from Slack.',
+      correct: true,
+      explanation: 'Repository-wide triggers need Code Review or a CI workflow instead.',
+    },
+    {
+      text: 'Yes, ask it to watch the repository.',
+      explanation: 'Channel watching covers Slack channels, not repositories.',
+    },
+    {
+      text: 'Yes, with `@Claude !routines --repo`.',
+      explanation: 'No such form; `!routines` lists a channel’s standing work.',
+    },
+    {
+      text: 'Only on Enterprise plans.',
+      explanation: 'The limitation is not plan-dependent.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/slack-claude-tag"
+  questionId="q4"
+  lang="en"
+  prompt="A routine you set up posts at the wrong hour. What is the most likely cause?"
+  options={[
+    {
+      text: 'You did not name a timezone, and schedules default to UTC.',
+      correct: true,
+      explanation: 'Say “9am Pacific” and verify with “what triggers do you have set up?”.',
+    },
+    {
+      text: 'Routines always run at a random offset to stagger traffic.',
+      explanation: 'That is Desktop scheduled tasks, not Claude Tag routines.',
+    },
+    {
+      text: 'The channel’s connections expired.',
+      explanation: 'That would fail the work, not shift the hour.',
+    },
+    {
+      text: 'Only Owners can set the time.',
+      explanation: 'Anyone in the channel can set up and edit standing work.',
+    },
+  ]}
+/>
+
+**Next:** `08-tmux-multi-session` closes the module back in the terminal, running several Claude Code sessions side by side.

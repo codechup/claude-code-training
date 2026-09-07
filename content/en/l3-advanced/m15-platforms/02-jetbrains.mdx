@@ -1,0 +1,312 @@
+---
+title: 'The JetBrains plugin'
+description: 'Install the Claude Code plugin for IntelliJ, PyCharm, WebStorm and friends, connect it with /ide, route diffs into the IDE viewer, and fix the two things that break most often — the ESC key and WSL2 networking.'
+level: 3
+module: 'm15-platforms'
+order: 2
+duration_min: 10
+difficulty: core
+tags: ['platforms', 'jetbrains', 'ide']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'JetBrains IDEs'
+    url: 'https://code.claude.com/docs/en/jetbrains.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Platforms and integrations'
+    url: 'https://code.claude.com/docs/en/platforms.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure your terminal for Claude Code'
+    url: 'https://code.claude.com/docs/en/terminal-config.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Install the JetBrains plugin next to a standalone CLI install, and explain why both pieces are needed.
+- Connect a session to the IDE — automatically from the integrated terminal, or with `/ide` from an external one.
+- Route diffs into the IDE's own viewer by setting **Diff tool** in `/config`, and know why that entry sometimes is not there.
+- Insert a file reference with `Cmd+Option+K` / `Alt+Ctrl+K` and read what the `⧉ Selected N lines from <file>` line in the transcript means.
+- Fix the two classic breakages: ESC not interrupting Claude, and "No available IDEs detected" under WSL2.
+
+**Prerequisites.** A JetBrains IDE (IntelliJ IDEA, PyCharm, WebStorm, PhpStorm, GoLand or Android Studio), a Claude Code CLI install on your `PATH`, and a paid Claude subscription or Console account. Lesson `01-vs-code` first: the two IDE surfaces are deliberately different, and the contrast is the point.
+
+<WhenNotToUse>
+  The JetBrains plugin is a thin bridge, not a chat panel. If you want a graphical conversation
+  surface with inline diffs and session tabs inside the editor, that is the VS Code extension, not
+  this. Skip the plugin entirely when you are happy in a terminal — the CLI is the full-featured
+  surface and the plugin only adds IDE diffs, selection sharing and diagnostics on top of it. Also
+  skip it in JetBrains Remote Development unless you can install the plugin on the remote host,
+  because installing it on the local client does nothing.
+</WhenNotToUse>
+
+## Concept
+
+### Two pieces, not one
+
+This is the single most important difference from VS Code. **The JetBrains plugin runs the `claude` command in your IDE's integrated terminal and connects to it. It does not bundle its own copy of the CLI.** So you install two things:
+
+1. The Claude Code CLI (the normal quickstart install).
+2. The Claude Code plugin from the JetBrains Marketplace, then restart the IDE.
+
+If `claude` is not on the `PATH` your IDE can see, the plugin shows a "Cannot launch Claude Code" notification. The fix is the plugin's **Claude command** setting — an absolute path such as `/usr/local/bin/claude`, or `npx @anthropic-ai/claude-code`, or for WSL users the full `wsl -d Ubuntu -- bash -lic "claude"` form.
+
+### What the plugin adds
+
+| Feature                  | What it does                                                                                                   |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| Quick launch             | `Cmd+Esc` (macOS) / `Ctrl+Esc` (Windows, Linux) opens Claude Code from the editor, or click the Claude button. |
+| Diff viewing             | Changes open in the IDE's diff viewer instead of the terminal. Controlled by **Diff tool** in `/config`.       |
+| Selection context        | The current selection or tab is shared with Claude Code automatically.                                         |
+| File reference shortcuts | `Cmd+Option+K` / `Alt+Ctrl+K` inserts a reference such as `@src/auth.ts#L1-99`.                                |
+| Diagnostic sharing       | Claude reads the IDE's inspection diagnostics by calling `getDiagnostics`.                                     |
+
+One behaviour worth stating precisely, because it surprises people: **Claude Code does not request diagnostics from the plugin on its own after edits.** Diagnostics are available, not automatic. If you want the IDE's inspection results considered, ask.
+
+### Connecting
+
+Run `claude` from the IDE's integrated terminal and every integration feature is active with no extra step. From an _external_ terminal, run `claude` and then:
+
+<CodeBlock title="connect an outside session to the IDE">
+
+```text
+/ide
+```
+
+</CodeBlock>
+
+On success you get a message like `Connected to IntelliJ IDEA.` If Claude Code finds a running IDE without the plugin, `/ide` installs the plugin for you and asks you to restart.
+
+Start Claude Code from the same directory as your IDE project root if you want Claude to see the same files the IDE does.
+
+### Diffs in the IDE
+
+<CodeBlock title="route diffs to the IDE viewer">
+
+```text
+/config
+```
+
+</CodeBlock>
+
+Set **Diff tool** to `auto` for IDE diffs, or `terminal` to keep them in the terminal. The catch: **the Diff tool entry appears in `/config` only while Claude Code is connected to the IDE.** If you do not see it, you started `claude` outside the IDE terminal and have not run `/ide` yet. The underlying setting is `diffTool`.
+
+This lesson's worked example prompt leans on the selection sharing, which is the plugin's real differentiator:
+
+```text
+Read the diagnostics the IDE reports for the file I have open and tell me
+which of them are real bugs and which are style noise. Change nothing.
+```
+
+### Selection, deny rules and the `ide` server
+
+While connected, the CLI includes your current editor selection and the active file's path on each prompt. The transcript shows a `⧉ Selected N lines from <file>` line when that happens — that line is your receipt that context was attached. To exclude a sensitive file, add a `Read` **deny** rule for its path; a matching rule blocks both the selected text and the open-file notice.
+
+The plugin runs a local MCP server named `ide`, hidden from `/mcp`. It listens on an OS-assigned ephemeral port over unencrypted `ws://`, and each IDE start writes a fresh random auth token to `~/.claude/ide/<port>.lock` (or `$CLAUDE_CONFIG_DIR/ide/`) which the CLI must present as `X-Claude-Code-Ide-Authorization`. Exactly one tool reaches the model — `mcp__ide__getDiagnostics`, read-only. **The JetBrains plugin does not expose a code-execution tool to the model.**
+
+There is a networking setting under **Settings → Tools → Claude Code \[Beta] → Networking (Advanced)** called **Accept connections from all network interfaces**. Off, the server binds `127.0.0.1` only. On, the port is reachable from your local network — and because the transport is unencrypted, both the traffic and the token cross the network in cleartext. Turn it on only when loopback genuinely cannot work.
+
+### Two things that break
+
+**ESC does not interrupt Claude.** JetBrains terminals bind Escape to "move focus to the editor". Go to **Settings → Tools → Terminal** and either uncheck "Move focus to the editor with Escape" or delete the "Switch focus to Editor" shortcut under "Configure terminal keybindings".
+
+**"No available IDEs detected" on WSL2.** WSL2's NAT networking or Windows Firewall blocks the connection between the WSL2 VM and the IDE on the Windows host. (WSL1 uses the host network directly and is unaffected.) Two fixes, in preference order:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+Not applicable — this failure is specific to WSL2 on Windows. On macOS the plugin talks to the CLI over loopback with no extra configuration.
+
+  </Fragment>
+  <Fragment slot="linux">
+
+Not applicable on native Linux — the IDE and the CLI share the same loopback interface.
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+# Preferred: mirrored networking (Windows 11 22H2+). Add to .wslconfig in your
+# Windows user directory, then run: wsl --shutdown
+# [wsl2]
+# networkingMode=mirrored
+
+# Fallback for Windows 10: allow WSL2 traffic through the firewall.
+# Find your subnet first: run `hostname -I` inside WSL, take the first two
+# segments of the address and follow them with .0.0/16. Then, as Administrator,
+# substitute that value for $Subnet below:
+$Subnet = '<first-two-segments>.0.0/16'
+New-NetFirewallRule -DisplayName "Allow WSL2 Internal Traffic" -Direction Inbound -Protocol TCP -Action Allow -RemoteAddress $Subnet -LocalAddress $Subnet
+```
+
+  </Fragment>
+</OSTabs>
+
+Mirrored networking is preferred because it shares the Windows loopback interface with the Linux VM, so the socket can stay on loopback instead of turning on the all-interfaces setting.
+
+### A note on `acceptEdits`
+
+In `acceptEdits` mode inside a JetBrains IDE, Claude may be able to modify IDE configuration files that the IDE executes automatically — which can bypass the permission prompts for bash execution. The docs' own advice is to prefer Manual mode for edits in JetBrains, because `acceptEdits` and auto mode both approve edits inside your working directory without asking except in protected paths.
+
+## Hands-on lab
+
+This lab is entirely IDE-driven: there is nothing headless to capture, so it is a step list plus a checklist. Do not expect a transcript here — this course does not manufacture one.
+
+<Lab
+  title="Lab · connect a JetBrains IDE and prove each integration point"
+  lessonId="en/l3-advanced/m15-platforms/jetbrains"
+  repoTag="none"
+  steps={[
+    'Confirm the CLI is installed and visible to your shell: `claude --version` should print a version followed by `(Claude Code)`.',
+    'Install the Claude Code plugin from the JetBrains Marketplace and restart the IDE completely.',
+    'Open a project you own. In the IDE’s integrated terminal, run `claude`, then run `/config` and confirm a **Diff tool** entry is present. Set it to `auto`.',
+    'Exit that session. Open a terminal *outside* the IDE, `cd` to the same project root, run `claude`, then run `/ide`. Confirm the connection message names your IDE.',
+    'Select a few lines in the editor and send a prompt that does not name a file. Look for the `⧉ Selected N lines from <file>` line in the transcript.',
+    'Press `Cmd+Option+K` / `Alt+Ctrl+K` and confirm an `@path#L…-…` reference is inserted.',
+    'Ask Claude to make one small edit and confirm the diff opens in the IDE viewer, not the terminal.',
+    'Press `Esc` while Claude is working. If focus jumps to the editor instead of interrupting, apply the terminal-keybinding fix in Settings → Tools → Terminal, then retry.',
+  ]}
+  expected="`/config` shows Diff tool only while connected; `/ide` from an outside terminal reports `Connected to <your IDE>.`; the transcript shows a `⧉ Selected N lines` line; an edit opens in the IDE diff viewer; Esc interrupts Claude rather than moving focus."
+  checklist={[
+    '`claude --version` prints a version (the plugin does not bundle a CLI)',
+    'The **Diff tool** entry appears in `/config` while connected',
+    '`/ide` from an external terminal named the IDE in its success message',
+    'A `⧉ Selected N lines from <file>` line appeared after a selection-based prompt',
+    'A proposed edit opened in the IDE diff viewer',
+    'Esc interrupts Claude instead of moving focus to the editor',
+  ]}
+/>
+
+## Anti-patterns
+
+**Installing the plugin and nothing else.** The plugin has no bundled CLI. _Fix:_ install the CLI, and if the IDE cannot find it, set the plugin's **Claude command** to an absolute path.
+
+**Installing the plugin on the local client under Remote Development.** It does nothing there. _Fix:_ install it on the remote host via **Settings → Plugin (Host)**.
+
+**Turning on "Accept connections from all network interfaces" to fix a WSL2 problem.** That exposes an unencrypted `ws://` port and its auth token to your local network. _Fix:_ switch WSL2 to mirrored networking, or add the firewall rule, and leave the setting off.
+
+**Expecting Claude to re-check IDE diagnostics after every edit.** It does not request them on its own. _Fix:_ ask for them, or run your own type-check.
+
+**Running in `acceptEdits` because the IDE feels safe.** The IDE is precisely where auto-approved edits are most dangerous, because IDE config files can execute. _Fix:_ use Manual mode for edits in JetBrains.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/jetbrains"
+  questionId="q1"
+  lang="en"
+  prompt="Why does the JetBrains plugin need a separate CLI install when the VS Code extension does not?"
+  options={[
+    {
+      text: 'The plugin runs the `claude` command in the IDE’s integrated terminal and connects to it; it ships no CLI of its own.',
+      correct: true,
+      explanation:
+        'Exactly — which is why a missing PATH entry produces "Cannot launch Claude Code".',
+    },
+    {
+      text: 'JetBrains licensing forbids bundling binaries.',
+      explanation: 'Not the documented reason.',
+    },
+    {
+      text: 'It does not — both bundle a CLI.',
+      explanation:
+        'The VS Code extension bundles one for its chat panel; the JetBrains plugin does not.',
+    },
+    {
+      text: 'The CLI is only needed for headless mode.',
+      explanation: 'Here it is needed for every session the plugin drives.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/jetbrains"
+  questionId="q2"
+  lang="en"
+  prompt="You run `/config` and there is no **Diff tool** entry. What is the most likely cause?"
+  options={[
+    {
+      text: 'Claude Code is not connected to the IDE — you started it outside the IDE terminal and have not run `/ide`.',
+      correct: true,
+      explanation: 'The entry appears only while connected.',
+    },
+    {
+      text: 'Your plan does not include IDE diffs.',
+      explanation: 'Diff routing is not plan-gated.',
+    },
+    {
+      text: 'The `diffTool` setting has been removed.',
+      explanation: '`diffTool` is the underlying setting and still exists.',
+    },
+    {
+      text: 'You need to restart the IDE three times.',
+      explanation: 'Restarting helps with plugin detection, not with this entry.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/jetbrains"
+  questionId="q3"
+  lang="en"
+  prompt="Which tool does the plugin’s `ide` MCP server expose to the model?"
+  options={[
+    {
+      text: '`mcp__ide__getDiagnostics`, and it is read-only.',
+      correct: true,
+      explanation:
+        'The other tools on that server are internal RPC filtered out before the model sees them.',
+    },
+    {
+      text: 'A code-execution tool, so Claude can run the IDE’s run configurations.',
+      explanation: 'The JetBrains plugin does not expose a code-execution tool to the model.',
+    },
+    {
+      text: 'Nothing — it is purely internal.',
+      explanation: 'Exactly one tool is visible to the model.',
+    },
+    {
+      text: 'A diff tool the model calls to open the viewer.',
+      explanation: 'Opening diffs is internal RPC the CLI uses, not a model-visible tool.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/jetbrains"
+  questionId="q4"
+  lang="en"
+  prompt="`/ide` reports “No available IDEs detected” from a WSL2 shell. What is the preferred fix?"
+  options={[
+    {
+      text: 'Switch WSL2 to mirrored networking so the socket stays on loopback.',
+      correct: true,
+      explanation:
+        'Preferred because it avoids exposing the unencrypted IDE port to the local network.',
+    },
+    {
+      text: 'Enable “Accept connections from all network interfaces”.',
+      explanation:
+        'That works but puts unencrypted traffic and the auth token on your local network — a last resort.',
+    },
+    {
+      text: 'Downgrade to WSL1.',
+      explanation: 'WSL1 is unaffected, but downgrading is not the documented fix.',
+    },
+    {
+      text: 'Reinstall the plugin on the Windows host.',
+      explanation:
+        'The plugin is already on the host; the problem is networking between the VM and it.',
+    },
+  ]}
+/>
+
+**Next:** `03-desktop-app` leaves the editor entirely for the standalone Desktop app — parallel sessions in git worktrees, the diff and browser panes, the iOS Simulator, and scheduled tasks that fire on your own machine.

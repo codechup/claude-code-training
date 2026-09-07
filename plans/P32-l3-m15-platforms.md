@@ -2,7 +2,7 @@
 id: P32
 title: "L3 Advanced module: Platforms (m15-platforms)"
 milestone: M2
-status: in_progress
+status: review
 owner: opus-p32-2026-09-07
 branch: plan/32-l3-m15-platforms
 model_hint: opus
@@ -15,8 +15,13 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T11:17:10Z
-open_questions: []
+updated_at: 2026-09-07T18:56:10Z
+open_questions:
+  - 'research/feature-inventory.md is missing Dispatch, the --tmux flag, /web-setup, /autofix-pr and /ios|/android, and does not record that `claude remote-control` is a real subcommand absent from the `Commands:` list in `claude --help` for 2.1.263 — P03 owns that file, so the drift is recorded here rather than edited in.'
+  - 'The fact-checker asked for three inventory rows to be enriched, because each was too thin to have caught an error this module made: the IDE row does not record that VS Code exposes two model-visible `ide` tools (getDiagnostics plus the non-read-only executeCode) while JetBrains exposes one; the Desktop/web row does not record Desktop''s third-party-provider matrix, permission-mode set or worktree default path; the Claude Tag row does not record Access bundles, the ephemeral sandbox, the DM billing exception, routines, or that the claude.com Claude Tag docs carry a Public Beta label.'
+  - 'research/deprecations.md has no entry for the three Changed facts this module teaches (--remote deprecated in favour of --cloud; Chrome integration kept off for API-key/setup-token sessions since v2.1.216; Claude Code in Slack being retired for Team/Enterprise in favour of Claude Tag). P03/P42 should add them so the Playbook changelog page stays in sync.'
+  - 'codechup/claude-code-lab has only process-only tags for this module (lesson/m15-01-* and lesson/m15-06-*, both at the m14-03 solution tip), so six of the eight lessons use repo_tag: none. A lab-repo plan would need real start/solution state before the Desktop or JetBrains labs could check out anything.'
+  - 'TR translation (P25/P26/P40/P41) will need glossary coverage for worktree, routine, permission mode, MCP server, transcript and headless; content/tr/playbook/glossary.mdx is not in this plan''s shared_paths so it was not edited.'
 ---
 
 ## Goal
@@ -100,5 +105,80 @@ A reviewer opens `npm run dev`, visits each of the 7 lessons at `/en/l3-advanced
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+**Session:** `opus-p32-2026-09-07`, worktree `../cct-wt-32`, branch `plan/32-l3-m15-platforms`.
+
+### What was written
+
+Eight EN lessons under `content/en/l3-advanced/m15-platforms/` plus eight `draft: true` TR stubs, ten captured transcripts under `content/_shared/transcripts/m15-platforms/<NN-slug>/`, and two new entries in `content/_shared/sources.json`.
+
+### Deltas from the plan file (CURRICULUM wins, per step 1)
+
+The plan listed **7** lessons with different slugs; `docs/CURRICULUM.md` §2 lists **8**. Followed CURRICULUM. Renames: `01-vscode`→`01-vs-code`, `02-jetbrains` (same), `03-desktop-app-and-scheduled-tasks`→`03-desktop-app`, `04-web-app-and-cloud-sessions`→`04-web-and-cloud-sessions`, `05-remote-control-and-mobile`→`05-remote-control-mobile`, `06-chrome` (same), `07-claude-tag-slack`→`07-slack-claude-tag`, plus the new `08-tmux-multi-session`.
+
+Two more places where `docs/authoring/CONTENT-PLAN-BRIEF.md` was followed over the plan file, as the brief instructs: transcripts live at `transcripts/<module>/<NN-slug>/<kk>-<name>.txt` with a `# ` provenance first line (not `transcripts/<module>/NN-<slug>.md`), and the TR stubs carry a **translated** title/description plus a one-paragraph Turkish summary (not English titles).
+
+### Evidence and honesty limits (D093, D099)
+
+This module is overwhelmingly UI-driven. Every surface is described from a live doc fetch with exact commands and settings in `<CodeBlock>`; **nothing was staged as a screenshot or a fake session.** Only what could be captured honestly was captured, all against `lesson/m15-01-start` / `lesson/m15-06-start` (both "process-only" tags pointing at the m14-03 solution tip, so the repo runs as-is):
+
+- `01-vs-code`: `claude --version`; `claude --help` `--ide` entry.
+- `04-web-and-cloud-sessions`: `claude --help` `--cloud` / `--teleport` entries; the `ultrareview` subcommand entry.
+- `05-remote-control-mobile`: `claude --help` `--remote-control` entries; the full `claude remote-control --help` flag list.
+- `06-chrome`: `claude --help` `--chrome` / `--no-chrome`; a **real** headless `claude -p --chrome` run against the lab checkout that was refused by the Chrome extension's site permissions. That capture answers in Turkish because this machine's global Claude Code preferences ask for Turkish — the same phenomenon the m01 reference lesson documents. The lesson calls both facts out rather than hiding them.
+- `08-tmux-multi-session`: `claude --help` `--tmux` / `--worktree` entries; a real `tmux -V` / `new-session` / `list-windows` / `list-sessions` run in WSL (tmux 3.6).
+
+Lessons `02-jetbrains`, `03-desktop-app` and `07-slack-claude-tag` have **no transcript**: the JetBrains plugin, the Desktop GUI and Claude Tag in Slack (Team/Enterprise, Owner-only) have nothing capturable headlessly. Their labs are step lists with an explicit expected result and a checklist, as the plan brief allows.
+
+### Inventory drift found (docs win, D004/D044)
+
+`research/feature-inventory.md` does not mention these, all confirmed live on 2026-09-07:
+
+- **Dispatch** — message a task from the Claude mobile app, Desktop spawns a Code session (`desktop.md#sessions-from-dispatch`, `platforms.md`). Pro/Max only.
+- **`--tmux`** — real flag in `claude --help` for 2.1.263; requires `--worktree`.
+- **`/web-setup`**, **`/autofix-pr`**, **`/ios`** / **`/android`** (aliases of `/mobile`) — in `commands.md` / `web-quickstart.md` but not the inventory's command list.
+- **`claude remote-control` is a real subcommand** but is **not listed** under `Commands:` in `claude --help` for 2.1.263; `claude remote-control --help` prints its own flag list (captured). Worth an inventory note.
+- **iOS Simulator pane** is documented as *not* computer use (it drives the simulator directly); the inventory's one-line entry does not make that distinction.
+- The **Claude Tag** authoritative docs live at `claude.com/docs/claude-tag/*`; `code.claude.com/docs/en/claude-tag.md` is a short pointer page. Both are cited so the mandatory `code.claude.com` official entry is satisfied.
+
+### Sources registry
+
+15 of the 17 official URLs this module cites were already tagged `m15-platforms` in `content/_shared/sources.json` by an earlier plan. Only `desktop-scheduled-tasks.md` and `terminal-config.md` needed the module tag appended, and two new entries were added (`docs-claude-tag-overview`, `docs-claude-tag-routines`, both on `claude.com`). Diff is 18 insertions / 2 deletions — no existing entry rewritten or reordered.
+
+### Verification
+
+`npm run gate` (OK, 174 files) · `npm run typecheck` (0 errors) · `npm run lint` (clean after `prettier --write` on the eight EN files) · `npm test` (22 files, 184 tests) · `npm run build` (ends `check-no-inline-script (dist): OK`, `dist/en/l3-advanced/m15-platforms/` has 8 lesson pages + index) · `node scripts/check-raw-colors.mjs` · `node scripts/check-public-hygiene.mjs` · `node tools/plan/cli.ts check`. Playwright on port **4432** with a temporary `playwright.p32.config.ts` and a temporary `e2e/p32-m15.spec.ts`: **34 passed** at 390 px and 1280 px (`e2e/a11y.spec.ts` plus both module indexes and all 8 EN lesson routes). Both temporary files were deleted afterwards. TR lesson routes are `draft: true` and deliberately do not render, so they are not in the route list.
+
+Two MDX build failures were found and fixed: an escaped `\"` inside a double-quoted `<Quiz prompt="…">` attribute is not valid MDX (`05` and `04`); both prompts were reworded.
+
+### Review pipeline (D071)
+
+Both agents were run read-only from the worktree root and both returned CHANGES REQUESTED. Everything they raised was either fixed or answered against a primary source.
+
+**`reviewer` — 4 blockers, 0 majors, 3 minors, 2 nits. All addressed.** The blockers were three misplaced `<Callout variant="changed">` blocks (before `## Anti-patterns` instead of after it — D006 / CURRICULUM §3 order) in lessons 04, 06 and 07, and the raw IPv4 in the JetBrains WSL2 firewall example, which the pre-commit hygiene hook had already caught and which is now a `$Subnet` placeholder. Minors and nits fixed: lesson 04's `expected=` quoted `Sent to cloud session.` as though it were captured output (now paraphrased, since it is doc text and not a recording from this session); lesson 05's transcript range cut an entry mid-line and its caption implied a slash command could appear in `claude --help`; lesson 01's lab said "committed text" where `git diff` shows the working tree; and this plan's `open_questions` was empty while the Handoff listed real follow-ups.
+
+**`fact-checker` — 3 WRONG, all fixed; 4 UNVERIFIABLE, 3 resolved and 1 kept with evidence; ~120 claims CONFIRMED across the eight lessons.**
+
+Fixed (WRONG):
+
+1. `01-vs-code` claimed the `ide` MCP server exposes exactly one model-visible tool. That is true of **JetBrains**; VS Code exposes **two** — `mcp__ide__getDiagnostics` (read-only) and `mcp__ide__executeCode`, which runs Python in the active Jupyter kernel behind a Quick Pick confirmation. The lesson now carries both, and the confirmation flow.
+2. `03-desktop-app`'s `WhenNotToUse` said Bedrock and Foundry need the CLI or an IDE extension. `desktop.md`'s feature-comparison table says the Code tab can run on all three third-party providers through the separate "Claude Desktop on 3P" setup. Rewritten, and the genuinely-absent Desktop features (agent teams, inline suggestions) named instead.
+3. `06-chrome` said "Two constraints on uploads" and then listed three. The docs call them three restrictions — permissions, size, hard links — and the lesson now does too.
+
+Resolved (UNVERIFIABLE):
+
+4. The `claude remote-control --help` capture was missing `--spawn`, `--capacity` and `--create-session-in-dir`, which the docs list — because the original capture was piped through `head -22`. **Re-captured in full (52 lines), the header now says "Complete, untruncated output", and the lesson renders the whole OPTIONS block.** This was a real evidence defect and the most valuable thing either agent found.
+5. `06-chrome` attributed the captured refusal specifically to the Chrome extension's site permissions. The agent is right that the transcript cannot establish which layer refused: the same capture's first line shows Claude Code's own permission layer dropping the workspace's `permissions.allow` entries. The lesson now says exactly that — the transcript proves *a* permission stopped the action, not *which* one — and points at the interactive dialog as where the distinction is visible.
+6. `08-tmux-multi-session` said "the transcript below is a real run" above an eight-step lab evidenced by two steps. It now names which steps the recording covers and says plainly that the rest are performed and observed by the reader. The "tmux is a POSIX tool" line was softened to a claim about `~/.tmux.conf`, which the cited doc does make.
+
+Kept, with primary-source evidence against the agent (one item):
+
+7. Lesson 04's setup-script advice to "drop long retry sleeps" was flagged as absent from `cloud-environments.md`. It is absent there, but it is verbatim in `web-quickstart.md`, which is also one of that lesson's cited sources: *"Remove long retry sleeps from the setup script, since a stalled retry loop counts against the budget."* Kept. The same applies to the `/status` **Login method** row, which is in `web-quickstart.md`; lesson 05 does not cite that page, so its wording was loosened rather than the claim removed.
+
+Both agents independently recommended enriching `research/feature-inventory.md`; those recommendations are in `open_questions` below.
+
+### Open questions / follow-ups
+
+- No `<Callout variant="changed">` in `01`, `02`, `03`, `05`, `08` — `research/deprecations.md` has no item for those surfaces and CURRICULUM §3 makes the callout conditional ("where relevant"). Three lessons do carry one (`--remote` → `--cloud`; Chrome integration off for API-key/`setup-token` sessions since v2.1.216; Claude Code in Slack being retired for Team/Enterprise in favour of Claude Tag).
+- P22 tagged only `m01`–`m09` labs; `m15-01`/`m15-06` exist as process-only tags. Six of the eight lessons use `repo_tag: 'none'`. If a later plan wants real lab state for the Desktop or JetBrains lessons, it needs new tags in `codechup/claude-code-lab`.
+- TR translation of these eight lessons belongs to P25/P26/P40/P41. Turkish glossary terms these lessons will need on translation and that may not exist yet: `worktree`, `routine`, `permission mode`, `MCP server`, `transcript`, `headless` (most are already listed in `.claude/rules/i18n.md`'s kept-terms list; the glossary was not edited by this plan since it is not in `shared_paths`).
 

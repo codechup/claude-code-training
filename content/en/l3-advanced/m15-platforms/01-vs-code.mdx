@@ -1,0 +1,286 @@
+---
+title: 'The VS Code extension: inline chat, diff view, selection context'
+description: 'Install the Claude Code extension for VS Code, open it from the Spark icon, send a prompt with your selection attached, review edits in the side-by-side diff, and know exactly what the extension adds over running claude in the integrated terminal.'
+level: 3
+module: 'm15-platforms'
+order: 1
+duration_min: 15
+difficulty: core
+tags: ['platforms', 'vs-code', 'ide']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Use Claude Code in VS Code'
+    url: 'https://code.claude.com/docs/en/vs-code.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Platforms and integrations'
+    url: 'https://code.claude.com/docs/en/platforms.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure your terminal for Claude Code'
+    url: 'https://code.claude.com/docs/en/terminal-config.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m15-01-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Install the Claude Code extension in VS Code and open it from the Spark icon, the Activity Bar, the Command Palette or the Status Bar.
+- Send a prompt with your current selection attached, and add an explicit `@file.ts#5-10` reference with `Option+K` / `Alt+K`.
+- Review a proposed edit in VS Code's side-by-side diff and accept, reject, or edit the proposal before accepting.
+- Say what the extension gives you that `claude` in the integrated terminal does not — and what the terminal still gives you that the extension does not.
+- Connect an _external_ terminal session to a running VS Code window with `/ide`, and know which flag does it at launch.
+
+**Prerequisites.** VS Code 1.94.0 or higher; a paid Claude subscription (Pro, Max, Team or Enterprise) or a Claude Console account — no API key required. You need a git checkout of the lab repository (`lesson/m15-01-start`). The earlier modules on permission modes (`m04`) and git workflows (`m08`) are assumed.
+
+<WhenNotToUse>
+  Skip the extension when you are working over SSH on a box with no editor, when you are scripting
+  Claude Code (`claude -p`, the Agent SDK and every headless workflow are CLI-only), or when you
+  need a CLI-only feature the extension does not carry. It is also the wrong surface for a task you
+  will not watch: a long autonomous refactor belongs in a cloud session or a background session, not
+  in a panel you have to keep focused. And if your editor is a VS Code fork the extension will not
+  install into, install the CLI and run `claude` in that editor's integrated terminal instead — the
+  CLI works in any terminal.
+</WhenNotToUse>
+
+## Concept
+
+### Same engine, different window
+
+The extension is not a different product. It runs the same agentic loop, reads the same `CLAUDE.md`, honours the same settings and connects to the same MCP servers as the CLI. What changes is the interface: instead of a scrolling transcript you get a panel that lives inside your editor, VS Code's own diff viewer for every proposed edit, and your editor's selection handed to Claude automatically.
+
+One nuance worth knowing before you install: **the extension bundles its own copy of the CLI for the chat panel.** If you also want to type `claude` in VS Code's integrated terminal, you need the standalone CLI install as well.
+
+### Opening it
+
+Throughout VS Code, the **Spark icon** means Claude Code. Four ways in:
+
+| Entry point     | How                                                                                             |
+| --------------- | ----------------------------------------------------------------------------------------------- |
+| Editor Toolbar  | Click the Spark icon in the top-right of the editor. Appears only when a file is open.          |
+| Activity Bar    | Click the Spark icon in the left sidebar to open the sessions list. Always visible.             |
+| Command Palette | `Cmd+Shift+P` / `Ctrl+Shift+P`, type "Claude Code", pick an option such as **Open in New Tab**. |
+| Status Bar      | Click **✱ Claude Code** at the bottom right — available when `preferredLocation` is `sidebar`.  |
+
+The first time you open the panel, sign in through the browser. If you later see **Not logged in · Please run /login**, the extension reopens the sign-in screen by itself; if it does not, run **Developer: Reload Window**.
+
+### Selection context and `@`-mentions
+
+Claude automatically sees your selected text. That is the default, with no keystroke. Pressing `Option+K` (macOS) / `Alt+K` (Windows, Linux) goes one step further and inserts an explicit reference such as `@file.ts#5-10` into your prompt, so the range is written into the conversation rather than being implicit context for one turn.
+
+Both paths flow through the same mechanism: while the extension is connected, the CLI includes your current editor selection and the active file's path as context on each prompt. To keep a sensitive file such as `.env` out of that, add a `Read` **deny** rule for its path — a matching deny rule blocks both the selected text and the open-file notice.
+
+This lesson's worked example prompt is deliberately shaped around a selection, because that is the one thing the extension does that a bare terminal cannot:
+
+```text
+Explain what the lines I have selected do, then tell me the one edge case
+they do not handle. Do not change any files yet.
+```
+
+### Reviewing changes
+
+What you see when Claude wants to edit depends on the permission mode shown at the bottom of the prompt box:
+
+- **Auto** — a classifier reviews most actions instead of asking you. On Pro, Max and Team plans this is the extension's built-in starting mode.
+- **Manual** — Claude shows a side-by-side comparison of the original and the proposal, then asks. You accept, reject, or say what to do instead. **If you edit the proposed content in the diff view before accepting, Claude is told that you modified it**, so it does not carry on assuming the file matches its own proposal.
+- **Plan** — Claude describes the approach first. VS Code opens the plan as a full Markdown document you can annotate inline before Claude begins.
+- **Edit automatically** — edits land without asking.
+
+### The `ide` MCP server
+
+When the extension is active it runs a local MCP server named `ide` that the CLI connects to. This is how diffs open in the native viewer, how selections reach `@`-mentions, how Claude reads editor diagnostics, and — in a Jupyter notebook — how it asks VS Code to execute cells. It is hidden from `/mcp` because there is nothing to configure, but it exists, and it matters if your organisation allowlists MCP tools in a `PreToolUse` hook.
+
+The server hosts about a dozen tools; the rest are internal RPC the CLI uses for its own UI and are filtered out before the tool list reaches Claude. **Two** reach the model:
+
+| Tool                       | What it does                                                 | Read-only |
+| -------------------------- | ------------------------------------------------------------ | --------- |
+| `mcp__ide__getDiagnostics` | Returns the errors and warnings in VS Code's Problems panel. | Yes       |
+| `mcp__ide__executeCode`    | Runs Python in the active Jupyter notebook's kernel.         | No        |
+
+`mcp__ide__executeCode` cannot run anything silently: the code is inserted as a new cell at the end of the active notebook and a native Quick Pick asks you to **Execute** or **Cancel** on every call. Cancelling, or dismissing with `Esc`, returns an error to Claude and nothing runs. That Quick Pick is separate from `PreToolUse` hooks — an allowlist entry lets Claude _propose_ a cell; the Quick Pick is what lets it _actually_ run. The JetBrains plugin is different here, and the next lesson says how.
+
+### Extension or CLI?
+
+Everything in the extension is also in the CLI. The reverse is not true, and the split is worth memorising:
+
+| Want                                                  | Use                                        |
+| ----------------------------------------------------- | ------------------------------------------ |
+| Inline diffs, plan review as a document, session tabs | Extension                                  |
+| `claude -p`, the Agent SDK, any script                | CLI                                        |
+| An external terminal driving your open VS Code window | CLI plus `/ide` (or launch `claude --ide`) |
+| Browser automation                                    | Either — see `06-chrome`                   |
+
+`claude --ide` is a real flag in this version:
+
+<Transcript
+  src="content/_shared/transcripts/m15-platforms/01-vs-code/02-help-ide.txt"
+  range="2-4"
+/>
+
+`/ide` does the same thing from inside a running session, and also reports connection status.
+
+## Hands-on lab
+
+This lab happens inside VS Code, so most of it is clicking rather than typing. Only the two verification commands are captured below — everything else is something you do and observe, and this course does not fabricate screenshots of UI it did not photograph.
+
+<Lab
+  title="Lab · drive the lab repo from the VS Code extension"
+  lessonId="en/l3-advanced/m15-platforms/vs-code"
+  repoTag="lesson/m15-01-start"
+  steps={[
+    'Clone the lab repository and check out `lesson/m15-01-start`, then open that folder in VS Code (`code .` from the checkout, so VS Code inherits your shell environment).',
+    'Install the extension: press `Cmd+Shift+X` / `Ctrl+Shift+X`, search for "Claude Code", click **Install**. If the panel does not appear afterwards, run **Developer: Reload Window** from the Command Palette.',
+    'Open `src/api/server.ts`, click the Spark icon in the Editor Toolbar, and sign in when the panel prompts you.',
+    'Select the body of one request handler in the editor. Without typing a file name, send: `Explain what the lines I have selected do, then tell me the one edge case they do not handle. Do not change any files yet.` Confirm the answer is about your selection.',
+    'Press `Option+K` / `Alt+K` with a different range selected and check that an `@src/api/server.ts#L…-…` reference is inserted into the prompt box.',
+    'Click the permission-mode indicator at the bottom of the prompt box and switch it to **Manual**. Ask Claude to add a one-line comment above the handler you selected. When the diff appears, edit the proposed comment text in the diff view, then accept.',
+    'Run `git diff` in the integrated terminal and confirm the working-tree text is *your* edited version, not Claude’s original proposal.',
+    'Open a terminal outside VS Code, run `claude` in the same checkout, then run `/ide` and confirm it reports a connection to your VS Code window.',
+  ]}
+  expected="The extension answers about your selection without you naming a file; Option+K/Alt+K inserts an @-reference with a line range; the Manual-mode diff lets you edit the proposal before accepting and `git diff` shows your edited text; `/ide` from an outside terminal connects to the same window."
+  checklist={[
+    'The Claude Code panel opens from the Spark icon and you are signed in',
+    'A prompt with no file name is answered about the current selection',
+    'Option+K / Alt+K inserted an @file#Lstart-Lend reference',
+    'The Manual-mode diff was edited before accepting, and git diff shows the edited text',
+    '`/ide` from an external terminal reported a connection',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m15-platforms/01-vs-code/01-version.txt"
+    range="2-3"
+  />
+</Lab>
+
+If `Shift+Enter` submits instead of inserting a newline in VS Code's integrated terminal, run `/terminal-setup` once. In VS Code it also sets `terminal.integrated.gpuAcceleration` to `"off"` (to stop garbled text) and adjusts `terminal.integrated.mouseWheelScrollSensitivity`.
+
+## Anti-patterns
+
+**Pasting the file into the prompt because "the extension can't see it".** It can. Your selection is attached automatically, and `@`-mentions cover everything else. Pasting large content into VS Code's integrated terminal is worse than useless: it can drop characters before they reach Claude Code. _Fix:_ select, or `@`-mention, or ask Claude to read the file.
+
+**Installing the extension and expecting `claude` in the terminal.** The extension bundles a CLI copy for its own panel only. _Fix:_ install the standalone CLI too if you want the terminal command.
+
+**Leaving `.env` visible.** Selection and open-file context reach Claude on every prompt while the extension is connected. _Fix:_ add a `Read` deny rule for the path; that blocks both the selected text and the open-file notice.
+
+**Accepting a diff you did not read because Auto mode "already checked it".** Auto mode's classifier blocks risky actions; it does not judge whether the change is what you wanted. _Fix:_ read the diff, and use Manual mode on anything you would not merge unreviewed.
+
+**Assuming the extension can do headless work.** Scripting, the Agent SDK, `claude -p` in CI: all CLI-only. _Fix:_ keep the CLI installed for automation and use the extension for interactive work.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/vs-code"
+  questionId="q1"
+  lang="en"
+  prompt="You select ten lines in the editor and ask a question without naming any file. What does Claude see?"
+  options={[
+    {
+      text: 'Nothing — you must @-mention the file first.',
+      explanation:
+        'Selection context is automatic while the extension is connected; @-mentions are the explicit form.',
+    },
+    {
+      text: 'Your selection and the active file’s path, attached to the prompt.',
+      correct: true,
+      explanation:
+        'The CLI includes the current selection and open-file path as context on each prompt while connected.',
+    },
+    {
+      text: 'The whole workspace, loaded into context.',
+      explanation: 'Claude reads files on demand; it does not preload the workspace.',
+    },
+    {
+      text: 'Only the file name, never the text.',
+      explanation:
+        'The selected text itself is included, which is why a Read deny rule blocks both.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/vs-code"
+  questionId="q2"
+  lang="en"
+  prompt="In Manual mode you edit Claude’s proposed change inside the diff view and then accept it. What happens next?"
+  options={[
+    {
+      text: 'Claude is told you modified the proposal, so it does not assume the file matches what it wrote.',
+      correct: true,
+      explanation: 'Documented behaviour of the extension’s diff view.',
+    },
+    {
+      text: 'Your edit is discarded and Claude’s original proposal is applied.',
+      explanation: 'The accepted content is what you edited.',
+    },
+    {
+      text: 'The session restarts to resynchronise.',
+      explanation: 'Nothing restarts.',
+    },
+    {
+      text: 'The edit applies but Claude is not informed, so later turns may be wrong.',
+      explanation: 'That is exactly the failure mode the extension avoids by telling Claude.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/vs-code"
+  questionId="q3"
+  lang="en"
+  prompt="You want to keep .env out of the context the extension sends. What works?"
+  options={[
+    {
+      text: 'Add a `Read` deny rule for the path.',
+      correct: true,
+      explanation:
+        'A matching deny rule blocks both the selected text and the open-file notice for that file.',
+    },
+    {
+      text: 'Close the file before prompting — that is the only control.',
+      explanation: 'It helps for that turn, but the deny rule is the durable control.',
+    },
+    {
+      text: 'Disable the `ide` MCP server in `/mcp`.',
+      explanation:
+        'The `ide` server is hidden from `/mcp` because there is nothing to configure there.',
+    },
+    {
+      text: 'Switch to Plan mode.',
+      explanation: 'Plan mode restricts edits, not what context is read.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/vs-code"
+  questionId="q4"
+  lang="en"
+  prompt="Which of these is CLI-only, with no extension equivalent?"
+  options={[
+    {
+      text: 'Reviewing a plan before Claude edits.',
+      explanation: 'The extension opens the plan as a Markdown document you can annotate.',
+    },
+    {
+      text: '`claude -p` and the Agent SDK.',
+      correct: true,
+      explanation: 'Scripting and the Agent SDK are CLI-only surfaces.',
+    },
+    {
+      text: 'Browser automation with Chrome.',
+      explanation: 'Chrome works from the CLI and from the VS Code extension.',
+    },
+    {
+      text: 'Switching permission modes mid-session.',
+      explanation: 'The extension has a mode indicator in the prompt box.',
+    },
+  ]}
+/>
+
+**Next:** `02-jetbrains` covers the other IDE surface — the plugin that runs the CLI in your IntelliJ, PyCharm or WebStorm terminal, and the WSL networking that most often breaks it.

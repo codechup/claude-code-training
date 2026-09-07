@@ -1,0 +1,296 @@
+---
+title: 'The Desktop app: scheduled tasks, the iOS Simulator pane, browser launching'
+description: 'Run Claude Code with no terminal: parallel sessions in git worktrees, the diff, terminal, file and Browser panes, the iOS Simulator on macOS, and local scheduled tasks that fire while the app is open.'
+level: 3
+module: 'm15-platforms'
+order: 3
+duration_min: 15
+difficulty: core
+tags: ['platforms', 'desktop', 'scheduled-tasks']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Desktop application'
+    url: 'https://code.claude.com/docs/en/desktop.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Get started with the desktop app'
+    url: 'https://code.claude.com/docs/en/desktop-quickstart.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Schedule recurring tasks in Claude Code Desktop'
+    url: 'https://code.claude.com/docs/en/desktop-scheduled-tasks.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Test iOS apps in the simulator'
+    url: 'https://code.claude.com/docs/en/desktop-ios-simulator.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Open the Desktop app's **Code** tab, pick an environment (Local, Cloud, SSH or WSL) and start a session.
+- Run several sessions in parallel, each in its own git worktree, and say where those worktrees live.
+- Arrange the diff, terminal, file and Browser panes, and use the Browser pane to preview a running app.
+- Create a **local** scheduled task, choose its schedule, and explain the three cases where it will not run.
+- Say which of the three scheduling surfaces — cloud routines, Desktop tasks, `/loop` — fits a given job.
+- Describe what the iOS Simulator pane does on macOS and why it is not computer use.
+
+**Prerequisites.** A Pro, Max, Team or Enterprise subscription. On Windows, Git for Windows must be installed and the app restarted afterwards, or local sessions will not work. Lessons `01-vs-code` and `02-jetbrains` first, so you can compare surfaces.
+
+<WhenNotToUse>
+  Desktop trades CLI-only features for visual review, so it is the wrong choice when you need to
+  script Claude Code or use the Agent SDK, when you want agent teams (a CLI feature; Desktop has
+  dynamic workflows instead), or when you want inline autocomplete-style code suggestions, which
+  Desktop does not provide. It connects to Anthropic's API by default: running the Code tab on
+  Amazon Bedrock, Google Cloud's Agent Platform, Microsoft Foundry or a self-hosted gateway is
+  possible, but it is a separate "Claude Desktop on 3P" setup rather than something you configure in
+  the app. Local scheduled tasks are the wrong tool for anything that must run when your machine is
+  off or asleep: use a cloud routine instead. And the iOS Simulator pane is macOS-only and
+  local-session-only — a cloud or SSH session runs on a machine that cannot reach the simulators on
+  your Mac.
+</WhenNotToUse>
+
+## Concept
+
+### Three tabs, one of them ours
+
+The Claude Desktop app has three tabs: **Chat** (conversation, no file access), **Cowork** (an autonomous background agent in a sandboxed VM), and **Code** (the coding assistant with direct access to your local files). Everything in this lesson is the **Code** tab.
+
+Desktop _includes_ Claude Code — you do not need Node.js or a separate CLI install for it. If you also want to type `claude` in a terminal, install the CLI separately. Desktop and the CLI run the same engine, can run simultaneously on the same project, and share configuration: `CLAUDE.md` files, MCP servers, hooks, skills and settings.
+
+### Starting a session
+
+Pick an environment first:
+
+| Environment | Where the code runs                                                                            |
+| ----------- | ---------------------------------------------------------------------------------------------- |
+| **Local**   | Your machine, on your files directly. Windows needs Git installed.                             |
+| **Cloud**   | The same infrastructure as Claude Code on the web; continues if you close the app.             |
+| **SSH**     | A remote machine. Desktop installs Claude Code there automatically on first connect.           |
+| **WSL**     | Windows only — inside a WSL 2 distribution, with Claude Code, tools and git on the Linux side. |
+
+Then a model from the dropdown next to the send button, then a permission mode: **Auto** (a classifier reviews actions in the background and blocks the risky ones), **Manual** (approve each change), **Accept edits** (edits auto-applied), **Plan** (propose without editing).
+
+### Parallel sessions and worktrees
+
+**+ New session** (`Cmd+N` / `Ctrl+N`) starts another one. For git repositories **each session gets its own isolated copy of the project using git worktrees**, so changes in one do not affect another until you commit. `Ctrl+Tab` / `Ctrl+Shift+Tab` cycle sessions; holding `Cmd` / `Ctrl` while clicking a sidebar session opens it in a second pane alongside the current one.
+
+Worktrees live in `<project-root>/.claude/worktrees/` by default — changeable in **Settings → Claude Code → "Worktree location"**, along with a branch prefix for every worktree branch. To include gitignored files like `.env`, add a `.worktreeinclude` file to your project root.
+
+### Panes
+
+The Code tab is a drag-and-drop layout of panes: chat, diff, browser, terminal, file, plan, tasks, subagent, plus the iOS Simulator on macOS. Drag by the header to move, drag an edge to resize, `Cmd+\` / `Ctrl+\` to close the focused pane, **Views** in the session toolbar to open more.
+
+- **Terminal** (Ctrl and the backtick key, on both platforms) opens in the session's working directory and shares Claude's environment, so `npm test` sees the same files Claude is editing. Local sessions only.
+- **File** pane: click a path in the chat or diff to open it, make spot edits, **Save**. Local and SSH sessions only; for cloud sessions, ask Claude to make the change.
+- **Browser** pane: run your dev server and the app opens here. Claude can view the running app, test endpoints, inspect logs and iterate on what it sees. It can also open external sites.
+- **Diff** pane: a `+12 -1` indicator appears after edits; click it to review file by file and comment on specific lines. Claude reads your comments and revises. **Review code** has Claude evaluate its own diffs and leave inline suggestions.
+
+The keyboard shortcut sheet is `Cmd+/` / `Ctrl+/`. Note that terminal interactive-mode shortcuts (`Shift+Tab` to cycle permission modes, for instance) **do not apply in Desktop**.
+
+### The iOS Simulator pane (macOS)
+
+When Claude builds, installs, launches or checks your app in a simulator, the **iOS Simulator** pane opens automatically and streams the device screen live. It drives the simulator directly, so — and this is the part people get wrong — **it does not need computer use and never takes over your screen**. From the CLI, Claude reaches the simulator through computer use instead, which does control your screen.
+
+It is in public beta on macOS on Pro, Max, Team and Enterprise (except Enterprise organisations with a HIPAA configuration), needs Claude Desktop v1.24012.0 or later and Xcode 26.x with the iOS platform installed, and works in local sessions only. Each device belongs to the session that launched it, up to 4 panes per session. The first time Claude uses a device you are asked to allow it, once per device. Screenshots of the device are sent to Anthropic under your normal retention settings — so do not sign in to real accounts on a device Claude uses.
+
+### Scheduled tasks
+
+Desktop's **Routines** page creates two different things. A **local scheduled task** runs on your machine with access to your files and tools, but only fires while the app is open and the computer is awake. A **remote routine** runs in the cloud even when your computer is off, and can also fire on API calls or GitHub events. Pick deliberately:
+
+|                       | Cloud routine                       | Desktop task          | `/loop`               |
+| :-------------------- | :---------------------------------- | :-------------------- | :-------------------- |
+| Runs on               | Cloud, Anthropic-managed by default | Your machine          | Your machine          |
+| Requires machine on   | No                                  | Yes                   | Yes                   |
+| Requires open session | No                                  | No                    | Yes                   |
+| Access to local files | No (fresh clone)                    | Yes                   | Yes                   |
+| Permission prompts    | No (runs autonomously)              | Configurable per task | Inherits from session |
+| Minimum interval      | 1 hour                              | 1 minute              | 1 minute              |
+
+To create one: in the **Code** tab click **Routines**, then **New routine**, then **Local**. Fill in Name (lowercased to kebab-case and used as the folder name on disk), Description, Instructions (with pickers for permission mode and model, plus the working folder and an isolated-worktree toggle), and Schedule. A folder is required before you can save, and Desktop asks you to trust it first. Schedule presets are **Manual**, **Hourly**, **Daily**, **Weekdays** and **Weekly**; for anything else — every 15 minutes, the first of the month, a single future run — just ask Claude in any Desktop session.
+
+That is this lesson's worked example prompt, and it is a real feature, not a figure of speech:
+
+```text
+Set up a local scheduled task that runs every weekday at 9am, reviews the
+commits pushed to this repo since the previous weekday, and writes a short
+summary. Run it in an isolated worktree.
+```
+
+Three things about how they run, all of which bite eventually:
+
+- **Timing drift.** Desktop checks every minute while the app is open and adds a small deterministic delay of a few minutes to stagger API traffic.
+- **Skipped runs.** If the computer sleeps through a scheduled time, the run is skipped. **Keep computer awake** under **Settings → Desktop app → General** prevents idle sleep; closing the lid still sleeps.
+- **Catch-up runs.** On app start or wake, Desktop starts exactly one catch-up run for the most recently missed time in the last seven days and discards anything older. So a 9am task can run at 11pm. Write guardrails into the prompt: _"Only review today's commits. If it's after 5pm, skip the review and just post a summary of what was missed."_
+
+Permissions are per task. Allow rules from `~/.claude/settings.json` also apply. A Manual-mode task that needs an unapproved tool **stalls until you approve it**, with the session waiting in the sidebar. The practical fix is to click **Run now** after creating the task, watch for prompts, and choose "always allow" for each. MCP tools marked `requiresUserInteraction` prompt every call and offer no always-allow, so those runs stall each time.
+
+Each task's prompt lives at `~/.claude/scheduled-tasks/<task-name>/SKILL.md` (or under `CLAUDE_CONFIG_DIR`), with YAML frontmatter for `name` and `description` and the prompt as the body; edits take effect on the next run. Schedule, folder, model and enabled state are _not_ in that file. A running task can even reschedule itself with the `update_scheduled_task` MCP tool.
+
+### Moving work off Desktop
+
+**Continue in** (the VS Code icon in the session toolbar) sends a session to **Claude Code on the Web** — Desktop pushes your branch, summarises the conversation and creates a cloud session with the full context; this requires a clean working tree and is not available for SSH sessions — or opens the project in **Your IDE**. Selecting **Cloud** instead of **Local** at session start does the same for work you know up front will be long.
+
+**Dispatch** goes the other way: you message a task from the Claude mobile app, and Dispatch decides how to handle it. Development-shaped tasks spawn a Code session in Desktop's sidebar with a **Dispatch** badge, and you get a push notification when it finishes or needs approval. Dispatch requires a Pro or Max plan and is not available on Team or Enterprise.
+
+## Hands-on lab
+
+Desktop is a GUI. There is no honest way to capture it headlessly, so this lab is a step list with an explicit expected result and a checklist — no invented screenshots, no invented transcript.
+
+<Lab
+  title="Lab · parallel sessions and a local scheduled task in Desktop"
+  lessonId="en/l3-advanced/m15-platforms/desktop-app"
+  repoTag="none"
+  steps={[
+    'Install the Desktop app for your OS and sign in. On Windows, install Git for Windows first and restart the app.',
+    'Open the **Code** tab, choose **Local**, and select a git repository you own as the folder. Choose **Manual** as the permission mode.',
+    'Give Claude a small task, then click the `+N -M` indicator when it appears and review the diff file by file. Leave an inline comment on one line and send it with your next message.',
+    'Press `Cmd+N` / `Ctrl+N` to start a second session on the same project. Run `git worktree list` in the integrated terminal (Ctrl and the backtick key) and confirm a worktree under `.claude/worktrees/`.',
+    'Hold `Cmd` / `Ctrl` and click the first session in the sidebar to view both at once. Close the focused pane with `Cmd+\\` / `Ctrl+\\`.',
+    'Start your project’s dev server in the integrated terminal and confirm the app appears in the Browser pane. Ask Claude what it sees on the page.',
+    'Click **Routines** in the sidebar, then **New routine**, then **Local**. Name it `lab-daily-review`, set the folder to your repo, turn on the isolated-worktree toggle, set the schedule to **Daily**, and give it an instruction with a time guardrail in it.',
+    'Click **Run now**, watch for permission prompts, and choose “always allow” for each tool it needs. Then open the task’s detail page and confirm the run appears under its history.',
+    'Set **Status** to Paused, then delete the task and tick **Also delete files on disk** so its `SKILL.md` is removed from `~/.claude/scheduled-tasks/`.',
+  ]}
+  expected="Two sessions run side by side with separate worktrees under .claude/worktrees/; the diff pane accepts an inline comment that Claude responds to; the Browser pane shows your dev server; `Run now` executes the scheduled task immediately, its run appears in the task history, and deleting the task with the on-disk checkbox removes ~/.claude/scheduled-tasks/lab-daily-review/."
+  checklist={[
+    'Two Desktop sessions are open, each with its own git worktree',
+    'An inline diff comment reached Claude with the next message',
+    'The Browser pane rendered the local dev server',
+    'A local scheduled task was created with an isolated worktree and a time guardrail in its prompt',
+    '**Run now** executed it and the run shows in the task history',
+    'Deleting the task with “Also delete files on disk” removed its SKILL.md',
+  ]}
+/>
+
+## Anti-patterns
+
+**Using a local scheduled task for something that must happen.** It fires only while the app is open and the machine is awake, and a missed day collapses into a single catch-up run. _Fix:_ use a cloud routine for anything that must run reliably; keep Desktop tasks for work that genuinely needs local files.
+
+**Writing a scheduled prompt with no sense of time.** "Review today's commits" run at 11pm as a catch-up is a different job than it was at 9am. _Fix:_ put the guardrail in the prompt — what to do if it is late, what window to look at.
+
+**Leaving a Manual-mode task to run unattended.** It stalls on the first unapproved tool and sits there. _Fix:_ **Run now** once, approve with "always allow", and check the task's **Always allowed** panel afterwards.
+
+**Assuming terminal shortcuts work.** `Shift+Tab` does not cycle permission modes in Desktop. _Fix:_ `Cmd+/` / `Ctrl+/` for the real list; `Cmd+Shift+M` opens the permission-mode menu.
+
+**Expecting the iOS Simulator pane in a cloud or SSH session.** Local sessions on macOS only — the remote machine cannot reach your Mac's simulators. _Fix:_ run those sessions locally.
+
+**Signing into real accounts on a simulator Claude drives.** Its screenshots go to Anthropic under your normal retention settings. _Fix:_ use test accounts.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/desktop-app"
+  questionId="q1"
+  lang="en"
+  prompt="Your laptop was asleep all day and a Daily 9am Desktop task never fired. What happens when you wake it at 11pm?"
+  options={[
+    {
+      text: 'Nothing — missed runs are dropped.',
+      explanation: 'Desktop does start a catch-up run.',
+    },
+    {
+      text: 'Exactly one catch-up run for the most recently missed time; anything older is discarded.',
+      correct: true,
+      explanation:
+        'Desktop looks back seven days, runs the most recent miss once, and notifies you that a catch-up started.',
+    },
+    {
+      text: 'One run per missed day, queued in order.',
+      explanation: 'A daily task that missed six days still runs once.',
+    },
+    {
+      text: 'The task is disabled until you re-enable it.',
+      explanation: 'The task stays Active.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/desktop-app"
+  questionId="q2"
+  lang="en"
+  prompt="Which job belongs in a cloud routine rather than a Desktop scheduled task?"
+  options={[
+    {
+      text: 'A nightly dependency audit that must run whether or not your laptop is on.',
+      correct: true,
+      explanation: 'Cloud routines do not require your machine; Desktop tasks do.',
+    },
+    {
+      text: 'A task that reads uncommitted changes in your working directory.',
+      explanation: 'A cloud routine gets a fresh clone and cannot see local files.',
+    },
+    {
+      text: 'A task that has to use a locally configured MCP server from your config files.',
+      explanation:
+        'Cloud routines configure connectors per task rather than reading your local config.',
+    },
+    {
+      text: 'A quick poll you want only while this session is open.',
+      explanation: 'That is `/loop`.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/desktop-app"
+  questionId="q3"
+  lang="en"
+  prompt="Two Desktop sessions are open on the same git repository. What keeps them from stepping on each other?"
+  options={[
+    {
+      text: 'Each session gets its own git worktree, by default under `<project-root>/.claude/worktrees/`.',
+      correct: true,
+      explanation: 'Changes stay isolated until you commit.',
+    },
+    {
+      text: 'A file lock held by whichever session edits first.',
+      explanation: 'Isolation is by worktree, not locking.',
+    },
+    {
+      text: 'Nothing — you must open them on separate clones yourself.',
+      explanation: 'Desktop creates the worktrees for you.',
+    },
+    {
+      text: 'They share one working tree but queue their edits.',
+      explanation: 'They do not share a working tree.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/desktop-app"
+  questionId="q4"
+  lang="en"
+  prompt="How does the Desktop iOS Simulator pane differ from reaching a simulator from the CLI?"
+  options={[
+    {
+      text: 'The pane drives the simulator directly, so it needs no computer use and never takes over your screen; from the CLI, Claude uses computer use instead.',
+      correct: true,
+      explanation:
+        'That is also why the pane does not need macOS Accessibility and Screen Recording permissions.',
+    },
+    {
+      text: 'The pane can drive a physical iPhone; the CLI cannot.',
+      explanation: 'Neither can control physical hardware — simulated devices only.',
+    },
+    {
+      text: 'The pane works in cloud sessions; the CLI does not.',
+      explanation: 'The pane is local-session-only.',
+    },
+    {
+      text: 'There is no difference; the pane is a computer-use viewer.',
+      explanation: 'It explicitly is not.',
+    },
+  ]}
+/>
+
+**Next:** `04-web-and-cloud-sessions` moves execution off your machine entirely — claude.ai/code, cloud environments, `--cloud`, `--teleport` and ultrareview.

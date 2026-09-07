@@ -1,0 +1,34 @@
+---
+title: 'Terminal multiplexer’ları ve yan yana birkaç oturum'
+description: 'Kopan bir SSH bağlantısından sağ çıkan ve yan yana duran Claude Code oturumları: Claude Code’un ihtiyaç duyduğu üç ~/.tmux.conf satırı, --worktree ve --tmux, background oturumlar ve multiplexer’ın yanlış cevap olduğu durumlar.'
+level: 3
+module: 'm15-platforms'
+order: 8
+duration_min: 10
+difficulty: advanced
+tags: ['platformlar', 'tmux', 'terminal', 'worktree']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Configure your terminal for Claude Code'
+    url: 'https://code.claude.com/docs/en/terminal-config.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Continue local sessions from any device with Remote Control'
+    url: 'https://code.claude.com/docs/en/remote-control.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Platforms and integrations'
+    url: 'https://code.claude.com/docs/en/platforms.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m15-platforms/08-tmux-multi-session.mdx` dosyasıdır.
+
+## Özet
+
+Bu ders Claude Code’u tmux gibi bir terminal multiplexer içinde çalıştırmayı anlatır. Varsayılan olarak iki şey bozulur — `Shift+Enter` satır eklemek yerine gönderir, masaüstü bildirimleri ile ilerleme çubuğu dış terminale ulaşmaz — ve üç `~/.tmux.conf` satırı (`allow-passthrough`, `extended-keys`, `terminal-features`) bunu düzeltir. `/terminal-setup` komutunun tmux içinde değil host terminalde çalıştırılması gerektiğini; `claude --worktree` ile her oturuma kendi git worktree’sini vermeyi ve `--tmux` flag’inin `--worktree` gerektirdiğini kapsar. Kopan bir SSH bağlantısında oturumu ayakta tutmanın yolunun bir multiplexer olduğunu — Remote Control yerel bir süreç olduğu ve süreç ölünce oturum saniyeler içinde çevrimdışı olduğu için — açıklar; ayrıca `claude --bg` ile `claude attach`, Desktop paralel oturumları ve cloud oturumları arasındaki seçimi karşılaştırır.

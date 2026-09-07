@@ -1,0 +1,301 @@
+---
+title: 'Claude in Chrome: navigation, forms, screenshots, console'
+description: 'Give Claude your real browser with your logged-in sessions: enable the extension, understand site permissions and the plan-mode read/write split, then drive a page, read its console, fill a form and save a screenshot.'
+level: 3
+module: 'm15-platforms'
+order: 6
+duration_min: 15
+difficulty: core
+tags: ['platforms', 'chrome', 'browser']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Use Claude Code with Chrome'
+    url: 'https://code.claude.com/docs/en/chrome.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Use Claude Code in VS Code'
+    url: 'https://code.claude.com/docs/en/vs-code.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Platforms and integrations'
+    url: 'https://code.claude.com/docs/en/platforms.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m15-06-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Install the Claude in Chrome extension, start a session with `--chrome`, and check the connection with `/chrome`.
+- Explain what site-level permissions are, where they live, and what happens when they are missing.
+- Predict which browser calls prompt in plan mode and which do not.
+- Drive a local web app: navigate, read the console, fill a form, upload a file, save a screenshot to disk.
+- Say what the tab-group cleanup rules do when a session ends, and why a recorded GIF needs review before sharing.
+
+**Prerequisites.** Google Chrome, Microsoft Edge or another Chromium browser (Brave, Arc, Vivaldi, Opera); the Claude in Chrome extension version 1.0.36 or higher; Claude Code installed; and a **direct Anthropic plan** (Pro, Max, Team or Enterprise) signed in with `/login`. A checkout of `lesson/m15-06-start` and a way to serve the lab repository's HTTP API locally.
+
+<WhenNotToUse>
+  Chrome integration is not available in WSL, is not available through third-party providers (Amazon
+  Bedrock, Google Cloud's Agent Platform, Microsoft Foundry), and is deliberately kept off when you
+  authenticate with an API key or a `claude setup-token` long-lived token — the browser extension
+  cannot authenticate with those credentials, so `--chrome` is ignored. Beyond availability: do not
+  reach for the browser when the site has an API you could call instead, when a test framework would
+  be faster and repeatable, or when the task would have Claude act inside an account whose actions
+  you cannot cheaply undo. Claude shares your browser's login state — every session you are signed
+  into is reachable — so the blast radius of a bad instruction is your real accounts, not a sandbox.
+</WhenNotToUse>
+
+## Concept
+
+### Your browser, not a headless one
+
+The whole point is that Claude drives **your** Chrome, with **your** logged-in sessions, in a visible window in real time. That means it can work inside Google Docs, Gmail, Notion or any internal tool you are signed into without an API connector — and it means the same reach is available to a badly phrased instruction. When Claude hits a login page or a CAPTCHA it pauses and asks you to handle it manually.
+
+Claude opens new tabs for browser tasks and the extension collects them into a **Chrome tab group** tied to your session. What happens to that group when the session ends depends on how it ends:
+
+- `/clear` closes the group, open pages included — unless work that survives the clear is still running.
+- Switching sessions with `/resume`, exiting Claude Code, or a `/clear` while surviving work is running: the group closes **only if it holds nothing but empty new tabs**, so pages you may still be reading stay open.
+
+### Turning it on
+
+<CodeBlock title="start a session with browser tools">
+
+```bash
+claude --chrome
+```
+
+</CodeBlock>
+
+Both flags exist in this version:
+
+<Transcript
+  src="content/_shared/transcripts/m15-platforms/06-chrome/01-help-chrome.txt"
+  range="2-5"
+/>
+
+The first launch shows a one-time dialog explaining the integration and how site permissions work; press Enter. To avoid the flag every time, run `/chrome` and select **Enabled by default** — but note the trade-off the docs are explicit about: **enabling Chrome by default in the CLI increases context usage, because browser tools are always loaded.** In the VS Code extension no flag is needed at all; Chrome is available whenever the extension is installed.
+
+`/chrome` is your control panel: connection status, permissions, **Reconnect extension**, and **Select browser…** when more than one is connected. The integration is working when the status panel shows `Status: Enabled` and `Extension: Installed`.
+
+If Claude needs the browser and the extension is not detected, it shows a one-per-session prompt titled "Claude wants to use your browser" with three choices — **Install extension** (guided setup, then "Continue with browser tools"), **Not now**, **Don't ask again**.
+
+### Site permissions are the real gate
+
+**Site-level permissions are inherited from the Chrome extension**, and you manage them in the extension's settings. This is not a formality: without permission for a site, Claude cannot act on it, even with `--chrome` on and the extension connected. Here is a real headless capture from a machine in exactly that state — extension connected, no permission granted for the target site:
+
+<Transcript
+  src="content/_shared/transcripts/m15-platforms/06-chrome/02-chrome-permission.txt"
+  range="2-4"
+/>
+
+Three things in that recording are worth stopping on. First, the answer is in Turkish: the machine that produced it has global Claude Code preferences asking for Turkish, and those preferences apply to a headless run just as much as an interactive one. Second, the refusal is not an error or a crash — Claude has the browser tools, tries to use them, is told it lacks the permission it needs, and reports that back in its own words.
+
+Third, and this is why the capture is shown rather than described: a headless run stacks two permission layers, and the first line proves it. Claude Code's own permission layer had already dropped this workspace's `permissions.allow` entries because the workspace was never trusted. So the transcript establishes _that_ a permission stopped the browser action, not _which_ layer refused it — the browser tools also read as unavailable when Claude Code's own layer denies them. The interactive path is where the distinction is visible, and there you see the `Claude in Chrome wants to` dialog described below.
+
+In an interactive session you will usually see a permission dialog instead, starting with `Claude in Chrome wants to`, offering an option to allow all actions on that site for the session.
+
+### Plan mode splits reads from writes
+
+In plan mode, browser calls that only **read** the page or browser state run without a prompt; calls that **change** state prompt for approval.
+
+| Read-only, no prompt                                                                            | State-changing, prompts                                                |
+| ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `read_page`, `get_page_text`, `find`, reading console messages or network requests, screenshots | clicks, typing, navigation, tab and window management, recording a GIF |
+
+The subtlety: an otherwise read-only call **also** prompts when it sets a state-changing input flag — `createIfEmpty` on `tabs_context_mcp`, `clear` on the console and network readers, `save_to_disk` on a screenshot. And a `browser_batch` runs without a prompt only when _every_ action inside it is read-only.
+
+To see the actual tool list, run `/mcp`, select `claude-in-chrome`, then **View tools**.
+
+### What it is good at
+
+Live debugging (read console errors and DOM state, then fix the code that caused them), design verification, web app testing, authenticated web apps, data extraction, task automation, file uploads and GIF recording. The pattern that pays for itself is the loop: build, open, observe, fix — without leaving the terminal.
+
+This lesson's worked example prompt is that loop in one sentence:
+
+```text
+Start the API on localhost:3000, open it in the browser, submit the task form
+with an empty title, and tell me what the console logs and what the page shows.
+```
+
+The docs name three restrictions on uploads. **Permissions:** Claude can upload a file only when the session is allowed to **read** it, so a `Read` deny rule blocks the upload too. **Size:** a single upload can include up to **10 MB** of files in total. **Hard links:** Claude refuses files that have multiple hard links, which is common inside package-manager stores like `node_modules` — copy the file and upload the copy.
+
+On console reading, the docs' advice is specific and good: **tell Claude what patterns to look for** rather than asking for all console output, because logs are verbose and they land in your context window.
+
+### Troubleshooting, briefly
+
+- **Extension not detected**: check `chrome://extensions`, check `claude --version`, check Chrome is running, run `/chrome` → **Reconnect extension**, then restart both. The first time you enable the integration, Claude Code writes a native messaging host configuration file that Chrome reads at startup — so if detection fails on the first attempt, restart Chrome.
+- **Browser not responding**: a modal dialog (`alert`, `confirm`, `prompt`) blocks browser events. Dismiss it manually and tell Claude to continue.
+- **Connection drops in a long session**: the extension's service worker goes idle. `/chrome` → **Reconnect extension**.
+- **Windows**: named pipe conflicts (`EADDRINUSE`) mean another process holds the pipe — restart Claude Code and close other sessions using Chrome.
+
+## Hands-on lab
+
+This lab runs against the lab repository as-is at `lesson/m15-06-start`, and it is genuinely browser-driven: you watch Chrome do the work. The single transcript below is the real headless capture discussed in the Concept section — the one part of this lab that could be recorded honestly. Every other step is something you do and watch in a browser.
+
+<Lab
+  title="Lab · debug the lab API through your own browser"
+  lessonId="en/l3-advanced/m15-platforms/chrome"
+  repoTag="lesson/m15-06-start"
+  steps={[
+    'Check out `lesson/m15-06-start` in the lab repository and install the Claude in Chrome extension (version 1.0.36 or higher) in Chrome or Edge.',
+    'Run `claude --chrome` in the checkout. Press Enter through the one-time dialog, then run `/chrome` and confirm the panel shows `Status: Enabled` and `Extension: Installed`.',
+    'Start the lab repo’s HTTP API on a local port, following its README.',
+    'Ask Claude: `Open http://localhost:3000 in the browser and tell me what the page renders.` Approve the permission dialog when it appears, choosing to allow actions on that site for the session.',
+    'Ask it to read the console: `Open the page again and check the console for errors containing "token" or "500" when it loads.` Note that you named the pattern rather than asking for everything.',
+    'Ask it to fill and submit a form with invalid input, and to report both the console output and what the page shows.',
+    'Ask for a screenshot saved to disk: `Take a screenshot of the page and save it to disk.` Confirm Claude reports a file path and the file exists.',
+    'Switch to plan mode (`/plan` or the mode selector) and ask it to read the page again. Confirm the read runs without a permission prompt, then ask it to click something and confirm that one does prompt.',
+    'Run `/clear` and confirm the session’s Chrome tab group closes.',
+  ]}
+  expected="With site permission granted, Claude opens the page in a visible Chrome tab inside a session tab group, reports what it renders, filters the console for the pattern you named, submits the form and reports the result, saves a screenshot and prints its path; in plan mode the page read runs unprompted while the click asks for approval; /clear closes the tab group."
+  checklist={[
+    '`/chrome` shows Status: Enabled and Extension: Installed',
+    'A site permission was granted and Claude opened the local app in a real Chrome tab',
+    'Console output was filtered to the pattern you named, not dumped wholesale',
+    'A form submission with invalid input was reported from both the console and the page',
+    'A screenshot was saved to disk and Claude printed the path',
+    'In plan mode, reading did not prompt and clicking did',
+    '`/clear` closed the session’s Chrome tab group',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m15-platforms/06-chrome/02-chrome-permission.txt"
+    range="2-4"
+  />
+</Lab>
+
+## Anti-patterns
+
+**"Read the console and tell me what you see."** Console logs are verbose and every line lands in your context window. _Fix:_ name the pattern — an error string, a status code, a component prefix.
+
+**Leaving `--chrome` on by default and wondering where the context went.** Browser tools are loaded on every session when the default is enabled. _Fix:_ turn the default off and pass `--chrome` when you need it.
+
+**Assuming a session-scoped "allow all actions on this site" is small.** Claude shares your browser's login state, so that site is your real, signed-in account. _Fix:_ grant per-site permissions deliberately in the extension, and prefer a test account for anything destructive.
+
+**Sharing a recorded GIF without watching it.** The recording captures everything visible in the browser, including account details on logged-in pages. _Fix:_ review before it leaves your team.
+
+**Reaching for the browser when an API exists.** A page interaction is slower, flakier and less reproducible than a request. _Fix:_ use the browser for what only a browser can do — real rendering, real login state, real console.
+
+**Debugging "browser not responding" by restarting everything.** Nine times out of ten a JavaScript modal is blocking page events. _Fix:_ dismiss the dialog, then tell Claude to continue.
+
+<Callout variant="changed">
+  Sessions authenticated with an API key or a `claude setup-token` token now keep Chrome integration
+  off even when you pass `--chrome`. Before v2.1.216 those sessions could enable it, but every
+  connection attempt failed with a 403 — verified against `chrome.md` for Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/chrome"
+  questionId="q1"
+  lang="en"
+  prompt="`--chrome` is on and `/chrome` reports the extension is installed, but Claude says it cannot open a tab on a site. What is the most likely cause?"
+  options={[
+    {
+      text: 'Site-level permission for that site has not been granted in the Chrome extension.',
+      correct: true,
+      explanation:
+        'Site permissions are inherited from the extension and gate every action, independent of the flag.',
+    },
+    {
+      text: 'The plan does not include browser tools.',
+      explanation: 'Availability is by plan, but the panel would not report Enabled.',
+    },
+    {
+      text: 'The page has no `h1` element.',
+      explanation: 'Not a permission condition.',
+    },
+    {
+      text: 'You need `--no-chrome` to reset the connection.',
+      explanation: '`--no-chrome` disables the integration.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/chrome"
+  questionId="q2"
+  lang="en"
+  prompt="In plan mode, which of these runs WITHOUT a permission prompt?"
+  options={[
+    {
+      text: 'Taking a screenshot without `save_to_disk`.',
+      correct: true,
+      explanation:
+        'Screenshots are read-only; setting `save_to_disk` turns them into a state-changing call that prompts.',
+    },
+    {
+      text: 'Reading console messages with `clear` set.',
+      explanation: 'The `clear` flag makes an otherwise read-only call state-changing.',
+    },
+    {
+      text: 'Recording a GIF.',
+      explanation: 'Explicitly listed as state-changing.',
+    },
+    {
+      text: 'A `browser_batch` containing one click.',
+      explanation: 'A batch runs unprompted only when every action in it is read-only.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/chrome"
+  questionId="q3"
+  lang="en"
+  prompt="You run `/clear` while a background task that survives the clear is still running. What happens to the session’s Chrome tab group?"
+  options={[
+    {
+      text: 'It closes only if it holds nothing but empty new tabs.',
+      correct: true,
+      explanation:
+        'The same conservative rule applies to `/resume` and to exiting Claude Code, so pages you may still be reading stay open.',
+    },
+    {
+      text: 'It closes completely, open pages included.',
+      explanation: 'That is a plain `/clear` with no surviving work.',
+    },
+    {
+      text: 'Nothing ever closes automatically.',
+      explanation: 'Tab groups are cleaned up under the documented rules.',
+    },
+    {
+      text: 'Chrome quits.',
+      explanation: 'Claude Code never quits your browser.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l3-advanced/m15-platforms/chrome"
+  questionId="q4"
+  lang="en"
+  prompt="Which restriction on file uploads through Chrome is real?"
+  options={[
+    {
+      text: 'Claude refuses files with multiple hard links, which is common inside `node_modules`.',
+      correct: true,
+      explanation: 'Copy the file and upload the copy. Uploads are also capped at 10 MB in total.',
+    },
+    {
+      text: 'Uploads only work in local sessions, never remote ones.',
+      explanation: 'Claude Code reads the file and sends its contents, so uploads work in both.',
+    },
+    {
+      text: 'A `Read` deny rule has no effect on uploads.',
+      explanation: 'It blocks them — Claude can upload only what the session may read.',
+    },
+    {
+      text: 'The size limit is per file, not per upload.',
+      explanation: 'It is up to 10 MB of files in total per upload.',
+    },
+  ]}
+/>
+
+**Next:** `07-slack-claude-tag` moves the agent into team chat, where the identity doing the work is the organisation's rather than yours.
