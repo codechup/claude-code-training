@@ -1,0 +1,336 @@
+---
+title: 'SKILL.md anatomy and frontmatter'
+description: 'Every frontmatter field Claude Code accepts in a SKILL.md, what each one actually changes, and the three that decide who may invoke the skill and what it is allowed to touch.'
+level: 2
+module: 'm06-skills'
+order: 2
+duration_min: 20
+difficulty: core
+tags: ['skills', 'frontmatter', 'configuration']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Extend Claude with skills'
+    url: 'https://code.claude.com/docs/en/skills.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Plugins reference'
+    url: 'https://code.claude.com/docs/en/plugins-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage permissions'
+    url: 'https://code.claude.com/docs/en/permissions.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Write a valid `SKILL.md` from memory: which fields are required (none), which is recommended (`description`), and where the `---` markers must sit.
+- Say what each of the seventeen Claude Code frontmatter fields changes, and which three are accepted but inert.
+- Choose between `disable-model-invocation` and `user-invocable` to control who may run a skill — the third lever, the `skillOverrides` setting, arrives in lesson 06.
+- Explain why `description` is the single field that decides whether Claude ever finds your skill, and why it is capped at 1,536 characters together with `when_to_use`.
+- Recognise which fields survive outside Claude Code (claude.ai uploads, the Skills API) and which cause a hard error there.
+
+**Prerequisites.** Lesson `01-skills-vs-commands`, and a project with a `.claude/` directory you can write to.
+
+<WhenNotToUse>
+  Do not set a field just because it exists. Most working skills declare `description` and nothing
+  else; every extra key is one more thing that can drift from what the skill actually does. In
+  particular, do not set `model` or `effort` to pin a skill to a specific model unless you have
+  measured that it needs one — you are overriding the reader's own `/model` choice for the rest of
+  the turn. And do not use `allowed-tools` as a security boundary: it grants permission, it never
+  removes it, so a skill can widen what Claude may do but not narrow it.
+</WhenNotToUse>
+
+## Concept
+
+### The file
+
+A skill is a directory containing `SKILL.md`: YAML frontmatter between `---` markers, then a markdown body that becomes the prompt when the skill runs.
+
+Two mechanical rules bite immediately. **Claude Code reads the frontmatter only when the opening `---` is the file's first line** — a stray blank line above it and the whole file, `---` markers included, is treated as body text. And **all fields are optional**; only `description` is recommended, so Claude knows when to use the skill. If you omit `description`, Claude Code falls back to the first paragraph of the markdown.
+
+Boolean fields accept `yes`, `no`, `on`, `off`, `1`, and `0` in any letter case, in addition to `true` and `false`. Before v2.1.218, only `true` and `false` were recognised.
+
+### The fields
+
+**Identity and discovery**
+
+| Field           | What it changes                                                                                                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`          | Display name in skill listings; defaults to the directory name. In a _plugin_ skill it also sets the last segment of the command. In a personal or project skill it does **not** change what you type.  |
+| `description`   | What the skill does and when to use it. Claude uses this to decide when to apply the skill. Put the key use case first: combined with `when_to_use` it is truncated at 1,536 characters in the listing. |
+| `when_to_use`   | Extra trigger context — phrases, example requests. Appended to `description` in the listing and counts toward the same 1,536-character cap.                                                             |
+| `argument-hint` | Autocomplete hint for expected arguments, e.g. `[issue-number]` or `[filename] [format]`.                                                                                                               |
+| `arguments`     | Named positional arguments for `$name` substitution in the body. A space-separated string or a YAML list; names map to positions in order. Lesson 03 uses it.                                           |
+| `paths`         | Glob patterns limiting **auto-activation**: Claude loads the skill automatically only when working with matching files. Same format as path-specific rules.                                             |
+
+**Invocation control**
+
+| Field                      | What it changes                                                                                                                                                     |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `disable-model-invocation` | `true` means only you can invoke it. Also keeps it out of subagent preloading and out of scheduled tasks that fire with the skill as their prompt. Default `false`. |
+| `user-invocable`           | `false` means only Claude can invoke it: hidden from the `/` menu, and typing `/name` does nothing. Default `true`.                                                 |
+
+The two fields differ in more than who may type them — they differ in what sits in context:
+
+| Frontmatter                      | You can invoke | Claude can invoke | In context                                                       |
+| -------------------------------- | -------------- | ----------------- | ---------------------------------------------------------------- |
+| (default)                        | Yes            | Yes               | Description always in context; full skill loads when invoked     |
+| `disable-model-invocation: true` | Yes            | No                | Description **not** in context; full skill loads when you invoke |
+| `user-invocable: false`          | No             | Yes               | Description always in context; full skill loads when invoked     |
+
+That middle row is why `disable-model-invocation: true` is a token saving as well as a safety switch — you will watch it happen in lesson 06.
+
+**Tools, model and execution**
+
+| Field              | What it changes                                                                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `allowed-tools`    | Tools Claude may use without asking, **during the turn that invokes the skill**. The grant clears on your next message. It does not restrict anything.        |
+| `disallowed-tools` | Tools removed from Claude's pool while the skill is active; also clears on your next message. Cannot remove `EndConversation` while other tools remain.       |
+| `model`            | Model for the rest of the turn — the same values as `/model`, or `inherit`. Not saved to settings. With `context: fork`, it sets the forked subagent's model. |
+| `effort`           | Effort level while the skill is active: `low`, `medium`, `high`, `xhigh`, `max`. Available levels depend on the model.                                        |
+| `context`          | `fork` runs the skill in an isolated subagent context with no conversation history (lesson 05).                                                               |
+| `agent`            | Which subagent type to use when `context: fork` is set — `Explore`, `Plan`, `general-purpose`, or a custom agent from `.claude/agents/`.                      |
+| `background`       | With `context: fork` only. `false` waits for the result in the invoking turn instead of running in the background. Default `true`; requires v2.1.218+.        |
+| `hooks`            | Hooks Claude Code registers when the skill is invoked, which then run for the rest of the session (`m07-hooks`).                                              |
+| `shell`            | Shell for `` !`command` `` and ` ```! ` blocks: `bash` (default) or `powershell`.                                                                             |
+
+**Accepted but inert**
+
+`metadata` is a free-form YAML map for your own tooling; Claude Code does not act on its contents. `license` and `compatibility` come from the [Agent Skills](https://agentskills.io) spec — Claude Code accepts them and does nothing with them.
+
+### Description is the whole ballgame
+
+Claude Code loads a listing of skill names and descriptions into context so Claude knows what is available. The listing always contains every name, but when you have many skills, descriptions get shortened to fit a budget of 1% of the model's context window — and when it overflows, Claude Code drops descriptions **starting with the skills you invoke least**. So the skill you never use is also the skill whose description disappears first, which makes it even less likely to be used.
+
+Practical consequences: put the key use case first in `description`; keep `description` plus `when_to_use` well under the 1,536-character cap; and if a skill is not triggering, the first thing to fix is its description, not its body. `/context` reports the size of the listing after the budget is applied, and `skillListingBudgetFraction` raises the budget if you genuinely need more.
+
+Here is the prompt shape that gets you a first draft worth editing:
+
+```text
+Write .claude/skills/release-notes/SKILL.md for this repo. It should turn the
+commits since the last tag into release notes. Only I should be able to run it,
+and it must not need permission for `git log`. Keep the description under two
+lines and put the trigger phrase first.
+```
+
+### Outside Claude Code
+
+Claude Code accepts every field above. Other distribution paths do not:
+
+| Distribution path                                           | Fields you may use                                                             |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Claude Code skills at any level, including plugin skills    | Every field in the tables above                                                |
+| claude.ai skill uploads, the Skills API, `package_skill.py` | `name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools` |
+
+An unsupported field is a hard error there, not a warning: `Unexpected key(s) in SKILL.md frontmatter: argument-hint.` If a skill is destined for both places, restrict the frontmatter to those six fields.
+
+## Hands-on lab
+
+<Callout>
+  This lab is self-contained — any git repository will do, no lab-repo tag. It writes two throwaway
+  skills so you can see two frontmatter fields change behaviour with nothing else in play.
+</Callout>
+
+<Callout>
+  The recorded commands carry `--settings '&#123;"language":"English"&#125;'` because the machine
+  that captured them has a global `language` preference set to Turkish. Drop that flag; nothing else
+  about the run changes.
+</Callout>
+
+<Lab
+  title="Lab · watch three frontmatter fields do their job"
+  lessonId="en/l2-intermediate/m06-skills/skill-md-anatomy"
+  repoTag="none"
+  steps={[
+    'In any git repository, create `.claude/skills/lab-anatomy/SKILL.md`. Give it a `description`, add `effort: low`, and no `name` field at all. Body: `Reply with exactly two lines and nothing else:` then `skill: lab-anatomy` and `effort: ${CLAUDE_EFFORT}`.',
+    'Run `claude -p "/lab-anatomy " --output-format text --max-turns 6`. The command name came from the directory, and `${CLAUDE_EFFORT}` reports the level the `effort` field set.',
+    'Move the opening `---` down by one blank line and run it again: the frontmatter is no longer parsed, so `effort` stops applying and the `---` markers arrive as body text.',
+    'Restore the file. Now create `.claude/skills/lab-internal/SKILL.md` with `user-invocable: false` and a body that would be obvious if it ran.',
+    'Run `claude -p "/lab-internal " --output-format json --max-turns 6` and read `num_turns` and `result` in the envelope.',
+  ]}
+  expected="/lab-anatomy prints `skill: lab-anatomy` and `effort: low`. /lab-internal produces nothing: the JSON envelope reports num_turns 0 and an empty result, because a user-invocable: false skill cannot be invoked by you."
+  checklist={[
+    'The command name matched the directory name, with no `name` field present',
+    '`${CLAUDE_EFFORT}` printed `low`, matching the `effort` field',
+    'Indenting the opening `---` stopped the frontmatter being parsed',
+    '`/lab-internal` returned `num_turns: 0` and `result: ""`',
+    'Both throwaway skill directories were deleted afterwards',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/02-skill-md-anatomy/01-directory-name-and-effort.txt"
+    range="2-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/02-skill-md-anatomy/02-user-invocable-false.txt"
+    range="2-7"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/02-skill-md-anatomy/03-frontmatter-not-first-line.txt"
+    range="2-4"
+  />
+</Lab>
+
+The third capture is the frontmatter rule in action. The only change is one blank line above the opening `---`: the file's contents are otherwise identical. `effort: low` stops applying, and `${CLAUDE_EFFORT}` — which is substituted regardless, because it is not a frontmatter field — reports the session's own effort instead. Nothing warned; the skill simply lost its configuration.
+
+The second capture is the other interesting one. There is no error message and no refusal from the model — there is no model call at all. `num_turns` is `0`, `result` is the empty string, and the run still reports `"subtype": "success"`. `user-invocable: false` is not a permission check the model negotiates; the invocation simply does not happen.
+
+### Creating the skill directories, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+mkdir -p .claude/skills/lab-anatomy .claude/skills/lab-internal
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+mkdir -p .claude/skills/lab-anatomy .claude/skills/lab-internal
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+New-Item -ItemType Directory -Force .claude\skills\lab-anatomy, .claude\skills\lab-internal
+```
+
+  </Fragment>
+</OSTabs>
+
+## Anti-patterns
+
+**A description that describes the implementation.** "Runs the scaffold script and edits store.ts" tells Claude nothing about _when_ you want it. _Fix:_ lead with the trigger — "Adding a brand-new operation to `src/store.ts`" — and let `when_to_use` carry the example phrasings.
+
+**Frontmatter that is not frontmatter.** A comment, a blank line or a BOM above the opening `---` and Claude Code treats the whole file as body: `allowed-tools` stops applying, `disable-model-invocation` stops applying, and nothing warns you. _Fix:_ `---` on line 1, always.
+
+**Renaming a project skill with `name`.** It changes the listing label only. _Fix:_ rename the directory.
+
+**Treating `allowed-tools` as a sandbox.** It pre-approves tools; it never removes any. Every other tool stays callable under your normal permission settings, and the field applies even in a workspace you have never trusted — so review the `allowed-tools` of skills checked into a repo before running Claude Code there. _Fix:_ use `disallowed-tools`, permission deny rules, or a hook when you need something taken away.
+
+**Piling on `model` and `effort` everywhere.** Each one silently overrides the reader's session choice for the rest of the turn. _Fix:_ set them only where you have evidence the default is wrong — a cheap, mechanical skill on `model: haiku`, a genuinely hard one on a higher `effort`.
+
+**Writing a skill that will also be uploaded to claude.ai without checking the field list.** `argument-hint`, `context`, `allowed-tools` beyond the spec set — packaging fails outright. _Fix:_ keep dual-destination skills to `name`, `description`, `license`, `compatibility`, `metadata`, `allowed-tools`.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/skill-md-anatomy"
+  questionId="q1"
+  lang="en"
+  prompt="Which frontmatter fields are required in a SKILL.md?"
+  options={[
+    {
+      text: 'None — all fields are optional, though `description` is recommended',
+      correct: true,
+      explanation:
+        'Without `description`, Claude Code falls back to the first paragraph of the body.',
+    },
+    { text: '`name` and `description`', explanation: '`name` defaults to the directory name.' },
+    {
+      text: '`name`, `description` and `allowed-tools`',
+      explanation: 'A skill with no tools at all is perfectly valid — see lesson 04.',
+    },
+    {
+      text: '`description` and `when_to_use`',
+      explanation: '`when_to_use` is optional extra trigger context.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/skill-md-anatomy"
+  questionId="q2"
+  lang="en"
+  prompt="A skill sets `user-invocable: false`. What happens when you type its name?"
+  options={[
+    {
+      text: 'Nothing runs — no model call at all; a -p run reports num_turns 0 and an empty result',
+      correct: true,
+      explanation: 'The skill is hidden from the / menu and typing /name does not run it.',
+    },
+    {
+      text: 'Claude asks for confirmation first',
+      explanation: 'There is no prompt; the invocation simply does not happen.',
+    },
+    {
+      text: 'It runs, but with no tools available',
+      explanation: 'That would be `disallowed-tools`, and it is a different field entirely.',
+    },
+    {
+      text: 'Claude Code refuses to load the skill at startup',
+      explanation: 'It loads fine — Claude can still invoke it.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/skill-md-anatomy"
+  questionId="q3"
+  lang="en"
+  prompt="Your skill has stopped triggering since you added twenty more skills to the repo. What is the most likely cause?"
+  options={[
+    {
+      text: 'The skill listing overflowed its budget and descriptions were dropped, starting with the least-invoked skills',
+      correct: true,
+      explanation:
+        'The budget is 1% of the context window; /context shows the listing size after it is applied.',
+    },
+    {
+      text: 'Claude Code only loads the first ten skills in a directory',
+      explanation:
+        'Every skill name is always in the listing; it is the descriptions that get cut.',
+    },
+    {
+      text: '`allowed-tools` expired',
+      explanation: 'That grant is per turn and has nothing to do with triggering.',
+    },
+    {
+      text: 'The `paths` field defaults to nothing once several skills exist',
+      explanation: '`paths` is inert unless you set it.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/skill-md-anatomy"
+  questionId="q4"
+  lang="en"
+  prompt="Which statement about `allowed-tools` is correct?"
+  options={[
+    {
+      text: 'It pre-approves the listed tools for the turn that invokes the skill, and the grant clears on your next message',
+      correct: true,
+      explanation:
+        'Invoking the skill again re-applies it. It never restricts which tools are available.',
+    },
+    {
+      text: 'It restricts the skill to only those tools',
+      explanation:
+        'Every tool stays callable under your normal permission settings; `disallowed-tools` is the removing field.',
+    },
+    {
+      text: 'It applies for the whole session once the skill is invoked',
+      explanation:
+        'The skill content persists across turns; the permission grant does not — it clears on your next message.',
+    },
+    {
+      text: 'It is ignored in a workspace you have not trusted',
+      explanation:
+        'Workspace trust does not gate this field, which is exactly why you should read it before running Claude Code in an unfamiliar repo.',
+    },
+  ]}
+/>
+
+**Next:** `03-arguments` puts values into the file — `$ARGUMENTS`, indexed and named arguments, and the `${CLAUDE_*}` substitutions — and builds `/commit-msg` against the lab repo.

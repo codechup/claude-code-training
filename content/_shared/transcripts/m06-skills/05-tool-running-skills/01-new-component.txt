@@ -1,0 +1,27 @@
+# Captured 2026-09-07, Claude Code 2.1.263. lesson/m06-05-start with .claude/skills/new-component/{SKILL.md,scaffold.mjs} written. Local absolute paths redacted to <lab>. Verbatim.
+› claude --settings '{"language":"English"}' -p "/new-component archiveTask" --permission-mode acceptEdits --output-format text --max-turns 30
+Both blocked too — shipping with the caveat, as advised.
+
+## Summary
+
+Implemented the `archiveTask` operation per `/new-component`.
+
+**Files changed:**
+- `<lab>\src\types.ts` — added `archivedAt?: number` to `Task` (optional, presence = archived). Necessary companion change even though the scaffold only pointed at `store.ts`.
+- `<lab>\src\store.ts` — added:
+  ```ts
+  export function archiveTask(id: string, now: () => number = Date.now): Task {
+    const task = getTask(id);
+    if (!task) throw new InvalidTaskError(`no such task: ${id}`);
+    task.archivedAt = now();
+    return task;
+  }
+  ```
+  Matches existing conventions: `InvalidTaskError` for bad input (like `markDone`), injectable clock (like `isOverdue`), idempotent re-archiving.
+- `<lab>\test\store.test.ts` — added `describe("archiveTask")` with two tests: unknown id throws `InvalidTaskError`; valid id stamps `archivedAt` using a fixed injected clock (`() => 1_700_000_000_000`), never a real timer.
+
+**Test result:** `npm test` → 4 files, 17 tests, all passing.
+
+**Caveat:** `npm run typecheck`, `npm run lint`, and direct `npx tsc`/`npx prettier` calls were all blocked by approval gating in this environment, so I couldn't run them directly. By inspection the change should be clean: the new field is optional so no other `Task` literal breaks, the assignment happens after a narrowing `!task` check, and the only formatting-sensitive line (the multi-import in the test file) was manually wrapped one-specifier-per-line to match how Prettier would reflow it once the line exceeds print width.
+
+**Not done by design:** `listTasks` still returns archived tasks (no filtering added) — changing that would alter `StatusFilter` semantics and wasn't part of this request.

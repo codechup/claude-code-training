@@ -1,0 +1,407 @@
+---
+title: 'Tool-running skills'
+description: 'Give a skill a script, a tool budget and a context of its own: allowed-tools with Bash rules, dynamic !`command` injection, and context: fork. Build /new-component and read what happens when the tool list is narrower than the job.'
+level: 2
+module: 'm06-skills'
+order: 5
+duration_min: 25
+difficulty: core
+tags: ['skills', 'allowed-tools', 'subagents', 'lab']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Extend Claude with skills'
+    url: 'https://code.claude.com/docs/en/skills.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Create custom subagents'
+    url: 'https://code.claude.com/docs/en/sub-agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage permissions'
+    url: 'https://code.claude.com/docs/en/permissions.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'claude-code-lab (tag lesson/m06-05-start)'
+    url: 'https://github.com/codechup/claude-code-lab/tree/lesson/m06-05-start'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m06-05-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Ship a script alongside `SKILL.md` and let the skill run it without a permission prompt.
+- Write `allowed-tools` Bash rules that actually match the commands your skill runs — including the trailing-wildcard rules that people get wrong.
+- Inject live command output into a skill body with `` !`command` `` and the ` ```! ` block form, and predict what happens when one of those commands fails.
+- Decide when `context: fork` earns its keep, pick an `agent`, and know when `background: false` is required.
+- Build and run `/new-component` against the lab repo, and read a real run where the tool budget was narrower than the job.
+
+**Prerequisites.** Lessons `01`–`04`, and a clone of `claude-code-lab` at tag `lesson/m06-05-start`.
+
+<WhenNotToUse>
+  `context: fork` only makes sense for a skill with explicit instructions. A skill that carries
+  guidelines — "use these API conventions" — with no task hands the subagent guidance and no prompt,
+  and it returns with nothing useful. Skip forking, too, when the skill needs the conversation: a
+  forked subagent has no history, so anything that depends on what you were just discussing has to
+  be passed as arguments or it is gone. And do not put a script in a skill when a plain tool call
+  would do — a script is another file to keep working on three operating systems.
+</WhenNotToUse>
+
+## Concept
+
+### Supporting files
+
+A skill is a directory, so it can carry more than `SKILL.md`:
+
+```text
+new-component/
+├── SKILL.md      (required — overview and navigation)
+├── reference.md  (detailed docs, loaded only when needed)
+└── scripts/
+    └── helper.mjs (executed, not loaded into context)
+```
+
+Reference the extra files from `SKILL.md` so Claude knows what each one holds and when to open it. A script is not read into context at all — it is run.
+
+### `allowed-tools` for a script
+
+The reliable pattern is `${CLAUDE_SKILL_DIR}` in both the body and the rule, because both are substituted:
+
+<CodeBlock title="a rule that matches a bundled script">
+
+```yaml
+allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/helper.mjs *)
+```
+
+</CodeBlock>
+
+Bash rules match on the text of the command, and the details matter:
+
+| Rule                  | Matches                                            | Does not match          |
+| --------------------- | -------------------------------------------------- | ----------------------- |
+| `Bash(npm run build)` | exactly `npm run build`                            | `npm run build --watch` |
+| `Bash(npm run *)`     | `npm run build`, `npm run test --watch`, `npm run` | `npm install`           |
+| `Bash(ls *)`          | `ls -la`, `ls`                                     | `lsof`                  |
+| `Bash(ls*)`           | `ls -la`, `lsof`                                   |                         |
+
+Three rules of thumb behind that table. A trailing `*` with a space before it also matches the bare command, so `Bash(ls *)` matches plain `ls`. The space is part of the rule — `Bash(ls*)` has none and therefore also matches `lsof`. And the `:*` suffix is an equivalent way to write a trailing wildcard: `Bash(ls:*)` and `Bash(ls *)` are the same rule, but `:*` is only recognised at the _end_ of a pattern.
+
+Claude Code is aware of shell operators, so `Bash(safe-cmd *)` does not approve `safe-cmd && other-cmd`; each subcommand must match a rule independently.
+
+### Dynamic context injection
+
+`` !`command` `` runs a shell command **before** the skill content is sent to Claude, and the output replaces the placeholder — so Claude receives data, not an instruction to go and get it.
+
+<CodeBlock title="a skill that arrives with the PR already in it">
+
+```yaml
+---
+name: pr-summary
+description: Summarize changes in a pull request
+context: fork
+agent: Explore
+allowed-tools: Bash(gh *)
+---
+## Pull request context
+
+- PR diff: !`gh pr diff`
+- PR comments: !`gh pr view --comments`
+
+## Your task
+
+Summarize this pull request...
+```
+
+</CodeBlock>
+
+For multi-line commands, open a fenced block with ` ```! ` instead of the inline form. The mechanics you need to know:
+
+- Substitution runs **once** over the original file; output is inserted as plain text and never re-scanned, so a command cannot emit a placeholder for a later pass.
+- The inline form is only recognised when `!` starts a line or follows whitespace. In `` KEY=!`cmd` `` the placeholder is left as literal text.
+- Commands run in the session's current working directory (which moves when Claude runs `cd`), under the Bash tool's 2-minute timeout, with stderr merged into stdout.
+- **A failed command aborts the whole invocation.** Claude never sees the skill content; you get `Shell command failed for pattern "..."` with the stderr attached. Any non-zero exit is a failure, except exit code 1 from search and comparison commands, which is treated as a normal result. Append `|| true` to anything else you expect to exit non-zero.
+- Injected commands never prompt. If the permission check returns anything other than allow — including a rule that would normally ask — the invocation aborts. Pre-approve with `allowed-tools`; a matching ask or deny rule still aborts regardless.
+- `"disableSkillShellExecution": true` in settings turns this off for user, project, plugin and additional-directory skills, replacing each command with a placeholder. Bundled and managed skills are unaffected.
+
+### `context: fork`
+
+Add `context: fork` and the skill runs in an isolated subagent context: no conversation history, a fresh context window, and the skill content becomes the subagent's prompt. The result comes back to your session when it finishes.
+
+By default a forked skill runs in the **background** — you keep working. Set `background: false` (v2.1.218+) to wait for it in the invoking turn. Claude Code waits regardless of that field in several cases, and one of them is the one you will hit in the lab: **non-interactive mode with `-p`**. The others are `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, invoking a forked skill while an earlier invocation of the same skill is still running, and a scheduled task firing with the skill as its prompt.
+
+Two consequences worth planning for. A backgrounded fork runs with the narrower tool set that applies to background subagents — if your skill's steps need a tool outside that set, use `background: false`. And a backgrounded fork's edits land **outside your session's checkpoints**, so `/rewind` will not undo them; use git.
+
+The `agent` field picks the execution environment: `Explore` (read-only tools, optimised for codebase exploration), `Plan`, `general-purpose` (the default when omitted), or any custom agent from `.claude/agents/`. `Explore` and `Plan` skip `CLAUDE.md` to keep their context small, which is a feature when you want isolation and a trap when your skill relies on project conventions living there.
+
+| Approach                   | System prompt       | Task                        | Also loads                                                |
+| -------------------------- | ------------------- | --------------------------- | --------------------------------------------------------- |
+| Skill with `context: fork` | From the agent type | The `SKILL.md` content      | `CLAUDE.md`, except when the agent is `Explore` or `Plan` |
+| Subagent with `skills:`    | The subagent's body | Claude's delegation message | Preloaded skills plus `CLAUDE.md`                         |
+
+The prompt that produces the skill you are about to build:
+
+```text
+Write .claude/skills/new-component/ for this repo: a SKILL.md plus a scaffold.mjs
+that prints a store.ts function stub and a test stub for a name. The skill should
+run the script, read the existing conventions, write the real code and run npm test.
+Give it context: fork so the exploration doesn't fill my session, and pre-approve
+only the script, the editing tools and `npm test`.
+```
+
+## Hands-on lab
+
+<Callout>
+  The recorded commands carry `--settings '&#123;"language":"English"&#125;'` because the machine
+  that captured them has a global `language` preference set to Turkish. Drop that flag; nothing else
+  about the run changes.
+</Callout>
+
+<Lab
+  title="Lab · a skill that runs a script, writes code, and reports back from its own context"
+  lessonId="en/l2-intermediate/m06-skills/tool-running-skills"
+  repoTag="lesson/m06-05-start"
+  steps={[
+    'In your lab-repo clone: `git checkout lesson/m06-05-start && npm ci`.',
+    'Create `.claude/skills/new-component/` and write both files shown below the transcript: `SKILL.md` and `scaffold.mjs`.',
+    'Run the script by hand first — `node .claude/skills/new-component/scaffold.mjs archiveTask` — so you know what the skill’s step 1 produces.',
+    'Read the `allowed-tools` line and predict which of `npm test`, `npm run typecheck` and `npm run lint` the skill may run without a prompt. Write your prediction down.',
+    'Run `claude -p "/new-component archiveTask" --permission-mode acceptEdits --output-format text --max-turns 30`.',
+    'Run `npm test` and `git status --short` yourself, then compare the result against your prediction from step 4.',
+    'Run `git checkout -- . && git clean -fd` to reset the working tree when you are done.',
+  ]}
+  expected="The skill runs the scaffold script, writes a real archiveTask implementation into src/store.ts plus a real test, runs npm test (4 files, 17 tests passing), and reports back — naming honestly any command it was not able to run rather than claiming it passed."
+  checklist={[
+    '`src/store.ts` gained an exported `archiveTask` that throws `InvalidTaskError` for an unknown id',
+    'A new test exists and uses an injectable clock rather than a real timer',
+    '`npm test` passes',
+    'The report either ran typecheck and lint or said it could not — it never claims a command passed without showing it',
+    'The working tree was reset afterwards',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/05-tool-running-skills/01-new-component.txt"
+    range="2-27"
+  />
+</Lab>
+
+### The two files you are writing
+
+<CodeBlock title=".claude/skills/new-component/SKILL.md">
+
+```markdown
+---
+name: new-component
+description: Scaffold a new store.ts operation (function stub + test stub) from a name, then implement it. Tool-running — runs a script, then writes real code in a forked context.
+when_to_use: Adding a brand-new operation to src/store.ts (not fixing an existing bug).
+argument-hint: '<functionName>'
+allowed-tools: Bash(node .claude/skills/new-component/scaffold.mjs:*), Read, Edit, Write, Bash(npm test)
+context: fork
+model: sonnet
+effort: medium
+---
+
+# /new-component
+
+1. Run `node .claude/skills/new-component/scaffold.mjs $ARGUMENTS` to print a starting stub.
+2. Read `src/store.ts` and `test/store.test.ts` to match existing conventions (named exports,
+   `InvalidTaskError` for bad input, an injectable clock for anything time-based).
+3. Write the real implementation into `src/store.ts` and a real test into `test/`, replacing
+   the `TODO`s from the stub.
+4. Run `npm test` and report the result before finishing.
+
+Runs in a forked context so this exploration doesn't consume the parent session's context
+window — only the final diff and test result need to come back.
+```
+
+</CodeBlock>
+
+<CodeBlock title=".claude/skills/new-component/scaffold.mjs">
+
+```javascript
+#!/usr/bin/env node
+// Prints a store.ts function stub and a matching test stub for a new task-store operation.
+// Usage: node scaffold.mjs <functionName>
+const name = process.argv[2];
+if (!name) {
+  console.error('usage: node scaffold.mjs <functionName>');
+  process.exit(1);
+}
+
+console.log(`// Add to src/store.ts:
+export function ${name}(/* args */): void {
+  // TODO: implement
+}
+
+// Add to test/store.test.ts:
+test("${name} …", () => {
+  // TODO: assert behaviour
+});
+`);
+```
+
+</CodeBlock>
+
+### Setting the lab up, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git checkout lesson/m06-05-start && npm ci
+mkdir -p .claude/skills/new-component
+node .claude/skills/new-component/scaffold.mjs archiveTask
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git checkout lesson/m06-05-start && npm ci
+mkdir -p .claude/skills/new-component
+node .claude/skills/new-component/scaffold.mjs archiveTask
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git checkout lesson/m06-05-start; npm ci
+New-Item -ItemType Directory -Force .claude\skills\new-component
+node .claude\skills\new-component\scaffold.mjs archiveTask
+```
+
+  </Fragment>
+</OSTabs>
+
+### What the capture is really teaching
+
+The report ends with a caveat, and the caveat is the lesson. `allowed-tools` lists `Bash(npm test)` — an exact match with no wildcard, so it approves `npm test` and nothing else. `npm run typecheck` and `npm run lint` were never in that grant. The lab repo's own `.claude/settings.json` does allow both, but this capture ran in a clone whose workspace trust dialog had never been accepted, so Claude Code ignored those `permissions.allow` entries and printed a warning to stderr saying so — which is why the recorded stdout does not contain it. **Your run may differ:** in a clone you have opened interactively and trusted, the project allow-list applies and the two commands go through. Either way the skill did the honest thing: it ran what it could, named what it could not, and did not claim a command passed.
+
+Two ways to fix that in your own skill, depending on what you meant. If you want the whole npm script surface, widen the rule to `Bash(npm run *)` and keep `Bash(npm test)` alongside it. If you want the skill to stay narrow, say so in the body — "run `npm test` only; do not attempt typecheck or lint" — so the model does not spend turns on calls it cannot make.
+
+Notice too what `context: fork` did here. The exploration — reading `src/store.ts`, reading `test/store.test.ts`, working out the conventions — happened in the subagent's own context. What came back to the session was the summary you can read: files changed, the implementation, the test result, the caveat. In `-p` mode the turn waited for it, exactly as documented.
+
+## Anti-patterns
+
+**An `allowed-tools` rule that does not match the command.** `Bash(npm test)` and `npm run typecheck` are different strings, and nothing warns you — the skill just stalls at a permission it cannot get. _Fix:_ write the rules from the exact commands in the body, and read the table above twice before using a wildcard.
+
+**A wildcard before the subcommand.** `Bash(git * main)` matches every git subcommand, including `-c`, which makes git run a program you name. Claude Code warns at startup about an allow rule with a `*` before the subcommand. _Fix:_ put the `*` after the subcommand: `Bash(git log *)`.
+
+**An injected command that can exit non-zero.** A check script that exits 1 when it finds problems aborts the entire skill invocation, and Claude never sees the body. _Fix:_ `` !`my-check || true` ``, unless it is one of the search and comparison commands that get the exit-1 carveout.
+
+**`context: fork` on a skill with no task.** A body of conventions gives the subagent guidance and no prompt; it returns nothing useful. _Fix:_ fork only skills that say what to do.
+
+**Forking in the background and then reaching for `/rewind`.** A backgrounded fork's edits are outside your session's checkpoints. _Fix:_ revert with git, or set `background: false` when you want the work inside the turn.
+
+**A relative script path in the body.** It resolves against the session's working directory, which moves. _Fix:_ `${CLAUDE_SKILL_DIR}` in the body and in the `allowed-tools` rule.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/tool-running-skills"
+  questionId="q1"
+  lang="en"
+  prompt="A skill has `allowed-tools: Bash(npm test)`. Which commands run without a permission prompt?"
+  options={[
+    {
+      text: 'Only the exact command `npm test`',
+      correct: true,
+      explanation:
+        'There is no wildcard, so `npm test --watch` and `npm run typecheck` are not covered.',
+    },
+    {
+      text: 'Any npm command',
+      explanation: 'That would be `Bash(npm *)`.',
+    },
+    {
+      text: '`npm test` and `npm run test`',
+      explanation: 'Rules match the command text; these are two different strings.',
+    },
+    {
+      text: 'Every command, because the skill was invoked by the user',
+      explanation: 'Invocation does not widen permissions beyond the listed rules.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/tool-running-skills"
+  questionId="q2"
+  lang="en"
+  prompt="An injected !`command` in a skill body exits with code 3. What does Claude see?"
+  options={[
+    {
+      text: 'Nothing — the failure aborts the whole invocation before Claude receives the skill content',
+      correct: true,
+      explanation:
+        'You get `Shell command failed for pattern "..."` with the stderr attached. Append `|| true` when non-zero is expected.',
+    },
+    {
+      text: 'The skill body with an empty string where the output would be',
+      explanation: 'A failure is not substituted as empty; it aborts.',
+    },
+    {
+      text: 'The skill body plus an error note, and the run continues',
+      explanation: 'Only search and comparison commands get a carveout, and only for exit code 1.',
+    },
+    {
+      text: 'A permission prompt asking whether to continue',
+      explanation: 'Injected commands never prompt.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/tool-running-skills"
+  questionId="q3"
+  lang="en"
+  prompt="You invoke a skill with `context: fork` and no `background` field, using `claude -p`. What happens?"
+  options={[
+    {
+      text: 'Claude Code waits for the subagent’s result in that turn, because non-interactive mode always waits',
+      correct: true,
+      explanation:
+        'The same applies with CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1, a re-entrant invocation, or a scheduled task.',
+    },
+    {
+      text: 'It runs in the background and the -p run exits before the result arrives',
+      explanation: 'Non-interactive mode is one of the documented always-wait cases.',
+    },
+    {
+      text: 'The invocation fails, because `background` is required with `context: fork`',
+      explanation: '`background` defaults to `true` and is optional.',
+    },
+    {
+      text: 'The subagent inherits the conversation history',
+      explanation: 'A forked skill deliberately starts with no history.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/tool-running-skills"
+  questionId="q4"
+  lang="en"
+  prompt="Which agent type does a forked skill use when the `agent` field is omitted?"
+  options={[
+    {
+      text: 'general-purpose',
+      correct: true,
+      explanation:
+        'Explore and Plan are the read-only and planning alternatives, and both skip CLAUDE.md.',
+    },
+    { text: 'Explore', explanation: 'Explore has to be asked for by name.' },
+    { text: 'Plan', explanation: 'Plan has to be asked for by name.' },
+    {
+      text: 'The first agent defined in .claude/agents/',
+      explanation: 'Custom agents are opt-in via the `agent` field.',
+    },
+  ]}
+/>
+
+**Next:** `06-skill-doctor` measures the whole collection — what each skill costs in context, how often it is actually used, and which ones to turn off.

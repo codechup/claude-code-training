@@ -1,0 +1,360 @@
+---
+title: 'Arguments and substitutions'
+description: 'Get values into a skill: $ARGUMENTS, indexed $0/$1, named arguments from frontmatter, and the ${CLAUDE_*} substitutions — then build /commit-msg against the lab repo and watch a scope hint change the output.'
+level: 2
+module: 'm06-skills'
+order: 3
+duration_min: 20
+difficulty: core
+tags: ['skills', 'arguments', 'lab']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Extend Claude with skills'
+    url: 'https://code.claude.com/docs/en/skills.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Headless mode'
+    url: 'https://code.claude.com/docs/en/headless.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'claude-code-lab (tag lesson/m06-03-start)'
+    url: 'https://github.com/codechup/claude-code-lab/tree/lesson/m06-03-start'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m06-03-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Pass values into a skill and read them back with `$ARGUMENTS`, `$ARGUMENTS[N]` and the `$N` shorthand.
+- Declare named arguments in frontmatter and use `$name` placeholders in the body.
+- Use `${CLAUDE_SKILL_DIR}`, `${CLAUDE_PROJECT_DIR}`, `${CLAUDE_SESSION_ID}` and `${CLAUDE_EFFORT}`, and say where each one is substituted.
+- Predict what happens when you pass an argument no placeholder receives, and when a placeholder has no argument.
+- Build and run `/commit-msg` against the lab repo, with and without a scope hint.
+
+**Prerequisites.** Lessons `01-skills-vs-commands` and `02-skill-md-anatomy`. A clone of `claude-code-lab` and git on your PATH.
+
+<WhenNotToUse>
+  Arguments are for the one or two values that change per run — an issue number, a scope, a path.
+  They are not a configuration system: if your skill needs five arguments in a fixed order, nobody
+  will remember the order, and `argument-hint` only helps while you are typing. Put stable settings
+  in the skill body or a supporting file instead. And do not reach for arguments at all when the
+  skill can read what it needs itself — `/commit-msg` runs `git diff --staged` rather than making
+  you paste the diff in.
+</WhenNotToUse>
+
+## Concept
+
+### `$ARGUMENTS` and its indexed forms
+
+Both you and Claude can pass arguments when invoking a skill. Everything after the skill name becomes the argument string.
+
+| Placeholder     | Expands to                                                                 |
+| --------------- | -------------------------------------------------------------------------- |
+| `$ARGUMENTS`    | All arguments passed, as typed                                             |
+| `$ARGUMENTS[N]` | A specific argument by 0-based index — `$ARGUMENTS[0]` is the first        |
+| `$N`            | Shorthand for `$ARGUMENTS[N]`: `$0` is the first argument, `$1` the second |
+| `$name`         | A named argument declared in the `arguments` frontmatter list              |
+
+Indexed arguments use shell-style quoting, so `/my-skill "hello world" second` makes `$0` expand to `hello world` and `$1` to `second`. `$ARGUMENTS` always expands to the full argument string as typed.
+
+Two edge cases worth committing to memory:
+
+- **An indexed placeholder with no argument stays as literal text.** `$2` when only one argument was passed reaches Claude as the characters `$2`.
+- **A named placeholder with no argument expands to an empty string.** That is the opposite behaviour, and it matters when you write conditional-sounding instructions like "if `$scope` is empty, infer it".
+
+If you pass arguments but _no placeholder receives one_, Claude Code appends `ARGUMENTS: <your input>` to the end of the skill content, so Claude still sees what you typed. A named placeholder counts as receiving one even when its position is empty; an indexed placeholder left as literal text does not.
+
+### Named arguments
+
+Declare them in frontmatter as a space-separated string or a YAML list; names map to positions in order.
+
+<CodeBlock title=".claude/skills/migrate-component/SKILL.md">
+
+```yaml
+---
+name: migrate-component
+description: Migrate a component from one language to another
+arguments: [component, from-lang, to-lang]
+---
+Migrate the $component from $from-lang to $to-lang.
+Preserve all existing behavior and tests.
+```
+
+</CodeBlock>
+
+`/migrate-component SearchBar JavaScript TypeScript` fills all three. The same skill written with `$0`, `$1`, `$2` behaves identically — named arguments buy readability, not capability.
+
+### The `${CLAUDE_*}` substitutions
+
+| Variable                | Expands to                                                                                                      |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `${CLAUDE_SESSION_ID}`  | The current session ID — useful for per-session log files                                                       |
+| `${CLAUDE_EFFORT}`      | The current effort level: `low`, `medium`, `high`, `xhigh` or `max`                                             |
+| `${CLAUDE_SKILL_DIR}`   | The directory containing this `SKILL.md`. For a plugin skill, the skill's own subdirectory, not the plugin root |
+| `${CLAUDE_PROJECT_DIR}` | The project root — the same path hooks and MCP servers receive. Requires v2.1.196 or later                      |
+| `${CLAUDE_PLUGIN_ROOT}` | The plugin's installation directory; substituted only in plugin skills                                          |
+| `${CLAUDE_PLUGIN_DATA}` | The plugin's persistent data directory, which survives updates; plugin skills only                              |
+
+`${CLAUDE_SKILL_DIR}` and `${CLAUDE_PROJECT_DIR}` are substituted in **two** places: the skill body, and Bash rules inside `allowed-tools`. Using the same variable in both is how a skill runs a bundled script with no permission prompt:
+
+<CodeBlock title="a skill that runs its own script without prompting">
+
+```yaml
+---
+name: render-chart
+description: Render a chart from a CSV file
+allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/render.sh *)
+---
+Run `${CLAUDE_SKILL_DIR}/scripts/render.sh <csv-file>` to render the chart.
+```
+
+</CodeBlock>
+
+Both occurrences expand to the same absolute path, so the rule matches the exact command the body asks for.
+
+### Escaping, and text that looks like a placeholder
+
+To write a literal `$` before a digit, before `ARGUMENTS`, or before a declared argument name, escape it with a backslash: `\$1.00`. Only a single backslash directly before the token escapes it; `\\$1` leaves both backslashes and still expands. The escape covers argument placeholders only — a backslash does not stop a `${CLAUDE_*}` substitution.
+
+Argument _values_ are inserted as literal text and never re-expanded. If a skill body contains `Summarize $0` and you run `/summarize "$ARGUMENTS from yesterday"`, Claude receives `Summarize $ARGUMENTS from yesterday`.
+
+### Stacking
+
+You can put several skills at the start of one message. Typing `/write-tests /fix-issue 123` loads both and passes the trailing text `123` to each as `$ARGUMENTS`. Claude Code expands the first skill plus up to five more, and stops at the first token that is not an inline user-invocable skill — including a skill that runs as a forked subagent, such as `/code-review`. That token and everything after it become the argument text.
+
+Here is this lesson's worked prompt — the thing you would actually type to get the skill you are about to build:
+
+```text
+Add .claude/skills/commit-msg/SKILL.md to this repo. It should read the staged
+diff and print one conventional commit message. Treat $ARGUMENTS as an optional
+scope hint, and infer the scope from the changed paths when it is empty.
+Pre-approve only `git diff` and `git status`, and never run `git commit`.
+```
+
+## Hands-on lab
+
+<Callout>
+  The recorded commands carry `--settings '&#123;"language":"English"&#125;'` because the machine
+  that captured them has a global `language` preference set to Turkish. Drop that flag; nothing else
+  about the run changes.
+</Callout>
+
+<Lab
+  title="Lab · build /commit-msg and feed it a scope"
+  lessonId="en/l2-intermediate/m06-skills/arguments"
+  repoTag="lesson/m06-03-start"
+  steps={[
+    'Clone the lab repo if you have not already, then `git checkout lesson/m06-03-start && npm ci`.',
+    'Create the directory `.claude/skills/commit-msg/` and write the SKILL.md shown below it. Note `allowed-tools: Bash(git diff:*), Bash(git status:*)` and `disable-model-invocation: true`.',
+    'Make one small real change: in `src/store.ts`, change `addTask`’s priority guard from `if (priority < 0)` to `if (priority < 0 || priority > 9)` and update the error message to `priority must be between 0 and 9`.',
+    'Stage only that file: `git add src/store.ts`. Confirm with `git diff --staged --stat` that exactly one file is staged.',
+    'Run `claude -p "/commit-msg store" --output-format text --max-turns 10` and read the message it prints.',
+    'Run `claude -p "/commit-msg " --output-format text --max-turns 10` — same diff, no argument — and compare. Mind the trailing space.',
+    'Confirm with `git log --oneline -1` that nothing was committed: the skill prints, it does not commit.',
+  ]}
+  expected="Both runs print a single conventional commit message for the staged change, with the scope `store` — supplied by $ARGUMENTS in the first run, inferred from the changed path in the second. No commit is created."
+  checklist={[
+    'The skill directory name is `commit-msg`, so the command is `/commit-msg`',
+    'Exactly one file (`src/store.ts`) is staged',
+    'The first run used the scope you passed as `$ARGUMENTS`',
+    'The second run inferred the same scope with no argument at all',
+    '`git log --oneline -1` still shows the tag’s commit — nothing was committed',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/03-arguments/01-commit-msg-scope.txt"
+    range="2-5"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/03-arguments/02-commit-msg-inferred-scope.txt"
+    range="2-5"
+  />
+</Lab>
+
+### The skill you are writing
+
+<CodeBlock title=".claude/skills/commit-msg/SKILL.md">
+
+```markdown
+---
+name: commit-msg
+description: Draft a conventional commit message for the currently staged diff. Prompt-only — reads the diff and $ARGUMENTS (an optional scope hint), writes nothing.
+when_to_use: Staged changes exist and you want a conventional-commit message drafted from them instead of writing one by hand.
+argument-hint: '[optional scope, e.g. cli or api]'
+allowed-tools: Bash(git diff:*), Bash(git status:*)
+disable-model-invocation: true
+model: haiku
+effort: low
+---
+
+# /commit-msg
+
+Run `git diff --staged` and `git status --short`. From the staged diff, write one
+conventional commit message: `type(scope): summary`, types `feat|fix|docs|chore|test|refactor`.
+
+- If `$ARGUMENTS` gives a scope, use it; otherwise infer one from the changed paths
+  (`cli`, `api`, `store`, `test`, `docs`).
+- Summary line under 72 characters, imperative mood ("add", not "added").
+- Add a body only if the diff needs one sentence of "why" beyond the summary.
+- Print the message only — do not run `git commit`.
+```
+
+</CodeBlock>
+
+(This site's formatter normalises YAML strings to single quotes; the lab repo's copy writes `argument-hint` with double quotes. Both are the same YAML string.)
+
+`Bash(git diff:*)` is the `:*` form of a trailing wildcard — `Bash(git diff:*)` and `Bash(git diff *)` match the same commands. The `:*` suffix is only recognised at the end of a pattern; in `Bash(git:* push)` the colon is a literal character and matches nothing useful.
+
+### Setting the lab up, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git checkout lesson/m06-03-start && npm ci
+mkdir -p .claude/skills/commit-msg
+git add src/store.ts && git diff --staged --stat
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git checkout lesson/m06-03-start && npm ci
+mkdir -p .claude/skills/commit-msg
+git add src/store.ts && git diff --staged --stat
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git checkout lesson/m06-03-start; npm ci
+New-Item -ItemType Directory -Force .claude\skills\commit-msg
+git add src/store.ts; git diff --staged --stat
+```
+
+  </Fragment>
+</OSTabs>
+
+Note what the two captures prove. The first run received `store` as `$ARGUMENTS` and used it. The second passed nothing, so `$ARGUMENTS` expanded to an empty string and the skill fell back to inferring the scope from the changed path — which is why the fallback instruction has to be _in the body_. An empty placeholder is not an error Claude Code reports; it is just an empty string, and your skill has to say what to do with one.
+
+## Anti-patterns
+
+**Relying on `argument-hint` to enforce anything.** It is a hint shown during autocomplete. Nothing validates it, and nothing fills a missing argument. _Fix:_ state the default in the body — "if `$ARGUMENTS` is empty, do X".
+
+**Positional arguments past two.** `$0 $1 $2 $3` is a command-line interface nobody has a manual for. _Fix:_ use named arguments so the body reads as English, and keep the count low.
+
+**Assuming `$2` is empty when nothing was passed.** It is not: an indexed placeholder with no argument reaches Claude as the literal text `$2`, which reads as noise inside an instruction. _Fix:_ use named arguments (which expand to an empty string) when a value is genuinely optional.
+
+**Writing a path into the body instead of `${CLAUDE_SKILL_DIR}`.** A relative path resolves against the session's current working directory, which moves when Claude runs `cd`. _Fix:_ `${CLAUDE_SKILL_DIR}` in both the body and the `allowed-tools` rule.
+
+**Pasting the data the skill could fetch.** Passing a diff as an argument burns context and goes stale the moment anything changes. _Fix:_ let the skill run `git diff --staged` itself, or inject it with `` !`git diff --staged` `` (lesson 05).
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/arguments"
+  questionId="q1"
+  lang="en"
+  prompt="A skill body says `Fix issue $1`. You run it with no arguments. What does Claude receive?"
+  options={[
+    {
+      text: 'The literal text “Fix issue $1”',
+      correct: true,
+      explanation:
+        'An indexed placeholder with no corresponding argument stays in the content unchanged.',
+    },
+    {
+      text: '“Fix issue ” with an empty string',
+      explanation: 'That is what a *named* placeholder does; indexed ones stay literal.',
+    },
+    {
+      text: 'Nothing — the invocation fails',
+      explanation: 'Missing arguments are not an error.',
+    },
+    {
+      text: 'The full argument string, as if you had written $ARGUMENTS',
+      explanation: '$1 is strictly the second positional argument.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/arguments"
+  questionId="q2"
+  lang="en"
+  prompt={'You run /my-skill "hello world" second. What does $0 expand to?'}
+  options={[
+    {
+      text: 'hello world',
+      correct: true,
+      explanation:
+        'Indexed arguments use shell-style quoting, so the quoted pair is a single argument.',
+    },
+    { text: 'hello', explanation: 'The quotes keep the two words together.' },
+    { text: '"hello world" second', explanation: 'That is $ARGUMENTS, the full string as typed.' },
+    { text: 'second', explanation: '$0 is the first argument, not the last.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/arguments"
+  questionId="q3"
+  lang="en"
+  prompt="Where does Claude Code substitute ${CLAUDE_SKILL_DIR}?"
+  options={[
+    {
+      text: 'In the skill’s markdown body and in Bash rules inside allowed-tools',
+      correct: true,
+      explanation:
+        'Using it in both places is how a skill runs its own bundled script without a prompt.',
+    },
+    {
+      text: 'Only in the markdown body',
+      explanation: 'Then the allowed-tools rule could never match the command the body asks for.',
+    },
+    {
+      text: 'Only in allowed-tools',
+      explanation: 'It is substituted in the body too — that is where the command is written.',
+    },
+    {
+      text: 'Anywhere in settings.json as well',
+      explanation: 'Skill substitutions apply to the skill file, not to arbitrary settings.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/arguments"
+  questionId="q4"
+  lang="en"
+  prompt="You invoke a skill with an argument, but the skill body contains no placeholder at all. What happens?"
+  options={[
+    {
+      text: 'Claude Code appends `ARGUMENTS: <your input>` to the end of the skill content',
+      correct: true,
+      explanation: 'So Claude still sees what you typed rather than silently losing it.',
+    },
+    {
+      text: 'The argument is discarded',
+      explanation: 'It is appended instead — a deliberate safety net.',
+    },
+    {
+      text: 'Claude Code prepends it to the body',
+      explanation: 'It goes at the end.',
+    },
+    {
+      text: 'The invocation is rejected',
+      explanation: 'Extra arguments are never an error.',
+    },
+  ]}
+/>
+
+**Next:** `04-prompt-only-skills` builds a skill with no script and no edits at all — `/review-security` — and shows why the cheapest skills are often the most used.

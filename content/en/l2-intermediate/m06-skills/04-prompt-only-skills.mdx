@@ -1,0 +1,318 @@
+---
+title: 'Prompt-only skills'
+description: 'The cheapest useful skill runs no script and edits nothing: it is a checklist with a reading list. Build /review-security against the lab repo and read a real report back.'
+level: 2
+module: 'm06-skills'
+order: 4
+duration_min: 15
+difficulty: core
+tags: ['skills', 'review', 'lab']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Extend Claude with skills'
+    url: 'https://code.claude.com/docs/en/skills.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage permissions'
+    url: 'https://code.claude.com/docs/en/permissions.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'claude-code-lab (tag lesson/m06-04-start)'
+    url: 'https://github.com/codechup/claude-code-lab/tree/lesson/m06-04-start'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m06-04-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Tell reference content from task content, and pick the invocation style that fits each.
+- Write a prompt-only skill: read-only `allowed-tools`, an explicit output format, and an instruction to report absence as well as presence.
+- Explain what a skill's body costs once it is loaded, and why "keep the body concise" is a token argument rather than a style preference.
+- Run `/review-security` against the lab repo and read a real finding list, including the checklist items that found nothing.
+
+**Prerequisites.** Lessons `01`–`03`. A clone of `claude-code-lab` at tag `lesson/m06-04-start`.
+
+<WhenNotToUse>
+  A prompt-only skill is the wrong shape when the answer must be deterministic. A checklist skill
+  reports what the model noticed; it will not notice the same set twice in a row, and it has no way
+  to fail a build. If you need "this must never merge", that is a linter, a test, or a hook —
+  something with an exit code. Reach for a prompt-only skill when the value is judgement applied
+  consistently, not when the value is a guarantee.
+</WhenNotToUse>
+
+## Concept
+
+### Reference content versus task content
+
+The docs draw a useful line through skill bodies.
+
+**Reference content** adds knowledge Claude applies to whatever you are already doing: conventions, patterns, style guides, domain knowledge. It runs inline, alongside your conversation context. A skill like this is usually left model-invocable, so Claude pulls it in when relevant. Our own habit — not a documented rule — is to add `paths` to one, so it activates only when Claude is working with the files it talks about.
+
+**Task content** gives step-by-step instructions for a specific action — a deploy, a commit, a review pass. These are the ones you usually want to trigger yourself with `/skill-name`, which is what `disable-model-invocation: true` is for.
+
+`/review-security` is task content: a numbered checklist, an output format, and an explicit instruction about what to say when a check finds nothing.
+
+### Prompt-only means read-only
+
+There is no `read-only` field. A prompt-only skill is one whose `allowed-tools` grants nothing that writes, and whose body says so:
+
+<CodeBlock title="read-only allowed-tools">
+
+```yaml
+allowed-tools: Read, Grep, Glob
+```
+
+</CodeBlock>
+
+Two honest caveats about what that line does. First, `allowed-tools` **pre-approves**; it does not restrict. Every other tool stays callable under your normal permission settings — so the body has to carry the intent ("this is a checklist skill only — it reads and reports, it does not edit"). If you want tools genuinely taken away for the duration, that is `disallowed-tools`. Second, the grant lasts for the turn that invoked the skill and clears when you send your next message; invoking the skill again re-applies it.
+
+### The body is a recurring cost
+
+When a skill is invoked, the rendered `SKILL.md` enters the conversation as a single message and **stays there across later turns**. Claude Code does not re-read the file on subsequent turns, so anything that should apply throughout a task must be written as a standing instruction, not a one-time step.
+
+That persistence has a shape you should know about. Auto-compaction re-attaches the most recent invocation of each skill after the summary, keeping the first 5,000 tokens of each, with a combined budget of 25,000 tokens across all skills — filled from the most recently invoked. Invoke many skills in one session and the earliest ones are dropped entirely after a compaction. If a skill seems to stop mattering, re-invoke it.
+
+Re-invoking with identical rendered content does not duplicate it: Claude Code adds a short note that the skill is already loaded. Content that differs — because the arguments changed, or a dynamic context command produced new output — is appended in full.
+
+### Writing a checklist that reports absence
+
+The single most useful sentence in a review skill is the one that forces a negative result to be stated. Without it you cannot tell "check 2 found nothing" from "the model forgot check 2". The lab's skill does this in one clause: _"say explicitly when a checklist item found nothing."_ You will see the effect in the capture — item 2 comes back as "none found", with the reasoning.
+
+The prompt that gets you a first draft:
+
+```text
+Write .claude/skills/review-security/SKILL.md: a four-item checklist for reviewing
+src/ in this repo. Read-only — Read, Grep and Glob, nothing else. Each finding as
+`file:line — issue — fix`, and it must say explicitly when an item found nothing.
+Only I should invoke it.
+```
+
+## Hands-on lab
+
+<Callout>
+  The recorded commands carry `--settings '&#123;"language":"English"&#125;'` because the machine
+  that captured them has a global `language` preference set to Turkish. Drop that flag; nothing else
+  about the run changes.
+</Callout>
+
+<Lab
+  title="Lab · a checklist skill that reads and reports, and nothing else"
+  lessonId="en/l2-intermediate/m06-skills/prompt-only-skills"
+  repoTag="lesson/m06-04-start"
+  steps={[
+    'In your lab-repo clone: `git checkout lesson/m06-04-start && npm ci`.',
+    'Create `.claude/skills/review-security/` and write the SKILL.md shown below the transcript. Note `allowed-tools: Read, Grep, Glob` and `disable-model-invocation: true`.',
+    'Read `src/api/server.ts` yourself first — it carries two clearly-commented "teaching surface" blocks that later modules use. Predict which checklist items will hit them.',
+    'Run `claude -p "/review-security src/api/server.ts" --output-format text --max-turns 12`.',
+    'Run `git status --short`. The working tree must be unchanged — the skill reads and reports.',
+    'Run it again with no argument at all, so `$ARGUMENTS` is empty and the skill falls back to all of `src/`. Compare how much longer the report is.',
+  ]}
+  expected="A report with one entry per checklist item, using the `file:line — issue — fix` format, that names at least the unvalidated page/pageSize query params, states explicitly that the unhandled-promises check found nothing, and leaves the working tree untouched."
+  checklist={[
+    'The report has an entry for every one of the four checklist items',
+    'At least one item is reported as “none found” rather than skipped',
+    'Findings carry a file and a line number',
+    '`git status --short` shows no modified files',
+    'The run needed no permission prompt for Read or Grep',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/04-prompt-only-skills/01-review-security.txt"
+    range="2-15"
+  />
+</Lab>
+
+### The skill you are writing
+
+<CodeBlock title=".claude/skills/review-security/SKILL.md">
+
+```markdown
+---
+name: review-security
+description: Prompt-only checklist for reviewing this repo's src/ for the common mistakes it is seeded with — unvalidated input, unhandled promise rejections, secrets in logs, unsanitised string interpolation.
+when_to_use: Before merging a change to src/, or when asked to "review this for security issues."
+argument-hint: '[optional path to focus on, e.g. src/api/server.ts]'
+allowed-tools: Read, Grep, Glob
+disable-model-invocation: true
+model: sonnet
+effort: low
+---
+
+# /review-security
+
+Review `$ARGUMENTS` (default: all of `src/`) against this checklist. Report each finding as
+`file:line — issue — fix`, and say explicitly when a checklist item found nothing.
+
+1. **Input validation** — does every function that accepts external input (CLI args, HTTP
+   request bodies) reject empty/negative/malformed values before using them?
+2. **Unhandled promises** — is every `async` call either `await`ed or has a `.catch`? A
+   fire-and-forget call whose rejection is never observed is a bug, not a style nit.
+3. **Secrets in logs** — does anything `console.log` a token, key, or password value, even a
+   placeholder one, in a code path that would run against a real credential?
+4. **Unsanitised interpolation** — does any handler splice untrusted input directly into a
+   string that is later trusted as an instruction or template (the shape of a prompt-injection
+   bug, even where there is no LLM call involved)?
+
+This is a checklist skill only — it reads and reports, it does not edit `src/`.
+```
+
+</CodeBlock>
+
+### Setting the lab up, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git checkout lesson/m06-04-start && npm ci
+mkdir -p .claude/skills/review-security
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git checkout lesson/m06-04-start && npm ci
+mkdir -p .claude/skills/review-security
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git checkout lesson/m06-04-start; npm ci
+New-Item -ItemType Directory -Force .claude\skills\review-security
+```
+
+  </Fragment>
+</OSTabs>
+
+Read the capture again with the checklist next to it. Item 1 produced an actionable finding with two file:line references. Item 2 produced an explicit "none found" with the reasoning attached — that is the sentence in the skill body doing its job. Items 3 and 4 hit the repo's deliberately-planted teaching surfaces, and the report says so and declines to "fix" them: the skill read `BUGS.md` and `CLAUDE.md`, which is exactly the behaviour a read-only checklist should have. Note also what is _not_ in the report — no diff, no edit, no patch. `git status --short` after the run is empty.
+
+## Anti-patterns
+
+**A checklist with no output format.** "Review this for security problems" returns prose of a different shape every time, which you cannot diff, triage or paste into a PR. _Fix:_ specify the line format, as the lab skill does with `file:line — issue — fix`.
+
+**No instruction to report absence.** Silence is ambiguous. _Fix:_ one clause — "say explicitly when a checklist item found nothing".
+
+**Leaving a review skill model-invocable.** A review that fires whenever the conversation drifts near "security" burns tokens on prompts that did not ask for it. _Fix:_ `disable-model-invocation: true`, which also removes its description from context entirely.
+
+**Believing `allowed-tools: Read, Grep, Glob` makes the skill read-only.** It pre-approves three tools; it removes nothing. _Fix:_ say "does not edit" in the body, and use `disallowed-tools` or permission deny rules when you need it enforced.
+
+**A body that grows into a document.** Once invoked, every line is in context for the rest of the session, and it competes for the 25,000-token re-attachment budget after a compaction. _Fix:_ move detail into a supporting file next to `SKILL.md` and link to it; Claude loads it only when needed.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/prompt-only-skills"
+  questionId="q1"
+  lang="en"
+  prompt="What does `allowed-tools: Read, Grep, Glob` do?"
+  options={[
+    {
+      text: 'Pre-approves those three tools for the invoking turn; every other tool stays callable under normal permission settings',
+      correct: true,
+      explanation: 'The grant clears when you send your next message.',
+    },
+    {
+      text: 'Restricts the skill to only those three tools',
+      explanation: '`disallowed-tools` removes tools; `allowed-tools` only grants.',
+    },
+    {
+      text: 'Denies every other tool for the whole session',
+      explanation: 'Neither the scope nor the direction is right.',
+    },
+    {
+      text: 'Has no effect unless the workspace is trusted',
+      explanation:
+        'Workspace trust does not gate `allowed-tools` — it applies even in a -p run in an untrusted folder.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/prompt-only-skills"
+  questionId="q2"
+  lang="en"
+  prompt="You invoke the same skill twice in one session with identical arguments. What does Claude Code do the second time?"
+  options={[
+    {
+      text: 'Adds a short note that the skill is already loaded, instead of a second copy of the content',
+      correct: true,
+      explanation:
+        'Content that differs — changed arguments, new dynamic-context output — is appended in full instead.',
+    },
+    {
+      text: 'Appends the whole body again',
+      explanation: 'Only when the rendered content differs.',
+    },
+    {
+      text: 'Re-reads SKILL.md from disk and applies any edits',
+      explanation: 'Claude Code does not re-read the file on later turns.',
+    },
+    {
+      text: 'Refuses, because the skill is already active',
+      explanation: 'Re-invocation is fine and re-applies the `allowed-tools` grant.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/prompt-only-skills"
+  questionId="q3"
+  lang="en"
+  prompt="Why does a review checklist need an explicit instruction to report items that found nothing?"
+  options={[
+    {
+      text: 'Otherwise you cannot tell a clean check from a skipped one',
+      correct: true,
+      explanation: 'Silence is ambiguous, and the ambiguity is exactly where a miss hides.',
+    },
+    {
+      text: 'Because Claude Code drops empty sections from the output',
+      explanation: 'Nothing in the harness edits the report.',
+    },
+    {
+      text: 'Because `allowed-tools` requires one line of output per tool',
+      explanation: 'There is no such rule.',
+    },
+    {
+      text: 'To keep the skill under the 1,536-character description cap',
+      explanation: 'That cap applies to `description` plus `when_to_use`, not to output.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/prompt-only-skills"
+  questionId="q4"
+  lang="en"
+  prompt="After an auto-compaction, which invoked skills come back?"
+  options={[
+    {
+      text: 'The most recent invocation of each skill, first 5,000 tokens each, within a combined 25,000-token budget filled from the most recently invoked',
+      correct: true,
+      explanation: 'So the skills you invoked earliest can be dropped entirely.',
+    },
+    {
+      text: 'All of them, in full',
+      explanation: 'There is a budget, and it is filled newest-first.',
+    },
+    {
+      text: 'None — you must re-invoke every skill after a compaction',
+      explanation: 'Re-attachment happens automatically within the budget.',
+    },
+    {
+      text: 'Only skills with `disable-model-invocation: true`',
+      explanation: 'That field controls invocation, not re-attachment.',
+    },
+  ]}
+/>
+
+**Next:** `05-tool-running-skills` gives a skill a script, a tool budget and its own context with `context: fork` — and shows what happens when the `allowed-tools` list is narrower than the job.

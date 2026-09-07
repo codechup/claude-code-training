@@ -1,0 +1,321 @@
+---
+title: 'Skills versus custom commands'
+description: 'Custom commands were merged into skills: one mechanism, one file format. Learn where a SKILL.md can live, which copy wins when two share a name, and who is allowed to invoke it.'
+level: 2
+module: 'm06-skills'
+order: 1
+duration_min: 15
+difficulty: core
+tags: ['skills', 'custom-commands', 'configuration']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Extend Claude with skills'
+    url: 'https://code.claude.com/docs/en/skills.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Commands'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Headless mode'
+    url: 'https://code.claude.com/docs/en/headless.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code changelog'
+    url: 'https://code.claude.com/docs/en/changelog.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'awesome-claude-code'
+    url: 'https://github.com/hesreallyhim/awesome-claude-code'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Explain why `.claude/commands/*.md` and `.claude/skills/*/SKILL.md` are two spellings of one mechanism, and what a skill adds that a command file cannot do.
+- Name the four places a skill can live — enterprise, personal, project, plugin — plus nested project skills, and say who each one applies to.
+- Predict which skill runs when two of them share a name, across levels and between a skill and a command file.
+- Work out the command you type from where the file sits on disk.
+- Decide whether a given piece of repeated instruction belongs in `CLAUDE.md` or in a skill.
+
+**Prerequisites.** A working Claude Code install (level 1, `m01-start`) and a project you can add files to. You should already know what `CLAUDE.md` does (`m03-memory`) — this lesson repeatedly contrasts the two.
+
+<WhenNotToUse>
+  Do not reach for a skill when the thing you want Claude to know is a fact rather than a procedure
+  — project conventions, the name of the deploy branch, which package manager the repo uses all
+  belong in `CLAUDE.md`, where they load once and stay. Do not build a skill for something you will
+  run once; typing the instruction is cheaper than maintaining a file. And do not use a skill to
+  enforce a rule that must hold every time regardless of what the model decides — a skill is
+  instructions the model reads, so an absolute guarantee ("never let a `git push --force` through")
+  belongs in a hook (`m07-hooks`) or a permission deny rule, not in a `SKILL.md`.
+</WhenNotToUse>
+
+## Concept
+
+### One mechanism, two spellings
+
+The official docs are blunt about it: **custom commands have been merged into skills**. A file at `.claude/commands/deploy.md` and a skill at `.claude/skills/deploy/SKILL.md` both create `/deploy` and work the same way. Existing `.claude/commands/` files keep working, and they support the same frontmatter — except `name` and `paths`, which Claude Code ignores in a command file.
+
+What a skill adds over a command file is worth the extra directory:
+
+| Skill can do this                                                  | Command file cannot          |
+| ------------------------------------------------------------------ | ---------------------------- |
+| Ship supporting files next to `SKILL.md` (scripts, reference docs) | It is a single markdown file |
+| Set `name` to change its display label                             | `name` is ignored            |
+| Restrict auto-activation to matching files with `paths`            | `paths` is ignored           |
+
+Everything else — `$ARGUMENTS`, `allowed-tools`, `context: fork`, dynamic `` !`command` `` injection — is shared. So the practical rule is: write skills; leave the `.claude/commands/` files you already have alone until you need one of the three rows above.
+
+A skill is not the same thing as memory. `CLAUDE.md` content is loaded at session start and pays its token cost on every turn. A skill's _body_ loads only when the skill is used, which is why the docs recommend moving a `CLAUDE.md` section into a skill once it "has grown into a procedure rather than a fact". Only the skill's one-line listing (name plus description) sits in context permanently.
+
+### Where a skill lives
+
+| Location   | Path                               | Applies to                     |
+| ---------- | ---------------------------------- | ------------------------------ |
+| Enterprise | Managed settings directory         | All users in your organization |
+| Personal   | `~/.claude/skills/<name>/SKILL.md` | All your projects              |
+| Project    | `.claude/skills/<name>/SKILL.md`   | This project only              |
+| Plugin     | `<plugin>/skills/<name>/SKILL.md`  | Where the plugin is enabled    |
+
+Project skills load from `.claude/skills/` in the directory where you start Claude Code **and in every parent directory up to the repository root**, so starting a session in a subdirectory still picks up the repo's skills. Skills in nested `.claude/skills/` directories _below_ your starting directory behave differently: they do not load at startup. They load the first time Claude reads or edits a file in that subdirectory, and stay available for the rest of the session. To load them earlier, run `/add-dir` with that path (Claude Code v2.1.257 or later).
+
+### Which one wins
+
+When two skills share a name, Claude Code resolves the conflict by source:
+
+- Across levels, **enterprise overrides personal, and personal overrides project**. With a `deploy` skill in both `~/.claude/skills/` and the project's `.claude/skills/`, `/deploy` runs the personal one.
+- A skill at any of those levels **overrides a bundled skill** of the same name — but not that bundled skill's aliases. A project `code-review` skill replaces `/code-review`; typing the bundled alias `/review` still runs the bundled one.
+- Plugin skills are namespaced `plugin-name:skill-name`, so they cannot collide with the other levels.
+- **A skill beats a command file of the same name.** With both `.claude/commands/deploy.md` and `.claude/skills/deploy/SKILL.md`, `/deploy` runs the skill. You prove this yourself in the lab below.
+- A nested skill that clashes stays available under a directory-qualified name: `apps/web/.claude/skills/deploy/SKILL.md` becomes `/apps/web:deploy`, and bare `/deploy` runs the project-root one.
+
+### The command name comes from the path
+
+| Skill location                           | Command name source                              | Example                                                        |
+| ---------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------- |
+| `~/.claude/skills/` or `.claude/skills/` | Directory name                                   | `.claude/skills/deploy-staging/SKILL.md` → `/deploy-staging`   |
+| Nested `.claude/skills/`, on a clash     | Subdirectory path, then directory name           | `apps/web/.claude/skills/deploy/SKILL.md` → `/apps/web:deploy` |
+| `.claude/commands/`                      | File name without extension                      | `.claude/commands/deploy.md` → `/deploy`                       |
+| Plugin `skills/` subdirectory            | Frontmatter `name` or directory name, namespaced | `my-plugin/skills/review/SKILL.md` → `/my-plugin:review`       |
+
+For a personal or project skill, frontmatter `name` sets only the display label in listings — the command still comes from the directory name. That trips people up, so read the row twice.
+
+### Who invokes it
+
+By default both of you can: you type `/skill-name`, and Claude loads the skill on its own when the `description` matches what you are doing. Two frontmatter switches narrow that, and lesson 02 goes through them in full. For now, the shape of the decision:
+
+```text
+Add a skill to this repo that drafts a conventional commit message from the
+staged diff, and make it something only I can trigger — never Claude on its own.
+```
+
+That last clause maps to `disable-model-invocation: true`, and it is the right instinct for anything with a side effect.
+
+## Hands-on lab
+
+<Callout>
+  This lab needs any git repository you can add files to; it does not use a lab-repo tag. The
+  recorded commands carry `--settings '&#123;"language":"English"&#125;'` because the machine that
+  captured them has a global `language` preference set to Turkish. Leave that flag off — it changes
+  nothing else.
+</Callout>
+
+<Lab
+  title="Lab · prove a skill outranks a command file"
+  lessonId="en/l2-intermediate/m06-skills/skills-vs-commands"
+  repoTag="none"
+  steps={[
+    'Open a terminal in any git repository you can write to.',
+    'Create `.claude/commands/lab-hello.md` with a one-line body: `Reply with exactly one line: "from .claude/commands/lab-hello.md".` Give it a `description` in frontmatter.',
+    'Create `.claude/skills/lab-hello/SKILL.md` with the same shape, but whose body says `from .claude/skills/lab-hello/SKILL.md`.',
+    'Run `claude -p "/lab-hello " --output-format text --max-turns 6` and read which of the two answered. If the reply tells you to run the skill yourself, run the command again — see the note below the transcript.',
+    'Delete `.claude/skills/lab-hello/` and run the same command again: now the command file answers.',
+  ]}
+  expected="With both files present the skill answers ('from .claude/skills/lab-hello/SKILL.md'); with the skill directory removed, the command file answers instead."
+  checklist={[
+    'Both files exist and both declare a `description`',
+    'The first run reports the SKILL.md body, not the command file',
+    'Removing the skill directory makes `/lab-hello` fall back to the command file',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/01-skills-vs-commands/01-skill-wins-over-command.txt"
+    range="2-3"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/01-skills-vs-commands/02-command-file-fallback.txt"
+    range="2-3"
+  />
+</Lab>
+
+### Creating the two files, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+mkdir -p .claude/commands .claude/skills/lab-hello
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+mkdir -p .claude/commands .claude/skills/lab-hello
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+New-Item -ItemType Directory -Force .claude\commands, .claude\skills\lab-hello
+```
+
+  </Fragment>
+</OSTabs>
+
+The second capture is the same command after `.claude/skills/lab-hello/` is deleted: with only the command file left, `/lab-hello` falls back to it. Nothing else changed.
+
+Two more things those recordings are quietly telling you.
+
+**Skill directories are watched live.** Claude Code watches `~/.claude/skills/`, the project `.claude/skills/`, and any `--add-dir` skills directory, and picks up `SKILL.md` text changes inside a running session without a restart. The one exception: if you create a top-level skills directory that did not exist when the session started, restart so Claude Code can watch it. Note that the captures above cannot show this — every `claude -p` run is a fresh session — so it is a documented behaviour to try in an interactive session, not something this lab proves.
+
+**A headless skill invocation is worth verifying.** Skills are documented to work in `-p` mode: include `/skill-name` in the prompt string and Claude Code expands it before running. In practice, while capturing this module against 2.1.263, roughly one headless run in three or four of a `disable-model-invocation: true` project skill came back as a refusal — "the skill must be run directly by you" — instead of the skill's own output. Re-running the identical command produced the recorded result. The two runs where the skill name had nothing at all after it were both refused, and every run with a trailing space or an argument succeeded, but that is a dozen-odd runs, far too small a sample to call it a cause. The practical advice is simply: skills are primarily an interactive mechanism, so treat a headless invocation as something to check, and re-run it if the answer tells you to run it yourself.
+
+## Anti-patterns
+
+**Migrating every `.claude/commands/` file "because commands are deprecated".** They are not deprecated; they were merged. Your existing files keep working and take the same frontmatter. _Fix:_ convert a command file only when you need a supporting file, a `name` label, or `paths` — otherwise leave it and spend the time elsewhere.
+
+**Putting a procedure in `CLAUDE.md`.** A twelve-step release checklist in memory costs tokens on every single turn of every session, including the ones about CSS. _Fix:_ move it to a skill; the body then loads only when the skill runs.
+
+**Assuming frontmatter `name` renames the command.** In a personal or project skill it changes the label in listings only. Renaming `.claude/skills/deploy/` to `.claude/skills/ship/` is what changes `/deploy` to `/ship`. _Fix:_ rename the directory.
+
+**Expecting a nested skill to be there from the start.** A skill under `apps/web/.claude/skills/` does not appear in autocomplete until Claude has read or edited a file in `apps/web/`. _Fix:_ run `/add-dir apps/web` (v2.1.257+), or open a file there first.
+
+**Using a skill to enforce a hard rule.** A skill is text the model reads and can be talked out of. _Fix:_ hard guarantees go in hooks or permission deny rules; skills carry judgement, not enforcement.
+
+<Callout variant="changed">
+  Slash commands and skills were merged in Claude Code 2.1.3 (9 January 2026), "simplifying the
+  mental model with no change in behavior". `.claude/commands/deploy.md` and
+  `.claude/skills/deploy/SKILL.md` both create `/deploy`; existing command files keep working, and
+  when both exist the skill takes precedence — verified against the changelog and `skills.md` for
+  Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/skills-vs-commands"
+  questionId="q1"
+  lang="en"
+  prompt="A repo has both .claude/commands/deploy.md and .claude/skills/deploy/SKILL.md. What does /deploy run?"
+  options={[
+    {
+      text: 'The skill at .claude/skills/deploy/SKILL.md',
+      correct: true,
+      explanation: 'When a skill and a command file share a name, the skill takes precedence.',
+    },
+    {
+      text: 'The command file, because .claude/commands/ is checked first',
+      explanation: 'Order of directories is not what decides it; the skill wins.',
+    },
+    {
+      text: 'Claude Code refuses to start until you remove one of them',
+      explanation: 'Both load fine; the conflict is resolved silently in the skill’s favour.',
+    },
+    {
+      text: 'Whichever file was modified most recently',
+      explanation: 'Precedence is by source, not by timestamp.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/skills-vs-commands"
+  questionId="q2"
+  lang="en"
+  prompt="You have a deploy skill in ~/.claude/skills/ and another in the project's .claude/skills/. Which one does /deploy run?"
+  options={[
+    {
+      text: 'The personal one in ~/.claude/skills/',
+      correct: true,
+      explanation:
+        'Enterprise overrides personal, and personal overrides project — so your personal copy wins.',
+    },
+    {
+      text: 'The project one, because project settings are more specific',
+      explanation:
+        'That is how permission scopes work, but skill precedence runs the other way: personal over project.',
+    },
+    {
+      text: 'Both, one after the other',
+      explanation: 'Only one skill answers to a given name.',
+    },
+    {
+      text: 'Neither — the name clash disables both',
+      explanation: 'A clash is resolved, not fatal.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/skills-vs-commands"
+  questionId="q3"
+  lang="en"
+  prompt="A project skill lives at .claude/skills/deploy-staging/SKILL.md and its frontmatter says `name: ship`. What do you type to run it?"
+  options={[
+    {
+      text: '/deploy-staging',
+      correct: true,
+      explanation:
+        'In a personal or project skill, `name` only sets the display label; the command comes from the directory name.',
+    },
+    {
+      text: '/ship',
+      explanation:
+        'That is true for plugin skills, where `name` sets the last segment of the command — not for project skills.',
+    },
+    {
+      text: '/skills deploy-staging',
+      explanation: '/skills opens the listing menu; it does not invoke a skill.',
+    },
+    { text: 'Either name works', explanation: 'Only the directory name is the command here.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/skills-vs-commands"
+  questionId="q4"
+  lang="en"
+  prompt="Which of these belongs in CLAUDE.md rather than in a skill?"
+  options={[
+    {
+      text: '“This repo uses pnpm, never npm.”',
+      correct: true,
+      explanation:
+        'A standing fact that should apply to every turn. Skills are for procedures that load when used.',
+    },
+    {
+      text: 'A nine-step release checklist you run once a fortnight',
+      explanation:
+        'A procedure that big is exactly what a skill is for — it costs nothing until invoked.',
+    },
+    {
+      text: 'A security review checklist with four numbered checks',
+      explanation: 'A procedure, invoked on demand: a skill.',
+    },
+    {
+      text: 'A scaffolding routine that runs a script and then writes code',
+      explanation: 'A multi-step action with a supporting file: a skill directory.',
+    },
+  ]}
+/>
+
+**Next:** `02-skill-md-anatomy` takes the file apart field by field — every frontmatter key Claude Code accepts, what it changes, and which ones you can safely ignore.

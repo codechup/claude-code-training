@@ -1,0 +1,15 @@
+# Captured 2026-09-07, Claude Code 2.1.263. lesson/m06-04-start with .claude/skills/review-security/SKILL.md written. Read-only run; no file was edited. Verbatim.
+› claude --settings '{"language":"English"}' -p "/review-security src/api/server.ts" --output-format text --max-turns 12
+Now I have enough to report findings against the checklist.
+
+**Security review: `src/api/server.ts`**
+
+1. **Input validation** — `src/api/server.ts:73-74` — `page` and `pageSize` from query params are parsed with `Number()` but never checked for `NaN`, negative, or zero values before being passed to `paginate` (`src/store.ts:56-58`, which does no validation either) — fix: reject/clamp non-positive or `NaN` `page`/`pageSize` values in the handler, or add validation to `paginate` in `store.ts` per the "fix at the source" convention. The `POST /tasks` and `render-note` bodies are validated downstream (`addTask` in `store.ts:23-31` rejects empty/negative), so those paths are fine.
+
+2. **Unhandled promises** — none found. Every `async` call in this file (`readBody`, the request handler itself) is `await`ed, and the outer handler is wrapped in `try/catch` that routes errors to `sendJson`. No fire-and-forget async calls.
+
+3. **Secrets in logs** — `src/api/server.ts:25` — `getApiToken()` logs the token value via `console.log`. This is a real match for the checklist item, but it's the `m14-03-secrets` **TEACHING SURFACE** explicitly marked at `server.ts:17-22` and called out in `BUGS.md`/`CLAUDE.md` to leave as-is for a later lesson. Flagging it here per the checklist, but not proposing a fix — do not touch it.
+
+4. **Unsanitised interpolation** — `src/api/server.ts:51-53` (`renderNote`) splices `title` and `note` directly into a template string, then serves it via the `render-note` route (`server.ts:103-112`). This is a real match too, but it's the `m14-02-prompt-injection` **TEACHING SURFACE** explicitly marked at `server.ts:44-50` — leave as-is per `BUGS.md`.
+
+Summary: one actionable, unflagged finding — unvalidated `page`/`pageSize` query params at `server.ts:73-74`. The other two checklist hits (token logging, unsanitised `renderNote` interpolation) are intentional, documented teaching surfaces for later lessons and should not be modified.

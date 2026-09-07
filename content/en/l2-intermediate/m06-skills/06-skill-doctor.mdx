@@ -1,0 +1,289 @@
+---
+title: 'Measuring skills with /skill-doctor'
+description: 'Every skill in the listing costs context on every turn, used or not. /skill-doctor shows what each one costs and how often it runs, so you can fix the descriptions that never trigger and turn off the skills nobody needs.'
+level: 2
+module: 'm06-skills'
+order: 6
+duration_min: 10
+difficulty: advanced
+tags: ['skills', 'context', 'diagnostics']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Extend Claude with skills'
+    url: 'https://code.claude.com/docs/en/skills.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Commands'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Headless mode'
+    url: 'https://code.claude.com/docs/en/headless.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Run `/skill-doctor` in both an interactive session and in `-p` mode, and read its report.
+- Explain the difference between the per-turn cost of a skill's _listing_ and the one-off cost of its _body_.
+- Use `skillOverrides` — through the `/skills` menu or by hand — to move a skill between `on`, `name-only`, `user-invocable-only` and `off`.
+- Diagnose a skill that never triggers, and know which of the three causes you are looking at.
+- Say where `/skill-doctor` is unavailable, and what to run instead.
+
+**Prerequisites.** Lessons `01`–`05`, and Claude Code v2.1.252 or later. A project with at least two or three skills in it — the state you finish lesson 05 in is ideal.
+
+<WhenNotToUse>
+  `/skill-doctor` measures usage; it does not measure quality. A skill that runs on every prompt and
+  produces mediocre output looks excellent in this report. Seeing a skill trigger tells you Claude
+  found it, not that it did what you intended — for that, the docs point at a baseline comparison:
+  run the same realistic prompts in a fresh session with the skill available and again with it
+  disabled, and compare. Do not use `/skill-doctor` for that, and do not delete a rarely used skill
+  on the strength of a low count if the few times it runs are the times that matter.
+</WhenNotToUse>
+
+## Concept
+
+### What it costs to have a skill you never use
+
+Claude Code loads a listing of skill names and descriptions into context so Claude knows what is available. Every skill in that listing adds to your context **on every turn**, whether or not Claude ever uses it. The body is different: it loads only when the skill runs, and then it stays for the rest of the session.
+
+So a skill has two costs, and they behave nothing alike:
+
+| Cost              | When it is paid                    | How to reduce it                                                           |
+| ----------------- | ---------------------------------- | -------------------------------------------------------------------------- |
+| The listing entry | Every turn, for the whole session  | `skillOverrides: "name-only"` or `"off"`; `disable-model-invocation: true` |
+| The rendered body | Once per invocation, then persists | Keep the body short; move detail into supporting files                     |
+
+`/skill-doctor` reports the first and shows you which skills are not earning it.
+
+### Reading the report
+
+`/skill-doctor` shows what each of your skills costs and how often it gets used. In an interactive session the report opens in the `/plugin` manager's **Stats** tab; in non-interactive mode with `-p`, Claude Code prints it as text. It covers the skills in your session other than bundled and enterprise skills, flags skills in the listing that have never been invoked, says where to turn them off, and lists plugins you have not used recently.
+
+The `context` column is the part people misread. It is the size of _this skill's one-line listing entry_, included every turn — not the size of `SKILL.md`. A dash means the skill is not in the current listing at all, and therefore costs nothing per turn. In the capture below, two of the three skills show a dash: both set `disable-model-invocation: true`, which keeps their description out of Claude's context entirely, exactly as the table in lesson 02 says.
+
+### Turning a skill down instead of off
+
+`skillOverrides` in `.claude/settings.json` or `.claude/settings.local.json` controls visibility without editing a `SKILL.md` you may not own:
+
+| Value                   | Listed to Claude     | In the `/` menu |
+| ----------------------- | -------------------- | --------------- |
+| `"on"` (the default)    | Name and description | Yes             |
+| `"name-only"`           | Name only            | Yes             |
+| `"user-invocable-only"` | Hidden               | Yes             |
+| `"off"`                 | Hidden               | Hidden          |
+
+The `/skills` menu writes this for you: highlight a skill, press `Space` to cycle states, `Esc` to save to `.claude/settings.local.json`. The menu labels `"user-invocable-only"` as `user-only`. Plugin skills are not affected by `skillOverrides` — manage those through `/plugin`.
+
+`"name-only"` is the underrated setting. It frees listing budget while keeping the skill typable, which is what you want for a skill you invoke by hand but never want Claude to guess at.
+
+### Why a skill is not triggering
+
+Three causes, in the order worth checking:
+
+1. **Its description is not in the listing at all.** Either you set `disable-model-invocation: true` (in which case it is working as designed and you must type it), or the listing overflowed. The budget scales at 1% of the model's context window, and when it overflows Claude Code drops descriptions **starting with the skills you invoke least** — so the skills you use most keep their full text, and the neglected ones get quieter. `/doctor` estimates the listing's cost and its biggest contributors; `--debug` writes a warning to the debug log when the budget is exceeded.
+2. **The description does not match how you ask.** Put the key use case first, and use `when_to_use` for trigger phrases. Remember the combined cap of 1,536 characters per entry.
+3. **`paths` is narrowing it.** A skill with `paths` set activates automatically only when Claude is working with matching files.
+
+The `/context` Skills row reports the listing size _after_ the budget is applied, so it matches what the model actually receives. To raise the budget, set `skillListingBudgetFraction` (for example `0.02` for 2%) or the `SLASH_COMMAND_TOOL_CHAR_BUDGET` environment variable.
+
+The prompt to type when the report is in front of you:
+
+```text
+Here is my /skill-doctor output. Three skills have never been invoked. For each,
+tell me whether the fix is a better description, a `paths` restriction, or turning
+it off in skillOverrides — and write the settings.json entry for the ones to turn off.
+```
+
+### Where it is not available
+
+`/skill-doctor` requires Claude Code v2.1.252 or later, and is not available in sessions that skip feature-flag fetching. Over Remote Control from a phone or browser it replies `Skill usage reports are not available on this connection.` — run it in the terminal on the machine where the session is running.
+
+## Hands-on lab
+
+<Callout>
+  No lab-repo tag: run this against whatever project you finished lesson 05 in, so there are real
+  skills with real usage counts to look at.
+</Callout>
+
+<Callout>
+  The recorded commands carry `--settings '&#123;"language":"English"&#125;'` because the machine
+  that captured them has a global `language` preference set to Turkish. Drop that flag; nothing else
+  about the run changes.
+</Callout>
+
+<Lab
+  title="Lab · read the bill for your skills"
+  lessonId="en/l2-intermediate/m06-skills/skill-doctor"
+  repoTag="none"
+  steps={[
+    'Confirm your version: `claude --version` must report 2.1.252 or later.',
+    'In a project with two or three skills, invoke at least one of them so the report has something to count.',
+    'Run `claude -p "/skill-doctor" --output-format text --max-turns 10` and read the table: skill, source, context, 7d tokens, uses, last used.',
+    'Compare the `context` column against each skill’s frontmatter. Every skill showing a dash should have `disable-model-invocation: true` — confirm that it does.',
+    'Open an interactive session and run `/skill-doctor` there instead: the same report opens in the `/plugin` manager’s Stats tab.',
+    'Run `/skills`, highlight a skill you rarely use, press `Space` until it reads `name-only`, then `Esc`. Check that `.claude/settings.local.json` now has a `skillOverrides` entry.',
+  ]}
+  expected="A table with one row per loaded skill showing its source, per-turn listing cost, 7-day token attribution, invocation count and last use — and a closing line naming the skills never invoked, or confirming that all of them have been used."
+  checklist={[
+    'The report lists every project skill in the session',
+    'Skills with `disable-model-invocation: true` show a dash in the `context` column',
+    'You can say, for one skill, what its listing costs per turn',
+    'The interactive run opened the Stats tab rather than printing text',
+    '`.claude/settings.local.json` gained a `skillOverrides` entry after using `/skills`',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m06-skills/06-skill-doctor/01-skill-doctor.txt"
+    range="2-14"
+  />
+</Lab>
+
+Read that capture against what you built in the last three lessons. All three skills come from `projectSettings` — they are the repo's `.claude/skills/`, not personal or plugin skills. `commit-msg` and `review-security` show a dash in the `context` column because both set `disable-model-invocation: true`: their descriptions are not in Claude's listing at all, so they cost nothing per turn and can only be invoked by name. `new-component` shows roughly 90 tokens, which is what its listing entry costs every single turn of every session in this project — cheap, and worth checking is still true after you rewrite a description.
+
+The `7d tokens` column is a different measure: tokens attributed to the skill over the last seven days of sessions on this machine. `commit-msg` dominates it because it was invoked thirteen times while this module was being written. High tokens with a low invocation count is the pattern worth investigating — a body that is too long for what it does.
+
+Because `/skill-doctor` is interactive-first, the second half of this lab is a TUI flow rather than a transcript. These are the exact commands:
+
+<CodeBlock title="the interactive half">
+
+```text
+/skill-doctor      # opens the /plugin manager on the Stats tab
+/skills            # listing menu: Space cycles visibility, Esc saves
+/context           # the Skills row: listing size after the budget is applied
+/doctor            # estimate of the listing's context cost and its biggest contributors
+```
+
+</CodeBlock>
+
+## Anti-patterns
+
+**Reading the `context` column as the size of `SKILL.md`.** It is the one-line listing entry, paid per turn. The body is a separate, one-off cost paid at invocation. _Fix:_ use `/context` for what the whole session is carrying, and `/skill-doctor` for what the listing costs.
+
+**Deleting a skill because the count is low.** The report measures frequency, not value. _Fix:_ set it to `"name-only"` first — you keep it typable and stop paying for its description — and delete only if you never reach for it.
+
+**Fixing a non-triggering skill by rewriting the body.** Claude decides whether to load a skill from its `description` and `when_to_use`; the body is what it reads _after_ deciding. _Fix:_ rewrite the description, key use case first.
+
+**Raising `skillListingBudgetFraction` as the first move.** More budget means more context spent on descriptions on every turn, forever. _Fix:_ trim descriptions and set low-priority skills to `"name-only"` first; raise the budget only when the trimmed listing still overflows.
+
+**Expecting the report over Remote Control.** It replies that skill usage reports are not available on that connection. _Fix:_ run it in the terminal on the machine hosting the session.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/skill-doctor"
+  questionId="q1"
+  lang="en"
+  prompt="In the /skill-doctor report, what does the `context` column measure?"
+  options={[
+    {
+      text: 'The size of that skill’s one-line listing entry, which is included on every turn',
+      correct: true,
+      explanation: 'A dash means the skill is not in the listing and costs nothing per turn.',
+    },
+    {
+      text: 'The size of the whole SKILL.md file',
+      explanation: 'The body loads only when the skill runs.',
+    },
+    {
+      text: 'How much context the skill consumed the last time it ran',
+      explanation: 'That is closer to the 7d tokens column, and it is measured over seven days.',
+    },
+    {
+      text: 'The remaining context window',
+      explanation: 'That is what /context reports.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/skill-doctor"
+  questionId="q2"
+  lang="en"
+  prompt="A skill shows a dash in the `context` column. What is the most likely reason?"
+  options={[
+    {
+      text: 'It sets `disable-model-invocation: true`, so its description is not in Claude’s listing',
+      correct: true,
+      explanation: 'It can still be invoked by name; it just costs nothing per turn.',
+    },
+    {
+      text: 'It has never been invoked',
+      explanation: 'The report flags never-invoked skills separately, in its closing lines.',
+    },
+    {
+      text: 'It has no `description` field',
+      explanation:
+        'Without one, Claude Code falls back to the first paragraph of the body — the entry still exists.',
+    },
+    {
+      text: 'It is a bundled skill',
+      explanation: 'The report covers skills other than bundled and enterprise ones.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/skill-doctor"
+  questionId="q3"
+  lang="en"
+  prompt="You want to keep typing /deploy yourself but stop paying for its description on every turn. What is the smallest change?"
+  options={[
+    {
+      text: 'Set `skillOverrides: { "deploy": "name-only" }`, or add `disable-model-invocation: true` to the skill',
+      correct: true,
+      explanation:
+        'Both keep the skill typable; "name-only" does it from settings without editing a shared SKILL.md.',
+    },
+    {
+      text: 'Set it to `"off"`',
+      explanation: '"off" also hides it from the / menu, so you can no longer type it.',
+    },
+    {
+      text: 'Set `user-invocable: false`',
+      explanation: 'That is backwards — it stops *you* invoking it and leaves it to Claude.',
+    },
+    {
+      text: 'Delete the description field',
+      explanation:
+        'Claude Code then falls back to the first paragraph of the body, which is usually longer.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m06-skills/skill-doctor"
+  questionId="q4"
+  lang="en"
+  prompt="Your project has grown to thirty skills and an old one has quietly stopped triggering. What is the first thing to check?"
+  options={[
+    {
+      text: 'Whether the listing overflowed its budget — descriptions are dropped starting with the least-invoked skills',
+      correct: true,
+      explanation:
+        'The budget is 1% of the context window; /doctor estimates the cost and --debug logs a warning when it is exceeded.',
+    },
+    {
+      text: 'Whether the SKILL.md body is too long',
+      explanation: 'The body is not read until after Claude has decided to load the skill.',
+    },
+    {
+      text: 'Whether `allowed-tools` expired',
+      explanation: 'That grant is per turn and has nothing to do with triggering.',
+    },
+    {
+      text: 'Whether the skill directory was renamed',
+      explanation:
+        'That would change the command name, which you would notice immediately when typing it.',
+    },
+  ]}
+/>
+
+**Next:** `m07-hooks` picks up where skills stop — the guarantees a `SKILL.md` cannot give you, enforced by the harness rather than the model.

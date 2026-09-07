@@ -2,7 +2,7 @@
 id: P18
 title: "L2 Intermediate module: Skills (m06-skills)"
 milestone: M1
-status: in_progress
+status: review
 owner: opus-p18-2026-09-07
 branch: plan/18-l2-m06-skills
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T08:56:13Z
+updated_at: 2026-09-07T10:03:01Z
 open_questions: []
 ---
 
@@ -99,5 +99,32 @@ A reviewer opens `npm run dev`, visits each of the 6 lessons at `/en/l2-intermed
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+Executed 2026-09-07 by `opus-p18-2026-09-07` against Claude Code 2.1.263.
+
+**Written.** 6 EN lessons + 6 TR `draft: true` stubs (translated title/description plus a one-paragraph Turkish summary) under `l2-intermediate/m06-skills/`, and 10 real transcripts under `content/_shared/transcripts/m06-skills/`.
+
+**Slug drift (resolved in the curriculum's favour, D-rule: CURRICULUM is authoritative).** This plan's Deliverables listed `01-skills-vs-custom-commands`, `02-skill-md-anatomy-and-frontmatter`, `03-arguments-and-named-args`. `docs/CURRICULUM.md` §2 names `01-skills-vs-commands`, `02-skill-md-anatomy`, `03-arguments`; the shipped files follow the curriculum. Lab tags are `lesson/m06-NN-start` (not `lesson/m06-skills-NN-start` as the plan text guessed); tags exist for 03/04/05 only, so 01/02/06 ship `repo_tag: 'none'` with self-contained labs.
+
+**Labs run for real.** 03/04/05 against `lesson/m06-03-start` … `-05-start`, writing the SKILL.md the tag's `-solution` contains and invoking it headlessly; 01/02/06 in throwaway skills in the same clone. Every `<Transcript>` is verbatim capture. Two redactions only: absolute local paths in `05-tool-running-skills/01-new-component.txt` replaced with `<lab>`.
+
+**Capture-environment notes (visible in the transcripts).**
+- The capture machine has `"language": "Turkish"` in user settings, so every recorded command carries `--settings '{"language":"English"}'`. Each lesson says so and tells the reader to drop the flag.
+- **Headless invocation of a `disable-model-invocation: true` skill is not fully reliable on 2.1.263.** Roughly one run in three or four came back as a refusal ("the skill must be run directly by you") instead of the skill's output; re-running the identical command produced the recorded result. The two runs with nothing at all after the skill name were both refused and every run with a trailing space or an argument succeeded, but that is ~13 runs total — far too small a sample to claim causation, and lesson 01 says exactly that. Worth re-testing on a later version.
+- `05-tool-running-skills/01-new-component.txt` opens mid-thought ("Both blocked too — shipping with the caveat, as advised."). That is the literal first line of the `--output-format text` result and is unedited; the fact-checker flagged it as an anomaly, and it is confirmed genuine. In the same run `npm run typecheck` / `npm run lint` were blocked (not in the skill's `allowed-tools`, and the workspace was untrusted so `permissions.allow` was ignored) — the lesson teaches exactly that.
+
+**Review pipeline (D071).** fact-checker: 0 WRONG, 0 inventory drift; 4 "must resolve" items — all handled (lab-tag URLs re-verified 200 by curl; the "reference content is often paired with `paths`" clause rewritten as our own habit rather than a doc claim; the `--debug` listing-budget warning re-confirmed verbatim in `skills.md`; the lesson-05 transcript re-confirmed genuine). reviewer: 1 blocker + 3 major + 2 minor — all fixed: the temporary `playwright.p18.config.ts` / `e2e/m06-skills.p18.spec.ts` were deleted (they were the brief's temporary Playwright pair, outside `owned_paths`); headings renamed to `Objectives & prerequisites`; two missing transcripts captured (`01-skills-vs-commands/02-command-file-fallback.txt`, `02-skill-md-anatomy/03-frontmatter-not-first-line.txt`) so no lab step claims an unrecorded result; the "Changed" callout now cites the real version — **slash commands and skills were merged in 2.1.3 (9 January 2026)**, from `changelog.md`; `awesome-claude-code` now cited in lesson 01, matching its `m06-skills` tag in the registry.
+
+**Post-review corrections (advisor pass, same session).** Lesson 01's headless paragraph was rewritten to match the run counts above rather than overclaiming, and its "picked up without a restart" reading of a `-p` capture was corrected (every `-p` run is a fresh session, so the capture cannot show live change detection); the corresponding checklist item was dropped. Lesson 02's field counts were wrong (seventeen documented fields, three inert) and the `arguments` row was missing — both fixed; the objective no longer promises `skillOverrides`, which lesson 06 covers. Lesson 05's `expected`/checklist no longer hard-codes "could not run typecheck/lint": the lab repo's own `.claude/settings.json` **does** allow `Bash(npm run typecheck)` and `Bash(npm run lint)`, and they were ignored only because the capture clone had never been trusted — the lesson now says a trusted clone behaves differently and that the trust warning went to stderr. The `--settings '{"language":"English"}'` explanation, previously only in lessons 01 and 03, is now in all six. Every `sources[].url` in the module was re-fetched by `curl` this session (11 URLs, all 200), including `awesome-claude-code`, rather than copying a `verified_at` forward.
+
+**Cosmetic note.** This repo's Prettier normalises YAML/JS strings to single quotes inside fenced blocks, so the `argument-hint` lines and `scaffold.mjs` shown in lessons 03/04/05 use `'…'` where the lab repo's `-solution` files use `"…"`. Identical YAML/JS; lesson 03 says so in one line for readers diffing against the tag.
+
+**i18n.** `.claude/rules/i18n.md` read; TR stubs use straight ASCII apostrophes for Turkish suffixes on English terms (`skill'ler`, `SKILL.md'nin`) per its examples, with the title/description re-quoted as double-quoted YAML so the apostrophes survive. No new glossary terms were needed for stubs; the translation plan will add them.
+
+**Coordinator instruction applied.** Both `m06-skills/index.mdx` files now hold only the intro paragraph — the numbered lesson list was removed (the module page renders the list itself). The temporary e2e spec discovered lesson routes from the index rather than asserting a count.
+
+**Deprecations follow-up (for P42 / the inventory owner).** `research/deprecations.md` has no entry for the slash-command→skill merge. Suggested row: *"custom commands as a separate mechanism → merged into skills in 2.1.3 (2026-01-09); `.claude/commands/*.md` keeps working, a skill of the same name wins"*. This plan does not own that file.
+
+**Verification (re-run after the corrections above).** `npm run gate` OK (88 files) · `npm run typecheck` 0 errors · `npm run lint` clean · `npm test` pass · `npm run build` ends `check-no-inline-script (dist): OK (78 files scanned)` with `dist/en/l2-intermediate/m06-skills/` holding 6 lesson pages + index (TR twins are `draft: true`, so only `dist/tr/.../index.html`) · `check-raw-colors` OK · `check-public-hygiene` OK · `tools/plan/cli.ts check` OK · Playwright on port 4418: 18 passed (a11y.spec.ts plus a temporary module spec at 390 px and 1280 px, 0 serious/critical axe violations); both temporary Playwright files deleted afterwards.
+
+**Open follow-ups.** `e2e/lesson.spec.ts` (P04) is hard-coded to the m01 lesson, so this module could not reuse it as-is — generalising it would let future content plans stop writing temporary specs.
 
