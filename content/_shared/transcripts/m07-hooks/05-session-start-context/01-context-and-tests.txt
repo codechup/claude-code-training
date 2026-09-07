@@ -1,0 +1,12 @@
+# Captured 2026-09-07, Claude Code 2.1.263, detached worktree of codechup/claude-code-lab at lesson/m07-05-start (npm ci run) with session-context.mjs registered on SessionStart and Stop. CLAUDE_CODE_DISABLE_AUTO_MEMORY=1, --settings '{"language":"English"}'. Verbatim; local paths redacted to /home/you.
+› claude -p "Without reading any files, tell me what this project is and how many entries BUGS.md has. Answer only from the context you were already given." --model sonnet --max-turns 3 --output-format text --debug-file debug.txt
+This is `claude-code-lab`, the hands-on lab repository for the CodeChup Claude Code Academy (cc.codechup.com) — a small TypeScript task-tracker CLI (`labtrack`) plus a matching HTTP API, intentionally seeded with a handful of small, real bugs.
+
+As for how many entries `BUGS.md` has: I don't actually know from the context given. The `CLAUDE.md` says it's "seeded with a handful of small, real bugs — see `BUGS.md`," and the SessionStart hook explicitly reports "unknown entries in BUGS.md." So the count isn't available without reading the file.
+
+› grep -n "Hook SessionStart" debug.txt
+154:2026-09-07T09:11:05.056Z [DEBUG] "Hook SessionStart:startup (SessionStart) success:\n{\"hookSpecificOutput\":{\"hookEventName\":\"SessionStart\",\"additionalContext\":\"claude-code-lab: a tiny task-tracker CLI + HTTP API for the CodeChup Claude Code Academy. unknown entries in BUGS.md. Run \\\"npm test\\\" to see current pass/fail.\"}}"
+155:2026-09-07T09:11:05.056Z [DEBUG] Hook SessionStart (node .claude/hooks/session-context.mjs) provided additionalContext (158 chars)
+
+› grep -n "Hook Stop" debug.txt
+210:2026-09-07T09:11:16.833Z [DEBUG] "Hook Stop (Stop) success:\n\n RUN  v5.0.0 /home/you/claude-code-lab\n\n\n Test Files  4 passed (4)\n      Tests  15 passed (15)\n   Start at  12:11:10\n   Duration  1.36s (import 41%, transform 35%, tests 21%, worker 3%)"

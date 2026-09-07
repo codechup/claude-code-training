@@ -1,0 +1,15 @@
+# Captured 2026-09-07, Claude Code 2.1.263, scratch project whose PreToolUse hook command pointed at .claude/hooks/recordevent.mjs - a typo; the real file is record-event.mjs. CLAUDE_CODE_DISABLE_AUTO_MEMORY=1, --settings '{"language":"English"}'. Verbatim; local paths redacted to /home/you.
+› claude -p "Read notes.txt and reply with one sentence." --model sonnet --max-turns 3 --output-format text --allowedTools "Read" --debug-file hooks-debug.txt
+LabTrack ships a CLI and an HTTP API, and its overdue check compares dates in seconds.
+
+› grep -o "Hook PreToolUse:Read (PreToolUse) error:.\{0,90\}" hooks-debug.txt
+Hook PreToolUse:Read (PreToolUse) error:\nnode:internal/modules/cjs/loader:1520\r\n  throw err;\r\n  ^\r\n\r\nError: Cannot find m
+
+› sed -i 's/recordevent.mjs/record-event.mjs/' .claude/settings.json
+› rm -f hooks-debug.txt events.log
+› claude -p "Read notes.txt and reply with one sentence." --model sonnet --max-turns 3 --output-format text --allowedTools "Read" --debug-file hooks-debug.txt
+Labtrack ships a CLI and an HTTP API, and its overdue check compares dates in seconds.
+
+› grep -o "Hook PreToolUse:Read (PreToolUse) error:.\{0,90\}" hooks-debug.txt
+› cat events.log
+PreToolUse Read

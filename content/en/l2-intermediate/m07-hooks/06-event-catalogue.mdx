@@ -1,0 +1,342 @@
+---
+title: 'The full event catalogue and /hooks'
+description: 'All 33 hook events, grouped by what they are for, with the decision each one accepts — plus the /hooks menu, hook precedence across settings scopes, and how to turn everything off for one run.'
+level: 2
+module: 'm07-hooks'
+order: 6
+duration_min: 20
+difficulty: advanced
+tags: ['hooks', 'events', 'reference', 'settings']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Hooks reference'
+    url: 'https://code.claude.com/docs/en/hooks.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Automate actions with hooks'
+    url: 'https://code.claude.com/docs/en/hooks-guide.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Settings'
+    url: 'https://code.claude.com/docs/en/settings.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Name every hook event Claude Code fires, grouped by the part of the session it belongs to.
+- Look up, for a given event, whether it can block and what decision shape it accepts.
+- Use `/hooks` to see which hooks are registered and which settings file each came from.
+- Explain how hooks merge across user, project, local, plugin, skill and managed scopes, and what `disableAllHooks` can and cannot switch off.
+- Predict which events a short session will actually fire — and be unsurprised when most of them do not.
+
+**Prerequisites.** Lessons `01`–`05`. No lab-repo tag: the lab here runs in a scratch folder, because it registers a hook on more than a dozen events at once and you do not want that in a working repository.
+
+<WhenNotToUse>
+  Do not treat this catalogue as a menu to work through. Most sessions need two or three hooks; the
+  rest of the list exists so you can recognise the right event when a specific need appears. In
+  particular, do not reach for the exotic events — `Elicitation`, `WorktreeCreate`, `TeammateIdle`,
+  `PostToolBatch` — until you are running the feature they belong to, and do not register a hook on
+  every event "to see what happens" in a repository you care about: each one is a process launch,
+  and the noisy ones (`MessageDisplay`, `PreToolUse`) fire constantly.
+</WhenNotToUse>
+
+## Concept
+
+### The session, in three cadences
+
+Before the table, the shape. The docs group the core events by how often they run:
+
+- **Once per session:** `SessionStart` and `SessionEnd`.
+- **Once per turn:** `UserPromptSubmit`, `Stop` and `StopFailure`.
+- **On every tool call inside the agentic loop:** `PreToolUse` and `PostToolUse`.
+
+Everything else hangs off that skeleton — permission decisions beside the tool call, subagent and task events inside the loop, compaction and model switches as standalone interruptions.
+
+### Lifecycle and session
+
+| Event                | When it fires                                                                      | Can block? |
+| -------------------- | ---------------------------------------------------------------------------------- | ---------- |
+| `SessionStart`       | A session begins or resumes                                                        | No         |
+| `SessionEnd`         | A session terminates                                                               | No         |
+| `Setup`              | `--init-only`, or `--init` / `--maintenance` in `-p` mode; one-time CI preparation | No         |
+| `InstructionsLoaded` | A `CLAUDE.md` or `.claude/rules/*.md` file is loaded into context                  | No         |
+| `ConfigChange`       | A configuration file changes during a session                                      | Yes        |
+| `CwdChanged`         | The working directory changes, e.g. Claude runs `cd`                               | No         |
+| `DirectoryAdded`     | A directory is added mid-session via `/add-dir`                                    | No         |
+| `FileChanged`        | A watched file changes on disk (the matcher names the filenames)                   | No         |
+| `PreCompact`         | Before context compaction                                                          | Yes        |
+| `PostCompact`        | After compaction completes                                                         | No         |
+| `PreModelSwitch`     | Before a requested model switch is applied                                         | Yes        |
+| `PostModelSwitch`    | After the session's model changes                                                  | No         |
+
+Uses: `SessionStart` for context (lesson 05); `SessionEnd` for cleanup — but note it shares a **1.5-second budget** across all its hooks; `InstructionsLoaded` to audit which memory files a session actually pulled in; `ConfigChange` to refuse a settings change you did not sanction; `CwdChanged` for direnv-style environment reloading; `PreCompact` to save state before the window is squeezed.
+
+### Prompt and display
+
+| Event                 | When it fires                                                   | Can block? |
+| --------------------- | --------------------------------------------------------------- | ---------- |
+| `UserPromptSubmit`    | You submit a prompt, before Claude processes it                 | Yes        |
+| `UserPromptExpansion` | A typed command expands into a prompt, before it reaches Claude | Yes        |
+| `MessageDisplay`      | While assistant message text is displayed                       | No         |
+| `Notification`        | Claude Code sends a notification                                | No         |
+
+`UserPromptSubmit` is the one to know: exit 2 blocks the prompt **and erases it**, and its plain stdout is added to Claude's context — so it is both the prompt filter and the second-best place to inject context after `SessionStart`. `MessageDisplay` is display-only: its `displayContent` replaces what is on screen while the transcript and what Claude sees keep the original.
+
+### Tools and permissions
+
+| Event                | When it fires                                 | Can block?                                      |
+| -------------------- | --------------------------------------------- | ----------------------------------------------- |
+| `PreToolUse`         | Before a tool call executes                   | Yes                                             |
+| `PermissionRequest`  | A tool call needs a permission decision       | No (deny via the `decision` object)             |
+| `PermissionDenied`   | Auto mode denies a tool call                  | No                                              |
+| `PostToolUse`        | After a tool call succeeds                    | No (stderr on exit 2 reaches Claude)            |
+| `PostToolUseFailure` | After a tool call fails                       | No (same)                                       |
+| `PostToolBatch`      | After a batch of parallel tool calls resolves | Yes (stops the loop before the next model call) |
+
+`PreToolUse` is the only one with the four-way `permissionDecision`. `PermissionRequest` fires when Claude Code is about to ask _you_ — which in a plain `-p` run never happens, so use `PreToolUse` for automated decisions in headless mode. `PermissionDenied` can return `retry: true` to tell the model it may try the denied call again.
+
+### Agents, tasks and teams
+
+| Event           | When it fires                              | Can block? |
+| --------------- | ------------------------------------------ | ---------- |
+| `SubagentStart` | A subagent is spawned                      | No         |
+| `SubagentStop`  | A subagent finishes                        | Yes        |
+| `TaskCreated`   | A task is being created via `TaskCreate`   | Yes        |
+| `TaskCompleted` | A task is being marked completed           | Yes        |
+| `TeammateIdle`  | An agent-team teammate is about to go idle | Yes        |
+| `Stop`          | Claude finishes responding                 | Yes        |
+| `StopFailure`   | The turn ends due to an API error          | No         |
+
+`TaskCompleted` blocking is the "definition of done" hook: run the check, and refuse the completion when it fails. `TeammateIdle` keeps a teammate working. `StopFailure` ignores your output and exit code entirely, except `terminalSequence`.
+
+### Worktrees and MCP elicitation
+
+| Event               | When it fires                                        | Can block?                         |
+| ------------------- | ---------------------------------------------------- | ---------------------------------- |
+| `WorktreeCreate`    | A worktree is created (`--worktree`, `isolation`, …) | Yes — **any** non-zero exit aborts |
+| `WorktreeRemove`    | A worktree is removed at session exit                | No                                 |
+| `Elicitation`       | An MCP server requests user input during a tool call | Yes (exit 2 denies it)             |
+| `ElicitationResult` | After a user responds, before the reply goes back    | Yes (exit 2 declines)              |
+
+`WorktreeCreate` is the one event that breaks the exit-code rule you learned in lesson 01: it replaces Claude Code's default git behaviour, its command hook's **stdout is read as the worktree path** (so it cannot return JSON at all), and any non-zero exit fails creation.
+
+That is 33 events. You will use four.
+
+### Which decision shape does an event take?
+
+Rather than memorising, remember the four families:
+
+| Family                                                                                                                                                     | Fields                                                               |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `UserPromptSubmit`, `UserPromptExpansion`, `PostToolUse`, `PostToolUseFailure`, `PostToolBatch`, `Stop`, `SubagentStop`, `ConfigChange`, `PreCompact`      | Top-level `decision: "block"` + `reason`                             |
+| `PreToolUse`, `PreModelSwitch`                                                                                                                             | `hookSpecificOutput.permissionDecision` + `permissionDecisionReason` |
+| `SessionStart`, `SubagentStart`, `PostModelSwitch`                                                                                                         | Context only — `hookSpecificOutput.additionalContext`                |
+| `Setup`, `WorktreeRemove`, `Notification`, `SessionEnd`, `PostCompact`, `InstructionsLoaded`, `StopFailure`, `CwdChanged`, `DirectoryAdded`, `FileChanged` | No decision control — side effects only                              |
+
+`TeammateIdle` and `TaskCompleted` use exit 2 or `continue: false`; `TaskCreated` uses exit 2 or `decision: "block"`; `PermissionRequest` uses `hookSpecificOutput.decision.behavior`; `Elicitation` and `ElicitationResult` use `hookSpecificOutput.action` (`accept`, `decline`, `cancel`), and exit 2 denies the elicitation or declines the response.
+
+A few events can rewrite rather than only allow or block: `PreToolUse` with `updatedInput`, `PermissionRequest` with `updatedInput` inside its `decision`, `PostToolUse` with `updatedToolOutput`, and `MessageDisplay` with `displayContent`. For redaction, intercept outbound input at `PreToolUse` and inbound results at `PostToolUse`.
+
+### `/hooks`
+
+Type `/hooks` in an interactive session to open a **read-only** browser of your configured hooks. It lists every event with a count, lets you drill into matchers, and shows each handler's full details. Every entry is labelled with its type — `command`, `prompt`, `agent`, `http`, `mcp_tool` — and its source:
+
+- `User Settings` — `~/.claude/settings.json`
+- `Project Settings` — `.claude/settings.json`
+- `Local Settings` — `.claude/settings.local.json`
+- `Plugin Hooks` — a plugin's `hooks/hooks.json`
+- `Session Hooks` — registered in memory for this session
+
+Selecting one opens a detail view with its event, matcher, type, source file and full command. It is read-only: to change a hook, edit the JSON (or ask Claude to).
+
+Because `/hooks` is an interactive TUI, there is no honest transcript of it in this lesson — you open it and look. It is the first thing to try when a hook does not fire, and lesson 07 makes that a habit.
+
+### Precedence, merging, and switching everything off
+
+Hook entries **merge** across settings levels rather than replacing each other: user, project and local settings each add their hooks, and all matching hooks run in parallel. A handler defined identically in two settings files runs once; a plugin's or skill's copy of the same handler stays separate.
+
+To turn hooks off:
+
+- `"disableAllHooks": true` in a settings file disables all hooks — but Claude Code reads the value left after settings precedence applies, so a project's `false` overrides a `true` in your user settings.
+- `--settings '{"disableAllHooks": true}'` turns them off for one run, whatever the project says. This is the flag to reach for before running `claude -p` in a repository you have not read.
+- Managed hooks are the exception: `disableAllHooks` set in user, project or local settings cannot disable them. Only the managed level can. Administrators can also set `allowManagedHooksOnly`, which blocks your user, project, local and plugin hooks entirely.
+
+There is no way to disable a single hook while keeping it in the configuration — delete its entry.
+
+This lesson's worked example prompt is the one you use once the catalogue stops being abstract:
+
+```text
+Read .claude/settings.json and list every hook event we register, what each handler does,
+and whether that event can block. Flag anything registered on an event that cannot block
+but whose script tries to block.
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · find out which events a real session fires"
+  repoTag="none"
+  steps={[
+    'In a scratch folder (not a repo you care about), create `.claude/hooks/record-event.mjs`: parse stdin, append `hook_event_name` — plus `tool_name` when present — to `events.log`, exit 0.',
+    'Write a `.claude/settings.json` that registers that one script on thirteen events with no matcher: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolBatch, MessageDisplay, Notification, Stop, SessionEnd, PreCompact, InstructionsLoaded, TaskCreated, SubagentStart.',
+    'Delete `events.log`, then run one short session: `claude -p "Read notes.txt and reply with one sentence." --model sonnet --max-turns 3 --output-format text --allowedTools "Read"`',
+    'Read the tally: `sort events.log | uniq -c | sort -rn`. Write down which of the thirteen fired, and predict why each of the others did not.',
+    'Open an interactive session in the same folder and run `/hooks`. Confirm the thirteen events appear with their counts and that each handler is labelled `Project Settings`.',
+    'Re-run the headless command with the single-quoted flag `--settings \'{"disableAllHooks": true}\'` and confirm `events.log` does not grow.',
+  ]}
+  expected="Eight of the thirteen events fire in a one-tool session: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolBatch, MessageDisplay, Stop and SessionEnd. Notification, PreCompact, InstructionsLoaded, TaskCreated and SubagentStart do not."
+  checklist={[
+    'All thirteen events are registered in `.claude/settings.json`',
+    '`events.log` lists eight distinct events after one short session',
+    'The `PreToolUse` and `PostToolUse` lines name the `Read` tool',
+    'You can say in one sentence why `SubagentStart` and `TaskCreated` did not fire',
+    '`/hooks` shows the hooks with source `Project Settings`',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/06-event-catalogue/01-which-events-fire.txt"
+    range="2-14"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/06-event-catalogue/02-hooks-disabled.txt"
+    range="2-7"
+  />
+</Lab>
+
+Read the absences, they are the lesson. `Notification` did not fire because nothing waited on a human (lesson 04). `PreCompact` did not fire because a three-turn session never fills the context window. `TaskCreated` and `SubagentStart` did not fire because this session created no task and spawned no subagent. `InstructionsLoaded` did not fire because the scratch folder has no `CLAUDE.md` or rules file to load.
+
+One line in that capture is a genuine warning worth keeping:
+
+```text
+SessionEnd hook [node .claude/hooks/record-event.mjs] failed: Hook cancelled
+```
+
+`SessionEnd` hooks share a **1.5-second budget** between them. A Node process launch can take most of that on its own, and here it was cancelled — after it had written its line, which is why `SessionEnd` still appears in the tally. If you need real work at session end, raise the per-hook `timeout` (Claude Code raises the shared budget to match, up to 60 seconds) or move the work somewhere with room.
+
+## Anti-patterns
+
+**Registering hooks on events "just in case".** Every event you register is a process launch on a hot path. `MessageDisplay` fires while text is streaming; `PreToolUse` fires on every call. _Fix:_ register what you use, and use the lab's recorder in a scratch folder when you want to explore.
+
+**Expecting `PermissionRequest` to work in `-p`.** In a plain headless run there is no permission prompt to intercept — the event only exists when a host supplies one. _Fix:_ automate permission decisions with `PreToolUse`.
+
+**Returning JSON from a `WorktreeCreate` command hook.** Its stdout is the worktree path. Printing an object breaks worktree creation, and any non-zero exit aborts it. _Fix:_ print a path, or use an HTTP hook, which can return `hookSpecificOutput.worktreePath`.
+
+**Assuming your `disableAllHooks` wins.** A project's `false` overrides your user-level `true`, and managed hooks ignore both. _Fix:_ use `--settings '{"disableAllHooks": true}'` for a single run, and read `/hooks` to see what is actually loaded.
+
+**Doing real work in a `SessionEnd` hook.** The shared budget is 1.5 seconds. _Fix:_ raise the timeout deliberately, or write a marker file and let something outside the session act on it.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/event-catalogue"
+  questionId="q1"
+  lang="en"
+  prompt="Which event should enforce a definition of done — refusing to mark a task complete until a check passes?"
+  options={[
+    {
+      text: '`Stop`',
+      explanation:
+        'Stop fires at the end of every turn, not at task completion, and blocking it hits the eight-block cap.',
+    },
+    {
+      text: '`TaskCompleted`',
+      correct: true,
+      explanation:
+        'It fires when a task is being marked complete and can block, returning your message to Claude.',
+    },
+    { text: '`PostToolBatch`', explanation: 'That fires after a batch of parallel tool calls.' },
+    { text: '`SessionEnd`', explanation: 'It has no decision control and a 1.5-second budget.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/event-catalogue"
+  questionId="q2"
+  lang="en"
+  prompt="What does the /hooks menu let you do?"
+  options={[
+    {
+      text: 'Add, edit and delete hooks interactively.',
+      explanation: 'It is read-only; you edit the settings JSON.',
+    },
+    {
+      text: 'Browse configured hooks by event, with each handler’s type and source settings file.',
+      correct: true,
+      explanation:
+        'Which makes it the fastest way to answer "is this hook even loaded, and from where?"',
+    },
+    {
+      text: 'Replay the last run of each hook with its output.',
+      explanation: 'Run details live in the debug log.',
+    },
+    {
+      text: 'Temporarily disable individual hooks.',
+      explanation: 'There is no per-hook disable — only `disableAllHooks`, or deleting the entry.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/event-catalogue"
+  questionId="q3"
+  lang="en"
+  prompt="Your user settings set disableAllHooks: true. A project's .claude/settings.json sets it to false. What runs?"
+  options={[
+    {
+      text: 'Nothing — the stricter setting wins.',
+      explanation: 'Settings precedence applies first, and the project value is more specific.',
+    },
+    {
+      text: "Hooks run: Claude Code reads the value left after settings precedence, so the project's false wins.",
+      correct: true,
+      explanation:
+        'Pass the disableAllHooks flag on the command line when you want one run with hooks off regardless.',
+    },
+    {
+      text: 'Only managed hooks run.',
+      explanation:
+        'Managed hooks are unaffected by non-managed disableAllHooks, but the others run here too.',
+    },
+    {
+      text: 'Claude Code reports a settings conflict.',
+      explanation: 'Precedence resolves it silently.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/event-catalogue"
+  questionId="q4"
+  lang="en"
+  prompt="A one-tool, one-turn headless session fires which of these?"
+  options={[
+    {
+      text: 'Every event you registered.',
+      explanation: 'Most events need conditions a short session never creates.',
+    },
+    {
+      text: 'SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolBatch, MessageDisplay, Stop and SessionEnd.',
+      correct: true,
+      explanation:
+        'Exactly the eight in the lab capture — no notification, compaction, task or subagent.',
+    },
+    {
+      text: 'Only SessionStart and Stop.',
+      explanation: 'The tool call fires the tool events too.',
+    },
+    {
+      text: 'None — headless sessions do not fire hooks.',
+      explanation: 'They do; `-p` even treats the folder as trusted.',
+    },
+  ]}
+/>
+
+**Next:** `07-debugging-hooks` is what to do when the hook you just wrote does nothing at all.

@@ -1,0 +1,347 @@
+---
+title: 'Load context at SessionStart, run tests at Stop'
+description: 'A SessionStart hook injects live project state into Claude context before the first prompt; a Stop hook runs the test suite when the turn ends. One script, two events, both proven from a real session.'
+level: 2
+module: 'm07-hooks'
+order: 5
+duration_min: 20
+difficulty: core
+tags: ['hooks', 'sessionstart', 'stop', 'context', 'testing']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Hooks reference'
+    url: 'https://code.claude.com/docs/en/hooks.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Automate actions with hooks'
+    url: 'https://code.claude.com/docs/en/hooks-guide.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage Claude memory'
+    url: 'https://code.claude.com/docs/en/memory.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'codechup/claude-code-lab — the course lab repository'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m07-05-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Inject live project state into a session with `SessionStart` and `additionalContext`, and say where in the conversation it lands.
+- Decide correctly between a `SessionStart` hook and `CLAUDE.md` for a given piece of information.
+- Use the `SessionStart` matcher (`startup`, `resume`, `clear`, `compact`, `fork`) to run different work on a fresh session and a resumed one.
+- Run a check — the test suite — from a `Stop` hook, and read its output in the debug log.
+- Recognise what a resumed session replays and what it re-runs, so your injected context does not go stale without you noticing.
+
+**Prerequisites.** Lessons `01`–`04`, and the lab at this lesson's tag. `npm ci` matters more here than usual: the `Stop` half of the hook shells out to the repo's own Vitest.
+
+<CodeBlock title="get the lab">
+
+```bash
+git checkout lesson/m07-05-start
+npm ci
+```
+
+</CodeBlock>
+
+<WhenNotToUse>
+  A `SessionStart` hook runs on every single session, so it is the wrong home for anything slow or
+  anything static. Conventions that never change belong in `CLAUDE.md`, which loads without spawning
+  a process; the docs say so directly. A `Stop` hook that runs the full suite is wrong on a
+  repository where the suite takes minutes — it fires at the end of every turn, not once per task,
+  so you would pay that cost per exchange. And neither event is a substitute for CI: a hook runs on
+  the developer's machine, with the developer's environment, and can be disabled with one setting.
+</WhenNotToUse>
+
+## Concept
+
+### SessionStart
+
+`SessionStart` runs when Claude Code starts a new session or resumes one. It is for **loading development context** — open issues, recent changes, the current branch — and for setting up environment variables. Only `type: "command"` and `type: "mcp_tool"` handlers are supported.
+
+Its matcher is how the session began:
+
+| Matcher   | Fires when                                                                    |
+| --------- | ----------------------------------------------------------------------------- |
+| `startup` | New session                                                                   |
+| `resume`  | `--resume`, `--continue` or `/resume`                                         |
+| `clear`   | `/clear`                                                                      |
+| `compact` | Auto or manual compaction                                                     |
+| `fork`    | A forked session: `--fork-session`, the `/fork` background copy, or `/branch` |
+
+That matcher is more useful than it looks. "Print the branch and the failing tests" is right for `startup`; "re-state the plan we agreed" is right for `compact`, where the conversation has just been squeezed.
+
+The event's own output fields are:
+
+| Field                | What it does                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------- |
+| `additionalContext`  | String added to Claude's context at the start of the conversation, before the first prompt  |
+| `initialUserMessage` | Becomes the first user message — in `-p`, even when no prompt is given                      |
+| `sessionTitle`       | Names the session, like `/rename`                                                           |
+| `watchPaths`         | Absolute paths to watch for `FileChanged` events this session                               |
+| `reloadSkills`       | Re-scan skill directories after the hook finishes, so skills it installed work this session |
+
+`SessionStart` is one of the four events where **plain stdout is added to Claude's context** (with `UserPromptSubmit`, `UserPromptExpansion` and `PostModelSwitch`), so a hook that only loads context can `echo` a string and skip JSON entirely. Use the JSON form when you need to combine context with another field, such as `sessionTitle`.
+
+### Where additionalContext actually goes
+
+`additionalContext` is not a chat message. Claude Code wraps the string in a **system reminder** and inserts it at the point where the hook fired — for `SessionStart`, at the start of the conversation, before the first prompt. Claude reads it on the next model request; you never see it in the interface.
+
+Two rules follow from that, and both are in the docs:
+
+- **Write facts, not orders.** "The deployment target is production" reads as project information. Text framed as an out-of-band system instruction can trigger Claude's prompt-injection defences, at which point Claude surfaces your text to you instead of acting on it.
+- **Prefer `CLAUDE.md` for anything static.** A hook that prints an unchanging sentence is a process launch per session for something a file does for free.
+
+There is a caveat with a sharp edge: the injected text is saved in the session transcript. When you resume with `--continue` or `--resume`, Claude Code **replays the saved text** for past turns rather than re-running the hook, so timestamps and commit SHAs from a mid-session event go stale. `SessionStart` itself does run again on resume, with `source` set to `"resume"` (or `"fork"`), which is exactly how you refresh it.
+
+### Stop, as a checker
+
+Lesson 04 used `Stop` to announce. Here it does work: run the test suite when the turn ends, so a session that broke something learns about it without you asking.
+
+The lab's hook keeps that deliberately toothless — it runs Vitest and swallows the failure — because the `-start` tags of this course carry seeded bugs and a blocking Stop hook would fight every lesson. In your own repository you have three escalating options:
+
+1. **Report only.** Run the suite, exit 0. The output goes to the debug log; the session is undisturbed.
+2. **Tell Claude.** Return `hookSpecificOutput.additionalContext` — "3 tests are failing in `test/overdue.test.ts`". The conversation continues and the transcript labels it `Stop hook feedback`.
+3. **Refuse to stop.** `{"decision": "block", "reason": "…"}`, or exit 2 with the reason on stderr. Claude keeps working. Read `stop_hook_active` first and exit early when it is `true`, or you will hit the eight-consecutive-block cap from lesson 04.
+
+### One script, two events
+
+Registering the same script on both events and branching on `hook_event_name` keeps the pair together:
+
+<CodeBlock title=".claude/hooks/session-context.mjs (the shape)">
+
+```javascript
+const event = input.hook_event_name ?? '';
+
+if (event === 'SessionStart') {
+  console.log(
+    JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'SessionStart',
+        additionalContext: `claude-code-lab: a tiny task-tracker CLI + HTTP API. ${bugCount} entries in BUGS.md. Run "npm test" to see current pass/fail.`,
+      },
+    }),
+  );
+  process.exit(0);
+}
+
+if (event === 'Stop') {
+  try {
+    execFileSync(process.execPath, ['node_modules/vitest/vitest.mjs', 'run'], {
+      cwd: root,
+      stdio: 'inherit',
+    });
+  } catch {
+    // A failing suite is expected on most -start tags — never block Stop over it.
+  }
+  process.exit(0);
+}
+```
+
+</CodeBlock>
+
+This lesson's worked example prompt exists to prove the injection, by forbidding the obvious alternative:
+
+```text
+Without reading any files, tell me what this project is and how many entries BUGS.md has.
+Answer only from the context you were already given.
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · orient the session, then check its work"
+  repoTag="lesson/m07-05-start"
+  steps={[
+    'Check out `lesson/m07-05-start` and run `npm ci`. The three hooks from lessons 02–04 are already registered.',
+    'Create `.claude/hooks/session-context.mjs`: parse stdin, branch on `hook_event_name`. On `SessionStart`, count the `## B` headings in `BUGS.md` and print a `hookSpecificOutput` object with an `additionalContext` string naming the project and that count. On `Stop`, run the repo-local Vitest and swallow a failure. Exit 0 on every path.',
+    'Register it on `SessionStart` and on `Stop` in `.claude/settings.json` (the `Stop` array now has two handlers — this one and the notifier from lesson 04).',
+    'Run the probe prompt with debug logging on: `claude -p "Without reading any files, tell me what this project is and how many entries BUGS.md has. Answer only from the context you were already given." --model sonnet --max-turns 3 --output-format text --debug-file debug.txt`',
+    'Read the answer. It describes the project without a single Read call — that description came from your hook.',
+    '`grep -n "Hook SessionStart" debug.txt` to see the JSON your hook printed and the line confirming how many characters of `additionalContext` were accepted; then `grep -n "Hook Stop" debug.txt` to find the Vitest run.',
+  ]}
+  expected="Claude describes claude-code-lab without reading anything, and the debug log contains both the SessionStart JSON (with a 'provided additionalContext (N chars)' line) and a Stop entry holding the Vitest summary."
+  checklist={[
+    'The script is registered on both `SessionStart` and `Stop`',
+    'The answer names the project with no Read tool call in the run',
+    '`debug.txt` contains `Hook SessionStart:startup (SessionStart) success`',
+    '`debug.txt` contains a `provided additionalContext (N chars)` line',
+    '`debug.txt` contains a `Hook Stop (Stop) success` entry with the test summary',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/05-session-start-context/01-context-and-tests.txt"
+    range="2-12"
+  />
+</Lab>
+
+That capture has an accident in it that is better than the clean version would have been.
+
+`BUGS.md` is not present at this tag, so the hook's count fell through to its `"unknown"` fallback — and Claude's answer says so, quoting the hook: _"the SessionStart hook explicitly reports 'unknown entries in BUGS.md'"_. Three things are proven at once. The hook ran. Its `additionalContext` reached the model as readable text. And the model is willing to tell you where a fact came from and where it ran out — which is precisely the behaviour you want from injected context, and precisely why it should be phrased as facts rather than instructions.
+
+The debug lines complete the picture. `Hook SessionStart:startup (SessionStart) success` shows the matcher that fired (`startup`); `provided additionalContext (158 chars)` confirms Claude Code accepted the string; and the `Hook Stop` entry carries the Vitest summary — `Test Files 4 passed (4)`, `Tests 15 passed (15)` — captured from a process that ran after the answer was written, without anyone asking for tests.
+
+### What to put in the context string
+
+Good candidates change between sessions and are cheap to compute:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+git rev-parse --abbrev-ref HEAD          # current branch
+git status --porcelain | head -20        # uncommitted work
+gh issue list --assignee @me --limit 5   # what you are on the hook for
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+git rev-parse --abbrev-ref HEAD          # current branch
+git status --porcelain | head -20        # uncommitted work
+gh issue list --assignee @me --limit 5   # what you are on the hook for
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+git rev-parse --abbrev-ref HEAD                    # current branch
+git status --porcelain | Select-Object -First 20   # uncommitted work
+gh issue list --assignee @me --limit 5             # what you are on the hook for
+```
+
+  </Fragment>
+</OSTabs>
+
+Bad candidates are the ones that belong in a file: coding conventions, the test command, directory layout. If the sentence would be identical next month, put it in `CLAUDE.md`.
+
+## Anti-patterns
+
+**A slow `SessionStart` hook.** Every session pays it, including the ones where you only wanted to ask a quick question. _Fix:_ keep it to cheap local commands; move anything network-bound behind a cache or drop it.
+
+**Static text in a hook.** "This repo uses pnpm" does not change. _Fix:_ `CLAUDE.md`.
+
+**Writing the context as instructions.** "You must always run npm test before answering" reads as an out-of-band system command and can trip prompt-injection defences, so Claude shows it to you instead of following it. _Fix:_ state facts — "the test command is `npm test`" — and leave the instructions to `CLAUDE.md` and your prompt.
+
+**Assuming resumed sessions re-run everything.** Mid-session `additionalContext` is replayed from the transcript on `--resume`, so a timestamp injected an hour ago comes back unchanged. _Fix:_ put volatile facts in the `SessionStart` hook, which does re-run on resume, and keep them out of `PostToolUse`.
+
+**A blocking `Stop` test-runner on a repo with a slow or flaky suite.** It fires at the end of every turn and can only block eight times before it is overridden. _Fix:_ report first (option 1), graduate to `additionalContext` (option 2), and only block when the check is fast and deterministic.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/session-start-context"
+  questionId="q1"
+  lang="en"
+  prompt="Where does a SessionStart hook's additionalContext appear?"
+  options={[
+    {
+      text: 'As a chat message at the top of the transcript.',
+      explanation: 'It is a system reminder, not a visible message.',
+    },
+    {
+      text: "In Claude's context at the start of the conversation, before the first prompt, wrapped as a system reminder.",
+      correct: true,
+      explanation: 'Which is why the lab prompt can be answered with no file reads at all.',
+    },
+    {
+      text: 'In the debug log only.',
+      explanation: 'The JSON is logged there, but the string itself reaches the model.',
+    },
+    {
+      text: 'Appended to CLAUDE.md.',
+      explanation: 'Hooks never write to your memory files.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/session-start-context"
+  questionId="q2"
+  lang="en"
+  prompt="Which of these belongs in a SessionStart hook rather than CLAUDE.md?"
+  options={[
+    {
+      text: 'The project’s commit-message convention.',
+      explanation: 'It never changes — that is a memory file.',
+    },
+    {
+      text: 'The current branch and the list of uncommitted files.',
+      correct: true,
+      explanation: 'Volatile, cheap to compute, different every session.',
+    },
+    {
+      text: 'The directory layout.',
+      explanation: 'Static structure belongs in CLAUDE.md.',
+    },
+    {
+      text: 'The rule that tests must pass before committing.',
+      explanation: 'A standing rule is memory, not a hook.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/session-start-context"
+  questionId="q3"
+  lang="en"
+  prompt="Your Stop hook runs the test suite and exits 0 with the results on stdout. Who sees them?"
+  options={[
+    {
+      text: 'Claude, as part of the conversation.',
+      explanation:
+        'Plain stdout reaches Claude on SessionStart, UserPromptSubmit, UserPromptExpansion and PostModelSwitch — not on Stop.',
+    },
+    {
+      text: 'Nobody in the session; the output is written to the debug log.',
+      correct: true,
+      explanation:
+        'To put the result in front of Claude, return `hookSpecificOutput.additionalContext` or block with a reason.',
+    },
+    { text: 'The user, in the transcript.', explanation: 'Successful hook stdout is not shown.' },
+    {
+      text: 'It is discarded entirely.',
+      explanation: 'The debug log keeps it — that is how the lab found the Vitest summary.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/session-start-context"
+  questionId="q4"
+  lang="en"
+  prompt="You want different context after a compaction than at startup. How?"
+  options={[
+    {
+      text: 'Read `hook_event_name` — it differs per source.',
+      explanation: 'It is `SessionStart` in both cases; the source is a separate field.',
+    },
+    {
+      text: 'Use two matcher groups on SessionStart: one matching `startup`, one matching `compact`.',
+      correct: true,
+      explanation:
+        'The SessionStart matcher is the session source: startup, resume, clear, compact or fork.',
+    },
+    {
+      text: 'Use the PostCompact event; SessionStart cannot tell the difference.',
+      explanation:
+        'PostCompact exists, but SessionStart also fires with source `compact` and can be matched on it.',
+    },
+    {
+      text: 'It is not possible without an environment variable.',
+      explanation: 'The matcher covers it.',
+    },
+  ]}
+/>
+
+**Next:** `06-event-catalogue` steps back and maps all 33 events — including the two dozen you have not touched yet — and shows what `/hooks` does with them.

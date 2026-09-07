@@ -1,0 +1,14 @@
+# Captured 2026-09-07, Claude Code 2.1.263, scratch project whose .claude/settings.json registers the same recorder script on 13 events (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolBatch, MessageDisplay, Notification, Stop, SessionEnd, PreCompact, InstructionsLoaded, TaskCreated, SubagentStart). events.log deleted before the run. CLAUDE_CODE_DISABLE_AUTO_MEMORY=1, --settings '{"language":"English"}'. Verbatim.
+› claude -p "Read notes.txt and reply with one sentence." --model sonnet --max-turns 3 --output-format text --allowedTools "Read"
+LabTrack ships a CLI and an HTTP API, and its overdue check compares dates in seconds.
+SessionEnd hook [node .claude/hooks/record-event.mjs] failed: Hook cancelled
+
+› sort events.log | uniq -c | sort -rn
+      1 UserPromptSubmit
+      1 Stop
+      1 SessionStart
+      1 SessionEnd
+      1 PreToolUse Read
+      1 PostToolUse Read
+      1 PostToolBatch
+      1 MessageDisplay

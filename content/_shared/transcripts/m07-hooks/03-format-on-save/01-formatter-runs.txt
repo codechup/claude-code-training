@@ -1,0 +1,18 @@
+# Captured 2026-09-07, Claude Code 2.1.263, detached worktree of codechup/claude-code-lab at lesson/m07-03-start (npm ci run) with the PostToolUse formatter hook registered on Write|Edit. src/scratch.ts was seeded with two deliberately mis-formatted lines. CLAUDE_CODE_DISABLE_AUTO_MEMORY=1, --settings '{"language":"English"}'. Verbatim.
+› cat src/scratch.ts
+export const greeting   =    "hi";
+export function add(a,b){return a+b}
+
+› claude -p "In src/scratch.ts, add a subtract function next to add, written in exactly this compact style: export function subtract(a,b){return a-b}. Do not run any command afterwards; just make the edit and say DONE." --model sonnet --permission-mode acceptEdits --max-turns 8 --output-format text --allowedTools "Read,Edit"
+A `format-on-save` PostToolUse hook (`.claude/hooks/format-on-save.mjs`) auto-ran Prettier after my edit, reformatting the whole file — including reflowing `add` — so the compact one-liner style you asked for wasn't preserved even though I didn't run any command myself.
+
+DONE — though note the result no longer matches the exact requested style due to that hook; let me know if you'd like me to disable it or restore the compact formatting.
+
+› cat src/scratch.ts
+export const greeting = "hi";
+export function add(a, b) {
+  return a + b;
+}
+export function subtract(a, b) {
+  return a - b;
+}

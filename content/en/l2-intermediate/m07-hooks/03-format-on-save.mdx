@@ -1,0 +1,320 @@
+---
+title: 'Format on save with a PostToolUse hook'
+description: 'Run Prettier — or gofmt, or ruff — on every file Claude writes, using a PostToolUse hook that never blocks. Includes what Claude does when the hook rewrites its work.'
+level: 2
+module: 'm07-hooks'
+order: 3
+duration_min: 15
+difficulty: core
+tags: ['hooks', 'posttooluse', 'formatting', 'automation']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Hooks reference'
+    url: 'https://code.claude.com/docs/en/hooks.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Automate actions with hooks'
+    url: 'https://code.claude.com/docs/en/hooks-guide.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'codechup/claude-code-lab — the course lab repository'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m07-03-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Write a `PostToolUse` hook that runs a formatter on the file Claude just wrote or edited.
+- Pull the edited path out of `tool_input.file_path` and skip everything you should not touch.
+- Explain why a formatter hook must end in exit 0 on every path, including its failure paths.
+- Verify a hook whose stdout you never see, by checking its effect rather than its output.
+- Decide when to format silently and when to tell Claude what you changed.
+
+**Prerequisites.** Lessons `01-hook-anatomy` and `02-block-dangerous-commands`, and the lab repository at this lesson's tag:
+
+<CodeBlock title="get the lab">
+
+```bash
+git checkout lesson/m07-03-start
+npm ci
+```
+
+</CodeBlock>
+
+The `-start` tag already contains the guard hook you wrote in lesson 02, so `.claude/settings.json` exists and you are adding a second event to it rather than creating the file.
+
+<WhenNotToUse>
+  Skip the formatter hook when your editor already formats on save and Claude's edits go through the
+  same files — you would be paying for a process launch per edit to do work that is already done.
+  Skip it when the repository has no agreed format, because a hook that reformats every file Claude
+  touches turns a two-line change into a 200-line diff nobody can review. And do not use
+  `PostToolUse` for anything that must _prevent_ a bad edit: the tool has already run by then, and
+  the docs are blunt that `PostToolUse` hooks cannot undo actions. Validation belongs in
+  `PreToolUse`.
+</WhenNotToUse>
+
+## Concept
+
+### PostToolUse in one paragraph
+
+`PostToolUse` fires **after a tool call succeeds** (its sibling `PostToolUseFailure` fires when one fails). The input carries the usual common fields plus `tool_name`, `tool_input`, `tool_use_id` and `tool_response`. It cannot block: exit 2 does not undo the tool call, though it does show your stderr to Claude — which is the supported way to put a warning in front of the model after the fact. The event's own decision fields are the top-level `decision: "block"` / `reason` pair (feedback, not a rollback) and `hookSpecificOutput.additionalContext`.
+
+For a formatter, none of that matters. You want the hook to be invisible: format the file, exit 0, say nothing.
+
+### Getting the path
+
+For `Write` and `Edit`, the file is at `tool_input.file_path`, and it is absolute. The lab hook resolves it, then applies four filters before it spends a process on Prettier:
+
+1. the tool is `Write` or `Edit` (a matcher already narrows this, but a hook that is also correct on its own is a hook you can move);
+2. the path is inside the repository — `relative(root, abs)` must not start with `..`;
+3. the extension is one Prettier handles here (`.js`, `.json`, `.md`, `.mjs`, `.cjs`, `.ts`, `.yaml`, `.yml`);
+4. the file exists, and `node_modules/prettier` exists.
+
+<CodeBlock title=".claude/hooks/format-on-save.mjs (the shape)">
+
+```javascript
+const tool = input.tool_name ?? '';
+if (tool !== 'Write' && tool !== 'Edit') return;
+
+const filePath = input.tool_input?.file_path;
+if (typeof filePath !== 'string' || filePath.length === 0) return;
+
+const abs = isAbsolute(filePath) ? filePath : resolve(input.cwd ?? root, filePath);
+const rel = relative(root, abs).replace(/\\/g, '/');
+if (rel.startsWith('..') || rel.length === 0) return; // not inside this repo
+
+if (!KNOWN.has(extname(abs).toLowerCase())) return;
+if (!existsSync(abs)) return;
+
+const prettier = join(root, 'node_modules', 'prettier', 'bin', 'prettier.cjs');
+if (!existsSync(prettier)) return; // dependencies not installed yet
+
+spawnSync(process.execPath, [prettier, '--write', '--ignore-unknown', rel], {
+  cwd: root,
+  encoding: 'utf8',
+});
+```
+
+</CodeBlock>
+
+### Every path exits 0
+
+The whole script is wrapped so that it cannot fail loudly:
+
+<CodeBlock title="the outer wrapper">
+
+```javascript
+try {
+  main();
+} catch (err) {
+  console.log(`format-on-save: ${err?.message ?? err}`);
+}
+process.exit(0);
+```
+
+</CodeBlock>
+
+That is not defensive habit, it is the contract. A formatter is a convenience; a convenience that reports errors into the session interrupts work for something the user did not ask about. On a non-zero exit other than 2 the transcript gets a `<hook name> hook error` notice, and on exit 2 your stderr goes to Claude as a warning about an edit that already happened. Neither helps when Prettier simply cannot parse a half-written file.
+
+### You will not see its stdout
+
+For `PostToolUse`, stdout goes to the debug log and is not shown in the transcript. So there is no "hook ran" message to look for. You verify a formatter the way you verify any silent side effect: **look at the file.** That is what the lab does — read it before, read it after.
+
+This lesson's worked example prompt is designed to make the hook visible by fighting it:
+
+```text
+In src/scratch.ts, add a subtract function next to add, written in exactly this compact
+style: export function subtract(a,b){return a-b}. Do not run any command afterwards;
+just make the edit and say DONE.
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · reformat every file Claude edits"
+  repoTag="lesson/m07-03-start"
+  steps={[
+    'Check out `lesson/m07-03-start` and run `npm ci` — the hook shells out to the repo-local Prettier, so `node_modules` must exist.',
+    'Create `.claude/hooks/format-on-save.mjs`: parse stdin, bail out unless `tool_name` is `Write` or `Edit`, resolve `tool_input.file_path`, apply the four filters above, and run the repo-local Prettier with `--write --ignore-unknown`. End every path — including every failure path — at `process.exit(0)`.',
+    'Add a `PostToolUse` block to `.claude/settings.json` with `"matcher": "Write|Edit"` and `"command": "node .claude/hooks/format-on-save.mjs"`, leaving the lesson-02 `PreToolUse` block in place.',
+    'Seed a deliberately mis-formatted file: write `src/scratch.ts` with `export const greeting   =    "hi";` and `export function add(a,b){return a+b}` on two lines, then `cat` it so you have a before.',
+    'Ask Claude for an edit in the same ugly style: `claude -p "In src/scratch.ts, add a subtract function next to add, written in exactly this compact style: export function subtract(a,b){return a-b}. Do not run any command afterwards; just make the edit and say DONE." --model sonnet --permission-mode acceptEdits --max-turns 8 --output-format text --allowedTools "Read,Edit"`',
+    '`cat src/scratch.ts` again. Both the new function and the line that was already there come back Prettier-formatted.',
+    'Now break it on purpose: point the `command` at a filename that does not exist, re-run, and confirm the edit still lands. A missing formatter must never stop an edit.',
+  ]}
+  expected="After the run, src/scratch.ts is Prettier-formatted end to end — including the add() the session never touched — and Claude's answer notes that a hook reformatted its work."
+  checklist={[
+    '`.claude/settings.json` has both a `PreToolUse` and a `PostToolUse` block',
+    'The file is mis-formatted before the run and formatted after it',
+    'Lines the session did not edit are formatted too',
+    'The hook script ends in `process.exit(0)` on every path',
+    'With the command pointed at a missing file, the edit still succeeds',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/03-format-on-save/01-formatter-runs.txt"
+    range="2-18"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/03-format-on-save/02-broken-hook-path.txt"
+    range="2-9"
+  />
+</Lab>
+
+The interesting part of that capture is not the formatting — it is Claude's answer.
+
+The prompt asked for a compact one-liner and forbade running any command. The edit landed exactly as asked; then the hook rewrote it, along with the `add` function that was already in the file. Claude noticed, said so, and offered to disable the hook. Nothing in the session was told a hook existed — it inferred it from the file changing under its own edit.
+
+That is the real cost of a `PostToolUse` formatter, and it is worth paying with your eyes open. A hook that silently rewrites the model's output makes the model's mental image of the file wrong until it reads the file again. Two consequences follow:
+
+- **Format the whole file or none of it.** Half-formatting produces churn that Claude will keep trying to "fix".
+- **Consider telling Claude what happened.** If the rewrite is substantial, return `hookSpecificOutput.additionalContext` — "Prettier reformatted `src/scratch.ts` after your edit" — so the next tool call starts from the truth rather than from a guess. Write it as a factual statement, not an instruction; text framed as an out-of-band system command can trip Claude's prompt-injection defences.
+
+### The same hook for other toolchains
+
+The structure does not change with the formatter; only the command does.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+# Go
+gofmt -w "$FILE"
+# Python
+ruff format "$FILE"
+# Rust
+rustfmt "$FILE"
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+# Go
+gofmt -w "$FILE"
+# Python
+ruff format "$FILE"
+# Rust
+rustfmt "$FILE"
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+# Go
+gofmt -w $File
+# Python
+ruff format $File
+# Rust
+rustfmt $File
+```
+
+  </Fragment>
+</OSTabs>
+
+One Windows-specific trap from the docs: in **exec form** — the form you get when you set `args` — `command` must resolve to a real executable. The `.cmd` and `.bat` shims that npm and friends drop in `node_modules/.bin` are not executables and cannot be spawned without a shell. Invoke the script through `node` instead (`"command": "node", "args": ["…/bin/prettier.cjs", "--write"]`), which works on every platform, or use shell form and let the shell find the shim. The lab hook sidesteps this entirely by calling `process.execPath` on Prettier's `.cjs` entry point.
+
+## Anti-patterns
+
+**Letting the formatter fail loudly.** A non-zero exit turns a cosmetic step into a session-level error notice, and exit 2 puts your stderr in front of the model. _Fix:_ catch everything, exit 0.
+
+**Formatting files outside the repository.** `tool_input.file_path` is whatever Claude edited, which can be a file in another directory you added with `/add-dir`. _Fix:_ compute the relative path and bail when it starts with `..`.
+
+**Running the formatter on every tool call.** Without a matcher, `PostToolUse` fires for `Read`, `Grep`, `Bash` and everything else, and your hook pays a process launch each time. _Fix:_ `"matcher": "Write|Edit"`, plus the tool-name check inside the script.
+
+**Reformatting the repository as a side effect.** A hook that runs `prettier --write .` instead of `--write <file>` turns one edit into a whole-tree diff. _Fix:_ format exactly the file in `tool_input.file_path`.
+
+**Trying to reject a bad edit from `PostToolUse`.** The write already happened; there is nothing to veto. _Fix:_ move the check to `PreToolUse`, where a `deny` stops it, and keep `PostToolUse` for repair and reporting.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/format-on-save"
+  questionId="q1"
+  lang="en"
+  prompt="Your PostToolUse formatter cannot parse the file and exits 1 with an error on stderr. What does the session do?"
+  options={[
+    {
+      text: 'The edit is rolled back and Claude retries.',
+      explanation: 'PostToolUse cannot undo anything — the tool already ran.',
+    },
+    {
+      text: 'The edit stands; the transcript shows a non-blocking hook error notice.',
+      correct: true,
+      explanation:
+        'Which is exactly the noise a formatter should not generate — catch the error and exit 0.',
+    },
+    {
+      text: 'Nothing is reported anywhere.',
+      explanation: 'A non-zero, non-2 exit is reported as a non-blocking error.',
+    },
+    {
+      text: 'The session stops.',
+      explanation: 'That requires `{"continue": false}`.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/format-on-save"
+  questionId="q2"
+  lang="en"
+  prompt="How do you confirm a PostToolUse formatter ran, given you never see its stdout?"
+  options={[
+    {
+      text: 'Look for a hook-ran line in the transcript.',
+      explanation: 'PostToolUse stdout goes to the debug log, not the transcript.',
+    },
+    {
+      text: 'Check its effect — read the file — or turn on debug logging and read the log.',
+      correct: true,
+      explanation: 'Those are the two techniques the troubleshooting guide names.',
+    },
+    {
+      text: 'Run `/hooks`; it shows the last run of each hook.',
+      explanation: '`/hooks` is a read-only browser of configuration, not of runs.',
+    },
+    {
+      text: 'It always prints to stderr, which is shown.',
+      explanation: 'Stderr from a hook that exits 0 goes to the debug log only.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/format-on-save"
+  questionId="q3"
+  lang="en"
+  prompt="Claude edits a file, your hook reformats it, and Claude's next step assumes its own formatting survived. What is the cleanest fix?"
+  options={[
+    {
+      text: 'Return `hookSpecificOutput.additionalContext` stating that the file was reformatted.',
+      correct: true,
+      explanation:
+        'It lands next to the tool result as a system reminder, so the model works from the current state.',
+    },
+    {
+      text: 'Exit 2 so Claude sees the stderr.',
+      explanation:
+        'That works but reports a hook error for something that is not an error — reserve it for real warnings.',
+    },
+    {
+      text: 'Print the diff to stdout.',
+      explanation: 'On PostToolUse, plain stdout never reaches Claude.',
+    },
+    {
+      text: 'Nothing — Claude re-reads every file before each edit.',
+      explanation: 'It does not, and that is the whole problem.',
+    },
+  ]}
+/>
+
+**Next:** `04-notify-when-done` leaves the tool loop for the session's edges — the `Notification` and `Stop` events, and how to be told when a long run needs you.

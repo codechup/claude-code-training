@@ -1,0 +1,350 @@
+---
+title: 'Block dangerous commands with a PreToolUse guard'
+description: 'Write a PreToolUse hook that returns permissionDecision: deny for a broad rm -rf or a plain force-push, test it offline with piped JSON, then watch it stop a real headless session.'
+level: 2
+module: 'm07-hooks'
+order: 2
+duration_min: 20
+difficulty: core
+tags: ['hooks', 'pretooluse', 'safety', 'permissions']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Hooks reference'
+    url: 'https://code.claude.com/docs/en/hooks.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Automate actions with hooks'
+    url: 'https://code.claude.com/docs/en/hooks-guide.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage permissions'
+    url: 'https://code.claude.com/docs/en/permissions.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'codechup/claude-code-lab — the course lab repository'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m07-02-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Write a `PreToolUse` hook that returns `permissionDecision: "deny"` with a reason Claude can read and act on.
+- Test that hook offline by piping hand-written JSON into it, before any session is involved.
+- Prove the guard works with a headless run whose transcript names the block.
+- Explain why a hook `"deny"` holds even under `bypassPermissions`, and why a hook `"allow"` does not loosen anything.
+- Say honestly what a pattern-matching guard does and does not protect you from.
+
+**Prerequisites.** Lesson `01-hook-anatomy` (the JSON contract and exit codes), Node 24 on your `PATH`, and a clone of the lab repository:
+
+<CodeBlock title="get the lab">
+
+```bash
+git clone https://github.com/codechup/claude-code-lab.git
+cd claude-code-lab
+git checkout lesson/m07-02-start
+npm ci
+```
+
+</CodeBlock>
+
+<WhenNotToUse>
+  A guard hook is a seatbelt, not a wall. It matches text patterns against a command string, and the
+  docs are explicit that the `if` filter is best-effort: when Claude Code cannot work out what a
+  Bash string will run, it runs your hook anyway, and a command your regex does not anticipate sails
+  straight through. When you need a real boundary — an untrusted repo, a production credential, a
+  machine you cannot restore — use permission rules, sandboxing and a disposable environment (m14),
+  and treat the hook as the layer that catches honest accidents. Skip a guard entirely on a
+  throwaway container where destruction is the point.
+</WhenNotToUse>
+
+## Concept
+
+### The decision object
+
+`PreToolUse` fires before a tool call executes, and it can block it. Unlike most events, it returns its decision inside `hookSpecificOutput`:
+
+| Field                      | What it does                                                                                   |
+| -------------------------- | ---------------------------------------------------------------------------------------------- |
+| `permissionDecision`       | `"allow"`, `"deny"`, `"ask"` or `"defer"`                                                      |
+| `permissionDecisionReason` | For `"allow"` and `"ask"`, shown to the user but not Claude. For `"deny"`, **shown to Claude** |
+| `updatedInput`             | Replaces the tool's whole input object before it runs                                          |
+| `additionalContext`        | A string added to Claude's context alongside the tool result                                   |
+
+That middle row is the design of this lesson. A denial is not a wall the model bounces off silently — the reason string goes to Claude as the explanation, so a well-written reason tells it what to do instead. "Blocked" teaches nothing; "use `--force-with-lease`, or ask the user to run it themselves" gets you a better next tool call.
+
+When several `PreToolUse` hooks disagree, precedence is `deny` > `defer` > `ask` > `allow`. A hook that blocks by exiting 2 routes the same way as `"deny"`, with your stderr as the reason.
+
+### Where a hook sits relative to permissions
+
+`PreToolUse` hooks fire **before any permission-mode check, in every permission mode**, including `dontAsk`. A hook returning `"deny"` blocks the tool even in `bypassPermissions` mode or under `--dangerously-skip-permissions`. That is what makes a committed project guard worth writing: a teammate cannot get around it by changing their own permission mode.
+
+The reverse is not true. A hook returning `"allow"` does not bypass deny rules from settings, and it cannot suppress the prompt for MCP tools marked `requiresUserInteraction`. In one line: **hooks can tighten restrictions, not loosen them past what permission rules allow.**
+
+### The guard in this lab
+
+The lab's hook is deliberately small enough to read in one sitting. It exits 0 for everything it does not recognise, and prints a deny object for two families of command:
+
+<CodeBlock title=".claude/hooks/guard-dangerous-commands.mjs (the part that decides)" highlight="1-5">
+
+```javascript
+const DANGEROUS = [
+  /\brm\s+(-\w*r\w*f\w*|-\w*f\w*r\w*)\s+(\/|~|\.\.|\*)/i, // rm -rf /, ~, .., *
+  /\bgit\s+push\b.*--force(?!-with-lease)/i, // plain --force, not --force-with-lease
+  /\bgit\s+push\b.*(-f)\b/i,
+];
+
+const hit = DANGEROUS.find((re) => re.test(command));
+if (!hit) process.exit(0);
+
+console.log(
+  JSON.stringify({
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason:
+        `Blocked by guard-dangerous-commands: "${command}" looks destructive ` +
+        `(broad rm -rf or a plain force-push). Use --force-with-lease, or narrow the path, ` +
+        `or ask the user to run it themselves.`,
+    },
+  }),
+);
+process.exit(0);
+```
+
+</CodeBlock>
+
+Read the first regex carefully, because its shape is the lesson: it only fires when the argument after `rm -rf` starts with `/`, `~`, `..` or `*`. `rm -rf build` is **not** blocked. That is a deliberate line — deleting a named subdirectory is normal work, deleting the root or a wildcard sweep is not — and it is also a reminder that you are looking at a pattern list, not a security model. You will confirm both halves of that sentence in the lab.
+
+This lesson's worked example prompt, once the guard is in place:
+
+```text
+The build/ directory holds stale output. Empty it: cd into build and delete everything
+inside it with rm -rf *. Then tell me what happened.
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · deny rm -rf and a plain force-push"
+  repoTag="lesson/m07-02-start"
+  steps={[
+    'Check out the start tag and install: `git checkout lesson/m07-02-start && npm ci`. The tree has `.claude/CLAUDE.md`, rules and skills, but no `.claude/hooks/` and no `.claude/settings.json`.',
+    'Create `.claude/hooks/guard-dangerous-commands.mjs`: read the JSON on stdin, exit 0 unless `tool_name` is `Bash` or `PowerShell`, test `tool_input.command` against the two patterns above, and print the deny object when one matches.',
+    'Register it in `.claude/settings.json` under `hooks.PreToolUse` with `"matcher": "Bash|PowerShell"` and `"command": "node .claude/hooks/guard-dangerous-commands.mjs"`.',
+    'Test it with no session at all: pipe six hand-written commands through it and read which ones produce a deny object (the first transcript below). Note that `rm -rf build` does not match, and `--force-with-lease` does not either.',
+    'Now prove it in a real session. Put two throwaway files in `build/`, then run: `claude -p "The build/ directory holds stale output. Empty it: cd into build and delete everything inside it with rm -rf *. Then tell me what happened." --model sonnet --permission-mode acceptEdits --max-turns 4 --output-format text`',
+    'Run the same prompt again with `--output-format stream-json --verbose > stream.jsonl`, then print the `tool_result` blocks to see your `permissionDecisionReason` arriving as the tool result Claude reads.',
+  ]}
+  expected="Offline, the three destructive forms print a deny object and the three safe ones print nothing. In the session, Claude reports that a guard hook blocked the rm -rf form; in the stream-json run, the tool result is the exact permissionDecisionReason string your hook wrote."
+  checklist={[
+    '`.claude/settings.json` registers the hook under `PreToolUse` with matcher `Bash|PowerShell`',
+    'Piping `rm -rf *` into the script prints a `permissionDecision: "deny"` object',
+    'Piping `npm test` prints nothing and exits 0',
+    'The headless run does NOT delete the files with `rm -rf *`',
+    "Claude's answer names the hook as the thing that stopped it",
+    'The stream-json tool result contains your reason string verbatim',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/02-block-dangerous-commands/01-guard-offline.txt"
+    range="2-11"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/02-block-dangerous-commands/02-blocked-headless.txt"
+    range="2-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/02-block-dangerous-commands/03-deny-reason.txt"
+    range="2-5"
+  />
+</Lab>
+
+Four observations from that recording, all of them things a description would have smoothed over.
+
+**The guard did its job, and Claude routed around it.** It did not delete the files with the sweeping form; it deleted them one by one, by name. That is the correct outcome — the hook's job was to stop a wildcard `rm -rf`, not to stop the task — but it is worth seeing, because a guard written as "stop this from ever happening" will disappoint you. Write guards that block a _dangerous shape_ and leave a safe path open, and say so in the reason.
+
+**The reason string is the interface.** In the third capture the tool result Claude receives is literally your sentence. Everything the model does next is downstream of how well that sentence is written.
+
+**The trust warning is real output, and it is about permissions, not hooks.** The line about `permissions.allow` entries being ignored appears because the folder was never trusted interactively. The hook still ran: a `-p` session treats the folder as trusted for hooks. Both halves of that are documented behaviour, and they are the reason lesson `01`'s warning about running `claude -p` in a stranger's repo matters.
+
+**`rm -rf build` is not blocked.** The offline capture shows it: the pattern requires `/`, `~`, `..` or `*` after the flags. If your project wants that blocked too, widen the regex yourself — and then re-run the offline test, because widening a regex is exactly how a guard starts blocking `npm run build:rm-cache` by accident.
+
+### Registering it, per OS
+
+The hook script is Node, so it is identical on every platform; only the way you create the file differs.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+mkdir -p .claude/hooks
+$EDITOR .claude/hooks/guard-dangerous-commands.mjs
+$EDITOR .claude/settings.json
+echo '{"tool_name":"Bash","tool_input":{"command":"git push --force origin main"}}' \
+  | node .claude/hooks/guard-dangerous-commands.mjs
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+mkdir -p .claude/hooks
+$EDITOR .claude/hooks/guard-dangerous-commands.mjs
+$EDITOR .claude/settings.json
+echo '{"tool_name":"Bash","tool_input":{"command":"git push --force origin main"}}' \
+  | node .claude/hooks/guard-dangerous-commands.mjs
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+New-Item -ItemType Directory -Force .claude\hooks
+notepad .claude\hooks\guard-dangerous-commands.mjs
+notepad .claude\settings.json
+'{"tool_name":"Bash","tool_input":{"command":"git push --force origin main"}}' |
+  node .claude\hooks\guard-dangerous-commands.mjs
+```
+
+  </Fragment>
+</OSTabs>
+
+The matcher is `Bash|PowerShell` on purpose: on native Windows without Git Bash, Claude Code uses the `PowerShell` tool instead of `Bash`, and a guard that only matches `Bash` protects nobody there.
+
+## Anti-patterns
+
+**A reason string that only says "blocked".** The deny reason is the one channel you have to the model. A bare "not allowed" gets you a retry of the same idea in a different shape. _Fix:_ name the rule, name the safe alternative.
+
+**Blocking with `exit 1`.** Same trap as lesson 01, with worse consequences here: your policy hook silently becomes a warning and the destructive command runs. _Fix:_ `exit 2`, or exit 0 with a `deny` object — and check the first run for a `Failed with non-blocking status code:` notice, which is what a mistyped script path looks like.
+
+**Trusting the guard because it passed one test.** One `rm -rf /` in a terminal proves one pattern. _Fix:_ keep a table of commands — dangerous and safe — and pipe all of them through the hook whenever you change a regex. The lab's offline capture is that table.
+
+**Widening the regex until it blocks real work.** A guard that stops `npm run clean` gets disabled by whoever is in a hurry, and then protects nothing. _Fix:_ block shapes, not words, and prefer a `"ask"` decision over `"deny"` for the grey area — it forces a prompt without stopping the work.
+
+**Expecting a hook `"allow"` to be a permission bypass.** It is not: deny rules still apply, and some tools always prompt. _Fix:_ if you want a command auto-approved, write a permission rule (m02) and use hooks for the cases rules cannot express.
+
+<Callout variant="changed">
+  Older guard hooks return a top-level `{"decision": "block", "reason": "…"}` from `PreToolUse`.
+  Those fields are deprecated for this event. The current shape is
+  `hookSpecificOutput.permissionDecision` with `permissionDecisionReason`, and the accepted values
+  are `"allow"`, `"deny"`, `"ask"` and `"defer"` — the old `"approve"` and `"block"` map to
+  `"allow"` and `"deny"`. Exit 2 still blocks whatever the JSON says. Verified against
+  `hooks.md` for Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/block-dangerous-commands"
+  questionId="q1"
+  lang="en"
+  prompt="Your hook returns permissionDecision: deny. Who sees permissionDecisionReason?"
+  options={[
+    {
+      text: 'Claude — it arrives as the tool result and explains the denial.',
+      correct: true,
+      explanation:
+        'For `deny` the reason is shown to Claude; for `allow` and `ask` it is shown to the user instead.',
+    },
+    {
+      text: 'Only the user, in the transcript.',
+      explanation: 'That is the `allow` / `ask` case.',
+    },
+    { text: 'Nobody; it is for the debug log.', explanation: 'It is the denial message itself.' },
+    {
+      text: 'Both, but only in interactive mode.',
+      explanation: 'The headless capture in this lesson shows it reaching Claude in `-p`.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/block-dangerous-commands"
+  questionId="q2"
+  lang="en"
+  prompt="A teammate runs the session with --dangerously-skip-permissions. Does your project's deny hook still block the command?"
+  options={[
+    {
+      text: 'Yes — PreToolUse hooks fire before any permission-mode check, in every mode.',
+      correct: true,
+      explanation:
+        'That is precisely why a committed guard is worth writing: the mode cannot be used to get around it.',
+    },
+    {
+      text: 'No — that flag disables hooks along with prompts.',
+      explanation: 'It disables permission prompts, not hooks.',
+    },
+    {
+      text: 'Only if the hook also exits 2.',
+      explanation: 'The JSON `deny` is enough.',
+    },
+    {
+      text: 'Only for hooks in managed policy settings.',
+      explanation: 'Managed settings change who can disable hooks, not whether a deny holds.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/block-dangerous-commands"
+  questionId="q3"
+  lang="en"
+  prompt="Two PreToolUse hooks fire on the same call: one returns allow, the other deny. What happens?"
+  options={[
+    {
+      text: 'The call is denied — precedence is deny > defer > ask > allow.',
+      correct: true,
+      explanation: 'The strictest decision wins, which is what makes a guard composable.',
+    },
+    {
+      text: 'The first hook to finish wins.',
+      explanation:
+        'Hooks run in parallel, so that would be non-deterministic — the docs define a precedence order instead.',
+    },
+    {
+      text: 'The call is allowed, because an explicit allow beats a deny.',
+      explanation: 'Hooks can tighten, not loosen.',
+    },
+    {
+      text: 'Claude Code reports a configuration error.',
+      explanation: 'Disagreement is expected and resolved by precedence.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/block-dangerous-commands"
+  questionId="q4"
+  lang="en"
+  prompt="Which of these is the honest description of a regex-based command guard?"
+  options={[
+    {
+      text: 'A sandbox: nothing destructive can run once it is installed.',
+      explanation: 'Pattern matching is not containment.',
+    },
+    {
+      text: 'A best-effort filter that catches known-dangerous shapes; hard boundaries come from permission rules and sandboxing.',
+      correct: true,
+      explanation:
+        'The docs say it outright: use the permission system to enforce a hard allow or deny.',
+    },
+    {
+      text: 'A replacement for reviewing what a session does.',
+      explanation: 'It narrows the accident surface; it does not remove the need to look.',
+    },
+    {
+      text: 'A way to make bypassPermissions safe.',
+      explanation:
+        'It blocks the shapes you listed, in that mode too — but everything you did not list still runs.',
+    },
+  ]}
+/>
+
+**Next:** `03-format-on-save` moves to the other side of the tool call — a `PostToolUse` hook that reformats every file Claude edits, and what it costs you when Claude did not want it reformatted.

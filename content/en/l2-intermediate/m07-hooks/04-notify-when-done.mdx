@@ -1,0 +1,335 @@
+---
+title: 'Notify when Claude is done — or stuck'
+description: 'Use the Notification and Stop events to tell you when a session needs you: a local log you can inspect, a desktop notification through terminalSequence, and a Slack webhook that keeps its secret out of the repo.'
+level: 2
+module: 'm07-hooks'
+order: 4
+duration_min: 15
+difficulty: core
+tags: ['hooks', 'notification', 'stop', 'automation']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Hooks reference'
+    url: 'https://code.claude.com/docs/en/hooks.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Automate actions with hooks'
+    url: 'https://code.claude.com/docs/en/hooks-guide.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'codechup/claude-code-lab — the course lab repository'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m07-04-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say what `Notification` fires for, what `Stop` fires for, and why they are not the same "done".
+- Write one hook that serves both events by branching on `hook_event_name`.
+- Emit a desktop notification the supported way, with `terminalSequence`, and say where that field is inert.
+- Post to Slack from a hook without putting the webhook URL in the repository.
+- Recognise the two failure modes of `Stop` hooks: the eight-block cap, and never firing on an interrupt.
+
+**Prerequisites.** Lessons `01`–`03`, and the lab at this lesson's tag:
+
+<CodeBlock title="get the lab">
+
+```bash
+git checkout lesson/m07-04-start
+npm ci
+```
+
+</CodeBlock>
+
+<WhenNotToUse>
+  A notification hook earns its keep on long, unattended runs. It is noise on a short interactive
+  session where you are already looking at the terminal — `Stop` fires every time Claude finishes
+  responding, not once per task, so a desktop alert per turn trains you to ignore alerts. Do not use
+  a `Stop` hook as a task-completion signal for automation either: it fires on every turn and never
+  on a user interrupt, and an API error fires `StopFailure` instead. And do not put a webhook URL,
+  token or channel id in a hook that lives in a shared repository; that is what
+  `.claude/settings.local.json` and environment variables are for.
+</WhenNotToUse>
+
+## Concept
+
+### Two different "done"
+
+`Notification` runs when Claude Code sends a notification, and it matches on the notification type. The useful ones early on are `permission_prompt` (Claude needs you to approve a tool use, and the prompt has waited about six seconds) and `idle_prompt` (Claude finished responding about 60 seconds ago and you have not typed since). There are a dozen more, including `auth_success`, the `elicitation_*` family, `agent_needs_input` and `agent_completed`, and the `quota_auto_resume_*` types.
+
+Two properties matter. You receive these events **even with desktop notifications turned off** — the `preferredNotifChannel` setting changes how you are alerted, not whether your hook runs. And the timing of `permission_prompt`, `idle_prompt` and the elicitation dialogs is gated on you appearing to be away: the timer starts when the prompt appears and every keystroke defers it. If you want to react the instant Claude asks for permission, use `PermissionRequest` instead.
+
+`Stop` runs when the main agent **has finished responding**. Not when the task is finished — when the turn is. It does not run on a user interrupt, and an API error fires `StopFailure` instead. `SubagentStop` is the same event for a subagent.
+
+Neither event is a completion signal in the project-management sense. They are the session's edges.
+
+### What each can return
+
+`Notification` hooks cannot block or modify notifications. Claude Code discards their `systemMessage` and `continue` fields; they are for side effects — forwarding to an external service. The one output that does work is `terminalSequence`.
+
+`Stop` hooks can block. `decision: "block"` with a `reason` prevents Claude from stopping and tells it why to keep going; `hookSpecificOutput.additionalContext` does the same thing more gently, labelled `Stop hook feedback` in the transcript rather than a hook error. Both run into the same guard rail: **Claude Code overrides a Stop hook after it blocks eight times in a row.** A Stop hook that can block must read `stop_hook_active` from its input and exit early when it is `true`.
+
+### Desktop notifications, the supported way
+
+Hooks run without a controlling terminal, so writing escape sequences to `/dev/tty` fails. Return the sequence in `terminalSequence` and Claude Code emits it for you — race-free, and it works inside tmux and on Windows:
+
+<CodeBlock title="a Notification hook that pings the desktop">
+
+```bash
+#!/bin/bash
+# Notification hook: ping the desktop when Claude Code needs attention.
+input=$(cat)
+title="Claude Code"
+body=$(jq -r '.message // "Needs your attention"' <<<"$input")
+seq=$(printf '\033]777;notify;%s;%s\007' "$title" "$body")
+jq -nc --arg seq "$seq" '{terminalSequence: $seq}'
+```
+
+</CodeBlock>
+
+The allowlist is narrow on purpose: OSC `0`/`1`/`2` (window and icon titles), OSC `9` (iTerm2, ConEmu, Windows Terminal, WezTerm), OSC `99` (Kitty), OSC `777` (urxvt, Ghostty, Warp), and a bare BEL. Anything else — cursor moves, colours, OSC 8 hyperlinks, OSC 52 clipboard writes — is rejected and the whole field is ignored.
+
+Two limits to plan around. Claude Code writes the sequence **only in an interactive session, and only while its interface is on screen**: in `-p` and in the Agent SDK the field is ignored. And a `WorktreeCreate` command hook cannot use it at all, because its stdout is read as a path.
+
+If you would rather use the platform's own notifier, the official guide's `Notification` examples are one-liners in settings:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```json
+{
+  "type": "command",
+  "command": "osascript -e 'display notification \"Claude Code needs your attention\" with title \"Claude Code\"'"
+}
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```json
+{
+  "type": "command",
+  "command": "notify-send 'Claude Code' 'Claude Code needs your attention'"
+}
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```json
+{
+  "type": "command",
+  "command": "powershell.exe -Command \"[System.Reflection.Assembly]::LoadWithPartialName('System.Windows.Forms'); [System.Windows.Forms.MessageBox]::Show('Claude Code needs your attention', 'Claude Code')\""
+}
+```
+
+  </Fragment>
+</OSTabs>
+
+On macOS, `osascript` routes through Script Editor, which needs notification permission granted once in System Settings or it fails silently. On Linux, `notify-send` needs a notification daemon — it will not work over SSH or in a container. On Windows the example opens a dialog box, which can appear behind your terminal.
+
+### Slack, without leaking the webhook
+
+A Slack notification is a POST to an incoming-webhook URL. The URL is a secret: anyone holding it can post to your channel. Keep it out of the repository — read it from the environment, and let the hook do nothing when it is unset:
+
+<CodeBlock title=".claude/hooks/notify-slack.mjs">
+
+```javascript
+#!/usr/bin/env node
+// Stop hook: post one line to Slack. No webhook configured -> do nothing, quietly.
+import { readFileSync } from 'node:fs';
+
+const url = process.env.SLACK_WEBHOOK_URL;
+if (!url) process.exit(0);
+
+let input = {};
+try {
+  input = JSON.parse(readFileSync(0, 'utf8') || '{}');
+} catch {
+  process.exit(0);
+}
+
+const text = `Claude Code finished a turn in ${input.cwd ?? 'a session'}.`;
+await fetch(url, {
+  method: 'POST',
+  headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ text }),
+}).catch(() => {});
+process.exit(0);
+```
+
+</CodeBlock>
+
+Export `SLACK_WEBHOOK_URL` in your shell profile, or set it in `.claude/settings.local.json`'s `env` block — that file is gitignored when Claude Code writes to it. Claude Code also ships a `type: "http"` hook that POSTs the event JSON to a URL directly, with `headers` interpolated from environment variables you list in `allowedEnvVars`; that is the right tool once your endpoint speaks the hook JSON format rather than Slack's.
+
+This lesson's worked example prompt is deliberately ordinary — the point is what happens around it:
+
+```text
+In one sentence, what does src/store.ts do?
+```
+
+## Hands-on lab
+
+<Lab
+  title="Lab · log every Notification and Stop, then wire a real alert"
+  repoTag="lesson/m07-04-start"
+  steps={[
+    'Check out `lesson/m07-04-start` and `npm ci`. The guard and formatter hooks from lessons 02 and 03 are already there.',
+    'Create `.claude/hooks/notify-done.mjs`: parse stdin, read `hook_event_name`, and append one line — timestamp, event name, and `message` (falling back to a default) — to `notify.log`. Wrap the append in try/catch and always exit 0; a notification that cannot be written must never interrupt a session.',
+    'Register the same script on both `Notification` and `Stop` in `.claude/settings.json`, with no matcher on either, so every notification type and every turn end reaches it.',
+    'Delete `notify.log`, run one short turn — `claude -p "In one sentence, what does src/store.ts do?" --model sonnet --max-turns 4 --output-format text --allowedTools "Read"` — then `cat notify.log`.',
+    'Read what is in the file, and what is not: exactly one `[Stop]` line, and no `[Notification]` line at all. A headless run never waits for permission and is never idle, so no notification is sent.',
+    'Now the interactive half: start `claude` normally, ask it to do something that needs approval, and walk away from the keyboard for ten seconds. The documented behaviour is a `[Notification] permission_prompt` line about six seconds after the prompt appears. This half of the lab has no transcript below: the event is gated on you not typing, so it cannot be captured headlessly, and this lesson does not ship a recording it did not make.',
+    'Optional: add the `terminalSequence` variant from the Concept section as a second handler on `Notification`, and confirm your terminal raises a notification. Remember it is inert under `-p`.',
+  ]}
+  expected="After the headless turn, notify.log holds exactly one line, tagged [Stop] — that is the part the transcript below proves. The interactive step is documentation-sourced: per the Notification reference, a permission prompt left alone should add a [Notification] line after about six seconds."
+  checklist={[
+    'The same script is registered on both `Notification` and `Stop`',
+    'The script exits 0 on every path, including when the log cannot be written',
+    '`notify.log` has one `[Stop]` line after one headless turn',
+    'No `[Notification]` line appears from the headless run',
+    'Optional, not captured here: an interactive permission prompt left alone produces a `[Notification]` line',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/04-notify-when-done/01-stop-log.txt"
+    range="2-6"
+  />
+</Lab>
+
+The capture is short, and its most useful content is the absence: one `[Stop]` line, no `[Notification]` line. That is not a broken hook. `Notification` fires when Claude Code sends a notification, and the types that mean "I need you" — `permission_prompt`, `idle_prompt` — are gated on a human being away from the keyboard. A `-p` run has no keyboard and no prompts, so nothing is sent.
+
+This is the general shape of testing session-edge hooks: the `Stop` half is provable headlessly, and the `Notification` half needs a real terminal you can walk away from. That is also why this lesson describes the desktop and Slack halves with configuration rather than a recorded session — a `terminalSequence` is ignored under `-p`, and a webhook you cannot show is a webhook you should not paste into a lesson.
+
+## Anti-patterns
+
+**Treating `Stop` as "the task is done".** It fires every time Claude finishes responding. Three turns of conversation is three `Stop` events. _Fix:_ if you need "the work is finished", check the condition itself — tests green, branch pushed — inside the hook, and stay quiet otherwise.
+
+**A blocking `Stop` hook with no exit condition.** Block on "tests are failing" and a session that cannot make the tests pass loops until Claude Code overrides you after eight consecutive blocks. _Fix:_ read `stop_hook_active` and exit 0 when it is `true`; raise `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP` only when the loop genuinely converges.
+
+**Writing escape sequences to `/dev/tty`.** Hooks have no controlling terminal; the write fails, and on Windows there is no `/dev/tty` at all. _Fix:_ return `terminalSequence` and let Claude Code emit it.
+
+**Committing the webhook.** A Slack URL in `.claude/settings.json` is a public credential the moment the repo is cloned. _Fix:_ read it from the environment and no-op when it is missing, so the hook is safe to commit and useless to a stranger.
+
+**Alerting on every turn.** The fastest way to make a notification hook worthless. _Fix:_ narrow the matcher (`permission_prompt` rather than everything), or gate the alert on elapsed time in the script.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/notify-when-done"
+  questionId="q1"
+  lang="en"
+  prompt="You run one headless turn with a hook registered on both Notification and Stop. What lands in your log?"
+  options={[
+    {
+      text: 'One Stop line and one Notification line.',
+      explanation: 'No notification is sent: a `-p` run has no permission prompt and no idle user.',
+    },
+    {
+      text: 'One Stop line only.',
+      correct: true,
+      explanation:
+        'Stop fires when Claude finishes responding; the Notification types that mean "I need you" are gated on a human being away from the keyboard.',
+    },
+    {
+      text: 'Nothing — neither event fires in headless mode.',
+      explanation: 'Stop fires normally in `-p`.',
+    },
+    {
+      text: 'One line per tool call.',
+      explanation: 'That would be PostToolUse.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/notify-when-done"
+  questionId="q2"
+  lang="en"
+  prompt="Your Stop hook returns decision: block whenever the test suite is red. The suite stays red. What happens?"
+  options={[
+    {
+      text: 'The session loops forever.',
+      explanation: 'There is a cap.',
+    },
+    {
+      text: 'Claude Code overrides the hook after eight consecutive blocks and ends the turn.',
+      correct: true,
+      explanation:
+        'And the fix is to read `stop_hook_active` from the input and exit early when it is true.',
+    },
+    {
+      text: 'The block is ignored because Stop hooks cannot block.',
+      explanation: 'Stop is one of the events where exit 2 and `decision: "block"` do block.',
+    },
+    {
+      text: 'Claude switches to a different model.',
+      explanation: 'Nothing in the hook contract changes the model.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/notify-when-done"
+  questionId="q3"
+  lang="en"
+  prompt="Where is a hook's terminalSequence field ignored?"
+  options={[
+    {
+      text: 'In tmux and GNU screen.',
+      explanation: 'It was designed to work there — that is one of its advantages over /dev/tty.',
+    },
+    {
+      text: 'In non-interactive `-p` runs and in the Agent SDK.',
+      correct: true,
+      explanation:
+        'Claude Code only writes the sequence in an interactive session with its interface on screen.',
+    },
+    {
+      text: 'On Windows.',
+      explanation: 'It works on Windows, where there is no /dev/tty to write to.',
+    },
+    {
+      text: 'On Notification hooks.',
+      explanation:
+        'Notification is exactly where it works — the event discards systemMessage and continue, but still emits terminalSequence.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/notify-when-done"
+  questionId="q4"
+  lang="en"
+  prompt="What is the safe way to ship a Slack-notifying hook in a shared repository?"
+  options={[
+    {
+      text: 'Put the webhook URL in `.claude/settings.json` so everyone gets alerts.',
+      explanation: 'That publishes a credential to every clone.',
+    },
+    {
+      text: 'Read the URL from an environment variable and exit 0 quietly when it is unset.',
+      correct: true,
+      explanation:
+        'The hook is then safe to commit, and useless to anyone who has not configured their own webhook.',
+    },
+    {
+      text: 'Base64-encode the URL in the script.',
+      explanation: 'Encoding is not encryption.',
+    },
+    {
+      text: 'Use an HTTP hook — those never need secrets.',
+      explanation:
+        'HTTP hooks interpolate headers from environment variables you allowlist; the secret still lives in the environment.',
+    },
+  ]}
+/>
+
+**Next:** `05-session-start-context` is the other end of the session — loading project state before the first prompt, and running the test suite when the turn ends.

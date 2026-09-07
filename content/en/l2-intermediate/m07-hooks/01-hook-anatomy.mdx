@@ -1,0 +1,421 @@
+---
+title: 'Hook anatomy: events, matchers and the JSON contract'
+description: 'A hook is a script Claude Code runs at a lifecycle point. Learn where hooks are configured, how matchers narrow them, what arrives on stdin, and what exit codes 0, 2 and everything else actually do.'
+level: 2
+module: 'm07-hooks'
+order: 1
+duration_min: 20
+difficulty: core
+tags: ['hooks', 'automation', 'json']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Hooks reference'
+    url: 'https://code.claude.com/docs/en/hooks.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Automate actions with hooks'
+    url: 'https://code.claude.com/docs/en/hooks-guide.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Settings'
+    url: 'https://code.claude.com/docs/en/settings.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Name the three levels of a hook configuration — event, matcher group, hook handler — and write one in `settings.json` without looking it up.
+- Predict which matcher form (exact list vs. regular expression) Claude Code will use for a given `matcher` string.
+- Read the JSON that arrives on a hook's stdin and pull the fields you need out of it.
+- Say what exit codes `0`, `2` and "anything else" do, and why `exit 1` is almost never what you want.
+- Choose between a plain exit code and a JSON `hookSpecificOutput` object for a given job.
+
+**Prerequisites.** A working Claude Code install (m01), comfort with `claude -p` and `--output-format` (m04), and a language you can write a five-line script in — the examples here use Node and Bash. You do not need the lab repo for this lesson; the lab runs in a scratch folder.
+
+<WhenNotToUse>
+  A hook is a shell command that runs automatically, with your full user permissions, every time an
+  event fires. Do not reach for one when a plain instruction would do: static project conventions
+  belong in `CLAUDE.md`, which loads without running a script. Do not use a hook to enforce a hard
+  security boundary either — the `if` filter that narrows a hook to particular Bash commands is
+  explicitly best-effort, and the docs tell you to use the permission system for a real allow/deny.
+  And do not use one for anything slow on a per-event path: `SessionStart` runs on every session,
+  `PreToolUse` runs on every tool call, and a hook that takes two seconds makes every one of those
+  two seconds longer.
+</WhenNotToUse>
+
+## Concept
+
+### What a hook is
+
+Hooks are **user-defined shell commands, HTTP endpoints, MCP tool calls, LLM prompts, or subagents that execute automatically at specific points in Claude Code's lifecycle**. The same events fire wherever Claude Code runs: the terminal, the IDE extensions, the desktop app and the web.
+
+This lesson is about `type: "command"` hooks — a script on your machine. Your script receives JSON about the event on stdin, does something, and communicates its result back through its exit code and its stdout.
+
+### Three levels of nesting
+
+Every hook configuration is the same three-level shape:
+
+1. **A hook event** to respond to, like `PreToolUse` or `Stop`.
+2. **A matcher group** that filters when it fires, like "only for the Bash tool".
+3. **One or more hook handlers** — the command that actually runs.
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(rm *)",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/block-rm.sh",
+            "args": []
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+</CodeBlock>
+
+Read it outside-in: the event `PreToolUse`, a matcher group narrowing to the `Bash` tool, and one handler — a command, narrowed further by `if` to Bash subcommands matching `rm *`.
+
+### Where hooks live, and what that means
+
+The file you put a hook in decides its scope:
+
+| Location                      | Scope             | Shareable                                             |
+| ----------------------------- | ----------------- | ----------------------------------------------------- |
+| `~/.claude/settings.json`     | All your projects | No, local to your machine                             |
+| `.claude/settings.json`       | Single project    | Yes, can be committed to the repo                     |
+| `.claude/settings.local.json` | Single project    | No, gitignored when Claude Code saves a setting to it |
+| Managed policy settings       | Organization-wide | Yes, admin-controlled                                 |
+| Plugin `hooks/hooks.json`     | When enabled      | Yes, bundled with the plugin                          |
+| Skill frontmatter             | Rest of session   | Yes, defined in the skill file                        |
+| Subagent frontmatter          | While it runs     | Yes, defined in the subagent file                     |
+
+Hook entries **merge** across these levels rather than replacing each other — a project hook does not shadow your personal one, both run. All matching hooks run in parallel, and a handler defined identically in more than one settings file runs once.
+
+Two consequences worth internalising now. First, hooks from settings files and plugins also run inside subagents: when a subagent calls a tool, `PreToolUse` and `PostToolUse` fire the same hooks as in the main conversation. Second, workspace trust behaves differently by session type — an interactive session holds back every settings-file hook until you accept the trust dialog for the folder, while **a `-p` or SDK session treats the folder as trusted**, so hooks committed in a repository's `.claude/settings.json` run in a folder you have never trusted. Review the `.claude/` of a repo you did not write before you script `claude -p` over it.
+
+### Matchers
+
+The `matcher` string is not always a regular expression. How it is evaluated depends on what characters it contains:
+
+| Matcher value                                        | Evaluated as                                | Example                                               |
+| ---------------------------------------------------- | ------------------------------------------- | ----------------------------------------------------- |
+| `"*"`, `""`, or omitted                              | Match all                                   | fires on every occurrence of the event                |
+| Only letters, digits, `_`, `-`, spaces, `,` and `\|` | Exact string, or list of exact strings      | `Bash`; `Edit\|Write`; `Edit, Write`                  |
+| Contains any other character                         | JavaScript regular expression, _unanchored_ | `^Notebook` matches any tool starting with `Notebook` |
+
+Unanchored is the trap: a regex matcher is tested with `RegExp.prototype.test`, which succeeds on a match anywhere in the value, so `Edit.*` matches both `Edit` and `NotebookEdit`. Write `^Edit$` when you mean exactly `Edit`.
+
+Not every event matches on a tool name. `SessionStart` matches on how the session started (`startup`, `resume`, `clear`, `compact`, `fork`), `Notification` on the notification type, `SubagentStart` on the agent type, `FileChanged` on filenames. Lesson `06-event-catalogue` maps them all.
+
+### What arrives on stdin
+
+Every command hook is handed one JSON object on stdin. These fields are common to all of them:
+
+| Field             | What it is                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------ |
+| `session_id`      | Current session identifier                                                           |
+| `prompt_id`       | UUID of the user prompt being processed; absent until the first user input           |
+| `transcript_path` | Path to the conversation JSONL — written asynchronously, so it can lag the live turn |
+| `cwd`             | Working directory when the hook was invoked                                          |
+| `permission_mode` | `default`, `plan`, `acceptEdits`, `auto`, `dontAsk` or `bypassPermissions`           |
+| `hook_event_name` | The event that fired                                                                 |
+
+Tool events (`PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PermissionRequest`, `PermissionDenied`) add `tool_name`, `tool_input` and `tool_use_id`; the two post-tool events add `tool_response`. Every other event adds its own fields — `Stop` gets `stop_hook_active` and `last_assistant_message`, `Notification` gets `message` and `notification_type`, and so on.
+
+The lab below prints a real one rather than describing it.
+
+### Exit codes
+
+This is the part people get wrong, so learn it exactly:
+
+- **Exit 0** — success, and the intended code when you print JSON for structured control. For most events, stdout goes to the debug log and is not shown in the transcript. The exceptions are `UserPromptSubmit`, `UserPromptExpansion`, `SessionStart` and `PostModelSwitch`, where plain-text stdout is added as context Claude can see.
+- **Exit 2** — a blocking error, on the events that can block. It blocks whether or not you print JSON: even a JSON `permissionDecision` of `"allow"` cannot override it. The blocking message is the reason from your JSON's blocking decision when it makes one, and your stderr text otherwise.
+- **Any other code** — does not block on its own for most events. The action proceeds and the transcript shows a `<hook name> hook error` notice with the first line of stderr, prefixed `Failed with non-blocking status code:`.
+
+The docs put a warning on that last row, and it is the single most useful sentence on the page: _"Without valid JSON on stdout, Claude Code treats exit code 1 as a non-blocking error and proceeds with the action, even though 1 is the conventional Unix failure code. If your hook is meant to enforce a policy, use `exit 2`."_ The one exception is `WorktreeCreate`, where any non-zero exit aborts creation.
+
+Not every event can block. The reference's per-event exit-code table lists these as blocking on exit 2: `PreToolUse`, `UserPromptSubmit`, `UserPromptExpansion`, `Stop`, `SubagentStop`, `TeammateIdle`, `TaskCreated`, `TaskCompleted`, `ConfigChange` and `PostToolBatch`. Three more block from their own sections: `PreCompact` and `PreModelSwitch` on exit 2, and `WorktreeCreate` on any non-zero exit. On `PostToolUse` and `PostToolUseFailure`, exit 2 does not block — the tool already ran — but it does show your stderr to Claude, which is how you get a warning in front of the model after the fact.
+
+### Exit codes versus JSON
+
+Exit codes only let you block or stay silent. JSON output gives finer-grained control: exit 0 and print an object to stdout. Whether Claude Code reads that stdout as JSON depends on how it starts and ends, ignoring surrounding whitespace — it must **start with `{` and end with `}`**. Anything else is plain text.
+
+The object supports three kinds of field: universal ones like `continue`, `stopReason`, `systemMessage` and `terminalSequence`; a top-level `decision` / `reason` pair used by `PostToolUse`, `Stop`, `UserPromptSubmit` and friends; and `hookSpecificOutput`, a nested object that requires a `hookEventName` and carries the richer per-event fields. `PreToolUse` uses the third form:
+
+<CodeBlock title="a PreToolUse deny, in full">
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny",
+    "permissionDecisionReason": "Database writes are not allowed"
+  }
+}
+```
+
+</CodeBlock>
+
+`permissionDecision` takes `"allow"`, `"deny"`, `"ask"` or `"defer"`. Pick one approach per hook — exit codes alone, or exit 0 plus JSON. Mixing them works but is hard to reason about, because exit 2 keeps its blocking effect regardless of what the JSON says.
+
+Here is this lesson's worked example prompt, once you have a hook in place and want to see whether Claude notices it:
+
+```text
+Try to run `rm -rf *` in the build directory, then tell me exactly what stopped you
+and quote the message you got back.
+```
+
+## Hands-on lab
+
+<Callout>
+  Every transcript in this module was captured with two extra flags that are not shown in the lab
+  commands: `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, so an unrelated auto-memory file could not change
+  the answer, and a `--settings` override forcing English, because the recording machine asks for
+  Turkish replies by default. Each transcript's first line names them. Your own runs will differ in
+  wording; what matters is the hook behaviour around them.
+</Callout>
+
+<Lab
+  title="Lab · see the JSON a hook actually receives"
+  repoTag="none"
+  steps={[
+    'Make a scratch folder outside any repository you care about, `cd` into it, and put one small text file in it — `notes.txt` with a sentence or two about a fictional project.',
+    'Create `.claude/hooks/echo-event.mjs`: read all of stdin, write it to `seen.json`, exit 0. Five lines, no dependencies (see the code block below).',
+    'Create `.claude/settings.json` registering that script as a `PreToolUse` hook with `"matcher": "Read"`.',
+    'Run a read-only headless session: `claude -p "Read notes.txt and tell me in one sentence what it says." --model sonnet --max-turns 3 --output-format text --allowedTools "Read"`',
+    "Pretty-print the captured file: `node -e \"console.log(JSON.stringify(JSON.parse(require('fs').readFileSync('seen.json','utf8')),null,2))\"`. Find `hook_event_name`, `tool_name`, `tool_input.file_path` and `permission_mode` in it.",
+    'Change the matcher to `"Bash"` and re-run the same prompt. `seen.json` is not rewritten — the hook never fired, because no Bash call happened.',
+  ]}
+  expected="The session answers normally, and seen.json contains a PreToolUse object whose tool_name is Read and whose tool_input.file_path points at your notes.txt. With the matcher changed to Bash, the file is not touched."
+  checklist={[
+    'The hook appears in `.claude/settings.json` under `hooks.PreToolUse`',
+    '`seen.json` exists after the run',
+    'It contains `"hook_event_name": "PreToolUse"` and `"tool_name": "Read"`',
+    'It contains `permission_mode`, `session_id`, `cwd` and `transcript_path`',
+    'Changing the matcher to `Bash` stops the hook firing for a Read-only session',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/01-hook-anatomy/01-hook-input.txt"
+    range="2-21"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m07-hooks/01-hook-anatomy/02-matcher-does-not-match.txt"
+    range="2-8"
+  />
+</Lab>
+
+The hook script and the settings file, in full:
+
+<CodeBlock title=".claude/hooks/echo-event.mjs">
+
+```javascript
+#!/usr/bin/env node
+// PreToolUse hook: writes the raw JSON it received on stdin to seen.json, then exits 0.
+import { readFileSync, writeFileSync } from 'node:fs';
+const raw = readFileSync(0, 'utf8');
+writeFileSync('seen.json', raw);
+process.exit(0);
+```
+
+</CodeBlock>
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [{ "type": "command", "command": "node .claude/hooks/echo-event.mjs" }]
+      }
+    ]
+  }
+}
+```
+
+</CodeBlock>
+
+Two things in that capture repay a second look. `permission_mode` is `"default"` even though nothing about the prompt mentioned permissions — hooks always know which mode the session is in, which is how you write a guard that behaves differently under `bypassPermissions`. And `tool_input.file_path` is absolute even though the prompt said `notes.txt`: what the hook sees is the tool call Claude actually made, not the words you typed.
+
+### Running the hook by hand
+
+You do not need a session to test a hook. Every command hook is just a program that reads stdin, so pipe it a sample event:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+echo '{"tool_name":"Bash","tool_input":{"command":"ls"}}' | node .claude/hooks/echo-event.mjs
+echo $?
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+echo '{"tool_name":"Bash","tool_input":{"command":"ls"}}' | node .claude/hooks/echo-event.mjs
+echo $?
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+'{"tool_name":"Bash","tool_input":{"command":"ls"}}' | node .claude/hooks/echo-event.mjs
+$LASTEXITCODE
+```
+
+  </Fragment>
+</OSTabs>
+
+That loop — edit script, pipe JSON, check exit code — is faster than any session, and it is the first step of every debugging session in lesson `07-debugging-hooks`.
+
+## Anti-patterns
+
+**Using `exit 1` to block.** It reads like failure, but for most events it is a non-blocking error: the action proceeds and you get a notice. _Fix:_ `exit 2`, or exit 0 and print a JSON decision.
+
+**Printing anything before your JSON.** Stdout is only parsed as JSON when it starts with `{` and ends with `}`. A shell profile that echoes a banner, or a stray `console.log("ok")`, silently turns your decision into plain text — and on exit 0 nothing is reported in the transcript at all. _Fix:_ keep stdout clean, and guard profile output with `if [[ $- == *i* ]]`.
+
+**Writing a regex matcher by accident.** `Edit.*` looks tighter than `*` but matches `NotebookEdit` too, because regex matchers are unanchored. _Fix:_ use the exact-list form (`Edit|Write`) when you mean exact names, and anchor with `^…$` when you do need a pattern.
+
+**Putting static project rules in a hook.** A `SessionStart` hook that prints "this repo uses pnpm" runs a process on every session to deliver a sentence that never changes. _Fix:_ `CLAUDE.md`. Keep hooks for values that vary — the branch, the CI result, the current state.
+
+**Assuming a hook is a security boundary.** The `if` filter is best-effort by design: when Claude Code cannot tell what a Bash string will run, it runs your hook anyway, and the reverse case — a command it cannot decompose — is exactly the one an attacker would use. _Fix:_ enforce hard limits with permission rules and sandboxing (m14); use hooks for the ergonomic layer on top.
+
+<Callout variant="changed">
+  `PreToolUse` used to carry its decision in top-level `decision` / `reason` fields. Those are
+  deprecated for this event: use `hookSpecificOutput.permissionDecision` and
+  `permissionDecisionReason` instead. The old values `"approve"` and `"block"` map to `"allow"` and
+  `"deny"`. Other events, such as `PostToolUse` and `Stop`, still use top-level `decision` and
+  `reason` as their current format. Verified against `hooks.md` for Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/hook-anatomy"
+  questionId="q1"
+  lang="en"
+  prompt="Your PreToolUse hook detects a forbidden command and exits 1 with a message on stderr. What happens?"
+  options={[
+    {
+      text: 'The tool call is blocked and Claude sees the stderr message.',
+      explanation: 'That is what exit 2 does. Exit 1 is not special to Claude Code.',
+    },
+    {
+      text: 'The tool call proceeds; the transcript shows a non-blocking hook error notice.',
+      correct: true,
+      explanation:
+        'Exactly — for most events every non-zero code except 2 is a non-blocking error, and the action goes ahead.',
+    },
+    {
+      text: 'The session stops entirely.',
+      explanation: 'That is `{"continue": false}`, a JSON field, not an exit code.',
+    },
+    {
+      text: 'Nothing at all happens; exit codes are ignored without JSON.',
+      explanation: 'The failure is reported — it just does not block.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/hook-anatomy"
+  questionId="q2"
+  lang="en"
+  prompt='You write "matcher": "Edit.*" for a PostToolUse hook. Which tools will it fire for?'
+  options={[
+    {
+      text: 'Only `Edit`.',
+      explanation: 'Anchoring would be needed for that: `^Edit$`.',
+    },
+    {
+      text: '`Edit` and `NotebookEdit`, because a regex matcher is unanchored.',
+      correct: true,
+      explanation:
+        'Right — the `.` makes it a regular expression, and it is tested with an unanchored `test()`.',
+    },
+    {
+      text: 'Nothing — `.*` is not valid matcher syntax.',
+      explanation: 'It is valid; it is just a regex rather than an exact name.',
+    },
+    {
+      text: 'Every tool, the same as `"*"`.',
+      explanation: 'It still has to match `Edit` somewhere in the name.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/hook-anatomy"
+  questionId="q3"
+  lang="en"
+  prompt="Where does a command hook's stdout go on a PostToolUse event that exits 0?"
+  options={[
+    {
+      text: 'Into the transcript, where you see it immediately.',
+      explanation:
+        'Only `UserPromptSubmit`, `UserPromptExpansion`, `SessionStart` and `PostModelSwitch` surface plain stdout as context.',
+    },
+    {
+      text: 'To the debug log — it is not shown in the transcript.',
+      correct: true,
+      explanation:
+        'Which is why a formatter hook has to be verified by its effect, or by reading the debug log.',
+    },
+    {
+      text: 'To Claude, as a system reminder.',
+      explanation:
+        'That happens for `additionalContext` inside `hookSpecificOutput`, not for plain stdout on this event.',
+    },
+    { text: 'Nowhere; it is discarded.', explanation: 'It is recorded in the debug log.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l2-intermediate/m07-hooks/hook-anatomy"
+  questionId="q4"
+  lang="en"
+  prompt="You clone an unfamiliar repository and immediately run `claude -p` in it. Whose hooks run?"
+  options={[
+    {
+      text: 'None — hooks wait for you to accept the workspace trust dialog.',
+      explanation: 'That is true of an interactive session, not of a `-p` session.',
+    },
+    {
+      text: "The repository's `.claude/settings.json` hooks run, because `-p` treats the folder as trusted.",
+      correct: true,
+      explanation:
+        'Right — review a stranger’s `.claude/` first, start with `--bare`, or turn hooks off for that run with the disableAllHooks setting.',
+    },
+    {
+      text: 'Only your own `~/.claude/settings.json` hooks run.',
+      explanation: 'Project hooks merge with yours; they do not wait.',
+    },
+    {
+      text: 'Hooks never run in headless mode.',
+      explanation: 'They do; only a few output paths, like `terminalSequence`, are inert there.',
+    },
+  ]}
+/>
+
+**Next:** `02-block-dangerous-commands` turns the contract into a guard — a `PreToolUse` hook that denies `rm -rf` and a plain force-push, proven with a real headless run.

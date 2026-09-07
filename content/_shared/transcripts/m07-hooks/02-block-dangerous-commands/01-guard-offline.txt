@@ -1,0 +1,11 @@
+# Captured 2026-09-07, Claude Code 2.1.263, detached worktree of codechup/claude-code-lab at lesson/m07-02-start with the guard hook written as the lab describes. The hook is fed hand-written PreToolUse JSON on stdin - no Claude session involved. Verbatim.
+› for c in "rm -rf /tmp/build" "rm -rf build" "rm -rf *" "git push --force origin main" "git push --force-with-lease origin main" "npm test"; do printf '%s -> ' "$c"; echo "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$c\"}}" | node .claude/hooks/guard-dangerous-commands.mjs; echo " [exit $?]"; done
+rm -rf /tmp/build -> {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocked by guard-dangerous-commands: \"rm -rf /tmp/build\" looks destructive (broad rm -rf or a plain force-push). Use --force-with-lease, or narrow the path, or ask the user to run it themselves."}}
+ [exit 0]
+rm -rf build ->  [exit 0]
+rm -rf * -> {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocked by guard-dangerous-commands: \"rm -rf *\" looks destructive (broad rm -rf or a plain force-push). Use --force-with-lease, or narrow the path, or ask the user to run it themselves."}}
+ [exit 0]
+git push --force origin main -> {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Blocked by guard-dangerous-commands: \"git push --force origin main\" looks destructive (broad rm -rf or a plain force-push). Use --force-with-lease, or narrow the path, or ask the user to run it themselves."}}
+ [exit 0]
+git push --force-with-lease origin main ->  [exit 0]
+npm test ->  [exit 0]

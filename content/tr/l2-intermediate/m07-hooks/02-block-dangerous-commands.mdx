@@ -1,0 +1,37 @@
+---
+title: 'PreToolUse koruması ile tehlikeli komutları engelleme'
+description: 'Geniş bir `rm -rf` veya düz bir force-push için `permissionDecision: deny` döndüren bir PreToolUse hook yazın, önce JSON borulayarak oturumsuz test edin, sonra gerçek bir headless (başsız) oturumu durdurmasını izleyin.'
+level: 2
+module: 'm07-hooks'
+order: 2
+duration_min: 20
+difficulty: core
+tags: ['hooks', 'pretooluse', 'safety', 'permissions']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Hooks reference'
+    url: 'https://code.claude.com/docs/en/hooks.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Automate actions with hooks'
+    url: 'https://code.claude.com/docs/en/hooks-guide.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage permissions'
+    url: 'https://code.claude.com/docs/en/permissions.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'codechup/claude-code-lab — the course lab repository'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m07-02-start'
+---
+
+Bu ders, bir [hook](/tr/playbook/glossary/#hook) (kanca) açısından `PreToolUse` olayının `hookSpecificOutput.permissionDecision` sözleşmesini (`allow`, `deny`, `ask`, `defer`) ve `permissionDecisionReason` alanının neden modele giden asıl arayüz olduğunu anlatır. Hook'lar her izin kipinden (permission mode) önce çalıştığı için bir `deny` kararı `bypassPermissions` altında bile geçerlidir; ancak `allow` kararı hiçbir kısıtı gevşetmez. Laboratuvarda lab deposunun `guard-dangerous-commands.mjs` hook'unu yazar, önce elle JSON borulayarak, sonra gerçek bir `claude -p` oturumunda engellemenin gerçekleştiğini kanıtlarsınız.
+
+> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
+> Çeviri için: `/translate-lesson content/en/l2-intermediate/m07-hooks/02-block-dangerous-commands.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
