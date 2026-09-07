@@ -109,3 +109,28 @@ invention. The workflow:
 - Every file tracked in the lab repository was scanned with this repo's
   `scripts/check-public-hygiene.mjs --stdin` (the public-hygiene rules apply there too,
   per `.claude/rules/public-hygiene.md`) — zero hits.
+
+## Tag map (all modules, generated 2026-09-07)
+
+98 tags on the lab repository. Modules without a row (m20, m21) have no lab-tagged lesson; their support material lives on `main` untagged.
+
+| Module | Lesson numbers with a tag pair | Tag pattern |
+|---|---|---|
+| `m01` | 02, 04 | `lesson/m01-<NN>-start` / `-solution` |
+| `m02` | 02, 03, 04, 05 | `lesson/m02-<NN>-start` / `-solution` |
+| `m03` | 01, 03 | `lesson/m03-<NN>-start` / `-solution` |
+| `m04` | 02, 03 | `lesson/m04-<NN>-start` / `-solution` |
+| `m05` | 02, 04 | `lesson/m05-<NN>-start` / `-solution` |
+| `m06` | 03, 04, 05 | `lesson/m06-<NN>-start` / `-solution` |
+| `m07` | 02, 03, 04, 05 | `lesson/m07-<NN>-start` / `-solution` |
+| `m08` | 01, 02, 03, 04 | `lesson/m08-<NN>-start` / `-solution` |
+| `m10` | 03, 05 | `lesson/m10-<NN>-start` / `-solution` |
+| `m11` | 02, 03, 04, 05, 06 | `lesson/m11-<NN>-start` / `-solution` |
+| `m12` | 02, 03 | `lesson/m12-<NN>-start` / `-solution` |
+| `m13` | 01, 02, 03, 05, 06 | `lesson/m13-<NN>-start` / `-solution` |
+| `m14` | 02, 03 | `lesson/m14-<NN>-start` / `-solution` |
+| `m15` | 01, 06 | `lesson/m15-<NN>-start` / `-solution` |
+| `m16` | 04 | `lesson/m16-<NN>-start` / `-solution` |
+| `m17` | 01, 02 | `lesson/m17-<NN>-start` / `-solution` |
+| `m18` | 02, 03, 05 | `lesson/m18-<NN>-start` / `-solution` |
+| `m19` | 01, 03 | `lesson/m19-<NN>-start` / `-solution` |
