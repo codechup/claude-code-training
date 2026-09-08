@@ -7,8 +7,8 @@ order: 5
 duration_min: 15
 difficulty: core
 tags: ['commands', 'cli', 'mcp', 'plugins', 'env-vars']
-verified_version: '2.1.263'
-updated: 2026-09-07
+verified_version: '2.1.265'
+updated: 2026-09-09
 draft: false
 sources:
   - type: official
@@ -111,7 +111,7 @@ Same shape, for plugins. `claude plugins` is an accepted alias:
 
 `install` takes `plugin@marketplace` when you need a specific marketplace; `marketplace` manages the marketplaces themselves; `init`/`new` scaffolds a plugin that auto-loads next session; `validate` checks a plugin or marketplace before you publish it; `details` shows a plugin's component inventory and its projected token cost, which is the number that matters when you are deciding whether a plugin earns its place in your context.
 
-For a single session, `--plugin-dir` loads a plugin from a directory or `.zip`, and `--plugin-url` fetches one from a URL. In-session, `/plugin` opens the same functionality as a menu, and `/reload-plugins` applies changes without restarting.
+For a single session, `--plugin-dir` loads a plugin from a directory or `.zip` — or, since 2.1.265, from a folder that _contains_ plugins, in which case every child folder with a manifest loads and children added or removed while the session runs are picked up. `--plugin-url` fetches one from a URL. In-session, `/plugin` opens the same functionality as a menu, and `/reload-plugins` applies changes without restarting.
 
 ### There is no `claude config`
 
@@ -325,6 +325,12 @@ The `--help` recordings above are trimmed to the first line of each subcommand's
   `ANTHROPIC_DEFAULT_HAIKU_MODEL`, which sets the model the `haiku` alias resolves to and the model
   Claude Code uses for background functionality — verified against `env-vars.md` for Claude Code
   2.1.263.
+</Callout>
+
+<Callout variant="changed">
+  `--plugin-dir` used to take exactly one plugin directory. Claude Code 2.1.265 (8 September 2026):
+  “Added support for pointing `--plugin-dir` at a folder of plugins: each child folder with a
+  manifest loads, and children added or removed while running are picked up” (official changelog).
 </Callout>
 
 ## Quiz

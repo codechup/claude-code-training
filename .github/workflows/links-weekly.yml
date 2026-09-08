@@ -8,8 +8,38 @@ on:
 permissions:
   contents: read
   issues: write
+  actions: read # the dead-man check below reads changelog-weekly's run history
 
 jobs:
+  # GitHub DISABLES `schedule` triggers on a repository after 60 days without commit activity,
+  # and the drift pipeline has no way to notice it has stopped running: every staleness signal it
+  # has (MAX_PENDING_AGE_DAYS, MAX_PENDING_ENTRIES) is computed INSIDE a run, so a pipeline that
+  # never runs is indistinguishable from one with nothing to report. This job is the dead man's
+  # switch — it runs on its own schedule and goes red when changelog-weekly has gone dark.
+  changelog-pipeline-alive:
+    name: changelog-weekly is still running
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fail if changelog-weekly has not run in 21 days
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          last="$(gh run list --workflow changelog-weekly.yml --limit 1 --json createdAt --jq '.[0].createdAt // empty')"
+          if [ -z "$last" ]; then
+            echo "::error::changelog-weekly has never run — the schedule is dark."
+            exit 1
+          fi
+          age=$(( ( $(date -u +%s) - $(date -u -d "$last" +%s) ) / 86400 ))
+          echo "last changelog-weekly run: $last (${age}d ago)"
+          if [ "$age" -gt 21 ]; then
+            echo "::error::changelog-weekly last ran ${age} days ago (limit 21). GitHub disables schedules after 60 days of repo inactivity — re-enable it in the Actions tab."
+            exit 1
+          fi
+
   lychee:
     name: full-repo link sweep
     runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}

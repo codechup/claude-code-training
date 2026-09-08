@@ -7,8 +7,8 @@ order: 2
 duration_min: 15
 difficulty: core
 tags: ['team', 'managed-settings', 'policy', 'enterprise']
-verified_version: '2.1.263'
-updated: 2026-09-07
+verified_version: '2.1.265'
+updated: 2026-09-09
 draft: false
 sources:
   - type: official
@@ -115,7 +115,7 @@ Some keys have no effect anywhere but a managed source. They are mostly locks �
 
 Read the pattern carefully, because it is easy to get backwards: the **lock** is managed-only, the **list it locks** is not. `allowedMcpServers`, `deniedMcpServers` and `allowedHttpHookUrls` are all `Any file` scope and merge across every settings file — deploying them in managed settings is how you enforce them, but it is the matching `allowManaged*Only` key that stops a developer's own file adding to the allowlist. The settings reference's Scope column is the authority for any key not in the managed-only table.
 
-Two related keys sit just outside that rule. `permissions.disableBypassPermissionsMode` works from any scope — a developer can even set it on themselves — but is normally placed in managed settings so it cannot be removed. And the login-enforcement pair `forceLoginMethod` / `forceLoginOrgUUID` is `Any file` too, with a managed-source caveat on each: `forceLoginMethod`'s `"gateway"` value counts only from an on-machine managed source, and `forceLoginOrgUUID` only _enforces_ from a managed source — set anywhere else it merely pre-selects the organisation at login.
+Two related keys sit just outside that rule. `permissions.disableBypassPermissionsMode` works from any scope — a developer can even set it on themselves — but is normally placed in managed settings so it cannot be removed. And the login-enforcement pair `forceLoginMethod` / `forceLoginOrgUUID` is `Any file` too, with a managed-source caveat on each: `forceLoginMethod`'s `"gateway"` value counts only from an on-machine managed source, and `forceLoginOrgUUID` only _enforces_ from a managed source — set anywhere else it merely pre-selects the organisation at login. Since 2.1.265 a third key belongs in that group: `forceLoginGatewayUrl` in managed settings makes the machine a Claude apps gateway session from startup on its own, exactly as `forceLoginMethod: "gateway"` does, and a claude.ai login or API key left over on that machine is not used.
 
 A smaller-scale example of the same idea is this course's own repository, which is not an enterprise deployment at all: its committed `.claude/settings.json` carries a short `permissions.allow` list and four hooks, and everything genuinely non-negotiable is enforced a second time by CI. That is the right shape when you cannot deploy policy to machines — belt in the settings file, braces in the pipeline.
 
@@ -270,6 +270,13 @@ Three keys, three different jobs. The `deny` list is the rule nobody can lift. `
   2.1.242 or later; the `Managed settings (remote)` line in `claude doctor` requires 2.1.248 or
   later. On older clients the default `first-wins` behaviour applies with no way to see what was
   skipped.
+</Callout>
+
+<Callout variant="changed">
+  `forceLoginGatewayUrl` used to name a gateway without, on its own, forcing the session onto it.
+  Claude Code 2.1.265 (8 September 2026): “Changed machines with `forceLoginGatewayUrl` in managed
+  settings to be Claude apps gateway sessions from startup, like `forceLoginMethod: "gateway"`; a
+  leftover claude.ai login or API key is not used” (official changelog).
 </Callout>
 
 ## Quiz

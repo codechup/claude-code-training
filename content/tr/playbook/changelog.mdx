@@ -314,6 +314,47 @@ doğrulanmıştır.
 geçirin ve tarayıcıyı sürün." O oturum tarayıcı tool'larını hiç almayacaktır.
 **Şimdi.** [Claude in Chrome: gezinme, formlar, ekran görüntüleri, konsol](/tr/l3-advanced/m15-platforms/chrome/) ve [Claude in Chrome ile bir siteyi sürmek ve kaydetmek](/tr/l4-master/m19-visual/chrome-automation/).
 
+### `--plugin-dir` artık plugin'ler içeren bir klasör alıyor
+
+**Değişti.** `--plugin-dir` eskiden tam olarak tek bir plugin dizini yüklerdi. Artık
+plugin'ler _içeren_ bir klasörü de kabul ediyor: manifest'i olan her alt klasör yüklenir
+ve oturum çalışırken eklenen ya da kaldırılan alt klasörler de algılanır.
+**Ne zamandan beri.** Claude Code 2.1.265, 8 Eylül 2026 — “Added support for pointing
+`--plugin-dir` at a folder of plugins: each child folder with a manifest loads, and
+children added or removed while running are picked up” (resmî changelog, 2026-09-09'da
+okundu; alıntı İngilizce orijinalindedir).
+**Bayat bir tutorial şöyle der.** "Yüklemek istediğiniz her plugin için `--plugin-dir`'i
+bir kez geçirin."
+**Şimdi.** [Alt komutlar ve ortam değişkenleri](/tr/l1-beginner/m04-commands/subcommands/).
+
+### `forceLoginGatewayUrl` tek başına gateway'i zorluyor
+
+**Değişti.** Managed settings'inde `forceLoginGatewayUrl` taşıyan bir makine,
+başlangıçtan itibaren bir Claude apps gateway oturumudur — tam olarak
+`forceLoginMethod: "gateway"`'in yaptığı gibi — ve o makinede kalmış bir claude.ai girişi
+ya da API anahtarı kullanılmaz.
+**Ne zamandan beri.** Claude Code 2.1.265, 8 Eylül 2026 — “Changed machines with
+`forceLoginGatewayUrl` in managed settings to be Claude apps gateway sessions from
+startup, like `forceLoginMethod: "gateway"`; a leftover claude.ai login or API key is not
+used” (resmî changelog, 2026-09-09'da okundu; alıntı İngilizce orijinalindedir).
+**Bayat bir tutorial şöyle der.** "`forceLoginGatewayUrl` ve `forceLoginMethod`'u
+birlikte ayarlayın; URL tek başına yalnızca gateway'i adlandırır."
+**Şimdi.** [Managed ve server-managed settings](/tr/l4-master/m20-team/managed-settings/).
+
+### `http` olarak yapılandırılmış bir MCP kaydı SSE'ye geri düşüyor
+
+**Değişti.** `http` olarak yapılandırılmış ama yalnızca eski HTTP+SSE transport'unu
+konuşan bir uzak server eskiden hiç bağlanamazdı. Claude Code artık MCP
+spesifikasyonunun tarif ettiği gibi SSE'ye geri düşüyor; bu yüzden emin olmadığınız bir
+server için bile `http` güvenli bir ilk tercihtir.
+**Ne zamandan beri.** Claude Code 2.1.265, 8 Eylül 2026 — “Fixed MCP servers configured
+as `http` that only speak the legacy HTTP+SSE transport never connecting; Claude Code now
+falls back to SSE as the MCP spec describes” (resmî changelog, 2026-09-09'da okundu;
+alıntı İngilizce orijinalindedir).
+**Bayat bir tutorial şöyle der.** "HTTP server bağlanmıyorsa onu `--transport sse` ile
+yeniden ekleyin."
+**Şimdi.** [MCP kavramları ve transport'lar](/tr/l3-advanced/m11-mcp/mcp-concepts/).
+
 ## Hâlâ açık
 
 `research/deprecations.md`, bir maddeyi doğrulanmamış olarak taşıyordu — kapanış

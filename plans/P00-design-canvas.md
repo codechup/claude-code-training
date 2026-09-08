@@ -78,7 +78,7 @@ The owner (or a reviewing session standing in for them) opens each exported artb
 
 - **Approval (2026-09-06):** the owner did not annotate the canvas but instructed the lead session (`/goal`) to proceed through P11 and take the site live; the lead session treats this as approval-to-proceed. Owner edits on the canvas remain welcome and flow into `tokens.css` via a follow-up.
 
-- **Canvas:** `CodeChup Claude Code Academy` — https://claude.ai/code/artifact/ff75de02-137e-4821-9894-22a66afc049a (owner's account, private). Source of truth for regeneration: `docs/design/canvas-src/build.mjs` → `docs/design/canvas-out/` (9 artboards + `canvas.json`); prompts/decisions/token table/handoff per plan in `docs/design/CANVAS.md`.
+- **Canvas:** `CodeChup Claude Code Academy` — the owner's private design canvas artifact (URL held outside this repo). Source of truth for regeneration: `docs/design/canvas-src/build.mjs` → `docs/design/canvas-out/` (9 artboards + `canvas.json`); prompts/decisions/token table/handoff per plan in `docs/design/CANVAS.md`.
 - **Second-look review** found and fixed: an unclosed `div` on the `/design` artboard, zero-slack frame heights, and two light-theme contrast failures → `ink-muted` lifted in both themes, new `accent-text` token; contrast matrix is now computed in the generator (all six pairs ≥ 4.5:1).
 - **Status:** `review` — waiting for owner approval (O9) on the canvas or by comment on this plan. On approval: record evidence in `CANVAS.md` §4, fold any owner edits into §3, set `done`.
 - **Judgement calls for the owner:** lowercase mono `codechup` + red caret wordmark lineage; darker gold in light mode; landing hero is a real transcript, animation limited to a blinking caret.

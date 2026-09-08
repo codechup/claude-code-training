@@ -49,4 +49,24 @@ describe('runContentGate', () => {
       true,
     );
   });
+  // A lesson may never claim a verified_version ahead of the ledger pin. Before this suite the
+  // assertion only held for *numeric* values: `2.1.266-rc.1` and `latest` both compared as NaN,
+  // `NaN > 0` is false, and the gate passed them.
+  it('fails a lesson whose verified_version is numerically above the pin', async () => {
+    const result = await runContentGate({ contentRoot: join(FIXTURES, 'pin-above') });
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => /is newer than the changelog/.test(e))).toBe(true);
+  });
+
+  it('fails a lesson whose verified_version is a PRE-RELEASE above the pin', async () => {
+    const result = await runContentGate({ contentRoot: join(FIXTURES, 'pin-prerelease') });
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => /is newer than the changelog/.test(e))).toBe(true);
+  });
+
+  it('fails a lesson whose verified_version is not a version at all', async () => {
+    const result = await runContentGate({ contentRoot: join(FIXTURES, 'pin-nonversion') });
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => /verified_version|semver/.test(e))).toBe(true);
+  });
 });

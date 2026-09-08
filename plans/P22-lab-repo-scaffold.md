@@ -126,7 +126,7 @@ behaviour, not a lab-repo code change - there is nothing to diff.
 "`npm test` succeeds at the repo's default branch tip, with some tests passing and the
 seeded-bug tests genuinely failing" - read literally that would make the *default branch*
 carry failing tests, which conflicts with the outer task's explicit instruction that
-"`main` is the clean baseline." I followed the outer instruction: `main` is fully green
+"`main` is the clean baseline." The session followed the outer instruction: `main` is fully green
 (verified via `npm ci && npm test` locally and via the lab repo's own GitHub Actions CI,
 run 34096936633, green); every seeded-bug test only fails at its own `-start` tag, and
 passes again at `-solution`. I read the plan's wording as describing a tag checkout, not

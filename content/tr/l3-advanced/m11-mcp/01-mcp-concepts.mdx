@@ -7,8 +7,8 @@ order: 1
 duration_min: 15
 difficulty: core
 tags: ['mcp', 'transport', 'protokol']
-verified_version: '2.1.263'
-updated: 2026-09-07
+verified_version: '2.1.265'
+updated: 2026-09-09
 draft: false
 sources:
   - type: official
@@ -93,7 +93,7 @@ Bir transport (taşıma katmanı: istemci ile server'ın nasıl konuştuğu), is
 
 Makinenize ihtiyaç duyan her şey için **stdio**'yu seçin: dosya sisteminiz, yerel bir veritabanı soketi, bir tarayıcı, yazdığınız bir betik. Claude Code process'i başlatır, standart girdi ve çıktısı üzerinden onunla konuşur ve oturumla birlikte kapatır. Ayrıca başlatılan server'ın ortamında `CLAUDE_PROJECT_DIR`'ı proje köküne ayarlar; böylece bir stdio server'ı, çalışma dizinine bağımlı olmadan projeye göreli yolları çözebilir.
 
-Barındırılan servisler için **HTTP**'yi seçin. Bulut tabanlı servisler için en yaygın desteklenen transport'tur ve OAuth ile oturum açmayı destekleyen tek transport'tur. JSON yapılandırmasında `type` alanı, `http` için bir takma ad olarak `streamable-http`'yi de kabul eder; böylece bir server'ın kendi dokümantasyonundan kopyalanan bir yapılandırma değiştirilmeden çalışır.
+Barındırılan servisler için **HTTP**'yi seçin. Bulut tabanlı servisler için en yaygın desteklenen transport'tur ve OAuth ile oturum açmayı destekleyen tek transport'tur. JSON yapılandırmasında `type` alanı, `http` için bir takma ad olarak `streamable-http`'yi de kabul eder; böylece bir server'ın kendi dokümantasyonundan kopyalanan bir yapılandırma değiştirilmeden çalışır. 2.1.265'ten beri, `http` olarak yapılandırılmış ama yalnızca eski HTTP+SSE transport'unu konuşan bir kayıt yine de bağlanır — Claude Code, MCP spesifikasyonunun tarif ettiği gibi SSE'ye geri düşer — bu yüzden emin olmadığınız bir uzak server için bile ilk tercih `http` olmalıdır.
 
 **WebSocket**'i yalnızca server'ın Claude'a istenmeden olay göndermesi gerektiğinde seçin. Dokümanlar bu ödünleşmede açıktır: server yalnızca isteklere yanıt veriyorsa bunun yerine HTTP kullanın, çünkü HTTP OAuth'u ve `--transport` bayrağını destekler, WebSocket ise ikisini de desteklemez. WebSocket server'ları ayrıca `claude mcp list` içinde görünmez — bunları `claude mcp get <name>` ile ya da `/mcp` panelinden kontrol edin.
 
@@ -203,6 +203,13 @@ $lines | node mcp/src/index.ts
   yerde HTTP server'ları kullanın. `--transport sse`, yalnızca bir SSE uç noktası sunan servisler
   için hâlâ çalışır ve deprecated bir transport, çalışan bir yapılandırmayı yeniden yazmak için bir
   sebep değildir — ama yeni bir şey için onu seçmeyin.
+</Callout>
+
+<Callout variant="changed">
+  `http` olarak yapılandırılmış ama yalnızca eski HTTP+SSE transport'unu konuşan bir server eskiden
+  hiç bağlanamıyordu. Claude Code 2.1.265 (8 Eylül 2026): “Fixed MCP servers configured as `http`
+  that only speak the legacy HTTP+SSE transport never connecting; Claude Code now falls back to SSE
+  as the MCP spec describes” (resmî changelog; alıntı İngilizce orijinalindedir).
 </Callout>
 
 ## Quiz

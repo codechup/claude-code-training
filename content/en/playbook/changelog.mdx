@@ -191,6 +191,27 @@ Nothing here teaches the old behaviour. If you are looking for the current one, 
 **A stale tutorial says.** "Export `ANTHROPIC_API_KEY`, pass `--chrome`, and drive the browser." That session will not get browser tools at all.
 **Now.** [Claude in Chrome: navigation, forms, screenshots, console](/en/l3-advanced/m15-platforms/chrome/) and [Driving a site with Claude in Chrome, and recording it](/en/l4-master/m19-visual/chrome-automation/).
 
+### `--plugin-dir` takes a folder of plugins
+
+**Changed.** `--plugin-dir` used to load exactly one plugin directory. It now also accepts a folder that _contains_ plugins: every child folder with a manifest loads, and children added or removed while the session runs are picked up.
+**Since.** Claude Code 2.1.265, 8 September 2026 — “Added support for pointing `--plugin-dir` at a folder of plugins: each child folder with a manifest loads, and children added or removed while running are picked up” (official changelog, read 2026-09-09).
+**A stale tutorial says.** "Pass `--plugin-dir` once per plugin you want loaded."
+**Now.** [Subcommands and environment variables](/en/l1-beginner/m04-commands/subcommands/).
+
+### `forceLoginGatewayUrl` forces the gateway on its own
+
+**Changed.** A machine whose managed settings carry `forceLoginGatewayUrl` is a Claude apps gateway session from startup, exactly as `forceLoginMethod: "gateway"` makes it, and a claude.ai login or API key left over on that machine is not used.
+**Since.** Claude Code 2.1.265, 8 September 2026 — “Changed machines with `forceLoginGatewayUrl` in managed settings to be Claude apps gateway sessions from startup, like `forceLoginMethod: "gateway"`; a leftover claude.ai login or API key is not used” (official changelog, read 2026-09-09).
+**A stale tutorial says.** "Set `forceLoginGatewayUrl` and `forceLoginMethod` together; the URL alone only names the gateway."
+**Now.** [Managed and server-managed settings](/en/l4-master/m20-team/managed-settings/).
+
+### An `http` MCP entry falls back to SSE
+
+**Changed.** A remote configured as `http` that turns out to speak only the legacy HTTP+SSE transport used not to connect at all. Claude Code now falls back to SSE the way the MCP specification describes, so `http` is a safe first choice even for a server you are unsure about.
+**Since.** Claude Code 2.1.265, 8 September 2026 — “Fixed MCP servers configured as `http` that only speak the legacy HTTP+SSE transport never connecting; Claude Code now falls back to SSE as the MCP spec describes” (official changelog, read 2026-09-09).
+**A stale tutorial says.** "If the HTTP server does not connect, re-add it with `--transport sse`."
+**Now.** [MCP concepts and transports](/en/l3-advanced/m11-mcp/mcp-concepts/).
+
 ## Still open
 
 `research/deprecations.md` carried one item as unconfirmed — Bash permission rules with text after the closing parenthesis. Reading the official changelog for this page on 2026-09-08 resolved it: the 2.1.260 entry is quoted in its section above. The remaining caution is the general one: the changelog moves faster than any course, so treat every version number here as "verified at 2.1.263" rather than "current forever", and check the changelog when a command behaves unlike its lesson.

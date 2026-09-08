@@ -1,0 +1,103 @@
+name: Changelog drift (weekly)
+
+# Every Monday, diff the upstream Claude Code changelog against the ledger pin in
+# research/changelog/reviewed.json, route each new bullet to the lessons it touches
+# (deterministically — no model runs here), and keep ONE open issue up to date with
+# the triage table. The job fails when the backlog is too old or too large, so the
+# schedule goes red and GitHub mails the owner.
+
+on:
+  schedule:
+    - cron: '41 6 * * 1' # every Monday at 06:41 UTC, after the link sweep
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: changelog-weekly
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    name: changelog drift triage table
+    runs-on: ${{ vars.RUNNER_LABEL || 'ubuntu-latest' }}
+    # A hung or half-open connection to raw.githubusercontent.com used to block this job until
+    # GitHub's 6-hour limit, and (cancel-in-progress: false) queue the next week behind it.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+
+      - run: npm ci
+
+      # fetch asserts the parser still works (a version heading exists, the pin is
+      # among the parsed headings, npm is not ahead). A broken parser fails here
+      # rather than quietly reporting "no drift".
+      - name: fetch
+        run: node scripts/changelog-drift.mjs fetch --snapshot drift-snapshot.json
+
+      - name: route
+        run: node scripts/changelog-drift.mjs route --snapshot drift-snapshot.json --pending
+
+      # report writes the issue body and exits non-zero past either threshold.
+      # continue-on-error so the issue is still upserted; the last step re-fails.
+      - name: report
+        id: report
+        continue-on-error: true
+        run: node scripts/changelog-drift.mjs report --snapshot drift-snapshot.json --out drift-report.md
+
+      - name: upsert the single `drift` issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # `gh issue create --label drift` fails outright if the label does not exist, which would
+          # make the very first scheduled run red for a reason that has nothing to do with drift.
+          # Creating it is idempotent (--force updates an existing label instead of failing).
+          gh label create drift --color FBCA04 --description "Upstream Claude Code changelog entries awaiting triage" --force
+
+          # ONE thread, forever. Closed issues are searched too and REOPENED rather than a second
+          # one being created: closing the issue is the natural gesture after a triage run, and it
+          # used to silently split the history in two. The title is STABLE (the date lives in the
+          # body) so GitHub only mails subscribers when something actually changed.
+          title="Claude Code changelog drift"
+          existing="$(gh issue list --label drift --state all --limit 50 --json number,title --jq "map(select(.title == \"$title\")) | sort_by(.number) | last | .number // empty")"
+
+          if grep -q '\*\*0 pending\*\*' drift-report.md; then pending=0; else pending=1; fi
+          echo "pending=$pending existing=${existing:-none}"
+
+          if [ -n "$existing" ]; then
+            gh issue view "$existing" --json body --jq .body > old-body.md || : > old-body.md
+          else
+            : > old-body.md
+          fi
+          # Human notes survive: only the region between the drift markers is replaced.
+          node scripts/drift-issue-body.mjs old-body.md drift-report.md new-body.md
+
+          if [ -n "$existing" ] && [ "$pending" = "0" ]; then
+            echo "nothing pending — updating and closing #$existing"
+            gh issue edit "$existing" --title "$title" --body-file new-body.md
+            gh issue comment "$existing" --body "Nothing pending as of $(date -u +%Y-%m-%d) — closing. The next run with drift reopens this thread."
+            gh issue close "$existing" || true
+          elif [ -n "$existing" ]; then
+            echo "editing existing issue #$existing"
+            gh issue reopen "$existing" 2>/dev/null || true
+            gh issue edit "$existing" --title "$title" --body-file new-body.md
+          elif [ "$pending" = "0" ]; then
+            echo "nothing pending and no issue exists — nothing to open"
+          else
+            echo "opening the drift issue"
+            gh issue create --label drift --title "$title" --body-file new-body.md
+          fi
+
+      - name: fail when the backlog is stale or oversized
+        if: steps.report.outcome == 'failure'
+        run: |
+          echo "::error::changelog drift report exited non-zero — see the open \`drift\` issue."
+          exit 1

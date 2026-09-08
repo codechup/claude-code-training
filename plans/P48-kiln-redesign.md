@@ -139,7 +139,7 @@ lessons, to separate reference pages from the curriculum. Terminal surfaces are 
 both themes, so a recording looks the same to every reader.
 
 **Open for the owner.** The design canvas is published at
-https://claude.ai/code/artifact/db906c53-f36f-4c12-a73e-be8d199f40cc. `docs/design/CANVAS.md`
+the owner's private Kiln canvas artifact (URL held outside this repo). `docs/design/CANVAS.md`
 still describes the retired system and should be superseded by `KILN.md` in a follow-up, and
 `src/pages/og/_render.ts` now reads the new tokens but its card art deserves a second pass
 once the mark has lived on the site for a while.

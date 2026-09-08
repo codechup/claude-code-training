@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Canvas** | `CodeChup Claude Code Academy` — https://claude.ai/code/artifact/ff75de02-137e-4821-9894-22a66afc049a (owner's Claude account; private) |
+| **Canvas** | `CodeChup Claude Code Academy` — the owner's private design canvas artifact (URL held outside this repo). Regenerate from `docs/design/canvas-src/build.mjs`. |
 | **Authored by** | lead session (Fable 5.1), 2026-09-06, via the `/design` skill |
 | **Source** | `docs/design/canvas-src/build.mjs` → `docs/design/canvas-out/*.dc.html` + `canvas.json` (regenerate with `node docs/design/canvas-src/build.mjs`) |
 | **Design version** | `2026.09.1` |

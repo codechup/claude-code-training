@@ -7,8 +7,8 @@ order: 5
 duration_min: 15
 difficulty: core
 tags: ['komutlar', 'cli', 'mcp', 'plugins', 'env-vars']
-verified_version: '2.1.263'
-updated: 2026-09-07
+verified_version: '2.1.265'
+updated: 2026-09-09
 draft: false
 sources:
   - type: official
@@ -111,7 +111,7 @@ Aynı yapı, [plugin](/tr/playbook/glossary/#plugin)'ler (Claude Code'a eklenen,
 
 `install`, belirli bir [marketplace](/tr/playbook/glossary/#marketplace)'e (plugin'lerin yayınlandığı ve keşfedildiği bir kayıt) ihtiyacınız olduğunda `plugin@marketplace` alır; `marketplace` alt komutu marketplace'lerin kendisini yönetir; `init`/`new`, bir sonraki oturumda kendiliğinden yüklenen bir plugin iskeleti oluşturur; `validate`, yayınlamadan önce bir plugin'i ya da marketplace'i denetler; `details`, bir plugin'in bileşen envanterini ve öngörülen [token](/tr/playbook/glossary/#token) (bir dil modelinin metni işlerken kullandığı temel birim) maliyetini gösterir — bu da bir plugin'in bağlamınızda yer kaplamaya değip değmediğine karar verirken önemli olan sayıdır.
 
-Tek bir oturum için `--plugin-dir`, bir plugin'i bir dizinden ya da `.zip`'ten yükler; `--plugin-url` ise bir tanesini bir URL'den getirir. Oturum içinde `/plugin`, aynı işlevi bir menü olarak açar ve `/reload-plugins`, yeniden başlatmadan değişiklikleri uygular.
+Tek bir oturum için `--plugin-dir`, bir plugin'i bir dizinden ya da `.zip`'ten yükler — ya da 2.1.265'ten beri, plugin'ler _içeren_ bir klasörden: bu durumda manifest'i olan her alt klasör yüklenir ve oturum çalışırken eklenen ya da kaldırılan alt klasörler de algılanır. `--plugin-url` ise bir tanesini bir URL'den getirir. Oturum içinde `/plugin`, aynı işlevi bir menü olarak açar ve `/reload-plugins`, yeniden başlatmadan değişiklikleri uygular.
 
 ### `claude config` diye bir şey yok
 
@@ -324,6 +324,13 @@ Yukarıdaki `--help` kayıtları, her alt komutun açıklamasının yalnızca il
   `ANTHROPIC_SMALL_FAST_MODEL` kullanımdan kaldırıldı. Güncel değişken, `haiku` takma adının
   çözümlendiği modeli ve Claude Code'un arka plan işlevselliği için kullandığı modeli belirleyen
   `ANTHROPIC_DEFAULT_HAIKU_MODEL`'dir — Claude Code 2.1.263 için `env-vars.md` üzerinden doğrulandı.
+</Callout>
+
+<Callout variant="changed" label="Değişti">
+  `--plugin-dir` eskiden tam olarak tek bir plugin dizini alırdı. Claude Code 2.1.265 (8 Eylül
+  2026): “Added support for pointing `--plugin-dir` at a folder of plugins: each child folder with a
+  manifest loads, and children added or removed while running are picked up” (resmî changelog;
+  alıntı İngilizce orijinalindedir).
 </Callout>
 
 ## Quiz

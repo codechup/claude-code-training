@@ -44,7 +44,11 @@ export const lessonSchema = z.object({
   duration_min: z.int().positive(),
   difficulty: z.enum(['intro', 'core', 'advanced']),
   tags: z.array(z.string()),
-  verified_version: z.string().min(1),
+  // A comparable release version. `latest`, `2.1.x` or a typo used to sail past the content
+  // gate's pin assertion, because the comparison returned NaN and every caller tests `> 0`.
+  verified_version: z
+    .string()
+    .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, 'must be a semver release, e.g. 2.1.265'),
   updated: z.coerce.date(),
   draft: z.boolean().default(false),
   sources: z.array(sourceSchema),

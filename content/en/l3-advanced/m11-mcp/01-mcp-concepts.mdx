@@ -7,8 +7,8 @@ order: 1
 duration_min: 15
 difficulty: core
 tags: ['mcp', 'transports', 'protocol']
-verified_version: '2.1.263'
-updated: 2026-09-07
+verified_version: '2.1.265'
+updated: 2026-09-09
 draft: false
 sources:
   - type: official
@@ -91,7 +91,7 @@ A transport is how the client and server talk. Claude Code supports four, and th
 
 Pick **stdio** for anything that needs your machine: your filesystem, a local database socket, a browser, a script you wrote. Claude Code launches the process, talks to it over its standard input and output, and shuts it down with the session. It also sets `CLAUDE_PROJECT_DIR` in the spawned server's environment to the project root, so a stdio server can resolve project-relative paths without depending on its working directory.
 
-Pick **HTTP** for hosted services. It is the most widely supported transport for cloud-based services, and it is the only one that supports OAuth sign-in. In JSON configuration the `type` field accepts `streamable-http` as an alias for `http`, so a config copied from a server's own documentation works unmodified.
+Pick **HTTP** for hosted services. It is the most widely supported transport for cloud-based services, and it is the only one that supports OAuth sign-in. In JSON configuration the `type` field accepts `streamable-http` as an alias for `http`, so a config copied from a server's own documentation works unmodified. Since 2.1.265, an `http` entry that turns out to speak only the legacy HTTP+SSE transport connects anyway — Claude Code falls back to SSE the way the MCP specification describes — so `http` is the right first choice even for a remote you are unsure about.
 
 Pick **WebSocket** only when the server needs to push events to Claude unprompted. The docs are explicit about the trade: use HTTP instead when your server only responds to requests, since HTTP supports OAuth and the `--transport` flag, while WebSocket supports neither. WebSocket servers also do not appear in `claude mcp list` — check them with `claude mcp get <name>` or the `/mcp` panel.
 
@@ -199,6 +199,13 @@ $lines | node mcp/src/index.ts
   The SSE (Server-Sent Events) transport is deprecated; use HTTP servers instead, where available.
   `--transport sse` still works for services that expose only an SSE endpoint, and a deprecated
   transport is not a reason to rewrite a working config — but do not choose it for something new.
+</Callout>
+
+<Callout variant="changed">
+  A server configured as `http` that only spoke the legacy HTTP+SSE transport used to fail to
+  connect at all. Claude Code 2.1.265 (8 September 2026): “Fixed MCP servers configured as `http`
+  that only speak the legacy HTTP+SSE transport never connecting; Claude Code now falls back to SSE
+  as the MCP spec describes” (official changelog).
 </Callout>
 
 ## Quiz

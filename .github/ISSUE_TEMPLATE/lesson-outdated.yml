@@ -1,0 +1,79 @@
+# Readers are the best drift detectors this course has: they run the lab against
+# whatever Claude Code shipped this week, which is exactly the version no lesson
+# was written against. This form asks for the four things a fix needs — which
+# lesson, which version, what it claims, what actually happened.
+name: A lesson is out of date
+description: A lesson describes behaviour that Claude Code no longer has (or now has differently).
+title: '[outdated] '
+labels: ['outdated', 'content']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you — a lesson that has drifted is the single most useful bug you can file here.
+
+        **Not this form:** a typo, a broken link or a rendering problem is a plain
+        [bug report](https://github.com/codechup/claude-code-training/issues/new).
+        A security issue goes to [SECURITY.md](https://github.com/codechup/claude-code-training/blob/main/SECURITY.md),
+        never to a public issue.
+
+  - type: input
+    id: lesson-url
+    attributes:
+      label: Lesson URL
+      description: The page you were reading, copied from the address bar.
+      placeholder: https://cc.codechup.com/en/l1-beginner/m03-memory/01-claude-md
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Your Claude Code version
+      description: Output of `claude --version`. Every lesson pins the version it was verified against; this is what tells us whether the lesson drifted or your install is behind.
+      placeholder: '2.1.263'
+    validations:
+      required: true
+
+  - type: textarea
+    id: lesson-says
+    attributes:
+      label: What the lesson says
+      description: Quote the sentence, step or command. A section heading and a short quote is plenty.
+      placeholder: |
+        Section "Hands-on lab", step 3 says:
+        > Run `/hooks` and choose "PreToolUse" from the menu.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actually-does
+    attributes:
+      label: What the tool actually does
+      description: What you saw instead. Paste the real terminal output rather than describing it — the exact wording is usually the whole clue.
+      render: text
+      placeholder: |
+        $ claude
+        > /hooks
+        The menu opens on "Select hook event" with no PreToolUse entry; the events are now listed as ...
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and terminal
+      description: Optional, but it matters for anything involving the shell, paths or key bindings.
+      placeholder: macOS 15.5, iTerm2 / Windows 11, PowerShell 7
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Before you file
+      options:
+        - label: I am on the latest Claude Code (`claude update`), or I have said above which version I am pinned to.
+          required: true
+        - label: My report contains no API keys, tokens, personal data or private hostnames — pasted terminal output included.
+          required: true

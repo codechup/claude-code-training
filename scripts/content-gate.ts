@@ -11,6 +11,11 @@
 //   4. A lesson's `level`/`module` frontmatter matches the folder it lives in.
 //   5. With --no-drafts: no entry may have `draft: true` (used by release
 //      plans to assert nothing half-finished ships).
+//   6. Every lesson's `verified_version` is <= the changelog ledger pin in
+//      `research/changelog/reviewed.json`. A lesson may lag the pin (it just has
+//      not been re-read yet, which the weekly drift report tracks) but it may
+//      never claim to have been verified against a version nobody has triaged.
+//      That is what makes silent drift impossible to merge.
 //
 // This module exports `runContentGate` so it can be reused by the Astro
 // integration in `src/integrations/content-gates.ts` (called from
@@ -20,13 +25,27 @@ import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import matter from 'gray-matter';
 import { lessonSchema, sectionSchema } from '../src/content/schema.ts';
+// Single source of truth for version comparison. The gate used to carry its own copy, which
+// returned NaN for a pre-release and let `verified_version: 2.1.266-rc.1` past the pin assertion.
+import { compareVersions } from './changelog-drift.mjs';
 
 export interface ContentGateOptions {
   /** Root directory containing the `en/` and `tr/` trees. Defaults to `<cwd>/content`. */
   contentRoot?: string;
   /** Fail if any entry has `draft: true`. */
   noDrafts?: boolean;
+  /**
+   * Changelog ledger. Defaults to this repo's `research/changelog/reviewed.json`,
+   * resolved from this file — not from `contentRoot` — so a fixture run still
+   * checks against the real pin, and a missing ledger is an error rather than a
+   * silently skipped assertion.
+   */
+  ledgerPath?: string;
 }
+
+const DEFAULT_LEDGER_PATH = fileURLToPath(
+  new URL('../research/changelog/reviewed.json', import.meta.url),
+);
 
 export interface ContentGateResult {
   ok: boolean;
@@ -85,6 +104,23 @@ export async function runContentGate(options: ContentGateOptions = {}): Promise<
   const contentRoot = options.contentRoot ?? join(process.cwd(), 'content');
   const noDrafts = options.noDrafts ?? false;
   const errors: string[] = [];
+
+  let ledgerPin: string | null = null;
+  const ledgerPath = options.ledgerPath ?? DEFAULT_LEDGER_PATH;
+  try {
+    const ledger = JSON.parse(await readFile(ledgerPath, 'utf8')) as { pin?: unknown };
+    if (typeof ledger.pin !== 'string' || !/^\d+(\.\d+)+$/.test(ledger.pin)) {
+      errors.push(`${toPosix(ledgerPath)}: "pin" must be a dotted version string`);
+    } else {
+      ledgerPin = ledger.pin;
+    }
+  } catch (err) {
+    errors.push(
+      `changelog ledger unreadable (${toPosix(ledgerPath)}): ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
 
   const allFiles = await walk(contentRoot);
   const mdxFiles = allFiles.filter((f) => f.endsWith('.mdx')).sort();
@@ -162,6 +198,26 @@ export async function runContentGate(options: ContentGateOptions = {}): Promise<
 
     if (noDrafts && parsed.data.draft) {
       errors.push(`${rel}: draft: true is not allowed with --no-drafts`);
+    }
+
+    // A lesson may never claim a verified_version ahead of the changelog ledger pin:
+    // the pin is the newest release whose bullets have all been triaged, so anything
+    // beyond it is an unverifiable claim (see .claude/rules/content.md, "Changelog facts").
+    if (ledgerPin) {
+      try {
+        if (compareVersions(parsed.data.verified_version, ledgerPin) > 0) {
+          errors.push(
+            `${rel}: verified_version ${parsed.data.verified_version} is newer than the changelog ` +
+              `ledger pin ${ledgerPin} — triage the backlog with /changelog-triage and bump the pin first`,
+          );
+        }
+      } catch (err) {
+        // An uncomparable value is a gate FAILURE, never a silent pass.
+        errors.push(
+          `${rel}: verified_version ${JSON.stringify(parsed.data.verified_version)} cannot be ` +
+            `compared with the ledger pin ${ledgerPin}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
   }
 

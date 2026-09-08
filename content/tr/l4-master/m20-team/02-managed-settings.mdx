@@ -7,8 +7,8 @@ order: 2
 duration_min: 15
 difficulty: core
 tags: ['takım', 'managed-settings', 'ilke', 'kurumsal']
-verified_version: '2.1.263'
-updated: 2026-09-07
+verified_version: '2.1.265'
+updated: 2026-09-09
 draft: false
 sources:
   - type: official
@@ -116,7 +116,7 @@ Bazı anahtarların managed bir kaynak dışında hiçbir yerde etkisi yoktur. B
 
 Kalıbı dikkatle okuyun, çünkü tersine anlamak kolay: **kilit** yalnızca managed’dir, **kilitlediği liste** değildir. `allowedMcpServers`, `deniedMcpServers` ve `allowedHttpHookUrls`’ün hepsi `Any file` kapsamındadır ve her settings dosyası arasında birleşir — onları managed settings’te dağıtmak onları zorunlu kılmanın yoludur, ama bir geliştiricinin kendi dosyasının allowlist’e eklemesini durduran şey eşleşen `allowManaged*Only` anahtarıdır. Managed-only tabloda olmayan herhangi bir anahtar için settings referansının Scope sütunu otoritedir.
 
-Bu kuralın hemen dışında iki ilişkili anahtar var. `permissions.disableBypassPermissionsMode` herhangi bir kapsamdan çalışır — bir geliştirici bunu kendisi için bile ayarlayabilir — ama normalde kaldırılamaması için managed settings’e konur. Ve giriş-zorlaması çifti `forceLoginMethod` / `forceLoginOrgUUID` de `Any file`’dır, her birinde bir managed-kaynak şerhiyle: `forceLoginMethod`’un `"gateway"` değeri yalnızca makine üzerindeki bir managed kaynaktan sayılır ve `forceLoginOrgUUID` yalnızca managed bir kaynaktan _zorlar_ — başka bir yerde ayarlandığında yalnızca girişte organizasyonu önceden seçer.
+Bu kuralın hemen dışında iki ilişkili anahtar var. `permissions.disableBypassPermissionsMode` herhangi bir kapsamdan çalışır — bir geliştirici bunu kendisi için bile ayarlayabilir — ama normalde kaldırılamaması için managed settings’e konur. Ve giriş-zorlaması çifti `forceLoginMethod` / `forceLoginOrgUUID` de `Any file`’dır, her birinde bir managed-kaynak şerhiyle: `forceLoginMethod`’un `"gateway"` değeri yalnızca makine üzerindeki bir managed kaynaktan sayılır ve `forceLoginOrgUUID` yalnızca managed bir kaynaktan _zorlar_ — başka bir yerde ayarlandığında yalnızca girişte organizasyonu önceden seçer. 2.1.265'ten beri bu gruba üçüncü bir anahtar katılıyor: managed settings'teki `forceLoginGatewayUrl`, tek başına makineyi başlangıçtan itibaren bir Claude apps gateway oturumu yapar — tam olarak `forceLoginMethod: "gateway"`'in yaptığı gibi — ve o makinede kalmış bir claude.ai girişi ya da API anahtarı kullanılmaz.
 
 Aynı fikrin daha küçük ölçekli bir örneği, hiç kurumsal bir dağıtım olmayan bu kursun kendi deposudur: [commit](/tr/playbook/glossary/#commit)'lenmiş (bir git deposundaki değişiklik kümesinin kalıcı, mesajlı kaydı) `.claude/settings.json`’ı kısa bir `permissions.allow` listesi ve dört hook taşır ve gerçekten pazarlık edilemez olan her şey [CI](/tr/playbook/glossary/#ci) (her push'ta ya da pull request'te testleri ve kontrolleri otomatik çalıştıran hat) tarafından ikinci kez zorlanır. Makinelere ilke dağıtamadığınızda doğru şekil budur — settings dosyasında kemer, pipeline’da pantolon askısı.
 
@@ -272,6 +272,14 @@ Windows’ta ilke, bu anahtarların altında `Settings` adlı bir `REG_SZ` ya da
   2.1.242 ya da üstünü gerektirir; `claude doctor`'daki `Managed settings (remote)` satırı 2.1.248
   ya da üstünü gerektirir. Daha eski istemcilerde varsayılan `first-wins` davranışı, neyin
   atlandığını görmenin bir yolu olmadan uygulanır.
+</Callout>
+
+<Callout variant="changed">
+  `forceLoginGatewayUrl` eskiden bir gateway'i adlandırırdı ama tek başına oturumu ona zorlamazdı.
+  Claude Code 2.1.265 (8 Eylül 2026): “Changed machines with `forceLoginGatewayUrl` in managed
+  settings to be Claude apps gateway sessions from startup, like `forceLoginMethod: "gateway"`; a
+  leftover claude.ai login or API key is not used” (resmî changelog; alıntı İngilizce
+  orijinalindedir).
 </Callout>
 
 ## Quiz

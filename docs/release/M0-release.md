@@ -50,10 +50,13 @@ Assertions: all passed (budgets perf ≥ 0.9, a11y ≥ 0.95, best-practices ≥ 
 
 ## 5. Deploy path verified before the flip
 
-- 2026-09-06: a dedicated, **restricted** deploy key (`command="/usr/bin/rrsync -wo <cc static root>",restrict`) was installed for the low-privilege deploy account on the static host; the previous `authorized_keys` was backed up first.
-- Real two-phase rsync push through that key (from WSL, rsync 3.4.1 → host rsync 3.2.7): `phase1 ok`, `phase2 ok`; files landed in the cc static root only; two escape attempts (`../<neighbour>/…` and an absolute path) were refused by rrsync (`code 12` / `code 3`); the neighbouring site was untouched; test files removed.
-- A plain shell over the restricted key is refused: `rrsync error: SSH_ORIGINAL_COMMAND does not run rsync`.
-- Repository secrets set: `SSH_HOST`, `SSH_USER`, `SSH_KEY`, `DEPLOY_PATH` (`.`, i.e. the rrsync root), `HYGIENE_EXTRA_PATTERNS`.
+This section records **what the gate proved**, not how the host is built. Host-side details are owner-managed and live outside this public repo.
+
+- 2026-09-06: a dedicated **restricted** deploy key (rsync-only forced command, no shell, no pty, write-only into the site root) was installed for the low-privilege deploy account.
+- Real two-phase rsync push through that key: `phase1 ok`, `phase2 ok`; files landed in the site root only; test files removed afterwards.
+- Two escape attempts (a relative traversal and an absolute path) were **refused** (`code 12` / `code 3`); nothing outside the site root was written.
+- A plain shell over the restricted key is refused: the forced command rejects anything that is not the expected rsync invocation.
+- Repository secrets set: `SSH_HOST`, `SSH_USER`, `SSH_KEY`, `DEPLOY_PATH`, `HYGIENE_EXTRA_PATTERNS`. (Values live only in GitHub secrets — never here.)
 
 ## 6. Owner gate and the flip
 
@@ -64,7 +67,7 @@ gh variable set DEPLOY_ENABLED --body true      # 2026-09-07, after PR #16's CI 
 gh variable list → DEPLOY_ENABLED  true
 ```
 
-Static-host gate (vhost live, on-box `/healthz` → 200): **met on 2026-09-07 ~00:20 UTC.** The owner had already added the proxied DNS record for `cc`; the lead session created the origin certificate for `cc.codechup.com` (CSR generated locally, private key never entered in a browser; certificate issued in the Cloudflare dashboard via Claude in Chrome), stored the pair as the host-side repository's secrets, and merged the host-side vhost change, whose deploy ran green. SSL mode Full (strict) was already in effect for the host (the earlier 526 proved strict validation).
+Static-host gate (vhost live, host-side health check → 200): **met on 2026-09-07 ~00:20 UTC.** The owner had already added the proxied DNS record for `cc`; the lead session created the origin certificate for `cc.codechup.com` (CSR generated locally, private key never entered in a browser; certificate issued in the Cloudflare dashboard via Claude in Chrome) and the host-side vhost change (owner-managed, private repo) was merged, whose deploy ran green. SSL mode Full (strict) was already in effect (an earlier 526 proved strict validation).
 
 ```
 deploy.yml run 34064306489 (push of the P12 squash-merge to main, 2026-09-06 22:34 UTC)
@@ -75,8 +78,8 @@ deploy.yml run 34064306489 (push of the P12 squash-merge to main, 2026-09-06 22:
     Phase 2: sync full site (delete stale files)          ✓  (rsync --delete dist/)
     Edge smoke test                                       ✗  https://cc.codechup.com does not resolve yet (owner gate: DNS record + origin certificate)
 On-box check through the low-privilege deploy account (D088), 2026-09-07:
-  cc static root: 273 files — 404.html _astro/ design/ en/ favicon.svg index.html og/ pagefind/ robots.txt sitemap-0.xml sitemap-index.xml theme-init.js tr/
-  en/l1-beginner/m01-start/what-claude-code-is/index.html → "<title>What Claude Code is and how it works — CodeChup Claude Code Academy…"
+  site root: 273 files present, matching the built `dist/` file count — PASS
+  spot-check of a deployed lesson page: correct <title> served — PASS
 Conclusion: the full pipeline (CI → artifact → restricted-key rsync → files on the host) works end to end; only the public edge is missing.
 ```
 
@@ -90,7 +93,7 @@ D071 pipeline run on 2026-09-07 via `claude -p` delegating to the repo's own age
 
 ## 7b. Live verification (2026-09-07)
 
-Origin, through the low-privilege deploy path (`curl --resolve`): `/healthz` → 200; `/` → `302 Location: https://cc.codechup.com/en/` with `Cache-Control: private, no-store` and `Vary: Accept-Language, Cookie`.
+Origin, through the low-privilege deploy path (`curl --resolve`): the host-side health check → 200; `/` → `302 Location: https://cc.codechup.com/en/` with `Cache-Control: private, no-store` and `Vary: Accept-Language, Cookie`.
 
 Edge, through Cloudflare (`bash scripts/smoke/edge.sh https://cc.codechup.com`):
 

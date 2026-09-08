@@ -95,3 +95,35 @@ Source the version from `research/deprecations.md` or the official changelog, ne
 Every factual claim traces to `research/feature-inventory.md` or to a URL you fetched while writing
 (D093). Claims the inventory marks UNVERIFIED stay out of lesson text and go into the plan's
 `open_questions`. Run the `fact-checker` agent before opening the PR (D071).
+
+## 7. Changelog facts
+
+Behaviour facts move every week. The weekly `changelog-weekly.yml` job diffs the upstream Claude
+Code changelog against the **ledger pin** in `research/changelog/reviewed.json`, routes each new
+bullet to the lessons it touches with `scripts/changelog-drift.mjs` (deterministically — no model
+runs in CI), and keeps one open `drift` issue with the triage table. `/changelog-triage` is the only
+thing that writes the ledger.
+
+Every routed bullet gets exactly one of three decisions, recorded against its stable id:
+
+- **`applied`** — a lesson sentence was wrong or incomplete and was edited. The edit carries a
+  "Changed" callout (§4), a row in `research/deprecations.md`, an entry on the Playbook changelog
+  page, and a mirrored edit in the Turkish twin.
+- **`noop`** — the change does not touch anything the course teaches, or a lesson already says it.
+  A one-line reason is recorded; no lesson is opened.
+- **`escalated`** — the change needs a new lesson, a restructured section or an owner decision. A
+  plan file is written; no lesson content is invented in the triage run.
+
+**Quote the bullet verbatim.** A "Changed" callout that cites the changelog quotes the upstream
+bullet character-for-character, with its version. Paraphrasing a release note into your own words is
+how a wrong claim gets laundered into the course (D093). Quote a contiguous span with a marked
+ellipsis if the bullet is too long; never splice.
+
+**`verified_version` is never bumped for a lesson nobody read.** It is a claim that someone actually
+re-checked that lesson against that release — not a global stamp. `/changelog-triage` bumps it only
+for lessons it edited or re-read end to end, so lessons legitimately sit below the pin. The content
+gate enforces the other direction: no lesson's `verified_version` may exceed the ledger pin, because
+the pin is the newest release whose bullets have all been triaged.
+
+**Source hashes are a separate, quarterly sweep.** Changelog triage never re-verifies `sources[]`.
+Docs pages are re-checked quarterly with `/verify-sources`, run on changed pages only.

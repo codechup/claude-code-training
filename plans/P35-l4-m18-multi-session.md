@@ -157,7 +157,7 @@ lessons, plus unverifiable items. All four contradictions fixed:
    and what `state.ts`/`check.ts` do, but `cli.ts` passes the wall clock to `next` and `claim` — the
    two commands a session actually uses. The lesson now teaches both reference points, names which
    code path uses which, and says the contract's guarantee does not hold for `next`/`claim`. Raised
-   in `open_questions` against whoever owns `tools/plan/**`. I had found the same drift by reading
+   in `open_questions` against whoever owns `tools/plan/**`. The session had found the same drift by reading
    `plan.ts` before the report arrived; the agent's independent confirmation is why it is now taught
    explicitly rather than hedged.
 2. Lesson 04 presented a re-ordered splice of `model-config.md`'s `max` row inside quotation marks.
