@@ -2,7 +2,7 @@
 id: P45
 title: Milestone M3 release
 milestone: M3
-status: review
+status: done
 owner: sonnet-p45
 branch: plan/45-milestone-3-release
 model_hint: sonnet
@@ -12,7 +12,7 @@ owned_paths:
   - docs/release/M3-release.md
 shared_paths: []
 estimate: M
-updated_at: 2026-09-08T03:58:33Z
+updated_at: 2026-09-08T04:03:08Z
 open_questions:
   - "O6 (giscus repo/category id) is still not set as a repository variable/secret — `gh variable list`/`gh secret list` confirm neither `PUBLIC_GISCUS_REPO_ID` nor `PUBLIC_GISCUS_CATEGORY_ID` exists. Giscus.astro correctly renders its placeholder on a live lesson. Deferred to M4, not release-blocking (owner action)."
   - "The 'agent'->'ajan' Turkish calque follow-up flagged by P40/P44 was fixed on main while this session ran (PR #83, 34 occurrences / 19 files). One occurrence survives on purpose: content/_shared/transcripts/m16-orchestration/04-pipeline-lab/03-workflow-result.txt is a byte-accurate real transcript (D070/D099) and must not be edited to match current terminology preference; recorded here so a future terminology sweep does not try to 'fix' a real recording."

@@ -2,8 +2,8 @@
 id: P47
 title: Launch hardening
 milestone: M4
-status: todo
-owner: null
+status: in_progress
+owner: lead-opus
 branch: plan/47-launch-hardening
 model_hint: sonnet
 effort_hint: medium
@@ -14,7 +14,7 @@ owned_paths:
   - .github/workflows/links-weekly.yml
 shared_paths: []
 estimate: M
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-08T04:03:09Z
 open_questions: []
 ---
 
