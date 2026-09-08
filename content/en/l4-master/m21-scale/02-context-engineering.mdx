@@ -1,0 +1,308 @@
+---
+title: 'Context engineering'
+description: 'Everything a session knows lives in one window. Learn what loads before you type, what survives compaction, how /context, /compact, /clear and /autocompact differ, and when delegating a read to a subagent actually pays — measured on real runs, not guessed.'
+level: 4
+module: 'm21-scale'
+order: 2
+duration_min: 20
+difficulty: core
+tags: ['context', 'compaction', 'subagents', 'tokens']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Explore the context window'
+    url: 'https://code.claude.com/docs/en/context-window.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage costs effectively'
+    url: 'https://code.claude.com/docs/en/costs.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Create custom subagents'
+    url: 'https://code.claude.com/docs/en/sub-agents.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Commands'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- List what loads into the context window before you type your first word, and name the three layers a request is ordered into.
+- Read `/context` and say which category is costing you.
+- Choose deliberately between `/compact`, `/compact <instructions>`, `/clear`, `/rewind` and `/autocompact <tokens>`.
+- Say what survives compaction and what does not — including the five-file re-read, the skill-body caps, and which rules come back.
+- Decide when to delegate a read to a subagent, using the honest trade-off: a leaner main context, paid for with a second cold context window.
+
+**Prerequisites.** `m10-subagents` (what a subagent is and how to invoke one) and `m03-memory` (`CLAUDE.md`, rules, auto memory). The previous lesson's scoping techniques shrink the _starting_ size of context; this one is about what happens to it as a session runs.
+
+<WhenNotToUse>
+  Do not engineer context in a session that is going fine. Compaction is not free — it discards
+  detail and rebuilds the conversation cache — so a `/compact` reflex every few turns costs more
+  than it saves. Do not delegate a read to a subagent when the file is small or when you will need
+  the full contents later in the same session: the subagent returns a summary, not the file, and its
+  own context starts cold. And do not treat `/clear` as a fix for a bad answer; it is a fix for a
+  session that has moved on to unrelated work.
+</WhenNotToUse>
+
+## Concept
+
+### What is in the window before you type
+
+A session is never blank. Before your first prompt, the window already holds the system prompt (core instructions, tool definitions, and any output style or `--append-system-prompt` text), `CLAUDE.md`, auto memory, MCP tool names and skill descriptions, plus environment information — working directory, platform, shell, OS version, git status. Your own setup adds to that.
+
+As Claude works, each file read adds to context, path-scoped rules load alongside the files they match, and a hook can add to it too — a `SessionStart` hook’s stdout goes into context before your first prompt.
+
+Claude Code orders every request into three layers so that the parts that rarely change come first:
+
+| Layer           | Content                                           | Changes when                                                           |
+| --------------- | ------------------------------------------------- | ---------------------------------------------------------------------- |
+| System prompt   | Core instructions, tool definitions, output style | The set of loaded tool definitions changes, or Claude Code is upgraded |
+| Project context | `CLAUDE.md`, auto memory, unscoped rules          | Session starts, or after `/clear` or `/compact`                        |
+| Conversation    | Your messages, Claude's responses, tool results   | Every turn                                                             |
+
+That ordering is a caching decision, and the next lesson is entirely about what it buys you. Here it explains a behaviour that otherwise looks like a bug: **editing your project-root `CLAUDE.md` mid-session does not apply.** It is read once at session start and held; the new content loads on the next `/clear`, `/compact` or restart. The same is true of output style.
+
+### Seeing your own numbers
+
+`/context` prints a live breakdown by category, with optimisation suggestions and the list of `CLAUDE.md` and auto-memory files that loaded. `/memory` opens those files to edit. Both are interactive-only — there is no headless equivalent, as the second transcript below shows. In a script, the token counts come from the `usage` object in `claude -p … --output-format json` instead.
+
+### Acting before the window fills
+
+Claude Code compacts automatically as you approach the limit, so a full window never ends a session. You have five ways to get ahead of it:
+
+<CodeBlock title="in a session">
+
+```text
+/compact focus on the auth bug fix   # summarise now, keeping what you name
+/rewind                              # then "Summarize from here" / "Summarize up to here"
+/autocompact 500k                    # compact earlier: set how full the window gets first
+/clear                               # switching to unrelated work
+```
+
+</CodeBlock>
+
+`/autocompact <tokens>` writes the [`autoCompactWindow`](https://code.claude.com/docs/en/settings-reference.md) setting to your user settings. Auto-compaction itself is turned off or on with `autoCompactEnabled`; `DISABLE_AUTO_COMPACT` turns it off for one session, and the manual `/compact` keeps working when it is off. For one session, the `--autocompact` CLI flag takes precedence over that setting, and `CLAUDE_CODE_AUTO_COMPACT_WINDOW` takes precedence over both.
+
+The fifth way is to not put the content in your window at all — delegate the reading to a subagent, which is the second half of this lesson.
+
+If what you need is a bigger window rather than a shorter conversation, Fable 5.1, Fable 5, Sonnet 5, Opus 4.6 and later, and Sonnet 4.6 support a 1 million token context window; Sonnet 5 runs at 1M with no `[1m]` variant to select. Compaction works the same way at the larger limit.
+
+### What survives compaction
+
+Compaction replaces the message history with a summary. What happens to a piece of content depends on how it got there:
+
+| Mechanism                                | After compaction                                                                            |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------- |
+| System prompt and output style           | Unchanged; not part of message history                                                      |
+| Project-root `CLAUDE.md`, unscoped rules | Re-injected from disk                                                                       |
+| Auto memory                              | Re-injected from disk                                                                       |
+| The plan Claude wrote in plan mode       | Re-injected from disk                                                                       |
+| Rules with `paths:` frontmatter          | Reloaded as Claude reads files they match                                                   |
+| Nested `CLAUDE.md` in subdirectories     | Reloaded as Claude reads files in that subdirectory                                         |
+| Files Claude read or edited              | Claude Code re-reads up to five, most recently modified first                               |
+| Invoked skill bodies                     | Re-injected, capped at 5,000 tokens per skill and 25,000 tokens total; oldest dropped first |
+| Context that hooks added earlier         | Summarised with the rest of the conversation                                                |
+| `SessionStart` hooks matching `compact`  | Claude Code runs them and adds their output                                                 |
+
+Three consequences follow directly. A file over 5,000 tokens comes back after the re-read as a path reference rather than its content — shown as `Referenced file` instead of `Read` — though its rules still reload. A rule that must persist across compaction should drop its `paths:` frontmatter or move into the project-root `CLAUDE.md`. And because skill bodies are truncated from the end, the instructions that matter most belong at the top of `SKILL.md`.
+
+Since v2.1.198 the summarisation request inherits the session's extended-thinking configuration — it reasons with thinking on when your session has it on. That affects only how the summary is produced.
+
+### Delegating a read to a subagent
+
+A subagent runs in its own context window. It reads what it needs there and returns only its answer, so the file contents never enter your conversation. From your side, the call and the result are two appended messages.
+
+That is the well-known half. The honest half is the cost. Here is this lesson's worked example prompt, run two ways against a directory of seven files:
+
+```text
+Read every .ts file in large/src/notifications/ and give me a one-line summary of each.
+```
+
+Done directly, that is seven reads landing in your context. Delegated to the built-in `Explore` subagent, the reads land in the subagent's context and one summary comes back. The measured result from the lab below: **8,596 tokens added to the main conversation's cache directly, versus 1,185 through the subagent** — and **$0.064 versus $0.128 in total cost.** The delegation kept the main window seven-eighths cleaner and cost roughly twice as much, because the subagent starts from a cold prefix of its own.
+
+So the rule is not "always delegate". It is: delegate when the main session's context is the scarce resource — a long session you need to keep going, a read whose contents you will never need again — and read directly when the session is short or you will want the file later anyway.
+
+## Hands-on lab
+
+<Callout>
+  No `lesson/m21-scale-*` tags exist in the lab repository; this module's fixtures live on `main`.
+  Work in a plain clone. `large/src/notifications/` holds the seven files this lab reads.
+</Callout>
+
+<Lab
+  title="Lab · measure what a subagent keeps out of your context"
+  lessonId="en/l4-master/m21-scale/context-engineering"
+  repoTag="none"
+  steps={[
+    'In a plain clone of the lab repo, run the direct version and keep the envelope: `claude -p "Read every .ts file in large/src/notifications/ and give me a one-line summary of each." --model sonnet --max-turns 12 --allowedTools Read Glob --output-format json > direct.json`',
+    'Run the delegated version: `claude -p "Delegate to the Explore subagent: have it read every .ts file in large/src/notifications/ and return a one-line summary of each. Report its answer." --model sonnet --max-turns 12 --allowedTools Agent --output-format json > subagent.json`',
+    'Compare `usage.cache_creation_input_tokens` (what this turn added to the cached prefix), `num_turns`, and `total_cost_usd` between the two files.',
+    'Start an interactive session in the same clone and run `/context`. Read the Memory files list and the per-category breakdown.',
+    'Confirm that `/context` has no headless form: run `claude -p "/context" --model sonnet --max-turns 2 --output-format text` and read what comes back.',
+  ]}
+  expected="The direct run adds roughly seven times more to the main conversation than the delegated run (8,596 vs 1,185 cache-creation tokens here) and takes many more turns; the delegated run costs about twice as much in total. `claude -p` with /context as the prompt answers as if you had typed the text, not as if you had run the command."
+  checklist={[
+    'You have both JSON envelopes and can point at the two cache_creation_input_tokens figures',
+    'You can say which of the two runs you would choose in a long session, and why',
+    'You ran /context interactively and found the Memory files list',
+    'You confirmed /context is interactive-only rather than assuming it',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m21-scale/02-context-engineering/01-direct-reads-vs-subagent.txt"
+    range="3-30"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m21-scale/02-context-engineering/02-context-command-is-interactive-only.txt"
+    range="3-5"
+  />
+</Lab>
+
+The `num_turns` figures tell the same story from another angle: nine turns of tool calls in your own loop versus one turn that hands the whole job over. And the second transcript is the reason this lesson describes `/context` in prose instead of showing a fake screenshot of it — sent to `claude -p`, the text `/context` is answered as a greeting, so there is no recording of it to show. Interactive-only features get described, never invented.
+
+## Anti-patterns
+
+**Editing `CLAUDE.md` and expecting the running session to pick it up.** It was read at session start and held in memory; the edit lands on disk and changes nothing until `/clear`, `/compact` or a restart. _Fix:_ make the edit, then `/clear`, or state the new instruction in the prompt for the rest of this session.
+
+**Compacting mid-task.** The summary keeps what the automatic pass guesses is important, which in the middle of a task is rarely what you were about to need. _Fix:_ compact at a natural break, or pass instructions — `/compact focus on the auth bug fix`.
+
+**Using `/compact` to abandon a bad path.** Compaction summarises the wrong turn along with everything else. _Fix:_ `/rewind` back to before it. Rewinding truncates to a prefix that already exists rather than building a new one.
+
+**Delegating everything to subagents to "save context".** Each subagent starts cold and is billed accordingly; the lab measured roughly double the cost for one small directory. _Fix:_ delegate reads whose contents you will not need again, in sessions where the main window is the constraint.
+
+**Writing the important part at the bottom of a `SKILL.md`.** After compaction, skill bodies are re-injected but truncated from the end, capped at 5,000 tokens each and 25,000 in total. _Fix:_ put the instructions that must survive at the top of the file.
+
+**Trusting a `paths:`-scoped rule to hold across a long session.** It lives in message history, so compaction summarises it away and it only comes back when a matching file is read again. _Fix:_ for a rule that must always apply, drop `paths:` or move it into the project-root `CLAUDE.md`.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/context-engineering"
+  questionId="q1"
+  lang="en"
+  prompt="You edit your project-root CLAUDE.md halfway through a long session. What happens?"
+  options={[
+    {
+      text: 'The new content applies from the next message',
+      explanation: 'Claude keeps working with the version loaded at session start.',
+    },
+    {
+      text: 'Nothing applies until the next `/clear`, `/compact` or restart',
+      correct: true,
+      explanation:
+        'Project-root and user-level memory files are read once at session start and held.',
+    },
+    {
+      text: 'The cache is invalidated and the next turn is slow',
+      explanation:
+        'The edit does not invalidate the cache — precisely because the file is not re-read.',
+    },
+    {
+      text: 'Claude re-reads it after the next file edit',
+      explanation:
+        'Nested CLAUDE.md files in subdirectories load on demand; the project-root one does not.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/context-engineering"
+  questionId="q2"
+  lang="en"
+  prompt="Which statement about compaction is correct?"
+  options={[
+    {
+      text: 'Everything is summarised, including CLAUDE.md and auto memory',
+      explanation:
+        'Project-root CLAUDE.md, unscoped rules, auto memory and the plan-mode plan are re-injected from disk.',
+    },
+    {
+      text: 'Claude Code re-reads up to five of the files it touched, most recently modified first, and a file over 5,000 tokens comes back as a path reference rather than its content',
+      correct: true,
+      explanation:
+        'It shows as `Referenced file` instead of `Read`; the rules matching it still reload.',
+    },
+    {
+      text: 'Skill bodies are dropped entirely',
+      explanation:
+        'They are re-injected, capped at 5,000 tokens per skill and 25,000 total, oldest dropped first.',
+    },
+    {
+      text: 'Compaction is unavailable once you exceed the 200k window',
+      explanation:
+        'Compaction is what handles a full window, and it works the same way at the 1M limit.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/context-engineering"
+  questionId="q3"
+  lang="en"
+  prompt="In the lab, delegating seven file reads to a subagent added 1,185 tokens to the main conversation instead of 8,596 — but cost $0.128 instead of $0.064. What is the right conclusion?"
+  options={[
+    {
+      text: 'Subagents are a cost optimisation and should be the default',
+      explanation:
+        'The measurement says the opposite about cost: the subagent run was about twice as expensive.',
+    },
+    {
+      text: 'Subagents trade money for main-context space, so delegate when the window is the scarce resource',
+      correct: true,
+      explanation:
+        'A subagent starts from its own cold prefix; you pay for that to keep the reads out of your window.',
+    },
+    {
+      text: 'The measurement is wrong; a subagent cannot cost more',
+      explanation:
+        'Both figures come from the real `--output-format json` envelopes captured for this lesson.',
+    },
+    {
+      text: 'Reading directly is always cheaper and always better',
+      explanation:
+        'Cheaper for one short task; in a long session the context you spend is what ends the session.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/context-engineering"
+  questionId="q4"
+  lang="en"
+  prompt="You want automatic compaction to run earlier than the default. Which is the documented way?"
+  options={[
+    {
+      text: 'Run `/autocompact 500k`, which writes the `autoCompactWindow` setting',
+      correct: true,
+      explanation:
+        'For one session the `--autocompact` flag overrides that setting, and `CLAUDE_CODE_AUTO_COMPACT_WINDOW` overrides both.',
+    },
+    {
+      text: 'Set `autoCompactAt` in settings',
+      explanation: 'No such key. The keys are `autoCompactEnabled` and `autoCompactWindow`.',
+    },
+    {
+      text: 'Set `DISABLE_AUTO_COMPACT=1`',
+      explanation: 'That turns automatic compaction off for the session, not earlier.',
+    },
+    {
+      text: 'Run `/compact` on a timer',
+      explanation:
+        'Manual compaction is a good habit at task boundaries, but it is not the setting being asked for.',
+    },
+  ]}
+/>
+
+**Next:** `03-prompt-caching` explains why the layer ordering above exists, what a mid-session model switch really costs, and how to read your own cache hit rate.

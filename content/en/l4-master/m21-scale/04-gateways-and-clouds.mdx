@@ -1,0 +1,353 @@
+---
+title: 'Gateways and cloud providers'
+description: 'Run Claude Code against Amazon Bedrock, Google Cloud’s Agent Platform, Microsoft Foundry, or a gateway your organisation operates — the environment variables for each, what a gateway buys you, what it costs, and the proxy and allowlist configuration underneath it all.'
+level: 4
+module: 'm21-scale'
+order: 4
+duration_min: 15
+difficulty: advanced
+tags: ['bedrock', 'vertex', 'foundry', 'gateway', 'network']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Run Claude Code through a gateway'
+    url: 'https://code.claude.com/docs/en/gateways.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Other LLM gateways'
+    url: 'https://code.claude.com/docs/en/llm-gateway.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Connect Claude Code to an LLM gateway'
+    url: 'https://code.claude.com/docs/en/llm-gateway-connect.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code on Amazon Bedrock'
+    url: 'https://code.claude.com/docs/en/amazon-bedrock.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: "Claude Code on Google Cloud's Agent Platform"
+    url: 'https://code.claude.com/docs/en/google-vertex-ai.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code on Microsoft Foundry'
+    url: 'https://code.claude.com/docs/en/microsoft-foundry.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Enterprise network configuration'
+    url: 'https://code.claude.com/docs/en/network-config.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Enterprise deployment overview'
+    url: 'https://code.claude.com/docs/en/third-party-integrations.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Name the four provider paths — Anthropic API or subscription, Amazon Bedrock, Google Cloud's Agent Platform, Microsoft Foundry — and the environment variable that selects each.
+- Say what a gateway gives an organisation, what it costs them, and the difference between Anthropic's Claude apps gateway and a gateway you already run.
+- Predict what happens to a developer's claude.ai subscription when a gateway credential is set, and what happens when only `ANTHROPIC_BASE_URL` is set.
+- Configure `ANTHROPIC_BASE_URL` plus the right credential variable, and know which HTTP header each one lands in.
+- Configure an `HTTPS_PROXY` and a custom CA, and know which domains still need to be reachable when model traffic goes elsewhere.
+
+**Prerequisites.** `m14-security` and `m20-team` for settings scopes and managed settings; `m05-models-effort` for model aliases and pinning. This is an administrator-shaped lesson: you can read it without an organisation, but the decisions belong to whoever owns the rollout.
+
+<WhenNotToUse>
+  A gateway is infrastructure your organisation then operates forever. Claude Code adds capabilities
+  every release, and a gateway that does not forward them breaks the corresponding features — so
+  unless you actually need central credentials, per-developer usage attribution, budgets, or audit
+  logging, do not put one in the path. The same goes for cloud providers: a developer on a Claude
+  subscription who is not bound by a data-residency or procurement requirement gets a simpler,
+  better-supported session going straight to Anthropic. And nothing here belongs in an individual's
+  shell profile — configuration for a fleet is delivered through managed settings, not by asking
+  each developer to export variables correctly.
+</WhenNotToUse>
+
+## Concept
+
+<Callout>
+  This lesson has no transcript, and that is deliberate. Every command below is a configuration
+  example: verifying a provider path requires an AWS, Google Cloud, Azure or gateway account, which
+  this course does not sign in to, and `/status` — the one command here you can run today — is
+  interactive-only, so there is nothing to capture from it either. Inventing a session that looked
+  like one would be a fabricated recording (D070). Treat the provider pages in Sources as the
+  authority for your own account.
+</Callout>
+
+### Four paths to a model
+
+| Path                          | Selected by                 | Credentials come from                                                                              |
+| ----------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------- |
+| Anthropic API / subscription  | The default                 | Browser sign-in, `ANTHROPIC_API_KEY`, or `claude setup-token`                                      |
+| Amazon Bedrock                | `CLAUDE_CODE_USE_BEDROCK=1` | The default AWS SDK credential chain                                                               |
+| Google Cloud's Agent Platform | `CLAUDE_CODE_USE_VERTEX=1`  | Application Default Credentials                                                                    |
+| Microsoft Foundry             | `CLAUDE_CODE_USE_FOUNDRY=1` | `ANTHROPIC_FOUNDRY_AUTH_TOKEN`, `ANTHROPIC_FOUNDRY_API_KEY`, or the Azure default credential chain |
+
+Bedrock and the Agent Platform both have an interactive setup wizard — pick **3rd-party platform** at the login prompt, or run `/setup-bedrock` or `/setup-vertex` in a session — which detects your credentials and region, checks which Claude models your account can invoke, and writes the result into the `env` block of your user settings file. Microsoft Foundry has no wizard; environment variables are the only path.
+
+<CodeBlock title="Amazon Bedrock">
+
+```bash
+export CLAUDE_CODE_USE_BEDROCK=1
+export AWS_REGION=us-east-1            # only needed to override your profile's region
+
+# Optional: pin the models a rollout uses, so an upgrade never changes them under you
+export ANTHROPIC_DEFAULT_SONNET_MODEL='us.anthropic.claude-sonnet-4-6'
+export ANTHROPIC_DEFAULT_HAIKU_MODEL='us.anthropic.claude-haiku-4-5-20251001-v1:0'
+```
+
+</CodeBlock>
+
+<CodeBlock title="Google Cloud's Agent Platform">
+
+```bash
+export CLAUDE_CODE_USE_VERTEX=1
+export CLOUD_ML_REGION=global          # or a multi-region such as `eu`, or a region such as us-east5
+export ANTHROPIC_VERTEX_PROJECT_ID=YOUR-PROJECT-ID
+
+# With CLOUD_ML_REGION=global, override the region for models that have no global endpoint
+export VERTEX_REGION_CLAUDE_HAIKU_4_5=us-east5
+```
+
+</CodeBlock>
+
+<CodeBlock title="Microsoft Foundry">
+
+```bash
+export CLAUDE_CODE_USE_FOUNDRY=1
+export ANTHROPIC_FOUNDRY_RESOURCE=<your-resource-name>
+export ANTHROPIC_DEFAULT_SONNET_MODEL='claude-sonnet-5'   # your deployment names
+```
+
+</CodeBlock>
+
+Three things generalise across all three. **Pin your models before rolling out to a team**: an unpinned deployment follows Claude Code's built-in defaults, and on Bedrock the docs are explicit that a deployment which does not pin a primary model ends up billed at the Opus rate from v2.1.207. **Model IDs are provider-shaped** — `us.anthropic.claude-sonnet-4-6` on Bedrock, a deployment name on Foundry — so the aliases you know from a direct session do not transfer verbatim. And **each provider carries its own model set**, which is generally older than what the Anthropic API offers; check availability in your region before promising a model to a team. Run `/status` to see the provider and the resolved region Claude Code actually chose.
+
+### What a gateway is for
+
+A gateway is a proxy your organisation runs between Claude Code and a provider. Developers authenticate to the gateway; the gateway forwards the request with the organisation's provider credential. Two credentials are in play: a per-developer one issued by the gateway, and one provider credential the gateway holds.
+
+That buys five things in one place: credentials stay server-side, usage is attributed per developer or team, budgets and rate limits are enforced centrally, every request can be logged for compliance, and — if the gateway exposes a single Anthropic-format endpoint — the provider can be changed without touching developer machines.
+
+The cost is that the gateway becomes infrastructure you operate and keep current with each Claude Code release.
+
+There are two kinds. **Claude apps gateway** is Anthropic's own, shipped inside the `claude` binary, with corporate-IdP sign-in through `/login`, per-group model allowlists and managed-settings enforcement, and OTLP usage metrics to your own observability stack. Because it releases with the CLI there is no forwarding list to keep updated. Its sign-in is a browser SSO step with no service-token flow, so a CI pipeline with nobody to approve the sign-in cannot authenticate through it. **Any other gateway** works too, as long as it exposes a supported API format; Anthropic does not endorse, maintain or audit third-party gateway products, and does not support routing Claude Code to non-Claude models through any gateway.
+
+### Connecting to a gateway you already run
+
+<CodeBlock title="point Claude Code at a gateway">
+
+```bash
+export ANTHROPIC_BASE_URL=https://llm-gateway.example.com
+export ANTHROPIC_AUTH_TOKEN=<your-gateway-credential>
+```
+
+</CodeBlock>
+
+Which credential variable you use is not cosmetic — each lands in a different header. `ANTHROPIC_AUTH_TOKEN` goes into `Authorization: Bearer`, `ANTHROPIC_API_KEY` into `x-api-key`, and an `apiKeyHelper` supplies both. A credential in the wrong variable reaches the gateway in a header it does not read and the request fails with `401`. If you were not told which kind your gateway wants, start with `ANTHROPIC_AUTH_TOKEN` and switch if you get a `401`.
+
+For a fleet, put these in the `env` block of a managed settings file and distribute them, so developers configure nothing. Before depending on a gateway, have each developer run `/status` and confirm the base URL and credential are actually present — distribution problems should surface then, not during an incident.
+
+Here is this lesson's worked example prompt, for the moment you are trying to tell configuration problems apart:
+
+```text
+I set ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in my shell, but /status still shows
+my claude.ai login. Read my settings files and tell me which scope is winning and why.
+```
+
+### The subscription rule, and the one exception
+
+While a gateway credential variable or an `apiKeyHelper` is active, the developer's claude.ai subscription **is not used**: the credential replaces the subscription login for that session, the subscription's usage limits do not apply, and every request is billed per token to whoever owns the credential the gateway forwards.
+
+The exception is setting **only** `ANTHROPIC_BASE_URL` with no credential. Requests still route through the gateway, but a saved claude.ai login stays the active credential, so its limits and billing apply. A gateway passing that traffic on to Anthropic must forward the OAuth capability in `anthropic-beta` for it to work.
+
+### Caching through a gateway
+
+The previous lesson's cache lives wherever your requests are served, and through a gateway what stays cached depends entirely on how the gateway treats the `cache_control` markers Claude Code sends. Three outcomes:
+
+- **Forwarded unchanged** — caching behaves as at the provider's own endpoint.
+- **Rejected with a `400` naming `cache_control`** — Claude Code moves the marker onto your last conversation message and keeps it there; the system block bills as uncached input, your conversation stays cached.
+- **Silently removed while returning success** — your entire conversation history bills as uncached input on every turn.
+
+The third is the one that hurts and the one nobody notices. If cache token counts stay at zero through a gateway, that is the first thing to check. The one-hour TTL also travels partly in the `anthropic-beta` header, so a gateway must forward that header unchanged for it to work; the Claude apps gateway does not offer the one-hour TTL at all.
+
+### The network underneath
+
+A gateway routes model API requests. Several things you might expect it to cover are configured separately.
+
+<CodeBlock title="proxy and CA configuration">
+
+```bash
+export HTTPS_PROXY=https://proxy.example.com:8080
+export NO_PROXY="localhost,192.168.1.1,example.com,.example.com"
+export NODE_EXTRA_CA_CERTS=/path/to/corporate-ca.pem
+```
+
+</CodeBlock>
+
+Lowercase variants work, and Claude Code uses the first of `https_proxy`, `HTTPS_PROXY`, `http_proxy`, `HTTP_PROXY` that is set. SOCKS proxies are not supported. Loopback WebSocket connections never go through the proxy, so `NO_PROXY` needs no loopback entry for them.
+
+Two rollout details are easy to get wrong. **Set these in settings, not in your shell.** Background agents run under a per-user supervisor process that outlives your shell and inherits the environment of whichever shell happened to start it first — an OS-installed supervisor gets no shell environment at all. Variables in the `env` block of `~/.claude/settings.json` or managed settings are the only form that reaches every background session. **A required corporate launcher needs the `processWrapper` setting** (or `CLAUDE_CODE_PROCESS_WRAPPER`), because the supervisor starts Claude Code from a fixed path and bypasses a wrapper placed earlier on `PATH` — the next lesson covers the launcher contract.
+
+Even when model traffic goes to a cloud provider or a gateway, some hosts still need to be reachable. `api.anthropic.com` is still called for the WebFetch domain safety check unless you set `skipWebFetchPreflight: true`, and for the fast-mode availability check even behind `ANTHROPIC_BASE_URL`. `downloads.claude.ai` serves the installer and auto-updater; `registry.npmjs.org` serves npm-source plugins and `npx`-launched MCP servers; `code.claude.com` serves documentation lookups. The two Datadog intake hosts carry only optional telemetry — `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` disables both, and sessions on third-party providers never send to them at all.
+
+## Hands-on lab
+
+<Lab
+  title="Lab · write the rollout configuration, then check your own session"
+  lessonId="en/l4-master/m21-scale/gateways-and-clouds"
+  repoTag="none"
+  steps={[
+    'Open an interactive session you already have and run `/status`, then read the provider, login method and region off your own screen — `/status` is interactive-only, so this step is yours to observe rather than something this lesson can show you a recording of. It is the baseline you would compare a rollout against.',
+    'On paper, choose a path for a hypothetical 40-developer team with an existing AWS estate and a compliance requirement to log every model request, and write down which of the four paths plus which gateway kind you would pick, and why.',
+    'Write the managed-settings `env` block that would deliver your choice — the provider selector, the region, the pinned model IDs, and the proxy variables — using placeholders for every account-specific value.',
+    'For each variable in your block, find it on the official page it comes from and confirm the exact spelling. Two spellings that look plausible and are wrong: there is no `autoCompactAt`, and `ANTHROPIC_VERTEX_PROJECT_ID` is outranked by `GOOGLE_CLOUD_PROJECT` if that is also set.',
+    'Write down what would happen to a developer on your team who has a personal Claude Max subscription once your gateway credential is delivered to their machine.',
+  ]}
+  expected="A settings block you could hand to an administrator, containing no real credentials, where every key is one you found on an official page rather than one you remembered — and a one-line answer that the developer's subscription is not used or charged while the gateway credential is active."
+  checklist={[
+    '/status told you your current provider and login method',
+    'Your env block has a provider selector, a region, and pinned model IDs',
+    'Every variable name was checked against the official page, not recalled',
+    'No real account IDs, hostnames or credentials appear anywhere in it',
+    'You can state the subscription rule and its one exception',
+  ]}
+/>
+
+## Anti-patterns
+
+**Rolling out a cloud provider without pinning models.** The built-in defaults move with Claude Code releases and with what your account has enabled; on Bedrock the documented consequence of not pinning a primary model is being billed at the Opus rate from v2.1.207. _Fix:_ pin `ANTHROPIC_DEFAULT_SONNET_MODEL` and friends, or complete the wizard's pin step, before the rollout.
+
+**Asking developers to export variables in their shell profile.** The background supervisor inherits whichever shell started it first, so proxy, CA and provider variables reach background sessions unpredictably. _Fix:_ deliver them in the `env` block of managed settings or `~/.claude/settings.json`.
+
+**Putting the credential in the wrong variable.** `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_API_KEY` land in different headers; the gateway simply does not see one in the header it does not read. _Fix:_ read the `401` as "wrong variable" before assuming a bad key, and switch.
+
+**Assuming a gateway preserves caching.** A gateway that strips `cache_control` while returning `200` makes every turn bill as uncached input, with no error anywhere. _Fix:_ check `cache_read_input_tokens` in a `--output-format json` run right after connecting; zero means the markers are not surviving.
+
+**Expecting a Claude apps gateway to work in CI.** Its sign-in is a browser SSO step with no service-token flow. _Fix:_ configure CI against the provider directly.
+
+**Allowlisting only the gateway.** Version checks, plugin installs, the WebFetch domain safety check and the fast-mode availability check still leave the machine on their own paths. _Fix:_ work through the network-access table for the hosts your install method and feature set actually need.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/gateways-and-clouds"
+  questionId="q1"
+  lang="en"
+  prompt="A developer with a Claude Max subscription is given ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN for the company gateway. What happens to their subscription?"
+  options={[
+    {
+      text: 'It is used first, and the gateway is a fallback once limits are hit',
+      explanation: 'The gateway credential replaces the subscription login for that session.',
+    },
+    {
+      text: 'It is not used or charged; every request bills to the account behind the gateway’s provider credential',
+      correct: true,
+      explanation:
+        'The saved claude.ai login stays on disk and unused; unset the variable and it comes back.',
+    },
+    {
+      text: 'Both are billed, since traffic passes through both',
+      explanation: 'Only one credential authenticates a request.',
+    },
+    {
+      text: 'Claude Code refuses to start until one of them is removed',
+      explanation: 'A gateway credential variable simply takes precedence over a saved login.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/gateways-and-clouds"
+  questionId="q2"
+  lang="en"
+  prompt="Which selects Microsoft Foundry, and what supplies its credentials by default?"
+  options={[
+    {
+      text: '`CLAUDE_CODE_USE_FOUNDRY=1`; the Azure SDK default credential chain when neither ANTHROPIC_FOUNDRY_AUTH_TOKEN nor ANTHROPIC_FOUNDRY_API_KEY is set',
+      correct: true,
+      explanation:
+        'ANTHROPIC_FOUNDRY_AUTH_TOKEN takes precedence over the API key and over the chain.',
+    },
+    {
+      text: '`CLAUDE_CODE_USE_AZURE=1`; an Azure CLI login',
+      explanation: 'No such variable.',
+    },
+    {
+      text: '`ANTHROPIC_BASE_URL` pointed at the Azure endpoint; an API key',
+      explanation: 'That is the LLM-gateway path, not the Foundry provider path.',
+    },
+    {
+      text: 'The `/setup-foundry` wizard',
+      explanation:
+        'Microsoft Foundry has no interactive setup wizard — environment variables are the only configuration path.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/gateways-and-clouds"
+  questionId="q3"
+  lang="en"
+  prompt="After connecting through a third-party gateway, `cache_read_input_tokens` is 0 on every turn and no errors appear. What is the most likely cause?"
+  options={[
+    {
+      text: 'The gateway removes the `cache_control` markers while returning success',
+      correct: true,
+      explanation:
+        'That makes the entire conversation history bill as uncached input, silently, on every turn.',
+    },
+    {
+      text: 'The gateway rejects marked requests with a 400 naming `cache_control`',
+      explanation:
+        'In that case Claude Code moves the marker onto your last message and your conversation stays cached.',
+    },
+    {
+      text: 'Caching is only available on a Claude subscription',
+      explanation:
+        'Caching works on API keys and cloud providers too; only the default TTL differs.',
+    },
+    {
+      text: 'You need to set `promptCacheTtl`',
+      explanation:
+        'That chooses between 5m and 1h; it does not create hits where the prefix never matches.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/gateways-and-clouds"
+  questionId="q4"
+  lang="en"
+  prompt="You set HTTPS_PROXY in your shell profile and background agents still bypass the proxy. Why?"
+  options={[
+    {
+      text: 'Background agents do not use the network',
+      explanation: 'They make the same model requests as any other session.',
+    },
+    {
+      text: 'The per-user supervisor that hosts background sessions inherits whichever shell started it first, and an OS-installed one gets no shell environment at all',
+      correct: true,
+      explanation:
+        'Put network variables in the `env` block of `~/.claude/settings.json` or managed settings instead.',
+    },
+    {
+      text: 'HTTPS_PROXY is ignored; only `https_proxy` works',
+      explanation:
+        'Both work — Claude Code takes the first of `https_proxy`, `HTTPS_PROXY`, `http_proxy`, `HTTP_PROXY` that is set.',
+    },
+    {
+      text: 'Claude Code does not support proxies',
+      explanation: 'It supports HTTP and HTTPS proxies; only SOCKS is unsupported.',
+    },
+  ]}
+/>
+
+**Next:** `05-devcontainers` puts a session inside a container — the last piece of a locked-down rollout, and where the launcher, the firewall and the managed settings from this lesson actually land.

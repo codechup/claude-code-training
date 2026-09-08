@@ -1,0 +1,319 @@
+---
+title: 'Prompt caching'
+description: 'Claude Code re-sends your whole conversation on every turn and the API charges you for it — unless the prefix matches what it already processed. Learn which actions break that match, how the two TTLs work, and how to read your own cache numbers from /usage and the JSON envelope.'
+level: 4
+module: 'm21-scale'
+order: 3
+duration_min: 15
+difficulty: advanced
+tags: ['prompt-caching', 'cost', 'tokens', 'usage']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'How Claude Code uses prompt caching'
+    url: 'https://code.claude.com/docs/en/prompt-caching.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage costs effectively'
+    url: 'https://code.claude.com/docs/en/costs.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Explore the context window'
+    url: 'https://code.claude.com/docs/en/context-window.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run Claude Code programmatically'
+    url: 'https://code.claude.com/docs/en/headless.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Explain prefix matching in one sentence, and why there is no per-file or per-segment caching.
+- Name the actions that invalidate the cache and the ones that do not, and predict which of two mid-session changes costs you a full re-read.
+- Choose between the five-minute and one-hour TTL, and say which bucket a subagent's requests fall into.
+- Read `cache_read_input_tokens`, `cache_creation_input_tokens` and `cache_creation.ephemeral_*` out of a real `--output-format json` envelope, and find the same numbers in `/usage`.
+- Say why two sessions in different directories — including two worktrees of the same repository — never share a cache.
+
+**Prerequisites.** The previous lesson's three-layer request model. Some familiarity with `claude -p` and `--output-format json` from `m13-headless-ci`.
+
+<WhenNotToUse>
+  There is nothing here to switch on: Claude Code manages prompt caching for you, and the correct
+  configuration for almost everyone is the default. Reach for the disable variables only when you
+  are debugging caching behaviour on a specific model or provider, and for a non-default TTL only
+  when you have measured that the default is wrong for how you work. Tuning cache settings is also
+  the wrong response to a large bill — the lever that actually moves that number is how much context
+  you carry, which is the previous lesson.
+</WhenNotToUse>
+
+## Concept
+
+### Why any of this exists
+
+The model remembers nothing between requests, so every turn re-sends the whole context: system prompt, project context, every prior message and tool result, then your new message. Without caching the API would reprocess all of it every time.
+
+The API caches by matching the **start** of each request — the prefix — against content it recently processed. On a normal turn the prefix is the entire previous request and only the latest exchange is new. The match is exact, so a change anywhere in the prefix recomputes everything after it. There is no per-file or per-segment caching, and a cache read bills at roughly 10% of the standard input rate.
+
+That is the whole mechanism, and it explains almost every behaviour on this page — including the layer ordering from the previous lesson, which exists to put the rarely-changing content first.
+
+Two things sit outside that table but still change what stays cached. **Each model has its own cache**, so `/model` mid-session recomputes the whole request even when the content is identical. **Effort level** does too on most models — with one exception: on Fable 5.1 with an API key or a Claude subscription, changing effort keeps the cache and Claude Code applies it without asking. That exception does not apply on Amazon Bedrock, Google Cloud's Agent Platform, a Claude apps gateway, with `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS` set, or under a HIPAA configuration.
+
+### What breaks the cache, and what does not
+
+| Invalidates                                                                 | Keeps the cache                                            |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| Switching models (`/model`, `opusplan` entering/leaving plan mode)          | Editing files in your repository                           |
+| Changing effort level (except Fable 5.1 as above)                           | Editing `CLAUDE.md` mid-session — it does not apply either |
+| Turning on fast mode, once per conversation                                 | Changing output style — also does not apply until restart  |
+| An MCP server connecting or disconnecting _when its tools are not deferred_ | Changing permission mode                                   |
+| Enabling or disabling a plugin that provides such an MCP server             | Invoking skills and commands                               |
+| Adding or removing a bare tool-name deny rule such as `Bash`                | Running `/recap`                                           |
+| `/compact`                                                                  | `/rewind`                                                  |
+| Accumulating enough images that Claude Code drops a batch                   | Spawning a subagent                                        |
+| Upgrading Claude Code                                                       | Toggling `/advisor`                                        |
+
+Several of these deserve a sentence each.
+
+**Deferred MCP tools are the default on supported models**, and deferred definitions were never in the cached prefix — so a server connecting or disconnecting only appends. It is when tools are loaded into the prefix (tool search unavailable or disabled, an `alwaysLoad` server, threshold-based loading) that a stdio process exiting or an HTTP session expiring silently costs you a full re-read.
+
+**Only a deny rule that matches in the tool-name position** removes a tool from context: a bare name, `Bash(*)`, or a tool-name glob like `"*"`. A scoped rule such as `Bash(rm *)` leaves the prefix alone, because Claude Code checks it when Claude attempts the call.
+
+**`/compact` invalidates the conversation layer by design** — the new history is a shorter one that shares no prefix with the old. But the summarisation request itself reads your warm prefix from cache, so a mid-session compact costs a fraction of what the context size suggests. After a break longer than the TTL there is nothing to read, which is why compaction on a resumed old session is the expensive case.
+
+**Resuming a session after an upgrade** reprocesses the entire history with no hits, since it now sits behind a different system prompt. The first turn back into a long session can be the most expensive request you ever send.
+
+### Lifetime, and which TTL you get
+
+Cached prefixes expire after a period of inactivity; every hit resets the timer. There are two TTLs: five minutes, and one hour — the longer one keeps the cache warm across breaks but bills cache _writes_ at a higher rate.
+
+Claude Code picks per request, from two fixed buckets:
+
+- **Main conversation** — your interactive turns, `-p` runs, Agent SDK turns, and the helpers run inline with them.
+- **Everything else** — subagents, workflows, in-process teammates, forks, compaction, session titles.
+
+| Request bucket    | Claude subscription, within plan usage                                     | Usage credits, API key, or cloud provider |
+| ----------------- | -------------------------------------------------------------------------- | ----------------------------------------- |
+| Main conversation | One hour                                                                   | Five minutes                              |
+| Everything else   | Five minutes, except server-controlled helper requests, which get one hour | Five minutes                              |
+
+Once you exceed your plan's usage and Claude Code draws on usage credits, the main conversation drops to the cheaper five-minute TTL. To choose for yourself, both buckets have a setting and an environment variable — `promptCacheTtl` / `CLAUDE_CODE_PROMPT_CACHE_TTL` for the main conversation, `subagentPromptCacheTtl` / `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL` for everything else. Each takes `5m` or `1h` and nothing else; both require v2.1.242 or later. `FORCE_PROMPT_CACHING_5M=1` wins over everything and is the right tool when you are debugging or comparing.
+
+### Cache scope: one machine, one directory
+
+In Claude Code the cache is effectively scoped to a machine _and a directory_. The system prompt embeds the working directory, platform, shell, OS version and auto-memory paths, so two sessions in different directories build different prefixes and miss each other's cache — **including two worktrees of the same repository.** Parallel sessions in the same directory do read each other's cache; sequential ones share it only when the startup git-status snapshot matches, since branch and recent commits are in the system prompt too.
+
+### Reading your own numbers
+
+Two fields on every API response tell you how it is going:
+
+| Field                         | Meaning                                                                                 |
+| ----------------------------- | --------------------------------------------------------------------------------------- |
+| `cache_creation_input_tokens` | Tokens written to the cache on this turn, billed at the cache write rate                |
+| `cache_read_input_tokens`     | Tokens served from cache on this turn, billed at roughly 10% of the standard input rate |
+
+A high read-to-creation ratio means it is working. Creation staying high turn after turn means something in your prefix keeps changing.
+
+Interactively, `/usage` adds a **`Prompt cache (main)`** line to the Session block after the first response — hit ratio, miss count, and whether the cache is warm right now (v2.1.251+). Since v2.1.260 it also names the likely cause of the last miss, for example `likely cause: tool definitions changed`. A statusline script can read the same values from the `current_usage` and `prompt_cache` objects, and the OpenTelemetry exporter reports them per user and session for a whole organisation.
+
+Headlessly, they are in the `usage` object of `--output-format json`, which is what the lab measures. Here is this lesson's worked example prompt — deliberately trivial, because the point is the envelope rather than the answer:
+
+```text
+In one sentence, what does src/cli.ts do?
+```
+
+## Hands-on lab
+
+<Callout>
+  No `lesson/m21-scale-*` tags exist in the lab repository; work in a plain clone of `main`. The
+  exact numbers below are from one machine on a Claude subscription — yours will differ, but the
+  shape of the result should not.
+</Callout>
+
+<Lab
+  title="Lab · make the cache visible, then turn it off"
+  lessonId="en/l4-master/m21-scale/prompt-caching"
+  repoTag="none"
+  steps={[
+    'In a plain clone of the lab repo, run: `claude -p "In one sentence, what does src/cli.ts do?" --model sonnet --output-format json > run1.json`',
+    'Take the session id out of it — `jq -r .session_id run1.json` — and run a second prompt into the same session: `claude -p "Now, in one sentence, what does src/store.ts do?" --resume "$SID" --model sonnet --output-format json > run2.json`',
+    'Compare `.usage.cache_read_input_tokens`, `.usage.cache_creation_input_tokens` and `.usage.cache_creation` across the two files.',
+    'Run the first prompt again with caching off: `DISABLE_PROMPT_CACHING=1 claude -p "In one sentence, what does src/cli.ts do?" --model sonnet --output-format json`. Compare `input_tokens` and `total_cost_usd` with run 1.',
+    'Run it once more with `FORCE_PROMPT_CACHING_5M=1` and look at which key inside `cache_creation` the write landed under.',
+    'Start an interactive session in the same clone, ask anything, then run `/usage` and find the `Prompt cache (main)` line.',
+  ]}
+  expected="With caching on, uncached `input_tokens` is a handful of tokens while `cache_read_input_tokens` is tens of thousands. With DISABLE_PROMPT_CACHING=1 the same prompt reports ~67,500 uncached input tokens, zero cache reads, and roughly 7x the cost. With FORCE_PROMPT_CACHING_5M=1 the write appears under `ephemeral_5m_input_tokens` instead of `ephemeral_1h_input_tokens`."
+  checklist={[
+    'Both cached runs show four-figure creation and five-figure read token counts',
+    'The disabled run shows cache_read_input_tokens: 0 and a much larger total_cost_usd',
+    'You can name which ephemeral_* key each run wrote to, and why',
+    'You found the Prompt cache (main) line in /usage',
+    'You can explain why run 1 already had a warm cache despite being a brand-new session',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m21-scale/03-prompt-caching/01-cache-hits-across-two-runs.txt"
+    range="3-30"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m21-scale/03-prompt-caching/02-cache-disabled-and-5m-ttl.txt"
+    range="2-29"
+  />
+</Lab>
+
+Four things in those envelopes are worth reading carefully.
+
+**Run 1 was a brand-new session and still read 66,548 tokens from cache.** That is the cache-scope rule in action: earlier sessions in the same directory on the same machine had already built that prefix, and this one matched it.
+
+**Both cached runs wrote to `ephemeral_1h_input_tokens`.** That machine is on a Claude subscription within plan usage, where the main conversation gets the one-hour TTL by default. On an API key or a cloud provider the same runs would write to `ephemeral_5m_input_tokens` unless `promptCacheTtl` said otherwise.
+
+**Turning caching off cost about seven times as much for the same answer** — `$0.137` against `$0.0198` — and moved 67,572 tokens from the cheap cached-read column into full-price `input_tokens`. That is the size of the thing Claude Code is doing for you silently on every turn.
+
+**Forcing the five-minute TTL was not free either**: `$0.095`, with 34,533 tokens written under `ephemeral_5m_input_tokens` and only 33,399 read. The existing one-hour prefix was not reusable for the five-minute bucket, so that run paid to build a second one. Which is exactly why `FORCE_PROMPT_CACHING_5M=1` is a debugging tool and not a saving.
+
+## Anti-patterns
+
+**Switching models mid-task to "try something".** Each model has its own cache, so the next request re-reads the whole conversation with no hits. _Fix:_ pick model and effort at the top of a session; if you must switch, do it right after a `/clear` or `/compact` when there is little to rebuild.
+
+**`/compact` every few turns as hygiene.** Compaction discards detail and rebuilds the conversation cache from a new, shorter prefix. _Fix:_ compact at natural task boundaries, or `/rewind` when you want to undo a path rather than summarise it.
+
+**Blaming the model for a slow first turn after a break.** The prefix expired; the request is being reprocessed from scratch. _Fix:_ recognise it, and if long idle gaps are your normal pattern on an API key, set `promptCacheTtl: "1h"`.
+
+**Expecting a `CLAUDE.md` edit to change the running session.** It does not invalidate the cache — because it does not apply at all until `/clear`, `/compact` or a restart. _Fix:_ restart, or say the new instruction in your next prompt.
+
+**Assuming worktrees share a warm cache.** Each worktree is a different working directory, so each builds its own prefix. _Fix:_ expect a cold first turn per worktree, and factor it into how many you run in parallel.
+
+**Reaching for `DISABLE_PROMPT_CACHING` to control spend.** The lab measured the opposite: disabling caching multiplied the cost of one identical prompt by about seven. _Fix:_ leave caching on and reduce what you carry in context instead.
+
+<Callout variant="changed">
+  Before v2.1.260, changing effort on Fable 5.1 with an API key or a Claude subscription also
+  invalidated the cache; it now keeps it, and Claude Code applies the change without asking. Before
+  v2.1.238, `/model` asked you to confirm a switch even after the cache had already expired.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/prompt-caching"
+  questionId="q1"
+  lang="en"
+  prompt="Which of these keeps the cached prefix intact?"
+  options={[
+    {
+      text: 'Adding `Bash` as a deny rule',
+      explanation:
+        'A bare tool name removes the tool from the system prompt layer, which invalidates everything after it.',
+    },
+    {
+      text: 'Adding `Bash(rm *)` as a deny rule',
+      correct: true,
+      explanation:
+        'A scoped rule does not change which tools Claude sees; it is checked when Claude attempts the call.',
+    },
+    {
+      text: 'Switching from Sonnet to Opus with `/model`',
+      explanation: 'Each model has its own cache.',
+    },
+    {
+      text: 'Entering plan mode with the `opusplan` model setting',
+      explanation:
+        '`opusplan` resolves to Opus in plan mode and Sonnet outside it, so the toggle is a model switch.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/prompt-caching"
+  questionId="q2"
+  lang="en"
+  prompt="Your JSON envelope shows `cache_creation.ephemeral_5m_input_tokens: 34533` and `ephemeral_1h_input_tokens: 0`. What does that tell you?"
+  options={[
+    {
+      text: 'Caching is disabled',
+      explanation:
+        'With caching disabled both cache columns are zero and `input_tokens` carries everything.',
+    },
+    {
+      text: "This request's cache writes used the five-minute TTL",
+      correct: true,
+      explanation:
+        'Which happens by default on an API key or cloud provider, or when `FORCE_PROMPT_CACHING_5M=1` is set.',
+    },
+    {
+      text: 'The cache expired mid-request',
+      explanation: 'The field records which TTL the write requested, not whether anything expired.',
+    },
+    {
+      text: 'You are running through a gateway that strips `cache_control`',
+      explanation:
+        'That case shows as your whole conversation billing as uncached input, not as a 5-minute write.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/prompt-caching"
+  questionId="q3"
+  lang="en"
+  prompt="A brand-new `claude -p` session in a directory you have used before reports tens of thousands of `cache_read_input_tokens` on its very first request. Why?"
+  options={[
+    {
+      text: 'The envelope is reporting the whole account’s cache, not this session’s',
+      explanation: 'The `usage` object reports this request only.',
+    },
+    {
+      text: 'The cache is scoped to the machine and directory, so an earlier session in the same directory had already built that prefix',
+      correct: true,
+      explanation:
+        'The system prompt embeds working directory, platform, shell and OS version — same values, same prefix.',
+    },
+    {
+      text: '`-p` runs always reuse the last interactive session',
+      explanation: 'Resuming a conversation requires `--resume` or `--continue`.',
+    },
+    {
+      text: 'Cache reads are estimated, not measured',
+      explanation: 'They are token counts the API reports on the response.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/prompt-caching"
+  questionId="q4"
+  lang="en"
+  prompt="Which TTL do a subagent's requests get by default on a Claude subscription within plan usage?"
+  options={[
+    {
+      text: 'One hour, the same as the main conversation',
+      explanation:
+        'Subagents fall in the "everything else" bucket, which does not get the subscription’s hour.',
+    },
+    {
+      text: 'Five minutes, until you set `subagentPromptCacheTtl` or `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL`',
+      correct: true,
+      explanation:
+        'A subagent’s `experimental.cacheTtl` frontmatter can also set it, on v2.1.248 or later.',
+    },
+    {
+      text: 'They inherit the parent’s cache, so no TTL applies',
+      explanation:
+        'A subagent has its own system prompt and tool set, so its first request does not read the parent’s cache. A *fork* does.',
+    },
+    {
+      text: 'None; subagent requests are never cached',
+      explanation: 'A subagent warms a cache of its own across its turns.',
+    },
+  ]}
+/>
+
+**Next:** `04-gateways-and-clouds` moves the same request off Anthropic's infrastructure entirely — Bedrock, Google Cloud's Agent Platform, Microsoft Foundry, and the gateways in front of them.

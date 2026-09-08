@@ -2,7 +2,7 @@
 id: P38
 title: "L4 Master module: Scale (m21-scale)"
 milestone: M2
-status: in_progress
+status: review
 owner: lead-fable
 branch: plan/38-l4-m21-scale
 model_hint: opus
@@ -15,8 +15,11 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T19:26:15Z
-open_questions: []
+updated_at: 2026-09-07T23:45:31Z
+open_questions:
+  - 'research/feature-inventory.md has no facts row for gateways, Amazon Bedrock, Google Cloud''s Agent Platform, Microsoft Foundry, network-config or devcontainer — only the docs-map slug listing on line 18. This module fell through to live docs (correct per the source policy), but P03 should close the coverage gap so the next lesson in this area does not re-fetch eight pages.'
+  - 'The lab repository has no lesson/m21-scale-* tags (its README documents this as deliberate: m21 is process/strategy, not a change to that repo). Every lab here therefore uses repo_tag: "none" against a throwaway clone of main. If a later plan tags m21, these five lessons should be revisited.'
+  - '04-gateways-and-clouds ships with no transcript, by design: verifying any provider path needs an AWS/GCP/Azure/gateway account this course does not sign in to, and /status is interactive-only. Recorded here so a reviewer does not read the absence as an omission.'
 ---
 
 ## Goal
@@ -97,5 +100,101 @@ A reviewer opens `npm run dev`, visits each of the 4 lessons at `/en/l4-master/m
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+Executed by session `opus-p38-2026-09-07` in worktree `../cct-wt-38`.
+
+### Drift from this plan (CURRICULUM won, per Steps 1)
+
+`docs/CURRICULUM.md` §2 lists **five** lessons for m21-scale, not the four this plan's Deliverables
+section named. The shipped set follows the curriculum:
+
+| Shipped | This plan said |
+|---|---|
+| `01-large-codebases` | same |
+| `02-context-engineering` | same |
+| `03-prompt-caching` | same |
+| `04-gateways-and-clouds` | `04-gateways-bedrock-vertex-foundry-overview` (slug changed) |
+| `05-devcontainers` | not listed |
+
+`l4-master/index.mdx` and `m21-scale/index.mdx` already described the five-lesson shape, so neither
+needed editing.
+
+### What was written
+
+- 5 EN lessons under `content/en/l4-master/m21-scale/`, each with the full D006 section order.
+- 5 TR `draft: true` stubs with a Turkish `## Özet` and the repo's established
+  `<Callout label="Çeviri bekleniyor">` notice. Translation belongs to P25/P26/P40/P41.
+- 7 transcripts under `content/_shared/transcripts/m21-scale/`, all captured this session against a
+  throwaway clone of the lab repo's `main` (`../cct-lab-38`) plus, for lesson 05, a real
+  `@devcontainers/cli` build. Absolute paths and the home directory are redacted as `<path-to>` /
+  `<home>`; nothing else was altered.
+- 3 new `content/_shared/sources.json` entries (`docs-devcontainer`, `docs-corporate-launcher`,
+  `containers-dev-spec`) plus `m21-scale` appended to 17 existing entries. Append-only; no entry
+  removed or reordered.
+
+### Evidence captured (D093/D099)
+
+- **01** — an A/B pair of byte-identical `claude -p` runs differing only by `--add-dir`: refused,
+  then `60_000`. Both runs also show `permissions.allow` entries being ignored in an untrusted
+  workspace, which the lesson teaches as the realistic rollout failure mode.
+- **02** — the same seven-file read run directly vs. delegated to the `Explore` subagent:
+  8,596 vs 1,185 cache-creation tokens into the main conversation, $0.064 vs $0.128 total. The
+  lesson teaches the honest trade-off rather than "subagents save money". Plus a capture proving
+  `/context` has no headless form.
+- **03** — two consecutive `-p` runs, the second `--resume`d, showing `cache_read_input_tokens`
+  66,548 / 68,756 against four uncached input tokens; then the same prompt with
+  `DISABLE_PROMPT_CACHING=1` ($0.137, 67,572 uncached) and `FORCE_PROMPT_CACHING_5M=1` ($0.095,
+  written under `ephemeral_5m_input_tokens`).
+- **04** — no transcript; see `open_questions`.
+- **05** — a real `npx @devcontainers/cli build` that failed on the documented missing-Node path and
+  succeeded after adding the node feature.
+
+### Doc drift found while writing
+
+- **`autoCompactAt` does not exist.** The settings keys are `autoCompactEnabled` and
+  `autoCompactWindow`; the command is `/autocompact <tokens>`. This closes the open item
+  `research/feature-inventory.md` line 51 flagged for P14 ("the setting name behind it must be
+  quoted from the live settings.md, not assumed").
+- **Auto-compact precedence** is `CLAUDE_CODE_AUTO_COMPACT_WINDOW` > `--autocompact` flag >
+  `autoCompactWindow` setting. An earlier draft had this reversed; the fact-checker caught it.
+- **`network-config.md`'s live H1 is "Enterprise network configuration"**, not "Network
+  configuration". Corrected in both lessons that cite it and in the shared registry.
+- **`google-vertex-ai.md` is now written as "Google Cloud's Agent Platform"** throughout; only the
+  login prompt still shows the "Google Vertex AI" label. Lessons use the current name.
+- **The devcontainer feature's real failure string** is `Node.js and npm are required but could not
+  be installed!`, while `devcontainer.md` describes it as `Failed to install Node.js and npm`; the
+  feature's own suggested fix uses the `:1` major tag where the docs show `:1.0`. Lesson 05 says so
+  explicitly rather than quoting the doc string as if it were the output.
+
+### Review pipeline (D071)
+
+- **fact-checker** (`claude -p`, read-only, plan mode): 01 PASS (0 wrong, 2 unverifiable — both
+  claims about the lab repo's own tag state, which this session verified directly by reading the lab
+  README); 02 3 findings; 03 PASS clean; 04 1 finding; 05 1 precision finding. **Applied:** the
+  auto-compact precedence reversal (body + quiz), the over-broad "hooks add whatever they print",
+  the `network-config.md` title, and the v2.1.210+ gate on Remote Control / agent-teams launcher
+  coverage. **Rejected with evidence:** its claim that `DISABLE_AUTO_COMPACT` does not exist — it is
+  documented in `env-vars.md` and `settings-reference.md`, both re-read to confirm, so the lesson
+  text stands.
+- **reviewer** (`claude -p`, read-only, plan mode): 4 major + 3 minor, 0 blockers. All 7 applied —
+  cited the registry's `third-party-integrations` entry from lesson 04, made the `network-config`
+  title consistent, filled these Handoff notes, reworded lesson 04's `/status` lab step so it reads
+  as an observe-it-yourself check rather than an implied captured run, aligned source titles with
+  the registry's existing strings for shared URLs, switched the TR stubs to the repo's
+  `<Callout label="Çeviri bekleniyor">` convention, and de-duplicated lesson 04's two "no
+  transcript" callouts.
+
+### Verification
+
+`npm run gate` (202 files) · `npm run typecheck` (110 files, 0 errors) · `npm run lint` ·
+`npm test` (22 files, 184 tests) · `npm run build` ending `check-no-inline-script (dist): OK` with
+all 5 lesson pages plus the index in `dist/en/l4-master/m21-scale/` · `check-raw-colors` ·
+`check-public-hygiene` · `tools/plan/cli.ts check` · Playwright 30/30 at 390 px and 1280 px on a
+temporary `playwright.p38.config.ts` (port 4438) and a temporary spec covering every m21-scale route
+in both languages, both deleted afterwards.
+
+### For the translation plan
+
+The TR twins are stubs. Terms used in the EN prose that the glossary may not carry yet, noted here
+rather than added (`content/tr/playbook/glossary.mdx` is not in this plan's paths): *sparse
+checkout*, *devcontainer*, *gateway*, *prompt caching*, *TTL*, *egress*, *corporate launcher*.
 

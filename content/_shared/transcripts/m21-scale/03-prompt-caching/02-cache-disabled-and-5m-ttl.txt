@@ -1,0 +1,29 @@
+# Captured 2026-09-07, Claude Code 2.1.263, same clone, same prompt as run 1 of the previous capture. Two variants: caching off, then caching forced to the 5-minute TTL. Real JSON envelopes, trimmed to the cache fields.
+› DISABLE_PROMPT_CACHING=1 claude -p "In one sentence, what does src/cli.ts do?" --model sonnet --output-format json
+{
+  "input_tokens": 67572,
+  "cache_creation_input_tokens": 0,
+  "cache_read_input_tokens": 0,
+  "output_tokens": 228,
+  "cache_creation": {
+    "ephemeral_1h_input_tokens": 0,
+    "ephemeral_5m_input_tokens": 0
+  },
+  "total_cost_usd": 0.137424,
+  "session_id": "87a80e31-839a-46e6-b065-d81f8b141a64",
+  "num_turns": 2
+}
+› FORCE_PROMPT_CACHING_5M=1 claude -p "In one sentence, what does src/cli.ts do?" --model sonnet --output-format json
+{
+  "input_tokens": 4,
+  "cache_creation_input_tokens": 34533,
+  "cache_read_input_tokens": 33399,
+  "output_tokens": 218,
+  "cache_creation": {
+    "ephemeral_1h_input_tokens": 0,
+    "ephemeral_5m_input_tokens": 34533
+  },
+  "total_cost_usd": 0.0952003,
+  "session_id": "b0d3a7df-0b1e-441e-9667-ae7e1822c0bd",
+  "num_turns": 2
+}

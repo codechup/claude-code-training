@@ -1,0 +1,415 @@
+---
+title: 'Working in large codebases'
+description: 'A monorepo fills the context window with instructions and file reads that have nothing to do with your task. Scope Claude to the subtree you are in with layered CLAUDE.md files, claudeMdExcludes, Read deny rules, sparse worktrees, per-directory skills, and --add-dir.'
+level: 4
+module: 'm21-scale'
+order: 1
+duration_min: 20
+difficulty: core
+tags: ['large-codebases', 'monorepo', 'add-dir', 'context']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Set up Claude Code in a monorepo or large codebase'
+    url: 'https://code.claude.com/docs/en/large-codebases.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'How Claude remembers your project'
+    url: 'https://code.claude.com/docs/en/memory.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'CLI reference'
+    url: 'https://code.claude.com/docs/en/cli-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Decide where to start `claude` in a large repository, and say what that choice changes about file access, which `CLAUDE.md` files load, and which project settings apply.
+- Split instructions across per-directory `CLAUDE.md` files, and choose between one of those and a path-scoped rule in `.claude/rules/`.
+- Keep irrelevant instructions and files out of context with `claudeMdExcludes` and `Read` deny rules in `permissions.deny`.
+- Shrink what a worktree writes to disk with `worktree.sparsePaths` and `worktree.symlinkDirectories`.
+- Reach a sibling package or a separate checkout with `--add-dir` or `permissions.additionalDirectories`, and say exactly what each of the two loads.
+
+**Prerequisites.** Level 3's memory and permissions material: you should already be comfortable with `CLAUDE.md`, `.claude/rules/` path-scoped rules, `permissions.deny` syntax and the settings scopes (project, local, user, managed). Git worktrees from `m18-multi-session` help but are not required.
+
+<WhenNotToUse>
+  None of this is worth doing in a repository small enough that a single root `CLAUDE.md` and an
+  unscoped session already behave well — every setting on this page is a maintenance cost you pay
+  forever, and an exclusion list that nobody prunes eventually hides code someone needs. Skip it too
+  when the problem is a single runaway session rather than the codebase: `/clear` between tasks, or
+  the context techniques in the next lesson, are the cheaper fix. And do not reach for
+  `claudeMdExcludes` as a per-task switch — the list is static, so "focus on this package today" is
+  better expressed by starting Claude in that package's directory.
+</WhenNotToUse>
+
+## Concept
+
+### The problem is context, not size
+
+Claude Code works at any repository size. What breaks first is the context window: defaults tuned for a small project load instructions and read files that have nothing to do with the task, which costs tokens and degrades the answer. Every technique below is one way of narrowing what a session sees.
+
+### Where you start `claude` decides most of it
+
+The single biggest lever is the working directory you launch from.
+
+| Start from      | File access                             | `CLAUDE.md` loaded at launch                                         | Use when                                   |
+| --------------- | --------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------ |
+| Repository root | Every file                              | Root only; subdirectory files load on demand when Claude reads there | Tasks span multiple packages or subsystems |
+| A subdirectory  | That subtree only, until you grant more | That directory's plus every ancestor's                               | Work is scoped to one package or subsystem |
+
+One asymmetry catches people out: `CLAUDE.md` files are inherited from parent directories, but a `.claude/settings.json` is not. Each subdirectory you regularly start from needs its own self-contained settings file.
+
+### Layer CLAUDE.md by directory
+
+A single root `CLAUDE.md` in a monorepo either grows to cover every subsystem — spending context on rules for code you are not touching — or stays so generic it says nothing. The usual split is two levels: a root file for what applies everywhere, and one file per package or subsystem for the conventions of that area.
+
+<CodeBlock title="CLAUDE.md (repository root)">
+
+```markdown
+Run package scripts from the package directory, not the monorepo root.
+Prefix commit subjects with the package name, for example `api: add rate limiting`.
+Never edit files under packages/*/generated/. Run `npm run codegen` in the package instead.
+```
+
+</CodeBlock>
+
+<CodeBlock title="packages/api/CLAUDE.md">
+
+```markdown
+Copy `.env.example` to `.env` before running anything. Tests and the dev server fail without it.
+Write database queries with the Knex query builder. Never put raw SQL strings in route handlers.
+Never edit a migration after it has merged. Add a new migration instead.
+```
+
+</CodeBlock>
+
+Start Claude from `packages/api/` and both files load — the local conventions alongside the repository-wide ones, with nothing from `packages/web/` in context. Run `/context` and read the **Memory files** list to confirm which files actually loaded.
+
+A per-directory `CLAUDE.md` and a path-scoped rule under `.claude/rules/` solve the same problem differently. The `CLAUDE.md` lives inside the directory next to its code, is maintained by that directory's owners, and versions with them. The rule lives in one central `.claude/` at the repository root and loads whenever Claude works with a file matching its `paths:` glob — better when you want every convention in one place, or when the same rule applies to scattered paths.
+
+### Keep irrelevant instructions and files out
+
+`claudeMdExcludes` skips `CLAUDE.md` and rules files by path or glob, so they never load. Patterns are globs matched against **absolute** paths, so a relative-looking pattern must start with `**/` to match anywhere in the tree.
+
+<CodeBlock title=".claude/settings.local.json">
+
+```json
+{
+  "claudeMdExcludes": ["**/packages/web/**"]
+}
+```
+
+</CodeBlock>
+
+Arrays merge across settings scopes, so a team can set project defaults and individuals add their own. Managed-policy `CLAUDE.md` files cannot be excluded — organisation-wide instructions always apply.
+
+File reads are the other half of the cost. Content searches already respect `.gitignore`, so `node_modules/`, `dist/` and `build/` stay out of results when they are ignored. For paths that are _checked in_ — a vendored SDK, committed generated code — add `Read` deny rules:
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "permissions": {
+    "deny": [
+      "Read(./**/dist/**)",
+      "Read(./**/build/**)",
+      "Read(./**/*.generated.*)",
+      "Read(./vendor/**)"
+    ]
+  }
+}
+```
+
+</CodeBlock>
+
+Deny rules cover the built-in file tools, and in Bash they cover the file commands Claude Code recognises — `cat`, `head`, `grep`, `find` — when a denied path is an argument or a redirection target. They do not cover subprocesses that open files themselves, and a `grep -r` over a directory containing denied files still prints them.
+
+Where a definition lives is a third cost. A [code intelligence plugin](https://code.claude.com/docs/en/discover-plugins.md) connects Claude to a language server so it jumps to definitions and finds references instead of scanning the tree:
+
+<CodeBlock title="in a Claude Code session">
+
+```text
+/plugin install typescript-lsp@claude-plugins-official
+```
+
+</CodeBlock>
+
+### Sparse worktrees
+
+`--worktree` starts a session in a fresh git worktree. By default it checks out the whole repository. `worktree.sparsePaths` uses git sparse-checkout to write only the directories you list, plus root-level files, and `worktree.symlinkDirectories` links a heavy directory back to the main checkout instead of duplicating it.
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "worktree": {
+    "sparsePaths": [".claude", "packages/api", "packages/shared"],
+    "symlinkDirectories": ["node_modules"]
+  }
+}
+```
+
+</CodeBlock>
+
+Paths are relative to the repository root whichever subdirectory you start from. List directories, not files. Root-level _directories_ are not included automatically, so `.claude` has to be in the list if you want the root's settings, rules and skills inside the worktree.
+
+### Reaching outside the working directory
+
+If you start Claude from `packages/api/`, it can read and write inside that directory. A change that also touches `packages/shared/` needs an explicit grant, and there are two ways to give one — with a difference that matters:
+
+| Added with                             | Loads CLAUDE.md and rules                | Loads skills |
+| -------------------------------------- | ---------------------------------------- | ------------ |
+| `additionalDirectories` setting        | Never                                    | Never        |
+| `--add-dir` flag or `/add-dir` command | Only with the environment variable below | Yes          |
+
+<CodeBlock title="grant access two ways">
+
+```bash
+# For everyone in this area: commit it to packages/api/.claude/settings.json
+#   { "permissions": { "additionalDirectories": ["../shared", "../web"] } }
+
+# For one session, at launch:
+claude --add-dir ../shared
+
+# ...and, if you also want that directory's CLAUDE.md and rules:
+CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude --add-dir ../shared
+```
+
+</CodeBlock>
+
+That environment variable has no effect on `additionalDirectories`; the setting grants file access and nothing else. To persist directories you keep adding by hand, move them into `permissions.additionalDirectories`.
+
+Two constraints worth knowing before you script anything: `--add-dir` validates that each path exists as a directory, and most network paths such as `\\server\share` cannot be added at all.
+
+Here is this lesson's worked example prompt — a cross-package change, phrased so Claude has to use the access you granted rather than guess at a path:
+
+```text
+Rename the `retryBudget` field on the shared RequestOptions type in ../shared,
+then update every call site in this package. Run the package tests when you are done.
+```
+
+### Per-directory skills, and when to stop layering
+
+Any subdirectory can hold `.claude/skills/`, and those skills load only when Claude works in that area. Commit them next to the code they describe. Two things keep this scaling: skills discovered from many directories all contribute names and descriptions to the list Claude chooses from, and **descriptions get shortened when there are many of them** — so lead with the words a request would actually contain ("writing or modifying tests in `packages/api/`"). Skills that many directories share belong in the root `.claude/skills/`; skills that need their own version history belong in a plugin, where the `plugin-name:skill-name` namespace also prevents collisions.
+
+Past a certain size, per-directory files stop being governable: conventions drift, files go stale, nobody owns the root. That is the point to move reference content out of always-loaded `CLAUDE.md` and into things that load on demand — skills, plugins distributed through an internal marketplace, or an MCP server exposing a code-search index your organisation already runs.
+
+## Hands-on lab
+
+<Callout>
+  No `lesson/m21-scale-*` tags exist in the lab repository — this module's material was added
+  straight to `main` (see the lab repo's README, "Modules with no tags"). Work on a plain clone of
+  `main`; `large/` is the fixture directory this lab uses.
+</Callout>
+
+<Lab
+  title="Lab · prove what --add-dir does and does not grant"
+  lessonId="en/l4-master/m21-scale/large-codebases"
+  repoTag="none"
+  steps={[
+    'Clone the lab repo somewhere scratch: `git clone https://github.com/codechup/claude-code-lab cct-lab-38` and `cd cct-lab-38`.',
+    'Create a "sibling package" next to it — a sibling, not a subdirectory, so the grant is genuinely needed: make `../cct-lab-38-shared/src/` and put a one-line `rate-limit.ts` in it exporting `WINDOW_MS = 60_000`.',
+    'From inside the clone, ask for that file with no grant: `claude -p "Read ../cct-lab-38-shared/src/rate-limit.ts and reply with the exact value of WINDOW_MS. If you cannot read it, say why in one sentence." --model sonnet --max-turns 4 --output-format text`',
+    'Run the identical command again with `--add-dir ../cct-lab-38-shared` inserted before `--output-format`.',
+    'Look at `large/` in the clone: 30 placeholder modules across five areas. Ask Claude to find the file that handles invoice exports without telling it the path, and watch whether it greps or guesses.',
+  ]}
+  expected="Without --add-dir the read is refused and Claude says the directory is outside the session's allowed working directories. With --add-dir the same prompt returns 60_000. Both runs also print the workspace-trust warning, because a fresh clone has never been trusted interactively."
+  checklist={[
+    'The first run refused the read and named the reason',
+    'The second run differed only by --add-dir and succeeded',
+    'You noticed the `permissions.allow` entries being ignored until the workspace is trusted',
+    'You can state what --add-dir loads that `additionalDirectories` does not (skills; CLAUDE.md only with the env var)',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m21-scale/01-large-codebases/01-add-dir-denied.txt"
+    range="2-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m21-scale/01-large-codebases/02-add-dir-granted.txt"
+    range="2-4"
+  />
+</Lab>
+
+Three things in that pair are worth stopping on.
+
+The two commands are byte-identical apart from `--add-dir`, and the refusal names the actual reason — the directory is outside the session's working directories — rather than failing vaguely. That is the whole mechanism: access is per-directory, and it is opt-in.
+
+Both runs open with a warning that 14 `permissions.allow` entries from the repository's own `.claude/settings.json` are being **ignored** because the workspace has not been trusted. A fresh clone is untrusted until you start Claude Code interactively there once and accept the dialog. In a large-codebase rollout this is the failure mode you will actually hit: settings you committed for the team silently do nothing on a machine that has never trusted the folder.
+
+The answers are in Turkish. The machine that produced this recording has global preferences asking for Turkish, and `-p` inherits them like any other session — the same phenomenon `m01-start` documents. It is a real recording, not a mistranslation.
+
+### Per-OS launch
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+cd ~/code/monorepo/packages/api
+claude --add-dir ../shared
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+cd ~/code/monorepo/packages/api
+claude --add-dir ../shared
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+Set-Location $HOME\code\monorepo\packages\api
+claude --add-dir ..\shared
+```
+
+  </Fragment>
+</OSTabs>
+
+## Anti-patterns
+
+**One root `CLAUDE.md` that documents every package.** It costs context on every session regardless of what you are touching, and it is the file nobody owns. _Fix:_ keep repository-wide rules at the root and push each area's conventions into that area's own `CLAUDE.md`.
+
+**Using `claudeMdExcludes` as a focus switch.** The list is static and shared; editing it daily to change which package you are in produces churn and eventually excludes something you needed. _Fix:_ start Claude from the directory you are working in.
+
+**Expecting `additionalDirectories` to bring the sibling's rules along.** It grants file access only — no `CLAUDE.md`, no rules, no skills — so Claude edits the sibling without knowing its conventions. _Fix:_ use `--add-dir` (plus `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1` if you need its memory files), or restate the constraints in your prompt.
+
+**Denying reads and assuming nothing can see the file.** Deny rules do not cover subprocesses that open files themselves, and a `grep -r` across a directory still prints denied files it walks into. _Fix:_ treat deny rules as context hygiene, not as a security boundary — that is what `m14-security` is for.
+
+**Sparse worktrees without `.claude`.** Root-level directories are not checked out automatically, so the worktree starts with no root settings, rules or skills and behaves differently from your main checkout. _Fix:_ put `.claude` first in `sparsePaths`.
+
+**Committing per-area settings and assuming they apply.** Until each developer trusts the folder, `permissions.allow` and `additionalDirectories` are ignored — as the lab transcript shows verbatim. _Fix:_ make "open the repo interactively once and accept the trust dialog" part of your onboarding steps.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/large-codebases"
+  questionId="q1"
+  lang="en"
+  prompt="You start Claude from `packages/api/` in a monorepo. Which CLAUDE.md files load at launch?"
+  options={[
+    {
+      text: "`packages/api/CLAUDE.md` plus every ancestor's, including the repository root's",
+      correct: true,
+      explanation:
+        'Memory files are inherited upward from the working directory. Sibling packages stay out of context.',
+    },
+    {
+      text: 'Only the repository root file',
+      explanation: 'That is what happens when you start from the root, not from a subdirectory.',
+    },
+    {
+      text: 'Every CLAUDE.md in the repository',
+      explanation: 'Subdirectory files load on demand when Claude reads there, never all at once.',
+    },
+    {
+      text: "`packages/api/CLAUDE.md` and `packages/api/.claude/settings.json`'s parent settings",
+      explanation:
+        'Project settings are the one thing that is *not* inherited from parent directories.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/large-codebases"
+  questionId="q2"
+  lang="en"
+  prompt={
+    'What is the difference between `--add-dir ../shared` and `permissions.additionalDirectories: ["../shared"]`?'
+  }
+  options={[
+    {
+      text: 'None; the flag is just the one-session form of the setting',
+      explanation:
+        'They differ in what loads from the added directory, not only in how long they last.',
+    },
+    {
+      text: "`--add-dir` also loads the directory's skills, and its CLAUDE.md and rules when `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1` is set; the setting grants file access only",
+      correct: true,
+      explanation:
+        'The environment variable has no effect on directories listed in `additionalDirectories`.',
+    },
+    {
+      text: 'The setting grants write access and the flag grants read access only',
+      explanation: 'Both grant read and edit access to files in the directory.',
+    },
+    {
+      text: 'The flag works with network paths and the setting does not',
+      explanation:
+        'Most network paths such as `\\\\server\\share` cannot be added with `--add-dir` at all.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/large-codebases"
+  questionId="q3"
+  lang="en"
+  prompt={
+    'You add `worktree.sparsePaths: ["packages/api"]` and the worktree sessions stop obeying your root permission rules. Why?'
+  }
+  options={[
+    {
+      text: 'Sparse checkout disables project settings inside worktrees',
+      explanation: 'Settings still load — from the worktree root, which is why the path matters.',
+    },
+    {
+      text: 'Root-level directories are not checked out unless you list them, so `.claude` is missing from the worktree',
+      correct: true,
+      explanation:
+        'Root-level *files* come along automatically; root-level directories do not. Add `.claude` to the list.',
+    },
+    {
+      text: 'The rules must be duplicated into every package',
+      explanation:
+        'The worktree reads the repository root copy of `.claude/settings.json` once it is checked out.',
+    },
+    {
+      text: '`sparsePaths` is relative to the directory you launched from',
+      explanation:
+        'Paths in `sparsePaths` are relative to the repository root regardless of where you start.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/large-codebases"
+  questionId="q4"
+  lang="en"
+  prompt="Which of these is the wrong tool for keeping a vendored, checked-in SDK out of context?"
+  options={[
+    {
+      text: '`Read` deny rules in `permissions.deny`',
+      explanation: 'This is exactly the documented use for checked-in paths.',
+    },
+    {
+      text: '`.gitignore`',
+      correct: true,
+      explanation:
+        'Content searches respect `.gitignore`, but a vendored SDK is checked in — so it is not ignored and the rule never applies.',
+    },
+    {
+      text: 'A code intelligence plugin, so Claude looks up definitions instead of scanning',
+      explanation: 'A legitimate complement: it reduces how much of what remains gets read.',
+    },
+    {
+      text: 'Starting Claude from the subdirectory you are actually working in',
+      explanation: 'A blunt but effective way to keep the vendored tree out of scope.',
+    },
+  ]}
+/>
+
+**Next:** `02-context-engineering` takes the same problem one level in — what to do about the context a single long session accumulates, even in a repository you have already scoped well.

@@ -1,0 +1,307 @@
+---
+title: 'Devcontainers and corporate launchers'
+description: 'Put Claude Code inside a dev container so commands run in an isolated environment every engineer shares — then keep authentication across rebuilds, enforce managed settings, restrict egress, and route every process through a mandatory corporate launcher.'
+level: 4
+module: 'm21-scale'
+order: 5
+duration_min: 10
+difficulty: advanced
+tags: ['devcontainer', 'docker', 'managed-settings', 'corporate-launcher']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Development containers'
+    url: 'https://code.claude.com/docs/en/devcontainer.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run Claude Code behind a corporate launcher'
+    url: 'https://code.claude.com/docs/en/corporate-launcher.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Enterprise network configuration'
+    url: 'https://code.claude.com/docs/en/network-config.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'Dev Containers specification'
+    url: 'https://containers.dev/'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Add Claude Code to an existing dev container with the official Dev Container Feature, and say what the version tag on it pins.
+- Keep authentication across rebuilds by mounting a volume at `~/.claude` **and** setting `CLAUDE_CONFIG_DIR` — and explain why the volume alone is not enough.
+- Deliver organisation policy into a container through `/etc/claude-code/managed-settings.json` and `containerEnv`, and say why the Dockerfile route is not tamper-proof.
+- State the security boundary honestly: what `--dangerously-skip-permissions` inside a container does and does not protect.
+- Write a corporate launcher that satisfies the `CLAUDE_CODE_PROCESS_WRAPPER` contract, and name the processes it does not reach.
+
+**Prerequisites.** Docker and a dev-container-capable editor if you want to run the lab; the previous lesson's managed settings and network configuration; `m14-security` for permission modes.
+
+<WhenNotToUse>
+  A dev container is worth its weight when a team needs one identical toolchain, or when you want
+  Claude's commands to run somewhere other than your host. It is not a substitute for the permission
+  system: the official warning is blunt — with `--dangerously-skip-permissions`, a dev container
+  does not stop a malicious project exfiltrating anything reachable inside it, including the Claude
+  Code credentials in `~/.claude`. Use containers with repositories you trust, and never mount host
+  secrets such as `~/.ssh` or cloud credential files into one. If you want fewer prompts without
+  removing the review step, auto mode is the feature you actually want. And the corporate launcher
+  in the second half is only for organisations that genuinely mandate one — on Windows the variable
+  is ignored entirely.
+</WhenNotToUse>
+
+## Concept
+
+### Adding Claude Code to a dev container
+
+A dev container is a Docker container defined by your repository, which an editor that supports the [Dev Containers spec](https://containers.dev/) connects to: you edit files as usual, but the terminal, language servers and build tools run inside the container. Claude Code installs into any of them through the official Dev Container Feature.
+
+<CodeBlock title=".devcontainer/devcontainer.json">
+
+```json
+{
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+  }
+}
+```
+
+</CodeBlock>
+
+Then rebuild the container — **Dev Containers: Rebuild Container** in the VS Code command palette, or your tool's equivalent — open a terminal inside it and run `claude` to sign in.
+
+The `:1.0` tag pins the _feature's install script_, not the Claude Code release: the feature installs the latest Claude Code, which then auto-updates itself inside the container. If a build fails with `Failed to install Node.js and npm`, add `"ghcr.io/devcontainers/features/node:1": {}` above the Claude Code feature.
+
+What the sign-in looks like depends on your provider. Going to Anthropic, it is a browser sign-in; on Bedrock, the Agent Platform or Foundry, Claude Code uses your cloud credentials with no browser prompt. Pass those in through `containerEnv`, a Codespaces secret, or your cloud's workload identity — **not** by mounting credential files from the host.
+
+### Surviving a rebuild
+
+By default the container's home directory is discarded on rebuild, so everyone signs in again. The trap is that mounting a volume at `~/.claude` is not sufficient on its own: the OAuth account, personal MCP servers and per-project trust live in `~/.claude.json`, a separate file _outside_ that directory. Mount the volume and point `CLAUDE_CONFIG_DIR` at the same path so that file is written inside it too.
+
+<CodeBlock title="devcontainer.json (remoteUser is the container's non-root user)">
+
+```json
+"mounts": ["source=claude-code-config,target=/home/<user>/.claude,type=volume"],
+"containerEnv": { "CLAUDE_CONFIG_DIR": "/home/<user>/.claude" }
+```
+
+</CodeBlock>
+
+Replace `<user>` with your container's `remoteUser` — the official example uses the `node` user. To keep state per project instead of one volume shared across repositories, put `${devcontainerId}` in the source name. In GitHub Codespaces `~/.claude` survives a stop and start but is cleared by a rebuild, so the same configuration applies; to carry authentication across codespaces, store an `ANTHROPIC_API_KEY` or a `CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token` as a Codespaces secret.
+
+### Policy inside the container
+
+A container is a convenient place to apply policy, because the same image runs on every machine. Claude Code reads `/etc/claude-code/managed-settings.json` on Linux at the highest precedence in the settings hierarchy — above anything an engineer sets in `~/.claude` or the project's `.claude/`.
+
+<CodeBlock title="Dockerfile">
+
+```dockerfile
+RUN mkdir -p /etc/claude-code
+COPY managed-settings.json /etc/claude-code/managed-settings.json
+```
+
+</CodeBlock>
+
+Be honest about what that achieves: the Dockerfile lives in the repository, so anyone with write access can change or remove that step. For policy engineers cannot bypass, deliver managed settings through server-managed settings or your MDM instead.
+
+Environment variables for every session in the container go in `containerEnv`:
+
+<CodeBlock title="devcontainer.json">
+
+```json
+"containerEnv": {
+  "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+  "DISABLE_AUTOUPDATER": "1"
+}
+```
+
+</CodeBlock>
+
+Two consequences worth stating. `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` also disables feature-flag evaluation, so Remote Control and everything else that depends on feature-flag fetching stops working in that container. And because the feature always installs the latest release, a build you need to be reproducible should install a pinned version from the Dockerfile — `npm install -g @anthropic-ai/claude-code@X.Y.Z` — with `DISABLE_AUTOUPDATER` set, instead of using the feature.
+
+For MCP servers inside the container, define them at project scope in a `.mcp.json` at the repository root, install any stdio server binaries in the Dockerfile, and add remote server domains to your egress allowlist.
+
+### Egress, and the honest security boundary
+
+You can limit the container's outbound traffic to the domains Claude Code needs — the network-access table from the previous lesson is the list. The reference container in the `anthropics/claude-code` repository includes an `init-firewall.sh` that does this, and adds the `NET_ADMIN` and `NET_RAW` capabilities through `runArgs` because running a firewall inside a container needs them. Neither the script nor those capabilities are required by Claude Code itself; you can leave them out and use your own network controls.
+
+Because the container runs Claude Code as a non-root user and confines command execution, `--dangerously-skip-permissions` becomes viable for unattended work — the CLI refuses the flag when launched as root, so confirm `remoteUser` is a non-root account. Understand what you give up: no review of tool calls, Claude can still modify any file in the bind-mounted workspace (which appears on your host), and it can reach anything the container's network policy allows. Pair it with egress restrictions, or use auto mode instead. To stop engineers using the flag at all, set `permissions.disableBypassPermissionsMode` to `"disable"` in managed settings.
+
+### Corporate launchers
+
+Some organisations require every process on a workstation to start through a mandatory launcher that applies the sandbox, network controls or credential injection their security posture depends on. A launcher that wraps the `claude` command on `PATH` misses most of what Claude Code starts, because those processes start from the binary's direct path without a `PATH` lookup.
+
+`CLAUDE_CODE_PROCESS_WRAPPER` (v2.1.208+), or the `processWrapper` setting (v2.1.210+), covers them: the background service, every agent view session including warm standby ones, sessions respawned after an update or a crash, and Claude Code's self-relaunch to finish an update. Remote Control's session processes and agent-teams' split-pane teammate sessions are covered too, but only on v2.1.210 or later — that version gate applies to both the environment variable and the setting.
+
+<CodeBlock title="/usr/local/sbin/corp-launcher">
+
+```bash
+#!/bin/sh
+# Your organisation's setup: enter the sandbox, apply
+# network controls, or inject credentials.
+exec "$@"
+```
+
+</CodeBlock>
+
+The contract is strict, and Claude Code refuses to start a process rather than starting it unwrapped when the launcher cannot run. End with `exec "$@"`. Do not reorder, absorb or prepend arguments. Pass every inherited environment variable through — the per-session auth tokens, the model and provider selection, and the wrapper variable itself all travel there, so a launcher that rebuilds the environment from an allowlist breaks the sessions it starts. Reach `exec` within about three seconds each time. Tolerate being invoked from inside itself. Print nothing before the `exec`.
+
+Some processes are outside it: a session you start yourself in a terminal, an installed background service whose unit predates the configuration, the first process of a `claude-cli://` deep link, the `--worktree`-plus-`--tmux` relaunch, and the Claude in Chrome native-messaging host. **On Windows the variable is ignored entirely** — the contract depends on `exec` — so count Windows machines as unwrapped when you plan a rollout. Run `/status` and look at the **Self-exec** entry, or `claude daemon status`, to see the resolved launch command; after deploying the setting, `claude daemon stop --any` so the next background session starts a supervisor that honours it.
+
+Do not confuse it with `CLAUDE_CODE_SHELL_PREFIX`, which wraps the shell commands Claude runs _on your behalf_ and passes each as a single shell-quoted string. A launcher written for one does not work as the other.
+
+Here is this lesson's worked example prompt, for auditing a container definition you inherited:
+
+```text
+Read .devcontainer/devcontainer.json and the Dockerfile, and tell me whether a rebuild
+would sign me out, whether managed settings are actually enforced, and what egress is allowed.
+```
+
+## Hands-on lab
+
+<Callout>
+  No `lesson/m21-scale-*` tags exist in the lab repository. This lab builds a real container from a
+  short `devcontainer.json`; the transcript below is the actual build, failure and all. If Docker is
+  not available on your machine, read the build steps and do the audit against the reference
+  configuration in the `anthropics/claude-code` repository instead.
+</Callout>
+
+<Lab
+  title="Lab · build a container with the feature, then audit it"
+  lessonId="en/l4-master/m21-scale/devcontainers"
+  repoTag="none"
+  steps={[
+    'In an empty scratch directory, write `.devcontainer/devcontainer.json` with the `mcr.microsoft.com/devcontainers/base:ubuntu` image, the `ghcr.io/anthropics/devcontainer-features/claude-code:1.0` feature, and a `containerEnv` block setting `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` and `DISABLE_AUTOUPDATER` to "1".',
+    'Build it without an editor: `npx -y @devcontainers/cli build --workspace-folder .` — and expect it to fail on this base image.',
+    'Read the failure, add `"ghcr.io/devcontainers/features/node:1": {}` above the Claude Code feature, and build again.',
+    'Note what the successful build actually pinned: the `:1.0` tag pinned the feature’s install script, and the feature installed whatever Claude Code release was current.',
+    'Add the persistence pair — a named volume mounted at the remoteUser’s `~/.claude`, and `CLAUDE_CONFIG_DIR` pointing at the same path — and say in one sentence which file the volume alone would have missed.',
+    'Audit: for your file, answer whether a rebuild signs you out, whether the policy in it is tamper-proof, and which of the network-access hosts your container would still need reachable.',
+  ]}
+  expected="The first build fails with `Node.js and npm are required but could not be installed!` and the feature's own suggested fix. With the node feature added, the second build ends with an outcome of success and an imageName. Your audit concludes that without the CLAUDE_CONFIG_DIR pair a rebuild loses ~/.claude.json (OAuth account, personal MCP servers, per-project trust), that anything delivered through the repository's own Dockerfile is editable by anyone with write access, and that a pinned Claude Code version needs the npm install rather than the feature."
+  checklist={[
+    'The first build failed for the documented reason, not a different one',
+    'The second build reported outcome: success and an image name',
+    'You can say what the feature’s `:1.0` tag pins and what it does not',
+    'The persistence pair is a volume mount AND CLAUDE_CONFIG_DIR, not just the mount',
+    'You named at least one host that must stay reachable even with egress restricted',
+    'You can state what --dangerously-skip-permissions inside the container does not protect',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m21-scale/05-devcontainers/01-feature-build.txt"
+    range="3-17"
+  />
+</Lab>
+
+That failure is the single most likely thing to go wrong on a first devcontainer build, and it is worth reading closely. The Claude Code feature installs Node.js itself when the base image does not provide it — `mcr.microsoft.com/devcontainers/base:ubuntu` does not — and when that install fails, the feature prints the exact `features` block that fixes it. Two details for accuracy: the docs describe this failure as stopping with `Failed to install Node.js and npm`, while the message the feature actually printed here was `Node.js and npm are required but could not be installed!`; and the feature's own suggestion uses the `:1` major tag rather than the `:1.0` the docs show. Match on the meaning, not the string.
+
+## Anti-patterns
+
+**Mounting a volume at `~/.claude` and calling authentication persistent.** `~/.claude.json` — the OAuth account, personal MCP servers, per-project trust — lives outside that directory, so rebuilds still sign you out. _Fix:_ set `CLAUDE_CONFIG_DIR` to the same path as the mount.
+
+**Treating a Dockerfile-delivered `managed-settings.json` as enforcement.** It sits in the repository, so anyone with write access can edit or delete the `COPY`. _Fix:_ use server-managed settings or your MDM for policy engineers must not bypass.
+
+**Mounting `~/.ssh` or cloud credential files into the container for convenience.** The documented warning is explicit that a container does not stop exfiltration of anything reachable inside it. _Fix:_ pass short-lived, repository-scoped credentials through `containerEnv`, a Codespaces secret, or workload identity.
+
+**Assuming the container is the security boundary for `--dangerously-skip-permissions`.** Claude can still write every file in the bind-mounted workspace — which is on your host — and reach whatever the network policy allows. _Fix:_ restrict egress as well, or use auto mode and keep the review step.
+
+**Pinning the feature tag and expecting a pinned CLI.** `:1.0` pins the install script; the feature installs the latest release and it then auto-updates. _Fix:_ `npm install -g @anthropic-ai/claude-code@X.Y.Z` in the Dockerfile plus `DISABLE_AUTOUPDATER=1`.
+
+**Wrapping `claude` on `PATH` and reporting the launcher rollout complete.** Self-spawned processes never consult `PATH`, and on Windows `CLAUDE_CODE_PROCESS_WRAPPER` is ignored altogether. _Fix:_ deliver `processWrapper` through settings, run `claude daemon stop --any`, and count Windows machines as unwrapped.
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/devcontainers"
+  questionId="q1"
+  lang="en"
+  prompt="You mount a named volume at the remoteUser's ~/.claude and engineers are still signed out after every rebuild. Why?"
+  options={[
+    {
+      text: 'Named volumes are cleared on rebuild',
+      explanation: 'They are not; the home directory is, which is why the volume exists.',
+    },
+    {
+      text: '`~/.claude.json` — the OAuth account, personal MCP servers and per-project trust — lives outside that directory, so `CLAUDE_CONFIG_DIR` must point at the volume too',
+      correct: true,
+      explanation: 'The mount and the variable are a pair; either alone is incomplete.',
+    },
+    {
+      text: 'The feature reinstalls Claude Code and wipes credentials',
+      explanation: 'The install does not touch stored credentials.',
+    },
+    {
+      text: 'Authentication cannot persist in a container at all',
+      explanation: 'It can, with the mount plus the variable — or with a Codespaces secret.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/devcontainers"
+  questionId="q2"
+  lang="en"
+  prompt="Which statement about running `--dangerously-skip-permissions` inside a dev container is accurate?"
+  options={[
+    {
+      text: 'The container fully isolates Claude, so nothing outside it can be affected',
+      explanation:
+        'The bind-mounted workspace appears directly on your host, and the network policy still governs reach.',
+    },
+    {
+      text: 'It is viable for unattended work, but a malicious project can still exfiltrate anything reachable in the container — including the credentials in ~/.claude',
+      correct: true,
+      explanation:
+        'Which is why the docs say to use containers with trusted repositories and pair the flag with egress restrictions.',
+    },
+    {
+      text: 'The flag works the same whether the container runs as root or not',
+      explanation: 'The CLI rejects it when launched as root; `remoteUser` must be non-root.',
+    },
+    {
+      text: 'It is the recommended way to reduce prompts',
+      explanation:
+        'Auto mode is the recommended way to reduce prompts without removing the review step.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m21-scale/devcontainers"
+  questionId="q3"
+  lang="en"
+  prompt="Which of these does a `CLAUDE_CODE_PROCESS_WRAPPER` launcher NOT cover?"
+  options={[
+    {
+      text: 'The background service that `claude agents` starts on demand',
+      explanation: 'It is the main thing the variable exists to cover.',
+    },
+    {
+      text: 'A session you start yourself by typing `claude` in a terminal',
+      correct: true,
+      explanation:
+        'That runs however you invoked it; cover it with a `claude` script earlier on PATH — self-spawns never consult PATH, so the two never stack.',
+    },
+    {
+      text: 'Sessions the service respawns after an update',
+      explanation: 'Covered.',
+    },
+    {
+      text: 'Agent teams’ split-pane teammate sessions, on v2.1.210 or later',
+      explanation: 'Covered — Claude Code starts those panes from its own binary.',
+    },
+  ]}
+/>
+
+**Next:** that is the end of Level 4. The Playbook's decision trees and checklists pull every level's material back into one place.
