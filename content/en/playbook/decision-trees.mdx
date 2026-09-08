@@ -1,0 +1,169 @@
+---
+title: 'Decision trees'
+description: 'CLAUDE.md, rule, skill, hook, permission rule, agent or MCP — and which model and effort level, decided by the distinctions the lessons actually teach.'
+order: 1
+summary: 'Four small trees for the choices that come up most, each with the lesson behind every branch.'
+---
+
+import DecisionTree from '../../../src/components/mdx/DecisionTree.astro';
+
+Most of the time the hard part is not writing the `CLAUDE.md` entry, the hook or the agent — it is knowing which of them you should be writing. The trees below encode the distinctions the lessons draw, in the order that decides the answer fastest. Every branch links to the lesson that argues for it, and the diagrams are plain SVG text, so `Ctrl+F` finds any node on this page (D091, D092).
+
+## Which mechanism?
+
+Start here. Three questions separate the six families, and each answer points at a lesson or at one of the finer trees below.
+
+<DecisionTree
+  title="Which mechanism does this belong in?"
+  desc="Enforcement first, then reach, then delegation: what must happen regardless goes in a hook or a permission rule; what needs a system outside the repository goes through MCP; work you can hand off wholesale goes to an agent; everything else is guidance in CLAUDE.md, a rule or a skill."
+  nodes={[
+    { id: 'start', x: 0, y: 145, width: 160, lines: ['A new standing', 'concern'] },
+    {
+      id: 'q1',
+      x: 180,
+      y: 139,
+      width: 180,
+      height: 56,
+      lines: ['Must it happen', 'regardless of what', 'Claude decides?'],
+    },
+    { id: 'enforce', x: 375, y: 30, width: 175, lines: ['Hook, or a', 'permissions rule'] },
+    { id: 'q2', x: 375, y: 175, width: 180, lines: ['Reaches a system', 'outside the repo?'] },
+    { id: 'mcp', x: 560, y: 110, width: 160, lines: ['MCP server', '(or a plain CLI)'] },
+    { id: 'q3', x: 375, y: 300, width: 180, lines: ['Handed off', 'wholesale?'] },
+    { id: 'agent', x: 560, y: 250, width: 160, lines: ['Subagent', 'or custom agent'] },
+    { id: 'guidance', x: 560, y: 350, width: 160, lines: ['CLAUDE.md, rule', 'or skill'] },
+  ]}
+  edges={[
+    { from: 'start', to: 'q1' },
+    { from: 'q1', to: 'enforce', label: 'yes' },
+    { from: 'q1', to: 'q2', label: 'no' },
+    { from: 'q2', to: 'mcp', label: 'yes' },
+    { from: 'q2', to: 'q3', label: 'no' },
+    { from: 'q3', to: 'agent', label: 'yes' },
+    { from: 'q3', to: 'guidance', label: 'no' },
+  ]}
+/>
+
+**"Regardless of what Claude decides" is the load-bearing phrase.** `CLAUDE.md`, a rule and a skill are all text the model reads and can be talked out of; a hook is a shell command that runs when its event fires, and a permission rule is evaluated before a tool call is allowed at all. That is why a hard guarantee — never let a force-push through, never write a secret to disk — belongs in a hook or in `permissions.deny`, not in a memory file ([Write a project CLAUDE.md with /init](/en/l1-beginner/m03-memory/claude-md/), [Hook anatomy](/en/l2-intermediate/m07-hooks/hook-anatomy/), [Permission modes and allow/deny rules](/en/l1-beginner/m02-interact/permissions/)).
+
+The reverse is worth saying too: a hook is not a security boundary. Its `if` filter is best-effort, and when Claude Code cannot tell what a Bash string will run, the hook runs anyway — so enforcement that has to hold against a hostile repository is a permission rule plus sandboxing or a container ([Block dangerous commands with a PreToolUse guard](/en/l2-intermediate/m07-hooks/block-dangerous-commands/), [The permission model and the sandbox](/en/l3-advanced/m14-security/permission-model-and-sandbox/)).
+
+**"Reaches a system outside the repo" is not the same as "is external".** If a CLI you already have installed answers the question in one step, use it: `gh pr view 456` in a Bash call is cheaper to run and easier to audit than a GitHub MCP server that costs context in every session. MCP earns its keep when the alternative is you copying data between two windows, or when the task weaves several systems together ([MCP concepts and transports](/en/l3-advanced/m11-mcp/mcp-concepts/), [The GitHub MCP server](/en/l3-advanced/m11-mcp/github-mcp/)).
+
+**"Handed off wholesale" means you can write the brief now and read the result later.** A subagent gets a fresh context window and returns a summary; it does not see your conversation, and you cannot steer it halfway through. That makes it right for breadth — many files, unknown location — and wrong for a single-fact lookup you could do with one `Read` ([The Agent tool and the built-in subagents](/en/l3-advanced/m10-subagents/agent-tool-and-builtins/)).
+
+## Guidance: `CLAUDE.md`, a rule, or a skill?
+
+Once you know it is guidance rather than enforcement, two questions decide where it lives — and both are really questions about context cost.
+
+<DecisionTree
+  title="CLAUDE.md, a path-scoped rule, or a skill?"
+  desc="A multi-step procedure is a skill, which loads on demand. Instructions tied to one area of the codebase are a path-scoped rule. Everything that must be true in every session stays in CLAUDE.md."
+  nodes={[
+    { id: 'g-start', x: 0, y: 90, width: 165, lines: ['Guidance Claude', 'should follow'] },
+    { id: 'g-q1', x: 180, y: 90, width: 175, lines: ['A multi-step', 'procedure?'] },
+    { id: 'g-skill', x: 375, y: 20, width: 175, lines: ['Skill', 'loads on demand'] },
+    { id: 'g-q2', x: 375, y: 160, width: 175, lines: ['Only for one area', 'of the code?'] },
+    {
+      id: 'g-rule',
+      x: 560,
+      y: 115,
+      width: 170,
+      lines: ['.claude/rules/ with', 'paths: frontmatter'],
+    },
+    { id: 'g-md', x: 560, y: 220, width: 170, lines: ['CLAUDE.md', 'every session'] },
+  ]}
+  edges={[
+    { from: 'g-start', to: 'g-q1' },
+    { from: 'g-q1', to: 'g-skill', label: 'yes' },
+    { from: 'g-q1', to: 'g-q2', label: 'no' },
+    { from: 'g-q2', to: 'g-rule', label: 'yes' },
+    { from: 'g-q2', to: 'g-md', label: 'no' },
+  ]}
+/>
+
+A skill's body is read when the skill runs; its one-line description is what costs context every turn, which is why a twelve-step release checklist belongs in a skill and not in a memory file ([Skills versus custom commands](/en/l2-intermediate/m06-skills/skills-vs-commands/), [Measuring skills with /skill-doctor](/en/l2-intermediate/m06-skills/skill-doctor/)).
+
+A rule only saves context when it carries `paths:` — an unscoped rule loads at launch exactly like `CLAUDE.md` does. And a scoped rule has one property worth remembering before you rely on it: it lives in message history, so `/compact` summarises it away and it returns only when Claude next reads a matching file. Anything that must survive compaction stays unscoped or in the project-root `CLAUDE.md` ([Path-scoped rules with .claude/rules/](/en/l1-beginner/m03-memory/rules/), [The memory hierarchy, @imports and claudeMdExcludes](/en/l1-beginner/m03-memory/hierarchy-imports/), [Context engineering](/en/l4-master/m21-scale/context-engineering/)).
+
+## Delegation: subagent, fork, or an isolated worktree?
+
+All three are "hand it to another context". They differ in what the worker starts with and where its edits land.
+
+<DecisionTree
+  title="Subagent, fork, or worktree isolation?"
+  desc="A fork carries the current conversation into the subagent. An isolated worktree gives the agent its own checkout so its edits cannot collide with yours. A plain subagent starts cold and edits in place."
+  nodes={[
+    { id: 'd-start', x: 0, y: 120, width: 160, lines: ['Work to hand off'] },
+    { id: 'd-q1', x: 180, y: 120, width: 180, lines: ['Does it need this', 'conversation?'] },
+    { id: 'd-fork', x: 375, y: 30, width: 170, lines: ['Fork', 'carries the history'] },
+    { id: 'd-q2', x: 375, y: 170, width: 180, lines: ['Will it write files', 'you are editing?'] },
+    { id: 'd-wt', x: 560, y: 120, width: 165, lines: ['Worktree-isolated', 'agent'] },
+    { id: 'd-plain', x: 560, y: 230, width: 165, lines: ['Plain subagent', 'edits in place'] },
+  ]}
+  edges={[
+    { from: 'd-start', to: 'd-q1' },
+    { from: 'd-q1', to: 'd-fork', label: 'yes' },
+    { from: 'd-q1', to: 'd-q2', label: 'no' },
+    { from: 'd-q2', to: 'd-wt', label: 'yes' },
+    { from: 'd-q2', to: 'd-plain', label: 'no' },
+  ]}
+/>
+
+Forking is the expensive branch on purpose: it copies your whole conversation into the subagent, which is exactly the context cost delegation usually exists to avoid. Take it only when the side task genuinely depends on what was just discussed. Worktree isolation buys you a separate checkout — and hands you a cold environment with no `node_modules` and no `.env`, branched from the default branch unless you set `worktree.baseRef` to `"head"` ([Fork, background and worktree isolation](/en/l3-advanced/m10-subagents/fork-background-worktree/)).
+
+Two further distinctions sit just outside this tree. A **custom agent** in `.claude/agents/` is the right shape when the same role recurs and differs mechanically — different tools, model or permission mode — from `general-purpose`; if the only difference is a longer prompt, you want a skill ([Custom agents in .claude/agents/](/en/l3-advanced/m10-subagents/custom-agents/)). An **agent team** is the right shape only when the workers genuinely work in parallel on disjoint files and discussion between them buys something; teammates in plan mode run at roughly seven times a standard session ([Agent teams and cross-session messaging](/en/l4-master/m16-orchestration/agent-teams-messaging/)).
+
+## Model and effort
+
+The most common mistake here is reaching for the dial before checking whether the task was well posed.
+
+<DecisionTree
+  title="Which model and effort level?"
+  desc="Stay on the session default until a class of work is actually failing. Fix a vague prompt or a missing check before raising effort. Fast mode is for interactive work only; escalate the model before the effort level."
+  nodes={[
+    { id: 'm-start', x: 0, y: 110, width: 160, lines: ['A task to run'] },
+    {
+      id: 'm-q1',
+      x: 180,
+      y: 104,
+      width: 180,
+      height: 56,
+      lines: ['Is a class of work', 'actually failing', 'at the default?'],
+    },
+    { id: 'm-default', x: 375, y: 20, width: 175, lines: ['Session default', 'model and effort'] },
+    { id: 'm-q2', x: 375, y: 150, width: 180, lines: ['Vague prompt, or', 'no check to run?'] },
+    { id: 'm-prompt', x: 560, y: 100, width: 165, lines: ['Fix the prompt', 'and the evidence'] },
+    { id: 'm-q3', x: 375, y: 270, width: 180, lines: ['Waiting at the', 'keyboard for it?'] },
+    { id: 'm-fast', x: 560, y: 215, width: 165, lines: ['Fast mode', 'interactive only'] },
+    { id: 'm-up', x: 560, y: 320, width: 165, lines: ['Escalate model,', 'then effort'] },
+  ]}
+  edges={[
+    { from: 'm-start', to: 'm-q1' },
+    { from: 'm-q1', to: 'm-q2', label: 'yes' },
+    { from: 'm-q1', to: 'm-default', label: 'no' },
+    { from: 'm-q2', to: 'm-prompt', label: 'yes' },
+    { from: 'm-q2', to: 'm-q3', label: 'no' },
+    { from: 'm-q3', to: 'm-fast', label: 'yes' },
+    { from: 'm-q3', to: 'm-up', label: 'no' },
+  ]}
+/>
+
+Whatever the tree says, decide once and at the top of the session: on most models a mid-task change of model or effort throws away the prompt cache and the next request re-reads the whole conversation at full price. If you want to compare, compare across two sessions from the same starting state ([Choosing a model](/en/l2-intermediate/m05-models-effort/choosing-a-model/), [Effort levels](/en/l2-intermediate/m05-models-effort/effort-levels/), [Prompt caching](/en/l4-master/m21-scale/prompt-caching/)).
+
+`max` is documented as prone to overthinking with diminishing returns, and `ultrathink` is the one-turn escalation that leaves your session setting and cache intact. Fast mode is the latency dial, not the quality one, and it is the wrong choice for CI and long autonomous runs ([Fast mode](/en/l2-intermediate/m05-models-effort/fast-mode/), [ultracode](/en/l4-master/m16-orchestration/ultracode/)).
+
+## The one-line version
+
+| You want…                             | Reach for                            | Lesson                                                                            |
+| ------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------- |
+| A fact every session should know      | `CLAUDE.md`                          | [claude-md](/en/l1-beginner/m03-memory/claude-md/)                                |
+| A convention for one area of the code | `.claude/rules/` with `paths:`       | [rules](/en/l1-beginner/m03-memory/rules/)                                        |
+| A procedure with steps                | a skill                              | [skills-vs-commands](/en/l2-intermediate/m06-skills/skills-vs-commands/)          |
+| Something to happen at a fixed moment | a hook                               | [hook-anatomy](/en/l2-intermediate/m07-hooks/hook-anatomy/)                       |
+| Something never to happen             | `permissions.deny` (plus sandboxing) | [permissions](/en/l1-beginner/m02-interact/permissions/)                          |
+| A recurring role with its own tools   | a custom agent                       | [custom-agents](/en/l3-advanced/m10-subagents/custom-agents/)                     |
+| Breadth-first work off your context   | a subagent                           | [agent-tool-and-builtins](/en/l3-advanced/m10-subagents/agent-tool-and-builtins/) |
+| Access to a system outside the repo   | an MCP server, or a CLI              | [mcp-concepts](/en/l3-advanced/m11-mcp/mcp-concepts/)                             |
+| The same setup shared across repos    | a plugin, then a marketplace         | [plugin-anatomy](/en/l3-advanced/m12-plugins/plugin-anatomy/)                     |
+| A rule nobody may remove              | managed settings                     | [managed-settings](/en/l4-master/m20-team/managed-settings/)                      |

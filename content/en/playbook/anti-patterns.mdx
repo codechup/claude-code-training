@@ -1,0 +1,329 @@
+---
+title: 'Anti-pattern catalogue'
+description: 'The mistakes that recur across the whole course, each with its fix, its source, and the lesson it came from.'
+order: 3
+summary: 'Aggregated from every lesson’s own Anti-patterns section — nothing here is invented for this page.'
+---
+
+Every lesson on this site ends with its own **Anti-patterns** section, written against the thing that lesson teaches. This page is the cross-cutting view: the mistakes that turn up in more than one module, grouped by what they are really about, each with the fix and a link to the lesson that explains it properly.
+
+Two rules govern the list. Nothing is invented here — every entry traces back to a lesson that already teaches it. And every entry is marked with where it comes from (D080):
+
+- **official** — documented behaviour, traceable to `code.claude.com/docs` or the official changelog;
+- **community** — reported by community lists and write-ups rather than the documentation;
+- **own observation** — something this course's labs or its own build measured or ran into.
+
+## Context and memory
+
+**Writing a `CLAUDE.md` that describes the codebase.** Directory tours and dependency lists go stale the moment someone moves a folder, and Claude can derive them by reading the repository. _Fix:_ keep pitfalls, rationale and conventions that differ from tool defaults. — [Write a project CLAUDE.md with /init](/en/l1-beginner/m03-memory/claude-md/) · official
+
+**Treating `CLAUDE.md` as a guarantee.** It is context, not enforcement: Claude reads it and tries to follow it. _Fix:_ anything that must happen goes in a hook; anything that must be blocked goes in a permission deny rule. — [Write a project CLAUDE.md with /init](/en/l1-beginner/m03-memory/claude-md/) · official
+
+**Splitting a memory file with `@imports` to save context.** Imported files are expanded at launch alongside the file that references them, so five imports cost exactly what one file did. _Fix:_ use `paths:`-scoped rules when the problem is size, and imports only for tidiness. — [The memory hierarchy, @imports and claudeMdExcludes](/en/l1-beginner/m03-memory/hierarchy-imports/) · official
+
+**Splitting into rules with no `paths:` and expecting a saving.** An unscoped rule loads every session, unconditionally. _Fix:_ the saving comes from the scope, not from the file split. — [Path-scoped rules with .claude/rules/](/en/l1-beginner/m03-memory/rules/) · official
+
+**Scoping a rule that has to be true everywhere.** "Never commit secrets" behind `paths: ['src/**']` is off duty whenever Claude is not reading `src/`. _Fix:_ leave genuinely global instructions unscoped. — [Path-scoped rules with .claude/rules/](/en/l1-beginner/m03-memory/rules/) · own observation
+
+**Expecting a scoped rule to survive `/compact`.** Path-scoped rules live in message history and are summarised away, reloading only when a matching file is read again. _Fix:_ if it must always apply, drop `paths:` or move it into the project-root `CLAUDE.md`. — [Context engineering](/en/l4-master/m21-scale/context-engineering/) · official
+
+**Editing `CLAUDE.md` and expecting the running session to notice.** It was read at session start; the edit changes nothing until `/clear`, `/compact` or a restart. _Fix:_ make the edit, then clear — or state the instruction in your next prompt. — [Context engineering](/en/l4-master/m21-scale/context-engineering/) · own observation
+
+**Relying on auto memory for something a teammate needs.** It is machine-local and not in version control, so "Claude already knows" is true for exactly one person. _Fix:_ commit it to `CLAUDE.md` or a rule. — [Auto memory: MEMORY.md and its four types](/en/l1-beginner/m03-memory/auto-memory/) · official
+
+**Adding to memory and never removing.** Nothing expires; old advice does not stand aside for new advice. _Fix:_ review and delete memory on the same schedule you add to it. — [/memory, quick notes, and pruning what you remember](/en/l1-beginner/m03-memory/memory-commands/) · own observation
+
+**Fixing a contradiction by adding a third instruction.** "Ignore the rule above about tabs" leaves both earlier rules in context. _Fix:_ delete the wrong one. — [/memory, quick notes, and pruning what you remember](/en/l1-beginner/m03-memory/memory-commands/) · own observation
+
+**Compacting reflexively.** Compaction discards detail, rebuilds the cache, and in mid-task keeps whatever the automatic pass guesses matters. _Fix:_ compact at a natural break, or `/rewind` when you want to undo a path rather than summarise it. — [Context basics: /context, /compact and /clear](/en/l1-beginner/m02-interact/context-basics/) · official
+
+**Delegating everything to subagents to "save context".** Each subagent starts cold and is billed for it — the lab measured roughly double the cost on one small directory. _Fix:_ delegate reads whose contents you will not need again. — [Context engineering](/en/l4-master/m21-scale/context-engineering/) · own observation
+
+**One root `CLAUDE.md` that documents every package.** It costs context on every session regardless of what you are touching, and nobody owns it. _Fix:_ repository-wide rules at the root, area conventions in that area's own `CLAUDE.md`. — [Working in large codebases](/en/l4-master/m21-scale/large-codebases/) · official
+
+## Prompting and iteration
+
+**Asking for an improvement instead of a change.** "Clean this up" gives the agent no target and no check. _Fix:_ name the behaviour that should be different afterwards. — [Decompose a task into verifiable steps](/en/l2-intermediate/m09-prompting/task-decomposition/) · official
+
+**Decomposing into steps with no checks.** "1. understand the code 2. write the code 3. test" is a list of phases, not a decomposition. _Fix:_ every step names a file, a change and the check that proves it. — [Decompose a task into verifiable steps](/en/l2-intermediate/m09-prompting/task-decomposition/) · own observation
+
+**Leaving exploration unbounded.** "Read the codebase, then plan" invites the agent to read everything — the documented infinite-exploration failure. _Fix:_ name the entry points, or delegate the exploration to a subagent. — [Decompose a task into verifiable steps](/en/l2-intermediate/m09-prompting/task-decomposition/) · official
+
+**Asserting instead of proving.** "I added the test and everything passes" is a claim produced by the thing that did the work. _Fix:_ ask for the command and its output, and read the output. — [Constraints, acceptance criteria and proof](/en/l2-intermediate/m09-prompting/constraints-and-evidence/) · official
+
+**A criterion nobody can evaluate.** "Make it robust", "production-ready" — no pass or fail. _Fix:_ name the case and the expected value. — [Constraints, acceptance criteria and proof](/en/l2-intermediate/m09-prompting/constraints-and-evidence/) · own observation
+
+**Correcting with a verdict.** "Nope", "still wrong" transfers your conclusion and none of your evidence. _Fix:_ state the requirement and the check. — [Iterative refinement without drift](/en/l2-intermediate/m09-prompting/iterative-refinement/) · own observation
+
+**Refining past the second correction.** Three corrections on one issue means three failed approaches are competing with your next instruction. _Fix:_ `/clear` and rewrite the initial prompt with what you learned. — [Iterative refinement without drift](/en/l2-intermediate/m09-prompting/iterative-refinement/) · official
+
+**Fixing the prompt when the problem is the context.** A polluted session makes good prompts behave badly, and no rewording repairs it. _Fix:_ `/context`, then `/clear`. — [The ten prompting anti-patterns](/en/l2-intermediate/m09-prompting/anti-patterns/) · own observation
+
+**Citing a community prompt collection as if it were official.** Unofficial lists drift and can name flags that no longer exist. _Fix:_ start from the official library and check borrowed flags against the docs. — [Prompt library patterns, adapted](/en/l2-intermediate/m09-prompting/prompt-library/) · community
+
+**Copying a template with its example slots intact.** A prompt naming `src/scheduler/queue.ts` in a repository that has no such file starts the session with a contradiction. _Fix:_ substitute a real path first. — [Prompt library patterns, adapted](/en/l2-intermediate/m09-prompting/prompt-library/) · community
+
+**Dictating tool names.** "Use Grep, then Read, then Edit" is dictating steps; Claude picks tools, and your levers are the prompt and the permission rules. _Fix:_ name the goal. — [The built-in tools: Read, Edit, Glob, Grep, Bash](/en/l1-beginner/m02-interact/tools-read-edit-run/) · official
+
+**Planning a one-line change.** Plan mode adds a round trip; on a typo or a rename it buys nothing. _Fix:_ if you could describe the diff in one sentence, ask for the diff. — [Plan mode: explore, plan, approve, execute](/en/l1-beginner/m02-interact/plan-mode/) · official
+
+## Permissions, security and secrets
+
+**Treating `bypassPermissions` as "trusted mode".** It is the absence of checks, and the docs say it offers no protection against prompt injection. _Fix:_ auto mode for fewer prompts; bypass only in a container or VM you are willing to lose. — [The permission model and the sandbox](/en/l3-advanced/m14-security/permission-model-and-sandbox/) · official
+
+**Reaching for `--dangerously-skip-permissions` to make a prompt go away.** It is `bypassPermissions` under a longer name and it applies to the whole session. _Fix:_ name the tools with `--allowedTools`. — [CLI flags: how a session starts](/en/l1-beginner/m04-commands/cli-flags/) · official
+
+**Writing a broad deny with a narrow allow and expecting an exception.** Deny is evaluated first and first match wins, so `Bash(aws *)` denies `aws s3 ls` whatever the allow list says. _Fix:_ narrow the deny rule, or express the exception as an ask rule or a hook. — [Shared settings and allowlists](/en/l4-master/m20-team/shared-settings/) · official
+
+**Keeping a blanket `Bash(*)` allow rule.** Auto mode drops it; every other mode honours it, which turns any injection reaching a Bash call into arbitrary code execution. _Fix:_ narrow rules like `Bash(npm test)`. — [Prompt injection: how it reaches an agent, and what stops it](/en/l3-advanced/m14-security/prompt-injection/) · official
+
+**Piping untrusted content straight into a prompt.** `curl … | claude -p "do what this says"` hands an attacker your session. _Fix:_ fetch into a file, read it as data, and say so in the prompt. — [Prompt injection](/en/l3-advanced/m14-security/prompt-injection/) · official
+
+**Treating "Claude refused it once" as a control.** One refusal is evidence about one session. _Fix:_ measure the blast radius — what could this session have done without asking? — [Prompt injection](/en/l3-advanced/m14-security/prompt-injection/) · own observation
+
+**Assuming the sandbox protects your credentials by default.** Default read access covers the whole computer, `~/.aws/credentials` and `~/.ssh/` included. _Fix:_ list them under `sandbox.credentials` or `filesystem.denyRead`. — [The permission model and the sandbox](/en/l3-advanced/m14-security/permission-model-and-sandbox/) · official
+
+**Relying on a pre-commit hook alone to stop a leak.** It fires after the value is already in your working tree and your scrollback. _Fix:_ block at write time with `PreToolUse` and keep the pre-commit check as the net. — [Secrets: .env, gitleaks, and a hook that blocks a leak](/en/l3-advanced/m14-security/secrets/) · own observation
+
+**Running a secret scanner without `--redact`.** The finding prints the secret into your terminal, your CI log and your artifact store. _Fix:_ `--redact`, always. — [Secrets](/en/l3-advanced/m14-security/secrets/) · official
+
+**Deleting the commit that contained the secret.** It stays in history, in every clone and in every fork. _Fix:_ rotate first; treat history rewriting as cleanup, not remediation. — [Secrets](/en/l3-advanced/m14-security/secrets/) · official
+
+**Committing a token in `.mcp.json` or a workflow.** It is a shared file, and `claude mcp get` prints it back in plain text. _Fix:_ `${SERVICE_TOKEN}` expansion in the file, the real value in the environment or a repository secret. — [Adding, listing and removing servers](/en/l3-advanced/m11-mcp/add-list-remove-scopes/) · official
+
+**Committing your personal approvals into the shared settings file.** Those "don't ask again" rules reflect one person's session, not a team decision. _Fix:_ curate the shared list. — [Shared settings and allowlists](/en/l4-master/m20-team/shared-settings/) · official
+
+**Deploying a managed policy without a verification step.** A policy that silently lost to a higher-priority source looks exactly like one that works. _Fix:_ roll out to one machine and read `Setting sources` and `Skipped sources` in `/status`. — [Managed and server-managed settings](/en/l4-master/m20-team/managed-settings/) · official
+
+**Locking `model` and thinking you have restricted models.** A managed `model` is a default; `--model` still moves. _Fix:_ deploy `availableModels` and `enforceAvailableModels`. — [Managed settings and auto-mode configuration](/en/l3-advanced/m14-security/managed-settings/) · official
+
+**Turning telemetry off without reading what goes with it.** `DISABLE_TELEMETRY` also stops feature-flag fetching, which takes Remote Control, `/skill-doctor`, the auto-mode default and your own usage dashboard with it. _Fix:_ decide it as a trade; `DISABLE_ERROR_REPORTING` is the narrower switch. — [Data, retention and telemetry](/en/l3-advanced/m14-security/data-and-retention/) · official
+
+**Assuming a container is the boundary for `--dangerously-skip-permissions`.** Claude can still write every file in the bind-mounted workspace, which is on your host. _Fix:_ restrict egress too, or use auto mode and keep the review step. — [Devcontainers and corporate launchers](/en/l4-master/m21-scale/devcontainers/) · official
+
+## Skills and hooks
+
+**Putting a procedure in `CLAUDE.md`.** A twelve-step release checklist costs tokens on every turn of every session, including the ones about CSS. _Fix:_ make it a skill, whose body loads only when it runs. — [Skills versus custom commands](/en/l2-intermediate/m06-skills/skills-vs-commands/) · official
+
+**Using a skill to enforce a hard rule.** A skill is text the model reads and can be talked out of. _Fix:_ hard guarantees go in hooks or permission deny rules. — [Skills versus custom commands](/en/l2-intermediate/m06-skills/skills-vs-commands/) · official
+
+**Treating `allowed-tools` as a sandbox.** It pre-approves tools; it never removes any, and it applies even in a workspace you have never trusted. _Fix:_ `disallowed-tools`, deny rules, or a hook when something must be taken away. — [SKILL.md anatomy and frontmatter](/en/l2-intermediate/m06-skills/skill-md-anatomy/) · official
+
+**A description that describes the implementation.** Claude decides whether to load a skill from its description, not its body. _Fix:_ lead with the trigger, and fix a non-triggering skill by rewriting the description. — [SKILL.md anatomy](/en/l2-intermediate/m06-skills/skill-md-anatomy/) and [Measuring skills with /skill-doctor](/en/l2-intermediate/m06-skills/skill-doctor/) · official
+
+**Frontmatter that is not frontmatter.** A blank line, a comment or a BOM above the opening `---` and the whole file is treated as body, silently. The same trap hits agent definitions. _Fix:_ `---` on line 1, always. — [SKILL.md anatomy](/en/l2-intermediate/m06-skills/skill-md-anatomy/) and [Custom agents in .claude/agents/](/en/l3-advanced/m10-subagents/custom-agents/) · own observation
+
+**Writing the important part at the bottom of a `SKILL.md`.** After compaction, skill bodies are re-injected truncated from the end, capped at 5,000 tokens each. _Fix:_ put what must survive at the top. — [Context engineering](/en/l4-master/m21-scale/context-engineering/) · official
+
+**Deleting a skill because `/skill-doctor` shows a low count.** The report measures frequency, not value. _Fix:_ set it to `"name-only"` first, and delete only if you never reach for it. — [Measuring skills with /skill-doctor](/en/l2-intermediate/m06-skills/skill-doctor/) · own observation
+
+**Blocking with `exit 1`.** For most events that is a non-blocking error: the action proceeds and you get a notice. _Fix:_ `exit 2`, or exit 0 with a JSON decision. — [Hook anatomy](/en/l2-intermediate/m07-hooks/hook-anatomy/) and [Block dangerous commands with a PreToolUse guard](/en/l2-intermediate/m07-hooks/block-dangerous-commands/) · official
+
+**Printing anything before your hook's JSON.** Stdout is parsed as JSON only when it starts with `{` and ends with `}`; a shell banner silently turns your decision into plain text. _Fix:_ keep stdout clean and debug to a file or stderr. — [Hook anatomy](/en/l2-intermediate/m07-hooks/hook-anatomy/) and [Debugging hooks](/en/l2-intermediate/m07-hooks/debugging-hooks/) · official
+
+**Putting static project rules in a hook.** A `SessionStart` hook that prints "this repo uses pnpm" runs a process on every session to deliver a sentence that never changes. _Fix:_ `CLAUDE.md`; keep hooks for values that vary. — [Load context at SessionStart, run tests at Stop](/en/l2-intermediate/m07-hooks/session-start-context/) · official
+
+**Assuming a hook is a security boundary.** The `if` filter is best-effort by design: when Claude Code cannot tell what a Bash string will run, it runs your hook anyway. _Fix:_ enforce hard limits with permission rules and sandboxing. — [Hook anatomy](/en/l2-intermediate/m07-hooks/hook-anatomy/) · official
+
+**Treating `Stop` as "the task is done".** It fires every time Claude finishes responding — three turns is three events. _Fix:_ check the condition itself inside the hook and stay quiet otherwise. — [Notify when Claude is done — or stuck](/en/l2-intermediate/m07-hooks/notify-when-done/) · official
+
+**Trying to reject a bad edit from `PostToolUse`.** The write already happened; the docs are blunt that it cannot undo actions. _Fix:_ move the check to `PreToolUse`. — [Format on save with a PostToolUse hook](/en/l2-intermediate/m07-hooks/format-on-save/) · official
+
+**Registering hooks on events "just in case".** Every registration is a process launch on a hot path, and `PreToolUse` and `MessageDisplay` fire constantly. _Fix:_ register what you use. — [The full event catalogue and /hooks](/en/l2-intermediate/m07-hooks/event-catalogue/) · own observation
+
+**Fixing the hook when the matcher is wrong.** If the script never ran, its contents cannot be the bug. _Fix:_ `/hooks` first, then the script. — [Debugging hooks](/en/l2-intermediate/m07-hooks/debugging-hooks/) · own observation
+
+## Models, effort and cost
+
+**Reaching for the biggest model first.** The most expensive model answers a five-file rename more slowly and no better. _Fix:_ start at the model that plausibly fits and escalate on evidence. — [The model family and its aliases](/en/l2-intermediate/m05-models-effort/model-family/) · own observation
+
+**Switching model or effort mid-task.** Each switch reprocesses the whole conversation as uncached input at full rate. _Fix:_ decide at the top of the session; compare across sessions, not within one. — [Cost and usage](/en/l2-intermediate/m05-models-effort/cost-and-usage/) and [Prompt caching](/en/l4-master/m21-scale/prompt-caching/) · official
+
+**Raising effort to fix a bad prompt.** More thinking about the wrong question produces a longer wrong answer. _Fix:_ add the constraint, the criterion or the failing command first. — [Effort levels](/en/l2-intermediate/m05-models-effort/effort-levels/) · official
+
+**`max` everywhere.** The docs call it prone to overthinking with diminishing returns. _Fix:_ reserve the top of the scale for work you have tested it on. — [Effort levels](/en/l2-intermediate/m05-models-effort/effort-levels/) and [Assigning model and effort hints by work type](/en/l4-master/m18-multi-session/model-effort-hints/) · official
+
+**Comparing models without resetting the repository.** The second run finds the bug already fixed and reports success in one turn. _Fix:_ reset the tree and re-run the failing check between arms. — [Choosing a model](/en/l2-intermediate/m05-models-effort/choosing-a-model/) · own observation
+
+**Reading a small spread across three runs as a trend.** Three runs with no repetition cannot separate an effect from noise. _Fix:_ repeat each arm, or report it as inconclusive. — [The effort lab](/en/l2-intermediate/m05-models-effort/effort-lab/) · own observation
+
+**Compacting to save money.** `/compact` reads the whole conversation to summarise it and the summary invalidates the cache. _Fix:_ `/clear` between unrelated tasks — it costs nothing. — [Cost and usage](/en/l2-intermediate/m05-models-effort/cost-and-usage/) · own observation
+
+**Reporting the session cost figure as spend.** It is a local estimate at list price, and on a subscription it is not a billing number. _Fix:_ take spend from the Console usage page or your cloud's billing console. — [Budgets, analytics and usage reports](/en/l4-master/m20-team/cost-budgeting/) · official
+
+**Ranking developers by tokens.** A developer who deletes a feature spends fewer tokens than one who generates a thousand lines nobody asked for. _Fix:_ track cost against outcomes at team level. — [Budgets, analytics and usage reports](/en/l4-master/m20-team/cost-budgeting/) · own observation
+
+**Reaching for `DISABLE_PROMPT_CACHING` to control spend.** The lab measured the opposite — about seven times the cost for one identical prompt. _Fix:_ leave caching on and carry less context. — [Prompt caching](/en/l4-master/m21-scale/prompt-caching/) · own observation
+
+**Using fast mode for autonomous or CI work.** Nobody is waiting on a pipeline's latency, and the pipeline pays double per token. _Fix:_ standard mode for batch and CI. — [Fast mode](/en/l2-intermediate/m05-models-effort/fast-mode/) · official
+
+## Delegation, agents and orchestration
+
+**Delegating a lookup you could do in one `Read`.** A subagent costs a spawn, a fresh context and a summarisation step. _Fix:_ delegate breadth, not depth. — [The Agent tool and the built-in subagents](/en/l3-advanced/m10-subagents/agent-tool-and-builtins/) · official
+
+**Expecting the subagent to know what you just discussed.** A non-fork subagent gets its prompt, your memory files and the repo — not your chat. _Fix:_ restate the task in full, or fork when the context genuinely matters. — [The Agent tool and the built-in subagents](/en/l3-advanced/m10-subagents/agent-tool-and-builtins/) · official
+
+**Inheriting every tool for a read-only role.** Omit `tools` and your "reviewer" has `Edit`, `Write` and `Bash` — and sooner or later it uses them. _Fix:_ allowlist `Read, Grep, Glob`. — [Custom agents in .claude/agents/](/en/l3-advanced/m10-subagents/custom-agents/) and [Lab: four agents that earn their keep](/en/l3-advanced/m10-subagents/agent-lab/) · own observation
+
+**Putting the task in the agent's body.** The body is a standing system prompt for every invocation. _Fix:_ body = role and method, prompt = this task. — [Custom agents in .claude/agents/](/en/l3-advanced/m10-subagents/custom-agents/) · own observation
+
+**Pinning every agent to the strongest model "to be safe".** You pay the top rate for lookups a cheap model gets exactly right. _Fix:_ pin only the agents whose output is a judgement. — [Choosing a model per agent](/en/l3-advanced/m10-subagents/model-per-agent/) · own observation
+
+**Fanning out twenty agents to save wall-clock time.** Running many at once multiplies token usage; it does not divide the work for free. _Fix:_ delegate what genuinely parallelises and keep the count small. — [Choosing a model per agent](/en/l3-advanced/m10-subagents/model-per-agent/) · official
+
+**Reaching for a fork when a plain subagent would do.** A fork carries your whole conversation into the subagent — the context cost delegation exists to avoid. _Fix:_ fork only when the side task depends on what was just discussed. — [Fork, background and worktree isolation](/en/l3-advanced/m10-subagents/fork-background-worktree/) · official
+
+**Expecting a background agent to ask you something.** It has no `AskUserQuestion` and no plan-mode tools. _Fix:_ give background work an unambiguous brief, or run it in the foreground. — [Fork, background and worktree isolation](/en/l3-advanced/m10-subagents/fork-background-worktree/) · official
+
+**Reaching for an agent team when subagents would do.** Teams cost roughly an order of magnitude more and add coordination overhead. _Fix:_ ask what discussion between the workers buys you; if the answer is nothing, delegate to subagents. — [Agent teams and cross-session messaging](/en/l4-master/m16-orchestration/agent-teams-messaging/) · official
+
+**Two workers editing the same file.** Nothing arbitrates, and it ends in overwrites. _Fix:_ partition the work so each owns a different set of files. — [Agent teams and cross-session messaging](/en/l4-master/m16-orchestration/agent-teams-messaging/) and [Disjoint owned_paths, a worktree per plan, and shared files](/en/l4-master/m18-multi-session/owned-paths-worktrees/) · official
+
+**Roles that overlap.** "Reviewer" and "second reviewer" with the same prompt produce correlated opinions at twice the price. _Fix:_ a different lens or a different job per role — never the same job twice. — [Designing a multi-agent pipeline](/en/l4-master/m16-orchestration/designing-multi-agent/) · own observation
+
+**Believing the summary over the artefacts.** The final report is a model's account of the run. _Fix:_ read the journal, the persisted script and `git status`. — [Lab: a review → verify → fix pipeline](/en/l4-master/m16-orchestration/pipeline-lab/) · own observation
+
+**Expecting to steer a workflow mid-run.** There is no mid-run user input, and a stopped agent counts as failed. _Fix:_ split a process that needs your sign-off into one workflow per stage. — [The Workflow tool: scripts that orchestrate agents](/en/l4-master/m16-orchestration/workflows/) · official
+
+**Leaving `ultracode` on all session.** It plans a workflow for every substantive task, including the ones that needed one delegated read. _Fix:_ `/effort high` for routine work; use the keyword for the task that deserves it. — [ultracode](/en/l4-master/m16-orchestration/ultracode/) · official
+
+## Autonomy and scheduling
+
+**Looping something expensive.** A `/loop 5m` that rebuilds the project costs a build every five minutes, forever. _Fix:_ point the loop at a cheap check that exits fast. — [/loop: running a prompt on repeat](/en/l4-master/m17-autonomy/loop/) · own observation
+
+**Walking away from a loop you never listed.** A forgotten fixed-interval loop fires until you cancel it or seven days pass. _Fix:_ ask what scheduled tasks you have before you close the laptop. — [/loop](/en/l4-master/m17-autonomy/loop/) · own observation
+
+**A vague prompt in a routine.** A routine has no one to ask, so "improve the codebase" produces a different unreviewable run every night. _Fix:_ a self-contained prompt with the task, the evidence of success, and what must not change. — [Routines: cron, one-off, API and GitHub triggers](/en/l4-master/m17-autonomy/routines/) · official
+
+**Treating fire text as instructions.** Anyone holding the bearer token can send the payload; a prompt written to "do what the payload says" turns a leaked token into remote code execution. _Fix:_ keep the routine's own prompt authoritative and treat the payload as data. — [Routines](/en/l4-master/m17-autonomy/routines/) · official
+
+**Posting on success.** A routine that says "all good" every night trains the team to ignore the night it says something real. _Fix:_ stay silent when there is nothing to report. — [Routines](/en/l4-master/m17-autonomy/routines/) · own observation
+
+**An unbounded `/goal`.** With no turn or time clause, a goal keeps starting turns until a model says stop — and `/goal` does not change your permission mode. _Fix:_ end every condition with "or stop after N turns", and keep the blast radius inside a worktree. — [/goal: working until a condition holds](/en/l4-master/m17-autonomy/goal/) · official
+
+**A condition the evaluator cannot see.** The evaluator reads the transcript and runs nothing itself, so "the service is healthy" is unjudgeable. _Fix:_ name the check and make sure it appears in the conversation. — [/goal](/en/l4-master/m17-autonomy/goal/) · official
+
+**Using a local scheduled task for something that must happen.** It fires only while the app is open and the machine is awake. _Fix:_ a cloud routine for anything that must run reliably. — [Scheduled tasks in the desktop app](/en/l4-master/m17-autonomy/desktop-scheduled-tasks/) · official
+
+**Polling what could push.** A `/loop 2m` against a log file costs a full turn every two minutes and still reports late. _Fix:_ a monitor, or a channel for an external system. — [Monitors, channels and wake-ups](/en/l4-master/m17-autonomy/monitors-and-channels/) · own observation
+
+## MCP, plugins and integrations
+
+**Adding an MCP server for something a CLI already does.** A server you configure, trust, authenticate and keep in context is a lot of machinery to replace `gh pr view 456`. _Fix:_ reach for MCP when the alternative is copying data between two windows by hand. — [MCP concepts and transports](/en/l3-advanced/m11-mcp/mcp-concepts/) and [The GitHub MCP server](/en/l3-advanced/m11-mcp/github-mcp/) · official
+
+**Reading `Added …` as "it works".** The `add` command saves configuration without validating credentials or contacting the server. _Fix:_ follow every add with `claude mcp list` or `claude mcp get`. — [Adding, listing and removing servers](/en/l3-advanced/m11-mcp/add-list-remove-scopes/) · own observation
+
+**Putting a personal server at project scope.** `.mcp.json` is checked in, so everyone who clones the repository is prompted for a server they do not need. _Fix:_ `--scope local` for personal, `--scope user` for everywhere. — [Adding, listing and removing servers](/en/l3-advanced/m11-mcp/add-list-remove-scopes/) · official
+
+**A read-write database credential "because it is just a dev database".** Dev databases get restored from production. _Fix:_ a read-only user in the DSN and read-only in the server config. — [A database MCP server](/en/l3-advanced/m11-mcp/database-mcp/) · own observation
+
+**Selecting everything into context.** `SELECT * FROM users` blows through the MCP output limit and puts personal data in a transcript. _Fix:_ aggregates and `LIMIT`ed samples. — [A database MCP server](/en/l3-advanced/m11-mcp/database-mcp/) · official
+
+**Treating tool output as trusted.** A row, an issue title or a fetched page is attacker-influenceable text arriving in your model's context. _Fix:_ review commands before approval, prefer read-only scopes, keep risky work in a sandbox. — [MCP security and supply chain](/en/l3-advanced/m11-mcp/mcp-security/) · official
+
+**"It is in the Directory, so it is audited."** Anthropic reviews connectors against listing criteria; it does not security-audit or manage any MCP server. _Fix:_ do your own review. — [MCP security and supply chain](/en/l3-advanced/m11-mcp/mcp-security/) · official
+
+**Pinning nothing.** `npx -y package@latest` runs whatever the publisher pushes next, on every session start. _Fix:_ pin a version you reviewed and update deliberately. — [MCP security and supply chain](/en/l3-advanced/m11-mcp/mcp-security/) · community
+
+**`console.log` in a stdio MCP server.** It writes a non-JSON line into the protocol stream and the connection dies with no obvious cause. _Fix:_ `console.error` for everything diagnostic. — [Writing a minimal MCP server](/en/l3-advanced/m11-mcp/write-your-own-server/) · own observation
+
+**Putting plugin components inside `.claude-plugin/`.** The plugin loads, the manifest validates, and none of your skills, agents or hooks exist. _Fix:_ only `plugin.json` goes there; everything else sits at the plugin root. — [Plugin anatomy: the manifest and the directories](/en/l3-advanced/m12-plugins/plugin-anatomy/) · official
+
+**Referring to bundled scripts by relative path.** Installation copies the plugin into a cache directory, so `./hooks/format.mjs` resolves against the user's project. _Fix:_ `${CLAUDE_PLUGIN_ROOT}`. — [Plugin anatomy](/en/l3-advanced/m12-plugins/plugin-anatomy/) and [Build a plugin from the skill and hook you already wrote](/en/l3-advanced/m12-plugins/build-a-plugin/) · official
+
+**Treating `claude plugin validate` as proof the plugin works.** It reads manifests. It does not fire your hook or notice a misplaced `skills/` directory. _Fix:_ load it with `--plugin-dir` and exercise each component. — [claude plugin validate, and what eval adds](/en/l3-advanced/m12-plugins/validate-and-eval/) · own observation
+
+**Adding a marketplace you have not read.** Plugins execute arbitrary code with your privileges, and a marketplace can point at any repository, archive or command. _Fix:_ open `marketplace.json` and follow each source first. — [Marketplaces and the /plugin command](/en/l3-advanced/m12-plugins/marketplaces/) · official
+
+**Installing plugins at user scope by default.** User scope means every project, every session, paying that plugin's always-on context cost forever. _Fix:_ `local` while you evaluate. — [Marketplaces and the /plugin command](/en/l3-advanced/m12-plugins/marketplaces/) · own observation
+
+**Treating an allowlist of marketplaces as an allowlist of code.** It constrains where plugins come from, not what they contain. _Fix:_ pair it with `disableCommandPluginSources` and review plugins like dependencies. — [Sharing skills and plugins across a team](/en/l4-master/m20-team/team-marketplace/) · official
+
+## Headless, CI and platforms
+
+**Ignoring the exit code of a headless run.** A run that could not authenticate still prints JSON on stdout and looks like output. _Fix:_ check `$?` and `is_error`; treat non-zero as a pipeline failure. — [claude -p: headless runs and structured output](/en/l3-advanced/m13-headless-ci/claude-p/) · official
+
+**No `--max-turns` on an unattended run.** There is no turn limit by default. _Fix:_ set a limit you have seen the task fit inside, and `--max-budget-usd` for a hard money cap. — [claude -p](/en/l3-advanced/m13-headless-ci/claude-p/) and [CLI flags](/en/l1-beginner/m04-commands/cli-flags/) · official
+
+**Running `-p` in an untrusted checkout without `--bare`.** It runs that repo's hooks and connects its MCP servers with no trust dialog. _Fix:_ `--bare` in CI, and pass back what you need with `--settings` or `--mcp-config`. — [claude -p](/en/l3-advanced/m13-headless-ci/claude-p/) · official
+
+**Parsing plain-text output with a regex.** The wording of an answer is not a contract. _Fix:_ `--output-format json`, and `--json-schema` when you need the answer's shape. — [claude -p](/en/l3-advanced/m13-headless-ci/claude-p/) · official
+
+**Granting the whole tool surface "to be safe" in CI.** A review job that can run any shell command is a review job that can push. _Fix:_ name the exact tools and keep workflow `permissions:` at read for anything that does not write. — [PR review with claude-code-action@v1](/en/l3-advanced/m13-headless-ci/github-actions-review/) · official
+
+**Expecting CI to run on Claude's commits.** GitHub does not trigger workflows on commits made with the default `GITHUB_TOKEN`. _Fix:_ let the action authenticate as the app, or pass a custom app token. — [The GitHub app](/en/l2-intermediate/m08-git/github-app/) and [Issue to pull request with @claude](/en/l3-advanced/m13-headless-ci/issue-to-pr/) · official
+
+**Treating an open pull request from Claude as reviewed.** It is a draft written by something that cannot run your staging environment. _Fix:_ keep branch protection and required reviews on. — [Issue to pull request with @claude](/en/l3-advanced/m13-headless-ci/issue-to-pr/) · official
+
+**Storing a cloud key as a CI variable when OIDC is available.** A masked variable is still a long-lived credential many people can read. _Fix:_ exchange the workflow's OIDC token for short-lived credentials. — [GitLab CI/CD, cloud providers and Enterprise Server](/en/l3-advanced/m13-headless-ci/gitlab-and-others/) · official
+
+**Making an automated review a required check.** The Claude Code Review check run always completes neutral by design, so a branch-protection rule on it gates nothing. _Fix:_ read the severity counts in your own job and fail on your own policy. — [Integrating Claude into code review and CI gates](/en/l4-master/m20-team/review-process/) · official
+
+**Asking a review to do the linter's job.** Formatting and import order are cheaper, faster and more reliable as CI steps. _Fix:_ list them under "do not report" and put the check in the pipeline. — [Integrating Claude into code review and CI gates](/en/l4-master/m20-team/review-process/) · own observation
+
+**Pointing a browser session at production.** It is your real browser with your real sessions; a misread selector in an admin console is a real change. _Fix:_ drive a local server or a staging site. — [The Playwright and Chrome browser MCP servers](/en/l3-advanced/m11-mcp/browser-mcp/) and [Driving a site with Claude in Chrome](/en/l4-master/m19-visual/chrome-automation/) · official
+
+**Replacing tests with browser sessions.** A prompt that "checks the page" is not deterministic and will not run in CI. _Fix:_ once a browser session finds a bug, write the test that would have caught it. — [The Playwright and Chrome browser MCP servers](/en/l3-advanced/m11-mcp/browser-mcp/) · own observation
+
+**Asking for "all the console output".** Console logs are verbose and every line lands in your context window. _Fix:_ name the pattern you are looking for. — [Claude in Chrome](/en/l3-advanced/m15-platforms/chrome/) · official
+
+**Assuming the IDE is the safe place for auto-approved edits.** It is precisely where they are most dangerous, because IDE config files can execute. _Fix:_ Manual mode for edits in the IDE, and read the diff. — [The JetBrains plugin](/en/l3-advanced/m15-platforms/jetbrains/) and [The VS Code extension](/en/l3-advanced/m15-platforms/vs-code/) · own observation
+
+**Running `--cloud` with unpushed commits.** The VM clones your remote at your current branch, not your working tree. _Fix:_ push first, or accept the bundle fallback deliberately. — [claude.ai/code, cloud environments, --teleport and ultrareview](/en/l3-advanced/m15-platforms/web-and-cloud-sessions/) · own observation
+
+**Closing the laptop on a Remote Control session.** It runs as a local process and goes offline seconds after the process exits. _Fix:_ a cloud session for work that must survive a closed lid. — [Remote Control and the mobile app](/en/l3-advanced/m15-platforms/remote-control-mobile/) · official
+
+**Tagging Claude into an untrusted channel.** Claude is given the conversation context and may follow directions from other messages in it. _Fix:_ channels whose participants you trust. — [Claude Tag in Slack](/en/l3-advanced/m15-platforms/slack-claude-tag/) · official
+
+**Adding tmux panes instead of worktrees.** Two sessions in one working tree overwrite each other's edits, however the terminal is arranged. _Fix:_ `claude --worktree`, and `--tmux` only if you also want the layout. — [Terminal multiplexers and several sessions side by side](/en/l3-advanced/m15-platforms/tmux-multi-session/) · own observation
+
+## Git, multi-session work and teams
+
+**Letting Claude stage as well as commit.** "Commit my changes" with a dirty tree bundles whatever else is lying around into one commit. _Fix:_ stage deliberately, then ask Claude to commit the staged changes. — [Commits and conventions](/en/l2-intermediate/m08-git/commits-and-conventions/) · own observation
+
+**A Testing section Claude wrote from the diff.** If Claude did not run the command, the section is a guess in a monospace font. _Fix:_ run it, paste the real output, and say so. — [Pull requests with evidence](/en/l2-intermediate/m08-git/pull-requests/) · own observation
+
+**Treating `/branch` as a git branch.** It copies the conversation, not the working tree. _Fix:_ a worktree when you want separate code. — [Worktrees and branches](/en/l2-intermediate/m08-git/worktrees-branches/) and [Sessions: resume, continue, branch and fork](/en/l1-beginner/m04-commands/sessions/) · official
+
+**Expecting a fresh worktree to be ready to run.** No `node_modules`, no `.env`, no build cache — so the first test run fails for reasons unrelated to your change. _Fix:_ install in the worktree and list gitignored files in `.worktreeinclude`. — [Worktrees and branches](/en/l2-intermediate/m08-git/worktrees-branches/) · own observation
+
+**Reading a clean `low` review as "no bugs".** `low` and `medium` deliberately withhold anything they are not confident about. _Fix:_ run `high` when the answer matters. — [Code review commands](/en/l2-intermediate/m08-git/code-review-commands/) · official
+
+**Claiming a plan without pushing.** The claim exists only on your machine, so a second session takes the same work. _Fix:_ push the branch in the same breath as the claim. — [A generated STATE.md, the claim protocol, and stale claims](/en/l4-master/m18-multi-session/state-md-and-claims/) · own observation
+
+**Hand-editing a generated status file.** Someone "just fixes" a count and the freshness check starts failing for unrelated reasons. _Fix:_ every change goes through the tool. — [A generated STATE.md](/en/l4-master/m18-multi-session/state-md-and-claims/) and [Plan files: frontmatter, ten sections, milestones](/en/l4-master/m18-multi-session/plan-files/) · own observation
+
+**Guessing a product decision because the plan was vague.** The guess becomes an unrecorded decision the next session cannot see. _Fix:_ write the question into `open_questions` and take the most conservative reading. — [Plan files](/en/l4-master/m18-multi-session/plan-files/) · own observation
+
+**Fixing something outside your paths because you found it.** The finding is valuable; the silent edit is not. _Fix:_ record it, propose the follow-up, leave the file alone. — [Handoff notes another session can resume from](/en/l4-master/m18-multi-session/handoff-notes/) · own observation
+
+**Leaving the handoff placeholder in place.** A merged plan whose notes still say "filled by the executing session" has thrown away everything that session learned. _Fix:_ treat filling it as part of moving to review. — [Handoff notes](/en/l4-master/m18-multi-session/handoff-notes/) · own observation
+
+**Copying a whole coordination system into a project that does not need it.** Ceremony nobody reads looks like coordination while providing none. _Fix:_ take the pieces that map onto a problem you actually have. — [This repository as the worked example](/en/l4-master/m18-multi-session/this-repo-as-example/) · own observation
+
+**Launching a team rollout before the kit exists.** An announcement with no committed settings becomes a support queue. _Fix:_ configure two or three real repositories first. — [Rolling out to a team: kits, champions and onboarding](/en/l4-master/m20-team/communications-and-champions/) · own observation
+
+## Publishing and visual work
+
+**Expecting a form on an artifact to save something.** There is no backend; the next viewer sees an empty form. _Fix:_ put state somewhere real. — [Publishing an artifact: update, share, comments](/en/l4-master/m19-visual/artifacts/) · official
+
+**Loading a library from the CDN you always use.** Anything outside the allowed hosts is blocked by the CSP, silently, and a blocked library has no fallback. _Fix:_ use an allowed host, pin an exact version, inline the rest. — [Publishing an artifact](/en/l4-master/m19-visual/artifacts/) · official
+
+**Treating a design canvas as the source of truth.** Nothing in your build reads a `.dc.html` artboard. _Fix:_ convert it to tokens in the stylesheet. — [The /design canvas: a brief in, artboards out](/en/l4-master/m19-visual/design-canvas/) · own observation
+
+**Eyeballing contrast.** A palette that looks fine on your monitor can fail AA. _Fix:_ compute the contrast matrix from the final tokens and let it change them. — [The /design canvas](/en/l4-master/m19-visual/design-canvas/) · own observation
+
+**Calling `/dataviz` after the chart exists.** By then form, axes and palette are in the markup and the skill can only suggest repainting. _Fix:_ invoke it before the first line of chart code. — [/dataviz and chart discipline](/en/l4-master/m19-visual/dataviz/) · official
+
+**Sharing a recorded GIF without watching it.** The recording captures everything visible, including account details on logged-in pages. _Fix:_ review every frame first. — [Driving a site with Claude in Chrome, and recording it](/en/l4-master/m19-visual/chrome-automation/) · own observation
+
+## Every module's own list
+
+This page is a selection. The complete set lives at the end of each lesson, module by module:
+
+- Level 1 — [m01-start](/en/l1-beginner/m01-start/), [m02-interact](/en/l1-beginner/m02-interact/), [m03-memory](/en/l1-beginner/m03-memory/), [m04-commands](/en/l1-beginner/m04-commands/)
+- Level 2 — [m05-models-effort](/en/l2-intermediate/m05-models-effort/), [m06-skills](/en/l2-intermediate/m06-skills/), [m07-hooks](/en/l2-intermediate/m07-hooks/), [m08-git](/en/l2-intermediate/m08-git/), [m09-prompting](/en/l2-intermediate/m09-prompting/)
+- Level 3 — [m10-subagents](/en/l3-advanced/m10-subagents/), [m11-mcp](/en/l3-advanced/m11-mcp/), [m12-plugins](/en/l3-advanced/m12-plugins/), [m13-headless-ci](/en/l3-advanced/m13-headless-ci/), [m14-security](/en/l3-advanced/m14-security/), [m15-platforms](/en/l3-advanced/m15-platforms/)
+- Level 4 — [m16-orchestration](/en/l4-master/m16-orchestration/), [m17-autonomy](/en/l4-master/m17-autonomy/), [m18-multi-session](/en/l4-master/m18-multi-session/), [m19-visual](/en/l4-master/m19-visual/), [m20-team](/en/l4-master/m20-team/), [m21-scale](/en/l4-master/m21-scale/)
+
+One module has a lesson devoted entirely to the subject: [The ten prompting anti-patterns](/en/l2-intermediate/m09-prompting/anti-patterns/) collapses its list into two ideas — bound the work, and give it something to verify against. Most of this catalogue is one of those two, wearing a different hat.

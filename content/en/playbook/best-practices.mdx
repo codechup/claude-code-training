@@ -1,0 +1,208 @@
+---
+title: 'Best-practice digest'
+description: 'The strongest practices from each level, one line each, with the lesson that teaches them.'
+order: 2
+summary: 'An index, not a second copy of the course: every item links to the lesson it came from.'
+---
+
+Each level of this course teaches its practices in place, inside the lesson where they matter (D025). This page is the digest: the ones worth carrying out of the level, in the order you meet them, each linking back to the lesson that explains why.
+
+Read it as a checklist after finishing a level, or as a refresher before a session you care about. It deliberately does not repeat the explanations — the link is the point.
+
+## Level 1 — Beginner
+
+**Start where `git status` is clean.** The agent's value is the check at the end, and a clean tree makes `git diff` the check. — [Your first session](/en/l1-beginner/m01-start/first-session/)
+
+**Keep one install and let it update itself.** A version you never update is a version whose bugs you keep; reach for `claude doctor` when something is actually wrong, not as a habit. — [claude doctor, updates and release channels](/en/l1-beginner/m01-start/doctor-update-channels/)
+
+**Say the goal, the constraints and the evidence.** A prompt that names what should be different afterwards and how you will know beats one that dictates steps. — [Prompting basics: goal, constraints, evidence](/en/l1-beginner/m02-interact/prompting-basics/)
+
+**Let Claude pick the tools.** Your levers are the prompt and the permission rules, not the tool names. — [The built-in tools: Read, Edit, Glob, Grep, Bash](/en/l1-beginner/m02-interact/tools-read-edit-run/)
+
+**Narrow permissions instead of switching them off.** `--allowedTools` and specific allow rules are the answer to prompt fatigue; `bypassPermissions` is for a container you are willing to lose. — [Permission modes and allow/deny rules](/en/l1-beginner/m02-interact/permissions/)
+
+**Plan when you are uncertain, not by default.** If you could describe the diff in one sentence, ask for the diff. — [Plan mode: explore, plan, approve, execute](/en/l1-beginner/m02-interact/plan-mode/)
+
+**Commit before anything risky.** Checkpoints are session-level recovery, not version control: they miss what Bash touched and expire with the session. — [Checkpoints and /rewind](/en/l1-beginner/m02-interact/checkpoints-rewind/)
+
+**`/clear` between unrelated tasks; `/compact` at a natural break.** Context hygiene is cheaper than a bigger model. — [Context basics: /context, /compact and /clear](/en/l1-beginner/m02-interact/context-basics/)
+
+**Keep `CLAUDE.md` to what Claude cannot derive.** Pitfalls, rationale and conventions that differ from tool defaults — not a tour of the directory tree. — [Write a project CLAUDE.md with /init](/en/l1-beginner/m03-memory/claude-md/)
+
+**Scope by `paths:` when a rule only matters in one area.** That, not splitting files, is what actually saves context. — [Path-scoped rules with .claude/rules/](/en/l1-beginner/m03-memory/rules/)
+
+**Check what is loaded with `/context` before rewriting a prompt.** A surprising answer is often a memory file you forgot about. — [The memory hierarchy, @imports and claudeMdExcludes](/en/l1-beginner/m03-memory/hierarchy-imports/)
+
+**Prune memory on the same schedule you add to it.** Nothing expires by itself, and old advice keeps shaping answers. — [/memory, quick notes, and pruning what you remember](/en/l1-beginner/m03-memory/memory-commands/)
+
+**Script the CLI flags, not the slash commands.** Commands live inside an interactive session and change between versions; flags are the stable surface. — [The built-in slash command reference](/en/l1-beginner/m04-commands/slash-command-reference/) and [CLI flags: how a session starts](/en/l1-beginner/m04-commands/cli-flags/)
+
+**Name the sessions you intend to come back to.** The display name is not a resume handle. — [Sessions: resume, continue, branch and fork](/en/l1-beginner/m04-commands/sessions/)
+
+**Put lasting configuration in a settings file, not your shell profile.** Environment variables are invisible to teammates and leak between projects. — [Subcommands and environment variables](/en/l1-beginner/m04-commands/subcommands/)
+
+## Level 2 — Intermediate
+
+**Pick the model and the effort level once, at the top of the session.** Every mid-task switch reprocesses the whole conversation with no cache hits. — [The model family and its aliases](/en/l2-intermediate/m05-models-effort/model-family/) and [Effort levels](/en/l2-intermediate/m05-models-effort/effort-levels/)
+
+**Record the full model name when reproducibility matters.** An alias means "the latest of that family", and it resolves differently on different providers. — [The model family and its aliases](/en/l2-intermediate/m05-models-effort/model-family/)
+
+**Escalate on evidence, with the repository reset between runs.** A comparison run on an already-fixed bug measures nothing. — [Choosing a model](/en/l2-intermediate/m05-models-effort/choosing-a-model/) and [The effort lab](/en/l2-intermediate/m05-models-effort/effort-lab/)
+
+**Fix the prompt and the evidence loop before raising effort.** More thinking about the wrong question gives you a longer wrong answer. — [Effort levels](/en/l2-intermediate/m05-models-effort/effort-levels/)
+
+**Use fast mode only when you are waiting at the keyboard.** Batch, CI and long autonomous work pay double for latency nobody is measuring. — [Fast mode](/en/l2-intermediate/m05-models-effort/fast-mode/)
+
+**Read plan-usage bars for limits and the Console for billing.** The session cost figure is a local estimate at list price. — [Cost and usage](/en/l2-intermediate/m05-models-effort/cost-and-usage/)
+
+**Make a skill when it is a procedure, a memory entry when it is a fact.** The skill body then costs context only when it runs. — [Skills versus custom commands](/en/l2-intermediate/m06-skills/skills-vs-commands/)
+
+**Lead a skill's description with its trigger.** Claude decides to load a skill from the description; the body is what it reads afterwards. — [SKILL.md anatomy and frontmatter](/en/l2-intermediate/m06-skills/skill-md-anatomy/)
+
+**Let a skill fetch what it needs instead of taking it as an argument.** Keep arguments to the one or two values that change per run. — [Arguments and substitutions](/en/l2-intermediate/m06-skills/arguments/)
+
+**Specify the output shape in a prompt-only skill.** `file:line — issue — fix` is diffable; prose is not. — [Prompt-only skills](/en/l2-intermediate/m06-skills/prompt-only-skills/)
+
+**Write `allowed-tools` rules from the exact commands in the body.** `Bash(npm test)` does not match `npm run typecheck`, and nothing warns you. — [Tool-running skills](/en/l2-intermediate/m06-skills/tool-running-skills/)
+
+**Trim descriptions before raising the skill listing budget.** `/skill-doctor` shows what the listing costs on every turn. — [Measuring skills with /skill-doctor](/en/l2-intermediate/m06-skills/skill-doctor/)
+
+**Block with exit code 2 or a JSON decision, never `exit 1`.** And keep the hook's stdout clean, or the decision is read as plain text. — [Hook anatomy: events, matchers and the JSON contract](/en/l2-intermediate/m07-hooks/hook-anatomy/)
+
+**Name the rule and the safe alternative in a deny reason.** The reason is your one channel to the model; "not allowed" gets you the same idea in a different shape. — [Block dangerous commands with a PreToolUse guard](/en/l2-intermediate/m07-hooks/block-dangerous-commands/)
+
+**Keep per-event hooks fast, and format exactly the edited file.** `SessionStart` and `PreToolUse` run on hot paths; `prettier --write .` turns one edit into a whole-tree diff. — [Format on save with a PostToolUse hook](/en/l2-intermediate/m07-hooks/format-on-save/) and [Load context at SessionStart, run tests at Stop](/en/l2-intermediate/m07-hooks/session-start-context/)
+
+**Test a hook by piping JSON into it before you blame the session.** Half of hook bugs are ordinary script bugs. — [Debugging hooks](/en/l2-intermediate/m07-hooks/debugging-hooks/)
+
+**Stage deliberately, then ask for a commit of the staged changes.** And write the PR title as the commit you want on `main` under squash-merge. — [Commits and conventions](/en/l2-intermediate/m08-git/commits-and-conventions/) and [Pull requests with evidence](/en/l2-intermediate/m08-git/pull-requests/)
+
+**Use a worktree when you want separate code, `/branch` when you want a separate conversation.** — [Worktrees and branches](/en/l2-intermediate/m08-git/worktrees-branches/)
+
+**Run the review at the effort the answer deserves.** A clean `low` review means "nothing it was confident about", not "no bugs". — [Code review commands](/en/l2-intermediate/m08-git/code-review-commands/)
+
+**Decompose into steps that each carry a check.** A step with no check is a phase, not a step. — [Decompose a task into verifiable steps](/en/l2-intermediate/m09-prompting/task-decomposition/)
+
+**Pair every set of constraints with at least one acceptance criterion.** Prohibitions alone give the agent no stopping condition. — [Constraints, acceptance criteria and proof](/en/l2-intermediate/m09-prompting/constraints-and-evidence/)
+
+**Restart after two failed corrections.** A clean session with a better first prompt beats a long one full of failed approaches. — [Iterative refinement without drift](/en/l2-intermediate/m09-prompting/iterative-refinement/)
+
+## Level 3 — Advanced
+
+**Delegate breadth, not depth.** Many files and an unknown location is a subagent; one known file is a `Read`. — [The Agent tool and the built-in subagents](/en/l3-advanced/m10-subagents/agent-tool-and-builtins/)
+
+**State a delegated task in full.** A non-fork subagent gets your memory files and the repo, never your conversation. — [The Agent tool and the built-in subagents](/en/l3-advanced/m10-subagents/agent-tool-and-builtins/)
+
+**Give an agent the tools its role needs and no more.** A reviewer with `Edit` reviews nothing; it fixes. — [Custom agents in .claude/agents/](/en/l3-advanced/m10-subagents/custom-agents/) and [Lab: four agents that earn their keep](/en/l3-advanced/m10-subagents/agent-lab/)
+
+**Pin a model only where the output is a judgement.** Otherwise leave `model` out so the agent follows the session. — [Choosing a model per agent](/en/l3-advanced/m10-subagents/model-per-agent/)
+
+**Isolate in a worktree when an agent will write, and expect a cold environment.** No `node_modules`, no `.env`, and the branch starts from the default branch unless you say otherwise. — [Fork, background and worktree isolation](/en/l3-advanced/m10-subagents/fork-background-worktree/)
+
+**Turn the advisor on per session, for the long jobs.** On short tasks you pay a full transcript read for nothing to advise about. — [The advisor pattern](/en/l3-advanced/m10-subagents/advisor/)
+
+**Add an MCP server only when a CLI cannot do it in one step.** Every connected server costs context and adds a dependency you now trust. — [MCP concepts and transports](/en/l3-advanced/m11-mcp/mcp-concepts/)
+
+**Verify a server after adding it.** `Added …` means configuration was written, not that anything connected. — [Adding, listing and removing servers: scopes and OAuth](/en/l3-advanced/m11-mcp/add-list-remove-scopes/)
+
+**Keep credentials out of checked-in config, and read-only where you can.** `${TOKEN}` expansion in the file, a read-only database user in the DSN. — [The GitHub MCP server](/en/l3-advanced/m11-mcp/github-mcp/) and [A database MCP server](/en/l3-advanced/m11-mcp/database-mcp/)
+
+**Ask for the SQL alongside the rows.** You cannot tell a wrong answer from a right one without the question. — [A database MCP server](/en/l3-advanced/m11-mcp/database-mcp/)
+
+**Return summaries, not datasets, from a server you write.** And keep diagnostics on stderr. — [Writing a minimal MCP server](/en/l3-advanced/m11-mcp/write-your-own-server/)
+
+**Pin server versions and review servers like dependencies.** The Directory is a listing, not a security audit. — [MCP security and supply chain](/en/l3-advanced/m11-mcp/mcp-security/)
+
+**Start standalone in `.claude/`, convert to a plugin when you are ready to share.** And address bundled files through `${CLAUDE_PLUGIN_ROOT}`. — [Plugin anatomy: the manifest and the directories](/en/l3-advanced/m12-plugins/plugin-anatomy/) and [Build a plugin from the skill and hook you already wrote](/en/l3-advanced/m12-plugins/build-a-plugin/)
+
+**Evaluate plugins at `local` scope before promoting them.** User scope means every project pays the context cost forever. — [Marketplaces and the /plugin command](/en/l3-advanced/m12-plugins/marketplaces/)
+
+**Validate in CI, exercise before you ship.** `claude plugin validate` reads manifests; loading with `--plugin-dir` is what proves the components work. — [claude plugin validate, and what eval adds](/en/l3-advanced/m12-plugins/validate-and-eval/)
+
+**Bound every headless run.** `--max-turns`, a budget cap, an explicit `--allowedTools`, and a check on the exit code and `is_error`. — [claude -p: headless runs and structured output](/en/l3-advanced/m13-headless-ci/claude-p/)
+
+**Scope CI permissions per job.** Review jobs read; issue-to-PR jobs write; `id-token: write` belongs in both for this action. — [PR review with claude-code-action@v1](/en/l3-advanced/m13-headless-ci/github-actions-review/) and [Issue to pull request with @claude](/en/l3-advanced/m13-headless-ci/issue-to-pr/)
+
+**Prefer OIDC to a stored cloud key.** And pin third-party actions to a commit SHA. — [GitLab CI/CD, cloud providers and Enterprise Server](/en/l3-advanced/m13-headless-ci/gitlab-and-others/)
+
+**Set `settingSources` explicitly in an SDK agent.** Otherwise it inherits whatever the host machine's `~/.claude` says. — [A custom agent with the TypeScript Agent SDK](/en/l3-advanced/m13-headless-ci/agent-sdk-typescript/) and [The same agent in Python](/en/l3-advanced/m13-headless-ci/agent-sdk-python/)
+
+**Treat permission rules as Claude Code's behaviour, and isolation as the boundary.** For untrusted code you want a container or a VM as well. — [The permission model and the sandbox](/en/l3-advanced/m14-security/permission-model-and-sandbox/)
+
+**Treat every fetched page, row and issue title as untrusted input.** Sanitise at the boundary rather than filtering attack strings. — [Prompt injection: how it reaches an agent, and what stops it](/en/l3-advanced/m14-security/prompt-injection/)
+
+**Block secrets at write time, scan with `--redact`, rotate before you rewrite history.** — [Secrets: .env, gitleaks, and a hook that blocks a leak](/en/l3-advanced/m14-security/secrets/)
+
+**Verify a deployed policy on one machine before the fleet.** `/status` names the sources that loaded and the ones that were skipped. — [Managed settings and auto-mode configuration](/en/l3-advanced/m14-security/managed-settings/)
+
+**Know what your retention settings actually cover.** Server-side retention says nothing about `~/.claude/projects/`. — [Data, retention and telemetry](/en/l3-advanced/m14-security/data-and-retention/)
+
+**Keep the CLI installed alongside any IDE integration.** Scripting, the SDK and headless runs are CLI-only. — [The VS Code extension](/en/l3-advanced/m15-platforms/vs-code/) and [The JetBrains plugin](/en/l3-advanced/m15-platforms/jetbrains/)
+
+**Choose the surface from where the code must execute.** `--cloud` sends the work away; `--remote-control` keeps it here and drives it from elsewhere. — [claude.ai/code, cloud environments, --teleport and ultrareview](/en/l3-advanced/m15-platforms/web-and-cloud-sessions/) and [Remote Control and the mobile app](/en/l3-advanced/m15-platforms/remote-control-mobile/)
+
+**Reach for the browser only for what only a browser can do.** Real rendering, real login state, real console — and never on production. — [Claude in Chrome: navigation, forms, screenshots, console](/en/l3-advanced/m15-platforms/chrome/)
+
+## Level 4 — Master
+
+**Let the runtime carry structure between stages.** A `schema` on the producing call beats "report findings as a numbered list". — [The Workflow tool: scripts that orchestrate agents](/en/l4-master/m16-orchestration/workflows/) and [Designing a multi-agent pipeline: roles, contracts, hand-offs](/en/l4-master/m16-orchestration/designing-multi-agent/)
+
+**Split a process that needs your sign-off into one workflow per stage.** A workflow takes no input once it starts. — [Lab: a review → verify → fix pipeline](/en/l4-master/m16-orchestration/pipeline-lab/)
+
+**Reserve `ultracode` for the task that deserves orchestration.** Leave the session at `high` for routine work. — [ultracode: the keyword, the effort level, and what a run costs](/en/l4-master/m16-orchestration/ultracode/)
+
+**Start a team at three to five teammates, on research and review.** Scale up only when they genuinely work in parallel on disjoint files. — [Agent teams and cross-session messaging](/en/l4-master/m16-orchestration/agent-teams-messaging/)
+
+**Measure your own run rather than quoting a cost multiplier.** `/workflows` and the JSON envelope's `total_cost_usd` are the numbers you can defend. — [ultracode](/en/l4-master/m16-orchestration/ultracode/)
+
+**Point a loop at a cheap check, and let the check decide.** A loop whose prompt does real work on every fire is an unattended agent with no brakes. — [/loop: running a prompt on repeat](/en/l4-master/m17-autonomy/loop/)
+
+**Write scheduled prompts that reason from current state.** "Check whether CI is green now" survives a catch-up run; "summarise the last hour" does not. — [Routines: cron, one-off, API and GitHub triggers](/en/l4-master/m17-autonomy/routines/) and [Scheduled tasks in the desktop app](/en/l4-master/m17-autonomy/desktop-scheduled-tasks/)
+
+**Bound every goal, and name a check the evaluator can see.** — [/goal: working until a condition holds](/en/l4-master/m17-autonomy/goal/)
+
+**Let events push instead of polling, and give a monitor a quiet condition.** — [Monitors, channels and wake-ups](/en/l4-master/m17-autonomy/monitors-and-channels/)
+
+**Write the plan's reading list and its `Out:` list first.** Context and scope are what stop the next session rediscovering — or widening — the work. — [Plan files: frontmatter, ten sections, milestones](/en/l4-master/m18-multi-session/plan-files/)
+
+**Push the claim as you make it, and let the tool generate status.** An unpushed claim does not exist. — [A generated STATE.md, the claim protocol, and stale claims](/en/l4-master/m18-multi-session/state-md-and-claims/)
+
+**Partition `owned_paths` before you create the worktrees.** Isolation without partitioning trades a lost edit for a merge conflict. — [Disjoint owned_paths, a worktree per plan, and shared files](/en/l4-master/m18-multi-session/owned-paths-worktrees/)
+
+**Hint model and effort on judgement, not on size — and escalate anyway when you are inventing a decision.** — [Assigning model and effort hints by work type](/en/l4-master/m18-multi-session/model-effort-hints/)
+
+**Write what is not in the diff.** Decisions, dead ends, what you chose not to do, and the command you actually ran. — [Handoff notes another session can resume from](/en/l4-master/m18-multi-session/handoff-notes/)
+
+**Adopt the tier you need, not the whole system.** Disjoint ownership and written hand-offs transfer; the file names are one project's implementation. — [This repository as the worked example](/en/l4-master/m18-multi-session/this-repo-as-example/)
+
+**Keep the durable copy in the repository and the artifact as the view of it.** — [Publishing an artifact: update, share, comments](/en/l4-master/m19-visual/artifacts/)
+
+**Ask for variants at both widths, then convert the canvas into tokens.** — [The /design canvas: a brief in, artboards out](/en/l4-master/m19-visual/design-canvas/)
+
+**Choose the chart's form before its colours, and validate the palette you actually ship.** — [/dataviz and chart discipline](/en/l4-master/m19-visual/dataviz/)
+
+**Curate the shared settings file; keep personal approvals local.** And expect nothing committed to apply until the folder is trusted. — [Shared settings and allowlists](/en/l4-master/m20-team/shared-settings/)
+
+**Put non-negotiable rules in managed settings, consolidated into one source.** Several deployed sources do not add up by default. — [Managed and server-managed settings](/en/l4-master/m20-team/managed-settings/)
+
+**Version and validate what you distribute.** `claude plugin validate .` in CI on the marketplace repository, and a `version` bump on every change. — [Sharing skills and plugins across a team](/en/l4-master/m20-team/team-marketplace/)
+
+**Keep review-only rules in `REVIEW.md`, and let CI do what CI does.** — [Integrating Claude into code review and CI gates](/en/l4-master/m20-team/review-process/)
+
+**Break cost down by `query_source` and model, and watch the cache-hit ratio.** Cache misses are the usual cause of a session that suddenly costs five times more. — [Budgets, analytics and usage reports](/en/l4-master/m20-team/cost-budgeting/)
+
+**Launch a rollout from configured repositories, and report adoption as breadth.** — [Rolling out to a team: kits, champions and onboarding](/en/l4-master/m20-team/communications-and-champions/)
+
+**Push each area's conventions into that area's own `CLAUDE.md`.** And put `.claude` first in `sparsePaths` for a sparse worktree. — [Working in large codebases](/en/l4-master/m21-scale/large-codebases/)
+
+**Spend context deliberately: delegate reads you will not need again, compact at boundaries, rewind rather than summarise a wrong turn.** — [Context engineering](/en/l4-master/m21-scale/context-engineering/)
+
+**Leave prompt caching alone and carry less context instead.** — [Prompt caching](/en/l4-master/m21-scale/prompt-caching/)
+
+**Pin models and deliver provider configuration through managed settings.** A shell profile reaches background sessions unpredictably. — [Gateways and cloud providers](/en/l4-master/m21-scale/gateways-and-clouds/)
+
+**Never mount host secrets into a container, and do not read the container as a boundary.** — [Devcontainers and corporate launchers](/en/l4-master/m21-scale/devcontainers/)
+
+## What to do next
+
+The companion pages are [the decision trees](/en/playbook/decision-trees/) for choosing a mechanism, [the anti-pattern catalogue](/en/playbook/anti-patterns/) for the failure modes these practices avoid, and [Changed since 2025](/en/playbook/changelog/) when something you read elsewhere contradicts a lesson here.

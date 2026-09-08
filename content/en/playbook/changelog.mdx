@@ -1,0 +1,196 @@
+---
+title: 'Changed since 2025'
+description: 'Every behaviour that moved after most Claude Code tutorials were written: what changed, since when, and what a stale guide gets wrong.'
+order: 4
+summary: 'One entry per superseded behaviour, with the lesson that teaches the current one.'
+---
+
+Most Claude Code material on the web was written in 2025, and Claude Code has shipped several hundred releases since. This page collects every superseded behaviour the course tracks in one place, so a lesson can carry a short **Changed** note and point here instead of teaching the old way twice (D044).
+
+Each entry says what changed, since when — the release, the date, or an honest "not documented" — and what a 2025-era tutorial would have you do instead. Everything below is verified against the official documentation for Claude Code **2.1.263**; where the source is the official changelog rather than a reference page, the entry says so.
+
+Nothing here teaches the old behaviour. If you are looking for the current one, follow the lesson link on the entry.
+
+## Removed outright
+
+### The `#` quick-note shortcut
+
+**Changed.** Starting a message with `#` used to append a line to your memory file. It does nothing special now; the text is just a prompt that begins with a hash.
+**Since.** Claude Code 2.0.70, 15 December 2025 (official changelog).
+**A stale tutorial says.** "Type `# always run pnpm, not npm` to teach Claude about your project." Today that sends a prompt and remembers nothing.
+**Now.** Ask Claude to edit `CLAUDE.md`, or open the file with `/memory` — see [/memory, quick notes, and pruning what you remember](/en/l1-beginner/m03-memory/memory-commands/).
+
+### `/fullscreen`
+
+**Changed.** There is no `/fullscreen` command in the live commands reference; the fullscreen renderer is reached through `/tui`.
+**Since.** Not documented as a dated removal; verified absent from `commands.md` at 2.1.263.
+**A stale tutorial says.** "Run `/fullscreen` for a full-window session."
+**Now.** `/tui fullscreen` — see [Keybindings, status line, themes and output styles](/en/l1-beginner/m04-commands/keybindings-statusline-theme/).
+
+### The `claude config` subcommand
+
+**Changed.** It is not in `claude --help` and does not exist.
+**Since.** Not documented as a dated removal; verified absent at 2.1.263.
+**A stale tutorial says.** "Run `claude config set -g theme dark`."
+**Now.** `/config key=value` in a session, `--settings` at launch, or edit the settings file directly — see [Subcommands and environment variables](/en/l1-beginner/m04-commands/subcommands/).
+
+### The one-hour limit on background subagent commands
+
+**Changed.** A background command started by a subagent used to be cut off after an hour. The limit is gone; such a command now runs until it exits or is stopped, matching the main session.
+**Since.** Claude Code 2.1.260 — “Removed the one-hour time limit on background commands started by subagents; they now run until they exit or are stopped, matching the main session” (official changelog, read 2026-09-08). One caveat worth carrying: `interactive-mode.md` still documents a 60-minute default for `CLAUDE_SUBAGENT_BG_SHELL_MAX_MS` while `tools-reference.md` names no limit, so the two live pages currently disagree.
+**A stale tutorial says.** "Split long background work into sub-hour chunks so the runtime does not kill it."
+**Now.** Bound the work deliberately instead — see [Fork, background and worktree isolation](/en/l3-advanced/m10-subagents/fork-background-worktree/).
+
+### Syntax highlighting for six languages
+
+**Changed.** Highlighting for `1c`, `gml`, `isbl`, `mathematica`, `maxima` and `sqf` was removed. Code in those languages still displays; it is simply not colourised.
+**Since.** Not documented as a dated removal.
+**A stale tutorial says.** Nothing that matters — this one is a footnote, listed here for completeness rather than because any lesson depends on it.
+
+### `MultiEdit`
+
+**Changed.** `MultiEdit` is not in the current tools reference. `Edit`, with `replace_all: true` where several occurrences must change, covers what it did.
+**Since.** Not documented as a dated removal; verified against `tools-reference.md`, 2026-09-06.
+**A stale tutorial says.** "Allow `MultiEdit` in your permission rules so Claude can batch edits." An allow rule naming a tool that does not exist grants nothing.
+**Now.** [The built-in tools: Read, Edit, Glob, Grep, Bash](/en/l1-beginner/m02-interact/tools-read-edit-run/).
+
+### `TodoWrite` as the session checklist
+
+**Changed.** `TodoWrite` is disabled by default and superseded by the `Task*` tools (`TaskCreate`, `TaskUpdate`, `TaskList` and friends).
+**Since.** Not documented as a dated change; verified against `tools-reference.md`, 2026-09-07.
+**A stale tutorial says.** "Watch the todo list Claude keeps with `TodoWrite`."
+**Now.** [What Claude Code is and how it works](/en/l1-beginner/m01-start/what-claude-code-is/) and [The built-in tools](/en/l1-beginner/m02-interact/tools-read-edit-run/).
+
+## Renamed or replaced
+
+### The SDK is the Claude Agent SDK
+
+**Changed.** `claude-code-sdk` (Python) became `claude-agent-sdk`, imported as `claude_agent_sdk`, with `ClaudeCodeOptions` renamed to `ClaudeAgentOptions`; `@anthropic-ai/claude-code` as an SDK entry point became `@anthropic-ai/claude-agent-sdk`.
+**Since.** The release that renamed them is not documented — say "renamed", not "since vX". Verified against the Agent SDK migration guide, 2026-09-08.
+**A stale tutorial says.** `pip install claude-code-sdk`, `import claude_code_sdk`.
+**Now.** [A custom agent with the TypeScript Agent SDK](/en/l3-advanced/m13-headless-ci/agent-sdk-typescript/) and [The same agent in Python](/en/l3-advanced/m13-headless-ci/agent-sdk-python/).
+
+### `includeCoAuthoredBy` is `attribution`
+
+**Changed.** The setting that controlled commit and pull-request attribution is now `attribution`, with `attribution.commit`, `attribution.pr` and `attribution.sessionUrl`.
+**Since.** The settings reference marks the old key deprecated at 2.1.263 without naming the release that changed it — treat `attribution` as current and do not read a version into the deprecation.
+**A stale tutorial says.** `"includeCoAuthoredBy": false` to drop the trailer.
+**Now.** [Commits and conventions](/en/l2-intermediate/m08-git/commits-and-conventions/).
+
+### `disableArtifact` is `enableArtifact`
+
+**Changed.** The switch was inverted: the current key is `"enableArtifact": false`. The old `"disableArtifact": true` still works and is deprecated.
+**Since.** The rename itself is not documented as a dated change. The artifacts lesson pins two related behaviours to 2.1.242 — project and local settings honouring the key at all, and a higher-precedence file no longer being able to turn artifacts back on once a lower-precedence one disabled them; the behaviours are confirmed against the settings reference, the version number is the lesson's.
+**A stale tutorial says.** `"disableArtifact": true`.
+**Now.** [Publishing an artifact: update, share, comments](/en/l4-master/m19-visual/artifacts/).
+
+### `--remote` is `--cloud`
+
+**Changed.** `--remote` is a deprecated alias. It still works, including in the existing-session and queue-a-message forms.
+**Since.** Not documented as a dated rename; verified against `cli-reference.md` and `claude-code-on-the-web.md`, 2026-09-08.
+**A stale tutorial says.** `claude --remote` for a cloud session — which also invites confusion with `--remote-control`, a different feature entirely.
+**Now.** [claude.ai/code, cloud environments, --teleport and ultrareview](/en/l3-advanced/m15-platforms/web-and-cloud-sessions/).
+
+### The self-paced course moved
+
+**Changed.** _Claude Code in Action_ lives at `academy.claude.com/courses/claude-code-in-action`, not at the older `anthropic.skilljar.com` address.
+**Since.** Not documented as a dated move; verified 2026-09-06.
+**A stale tutorial says.** Links to `anthropic.skilljar.com/claude-code-in-action`.
+**Now.** [Rolling out to a team: kits, champions and onboarding](/en/l4-master/m20-team/communications-and-champions/).
+
+### Custom slash commands are skills
+
+**Changed.** `.claude/commands/*.md` and `.claude/skills/<name>/SKILL.md` are one mechanism, "simplifying the mental model with no change in behavior". Existing command files keep working and take the same frontmatter; where both exist, the skill wins.
+**Since.** Claude Code 2.1.3. (The skills lesson dates that release to 9 January 2026; the changelog range fetched for this page did not reach back that far, so take the version as the verified part.)
+**A stale tutorial says.** "Commands and skills are different things — commands are prompts you invoke, skills are what the model picks." They are the same file format now, and a plugin ships them under `skills/`.
+**Now.** [Skills versus custom commands](/en/l2-intermediate/m06-skills/skills-vs-commands/) and [Sharing skills and plugins across a team](/en/l4-master/m20-team/team-marketplace/).
+
+## Changed behaviour
+
+### `PreToolUse` hooks: `decision: "block"` is superseded
+
+**Changed.** A `PreToolUse` hook carries its decision in `hookSpecificOutput.permissionDecision` with a `permissionDecisionReason`. The accepted values are `allow`, `deny`, `ask` and `defer`; the old `"approve"` and `"block"` map to `allow` and `deny`. `block` is not a valid `permissionDecision` value — the equivalent "block whatever the JSON says" is exit code 2. Other events, such as `PostToolUse` and `Stop`, still use top-level `decision` and `reason`.
+**Since.** Not documented as a dated change; verified against `hooks.md` for 2.1.263 on 2026-09-08.
+**A stale tutorial says.** `echo '{"decision":"block","reason":"nope"}'` from a `PreToolUse` hook — which today is parsed, ignored for this event, and lets the command through.
+**Now.** [Hook anatomy: events, matchers and the JSON contract](/en/l2-intermediate/m07-hooks/hook-anatomy/), [Block dangerous commands with a PreToolUse guard](/en/l2-intermediate/m07-hooks/block-dangerous-commands/) and [Secrets: .env, gitleaks, and a hook that blocks a leak](/en/l3-advanced/m14-security/secrets/).
+
+### `defaultMode: auto` and `bypassPermissions` are ignored in project settings
+
+**Changed.** These two values take effect only from user settings (`~/.claude/settings.json`), the `--settings` flag, or managed settings. Set either one in a project's `.claude/settings.json` **or** in `.claude/settings.local.json` and it is silently ignored: `auto` falls back to the built-in default and `bypassPermissions` starts the session in Manual. Every other value (`plan`, `dontAsk`, `default`/`manual`) applies from any settings file.
+**Since.** Claude Code 2.1.257 for `bypassPermissions` (the changelog entry aligns it with `auto`, which was already ignored).
+**A stale tutorial says.** "Commit `"defaultMode": "bypassPermissions"` so your team stops seeing prompts." The file then looks like a policy and enforces nothing.
+**Now.** [Permission modes and allow/deny rules](/en/l1-beginner/m02-interact/permissions/), [The permission model and the sandbox](/en/l3-advanced/m14-security/permission-model-and-sandbox/) and [Shared settings and allowlists](/en/l4-master/m20-team/shared-settings/).
+
+### Bash permission rules with text after the closing parenthesis
+
+**Changed.** A rule such as `Bash(ls) x` never matched anything. It is now reported as an invalid setting instead of being silently ignored.
+**Since.** Claude Code 2.1.260 (official changelog, read 2026-09-08 — this resolves an item `research/deprecations.md` was holding as unconfirmed).
+**A stale tutorial says.** Suggests trailing descriptions inside a rule, as if the text after `)` were a comment. It never worked; now it also fails loudly.
+**Now.** [Permission modes and allow/deny rules](/en/l1-beginner/m02-interact/permissions/).
+
+### `keybindingFlavor` has no effect
+
+**Changed.** Word-editing keys are always Bash-style: `Ctrl+W` deletes back to whitespace, `Alt+B`/`Alt+F` move a word, `Alt+D` deletes to the end of a word. The `keybindingFlavor` setting is ignored and gone from the reference.
+**Since.** Claude Code 2.1.261 (official changelog); the readline conventions and the note that `keybindingFlavor` has no effect are on `interactive-mode.md`, read 2026-09-08.
+**A stale tutorial says.** `"keybindingFlavor": "emacs"` to get word keys — a setting that changes nothing today.
+**Now.** [Keybindings, status line, themes and output styles](/en/l1-beginner/m04-commands/keybindings-statusline-theme/).
+
+### `/btw` history navigation
+
+**Changed.** A bare `/btw` reopens the overlay on your most recent side question; `Left` steps back through earlier answers, `Right` moves toward the current one, `x` clears the list.
+**Since.** `Left`/`Right` navigation needs 2.1.187 or later; a bare `/btw` printed a usage message before 2.1.212.
+**A stale tutorial says.** `Shift+←` / `Shift+→` to walk the history — the earlier note the course itself carried, corrected against the live docs (`interactive-mode.md`, re-read 2026-09-08).
+**Now.** [The built-in slash command reference](/en/l1-beginner/m04-commands/slash-command-reference/).
+
+### Model aliases resolve to different models than they used to
+
+**Changed.** `opus` and `default` resolve to Opus 5 from 2.1.219 (Opus 4.8 before that on the Anthropic API), and `fable` resolves to Fable 5.1 from 2.1.255 (Fable 5 before). Treat an alias as "the latest of that family", never as a pinned id — and remember a third-party provider decides what its own aliases reach.
+**Since.** Claude Code 2.1.219 and 2.1.255 (version notes on `model-config.md`).
+**A stale tutorial says.** "`opus` means Claude Opus 4.x" — or writes an alias into a runbook as though it were a version.
+**Now.** [The model family and its aliases](/en/l2-intermediate/m05-models-effort/model-family/).
+
+### `--effort ultracode`
+
+**Changed.** Passing `ultracode` to `--effort` is accepted from 2.1.203. Earlier versions print `Unknown --effort value 'ultracode'` and start the session at the default effort.
+**Since.** Claude Code 2.1.203.
+**A stale tutorial says.** Nothing — this is the opposite case: a _new_ value that a 2025-era guide cannot know about, and one your colleague on an older build does not have.
+**Now.** [Effort levels](/en/l2-intermediate/m05-models-effort/effort-levels/) and [ultracode: the keyword, the effort level, and what a run costs](/en/l4-master/m16-orchestration/ultracode/).
+
+### Fast mode on Opus 4.7
+
+**Changed.** Fast mode for Opus 4.7 was deprecated on 25 June 2026 and removed on 24 July 2026. Claude Code now treats Opus 4.7 as a model without fast-mode support, so switching to it turns fast mode off. Fast mode targets the current Opus.
+**Since.** 24 July 2026 (`fast-mode.md`).
+**A stale tutorial says.** "Turn on fast mode and stay on 4.7 for the cheaper rate."
+**Now.** [Fast mode](/en/l2-intermediate/m05-models-effort/fast-mode/).
+
+### `/simplify` and `/review` are younger than they look
+
+**Changed.** `/simplify` arrived in 2.1.147 — before that, the name belonged to what is now `/code-review`, and it applied fixes by default. `/review` arrived in 2.1.223. There is no `/refactor` alias.
+**Since.** Claude Code 2.1.147 and 2.1.223 (version notes on the live command pages).
+**A stale tutorial says.** Treats `/simplify` as a bug-finding review. It is cleanup-only by design now; `/code-review --fix` is the one that hunts for bugs.
+**Now.** [Code review commands](/en/l2-intermediate/m08-git/code-review-commands/).
+
+### The MCP SSE transport is deprecated
+
+**Changed.** Use HTTP, stdio or WebSocket. `--transport sse` still works for services that expose only an SSE endpoint, and a deprecated transport is not a reason to rewrite a working config — but do not choose it for something new.
+**Since.** Not documented as a dated deprecation; verified against `mcp.md` for 2.1.263.
+**A stale tutorial says.** "Add the server with `--transport sse`" as the default remote choice.
+**Now.** [MCP concepts and transports](/en/l3-advanced/m11-mcp/mcp-concepts/).
+
+### The GitHub Action is `@v1`
+
+**Changed.** `anthropics/claude-code-action@beta` is superseded by `@v1`. Four edits: `@beta` → `@v1`; drop `mode` (the action detects it from whether `prompt` is set); `direct_prompt` → `prompt`; move CLI options such as `max_turns` and `model` into `claude_args`. `custom_instructions` becomes `--append-system-prompt`.
+**Since.** Not documented as a dated cutover; verified against the action's v1 documentation, 2026-09-07.
+**A stale tutorial says.** A workflow pinned to `@beta` with `mode: tag` and `direct_prompt:` — none of which exist in v1.
+**Now.** [The GitHub app](/en/l2-intermediate/m08-git/github-app/), [PR review with claude-code-action@v1](/en/l3-advanced/m13-headless-ci/github-actions-review/), [Issue to pull request with @claude](/en/l3-advanced/m13-headless-ci/issue-to-pr/) and [Integrating Claude into code review and CI gates](/en/l4-master/m20-team/review-process/).
+
+### Chrome integration on API-key and `setup-token` sessions
+
+**Changed.** A session authenticated with an API key or a `claude setup-token` token keeps Chrome integration off, even when `--chrome` is passed, because the browser extension cannot authenticate with those credentials. Before 2.1.216 such a session could attempt to enable it and every connection failed with a 403.
+**Since.** Claude Code 2.1.216; verified against `chrome.md`, 2026-09-08.
+**A stale tutorial says.** "Export `ANTHROPIC_API_KEY`, pass `--chrome`, and drive the browser." That session will not get browser tools at all.
+**Now.** [Claude in Chrome: navigation, forms, screenshots, console](/en/l3-advanced/m15-platforms/chrome/) and [Driving a site with Claude in Chrome, and recording it](/en/l4-master/m19-visual/chrome-automation/).
+
+## Still open
+
+`research/deprecations.md` carried one item as unconfirmed — Bash permission rules with text after the closing parenthesis. Reading the official changelog for this page on 2026-09-08 resolved it: the 2.1.260 entry is quoted in its section above. The remaining caution is the general one: the changelog moves faster than any course, so treat every version number here as "verified at 2.1.263" rather than "current forever", and check the changelog when a command behaves unlike its lesson.

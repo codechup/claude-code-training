@@ -1,9 +1,252 @@
 ---
 title: 'Glossary'
-description: 'Every English technical term used across the site, explained in one line.'
+description: 'Every English technical term the course keeps as-is, defined in one line, with the lesson that introduces it.'
 order: 5
+summary: 'The English half of the bilingual glossary: the terms Turkish lessons keep in English and explain on first use (D018).'
 ---
 
-This page grows as lessons are written.
+Turkish lessons on this site keep English technical terms rather than inventing Turkish equivalents, explain each one on first use, and link that first use to the glossary (D018). This is the English page: the same terms, defined in one line each, with a link to the lesson that introduces them properly. The Turkish explanations live on [the Turkish glossary](/tr/playbook/glossary/).
+
+Definitions here are deliberately short. If a term needs a paragraph, the lesson link is the paragraph.
 
 ## Terms
+
+### agent
+
+An AI process that pursues a goal step by step and can call tools to do it. Claude Code is itself an agent; a subagent and a teammate are agents it can start. — [What Claude Code is and how it works](/en/l1-beginner/m01-start/what-claude-code-is/)
+
+### agent team
+
+Several sessions working under a lead session, able to message each other. Experimental, off by default, and expensive: teammates in plan mode run at roughly seven times a standard session. — [Agent teams and cross-session messaging](/en/l4-master/m16-orchestration/agent-teams-messaging/)
+
+### agentic loop
+
+The cycle Claude Code repeats while working: gather context, act with a tool, check the result, repeat. The check at the end is where the value is. — [What Claude Code is and how it works](/en/l1-beginner/m01-start/what-claude-code-is/)
+
+### argument
+
+A value passed to a skill when you invoke it, substituted into its body as `$ARGUMENTS` or a named placeholder. — [Arguments and substitutions](/en/l2-intermediate/m06-skills/arguments/)
+
+### artifact
+
+A self-contained page Claude publishes to a URL — no backend, no second route, and no persistence of its own. — [Publishing an artifact: update, share, comments](/en/l4-master/m19-visual/artifacts/)
+
+### auto memory
+
+Notes Claude Code keeps for itself on this machine, indexed by a `MEMORY.md`. Machine-local, not in version control, and never inherited by a non-fork subagent. — [Auto memory: MEMORY.md and its four types](/en/l1-beginner/m03-memory/auto-memory/)
+
+### branch
+
+In git, a named line of development. In Claude Code, `/branch` is something else entirely: it copies the _conversation_, not your files. — [Worktrees and branches](/en/l2-intermediate/m08-git/worktrees-branches/)
+
+### channel
+
+A research-preview connection that lets an external system push events into a session, instead of the session polling for them. — [Monitors, channels and wake-ups](/en/l4-master/m17-autonomy/monitors-and-channels/)
+
+### checklist
+
+A list of checks a lesson's lab asks you to run before calling the exercise finished — a check you can run, not a claim you can make. — [Constraints, acceptance criteria and proof](/en/l2-intermediate/m09-prompting/constraints-and-evidence/)
+
+### checkpoint
+
+An automatic snapshot of the session and the files it edited, restored with `/rewind`. Session-level recovery, not version control: it misses what Bash touched and expires with the session. — [Checkpoints and /rewind](/en/l1-beginner/m02-interact/checkpoints-rewind/)
+
+### chord
+
+A two-key keyboard shortcut where the first key opens a sequence and the second completes it. — [Keybindings, status line, themes and output styles](/en/l1-beginner/m04-commands/keybindings-statusline-theme/)
+
+### CI
+
+Continuous integration: the automated pipeline that builds, tests and checks a change when it is pushed. — [claude -p: headless runs and structured output](/en/l3-advanced/m13-headless-ci/claude-p/)
+
+### CLAUDE.md
+
+The project memory file Claude reads at session start. Context, not enforcement — anything that must happen belongs in a hook or a permission rule. — [Write a project CLAUDE.md with /init](/en/l1-beginner/m03-memory/claude-md/)
+
+### commit
+
+A recorded change in git history, with a message that should say _why_ rather than restate the diff. — [Commits and conventions](/en/l2-intermediate/m08-git/commits-and-conventions/)
+
+### compaction
+
+Replacing the conversation so far with a summary to free context. It discards detail and rebuilds the cache, so it is a context tool, not a cost tool. — [Context basics: /context, /compact and /clear](/en/l1-beginner/m02-interact/context-basics/)
+
+### context window
+
+The total amount of text — instructions, files, tool output, conversation — a model can hold for one request, measured in tokens. — [Context basics: /context, /compact and /clear](/en/l1-beginner/m02-interact/context-basics/)
+
+### debug log
+
+The file Claude Code writes with `--debug` or `--debug-file`, where hook errors and other silent failures actually appear. — [Debugging hooks](/en/l2-intermediate/m07-hooks/debugging-hooks/)
+
+### diff
+
+The set of line-level changes between two states of a file or a branch — what you read before approving anything. — [Code review commands](/en/l2-intermediate/m08-git/code-review-commands/)
+
+### effort
+
+How much thinking the model spends on a response (`low` … `max`). A lever between quality and speed or cost — not a fix for a vague prompt. — [Effort levels](/en/l2-intermediate/m05-models-effort/effort-levels/)
+
+### exit code
+
+The number a command returns when it finishes. In hooks it is a contract: `0` succeeds, `2` blocks, and `1` is a non-blocking error that lets the action through. — [Hook anatomy: events, matchers and the JSON contract](/en/l2-intermediate/m07-hooks/hook-anatomy/)
+
+### fast mode
+
+A higher-priced, lower-latency mode for interactive work on the current Opus. Wrong for batch, CI and long autonomous runs. — [Fast mode](/en/l2-intermediate/m05-models-effort/fast-mode/)
+
+### fork
+
+A subagent that starts with a copy of the current conversation, rather than cold. Powerful and expensive, for the same reason. — [Fork, background and worktree isolation](/en/l3-advanced/m10-subagents/fork-background-worktree/)
+
+### GitHub App
+
+The installed application that lets Claude act on a repository — open pull requests, comment, run the Action — under its own identity. — [The GitHub app](/en/l2-intermediate/m08-git/github-app/)
+
+### goal
+
+A condition a session works towards, re-evaluated each turn until it holds or a bound is reached. — [/goal: working until a condition holds](/en/l4-master/m17-autonomy/goal/)
+
+### headless
+
+A non-interactive run: `claude -p "…"` answers once and exits. The mode CI and scripts use, with no permission prompts to lean on. — [claude -p: headless runs and structured output](/en/l3-advanced/m13-headless-ci/claude-p/)
+
+### hook
+
+A shell command Claude Code runs automatically when an event fires, with your permissions. The mechanism for things that must happen regardless of what the model decides. — [Hook anatomy: events, matchers and the JSON contract](/en/l2-intermediate/m07-hooks/hook-anatomy/)
+
+### hook event
+
+The named moment a hook is attached to — `PreToolUse`, `PostToolUse`, `SessionStart`, `Stop` and the rest of the catalogue. — [The full event catalogue and /hooks](/en/l2-intermediate/m07-hooks/event-catalogue/)
+
+### import
+
+An `@path` reference inside a memory file that pulls another file in. It organises memory; it does not shrink it, because imports are expanded at launch. — [The memory hierarchy, @imports and claudeMdExcludes](/en/l1-beginner/m03-memory/hierarchy-imports/)
+
+### issue
+
+A tracked item of work in a repository host. With the GitHub app, an `@claude` comment on one can start a run that opens a pull request. — [Issue to pull request with @claude](/en/l3-advanced/m13-headless-ci/issue-to-pr/)
+
+### lab
+
+The hands-on half of a lesson: real commands run against the course's lab repository, with the captured transcript shown as evidence. — [Your first session](/en/l1-beginner/m01-start/first-session/)
+
+### marketplace
+
+A catalogue of plugins that a user or an organisation can add and install from. Removing one uninstalls the plugins that came from it. — [Marketplaces and the /plugin command](/en/l3-advanced/m12-plugins/marketplaces/)
+
+### matcher
+
+The pattern that decides which tool calls or events a hook applies to. Regex matchers are unanchored, so `Edit.*` also matches `NotebookEdit`. — [Hook anatomy: events, matchers and the JSON contract](/en/l2-intermediate/m07-hooks/hook-anatomy/)
+
+### MCP server
+
+A process that exposes tools and data to Claude over the Model Context Protocol — GitHub, a database, a browser. Context cost and a dependency, so add one only when a CLI cannot do the job. — [MCP concepts and transports](/en/l3-advanced/m11-mcp/mcp-concepts/)
+
+### merge
+
+Combining one branch's commits into another. This course's own workflow squash-merges, which is why a pull request title becomes the commit message. — [Pull requests with evidence](/en/l2-intermediate/m08-git/pull-requests/)
+
+### monitor
+
+A background watcher attached to a session that reports when its condition matches. Never restored on `--resume`. — [Monitors, channels and wake-ups](/en/l4-master/m17-autonomy/monitors-and-channels/)
+
+### monorepo
+
+One repository holding several packages or applications, where per-area memory files and rules matter more than a single root file. — [Working in large codebases](/en/l4-master/m21-scale/large-codebases/)
+
+### permission mode
+
+The session-wide stance on approvals — Manual, `acceptEdits`, `plan`, `dontAsk`, auto, `bypassPermissions` — cycled with `Shift+Tab` or set at launch. — [Permission modes and allow/deny rules](/en/l1-beginner/m02-interact/permissions/)
+
+### plan mode
+
+A mode in which Claude explores and proposes a plan without editing anything, until you approve it. — [Plan mode: explore, plan, approve, execute](/en/l1-beginner/m02-interact/plan-mode/)
+
+### plugin
+
+A packaged set of skills, agents, hooks and MCP servers, distributed through a marketplace. Installing one runs its code with your privileges. — [Plugin anatomy: the manifest and the directories](/en/l3-advanced/m12-plugins/plugin-anatomy/)
+
+### prompt
+
+The request you send. A good one names the goal, the constraints and the evidence that will show it worked. — [Prompting basics: goal, constraints, evidence](/en/l1-beginner/m02-interact/prompting-basics/)
+
+### prompt caching
+
+Reuse of the already-processed prefix of a conversation, which is why switching model or effort mid-task costs money: it invalidates the prefix. — [Prompt caching](/en/l4-master/m21-scale/prompt-caching/)
+
+### prompt injection
+
+An attack in which text Claude reads — a page, a file, an issue title — is written to be followed as an instruction. — [Prompt injection: how it reaches an agent, and what stops it](/en/l3-advanced/m14-security/prompt-injection/)
+
+### pull request
+
+A proposed change opened for review before it merges. The place evidence belongs: the commands you ran and their real output. — [Pull requests with evidence](/en/l2-intermediate/m08-git/pull-requests/)
+
+### renderer
+
+The way the terminal UI is drawn — the standard inline view or the fullscreen one reached with `/tui fullscreen`. — [Keybindings, status line, themes and output styles](/en/l1-beginner/m04-commands/keybindings-statusline-theme/)
+
+### routine
+
+A cloud-run scheduled or triggered job: a fresh clone, no permission prompts, and whatever connectors you left attached. — [Routines: cron, one-off, API and GitHub triggers](/en/l4-master/m17-autonomy/routines/)
+
+### rule
+
+A topic file under `.claude/rules/`. With `paths:` frontmatter it loads only when Claude reads a matching file; without it, it loads every session. — [Path-scoped rules with .claude/rules/](/en/l1-beginner/m03-memory/rules/)
+
+### sandbox
+
+The OS-level layer that limits what a Bash command can reach once it runs — a different question from whether the tool call was allowed. — [The permission model and the sandbox](/en/l3-advanced/m14-security/permission-model-and-sandbox/)
+
+### secret
+
+A credential: an API key, token, private key or password. Never in a committed file, never in a prompt, never printed by an unredacted scan. — [Secrets: .env, gitleaks, and a hook that blocks a leak](/en/l3-advanced/m14-security/secrets/)
+
+### session
+
+One conversation with Claude Code, identified by a session id, resumable with `--resume`, and deleted after a retention period. — [Sessions: resume, continue, branch and fork](/en/l1-beginner/m04-commands/sessions/)
+
+### skill
+
+A `SKILL.md` file — a procedure Claude loads on demand, either because you invoked it or because its description matched. Guidance, never enforcement. — [Skills versus custom commands](/en/l2-intermediate/m06-skills/skills-vs-commands/)
+
+### slash command
+
+A command typed at the start of a message (`/context`, `/model`, `/hooks`). Built-in commands control the session; custom ones are skills. — [The built-in slash command reference](/en/l1-beginner/m04-commands/slash-command-reference/)
+
+### subagent
+
+A helper agent with its own context window and tool permissions that a session delegates a task to, and which returns a text summary. — [The Agent tool and the built-in subagents](/en/l3-advanced/m10-subagents/agent-tool-and-builtins/)
+
+### token
+
+The unit models read, generate and are billed in — roughly a word fragment. Context, cost and limits are all counted in tokens. — [Cost and usage](/en/l2-intermediate/m05-models-effort/cost-and-usage/)
+
+### tool
+
+A built-in capability Claude calls to do something — `Read`, `Edit`, `Bash`, `Grep`, `Glob` and the rest. You do not call them; you shape which are available. — [The built-in tools: Read, Edit, Glob, Grep, Bash](/en/l1-beginner/m02-interact/tools-read-edit-run/)
+
+### transcript
+
+A verbatim recording of a real session, stored and rendered as evidence. Every transcript on this site is captured from an actual run (D070, D099). — [Your first session](/en/l1-beginner/m01-start/first-session/)
+
+### ultracode
+
+A Claude Code setting and keyword that makes the session plan a workflow for every substantive task. Not a sixth effort level. — [ultracode: the keyword, the effort level, and what a run costs](/en/l4-master/m16-orchestration/ultracode/)
+
+### workflow
+
+A script Claude writes and the runtime persists, orchestrating agents in stages. A batch job: no input once it starts. — [The Workflow tool: scripts that orchestrate agents](/en/l4-master/m16-orchestration/workflows/)
+
+### worktree
+
+A second checkout of the same repository at another path, so two sessions can edit without colliding. Fresh and empty: no `node_modules`, no `.env`. — [Worktrees and branches](/en/l2-intermediate/m08-git/worktrees-branches/)
+
+## Terms that mean something else here
+
+Three words are worth reading twice, because their Claude Code meaning is not the one you expect:
+
+- **branch** — `/branch` copies the conversation, not the code; the git kind is [`--worktree`](/en/l2-intermediate/m08-git/worktrees-branches/).
+- **fork** — a subagent carrying your conversation, not a repository copy ([fork, background and worktree isolation](/en/l3-advanced/m10-subagents/fork-background-worktree/)).
+- **effort** — the model's thinking budget, unrelated to how long the task takes you ([effort levels](/en/l2-intermediate/m05-models-effort/effort-levels/)).
