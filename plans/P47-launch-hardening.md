@@ -2,7 +2,7 @@
 id: P47
 title: Launch hardening
 milestone: M4
-status: in_progress
+status: review
 owner: lead-opus
 branch: plan/47-launch-hardening
 model_hint: sonnet
@@ -14,8 +14,10 @@ owned_paths:
   - .github/workflows/links-weekly.yml
 shared_paths: []
 estimate: M
-updated_at: 2026-09-08T04:03:09Z
-open_questions: []
+updated_at: 2026-09-08T04:24:48Z
+open_questions:
+  - "Skip-link focus defect: <main id=\"main\"> in src/layouts/Lesson.astro, Section.astro and Landing.astro has no tabindex=\"-1\", so keyboard activation of \"Skip to content\" does not move focus past the header nav (confirmed live: document.activeElement lands on <body>). Real, cross-cutting a11y defect axe cannot detect; out of P47's owned_paths (touches three layout files, not src/lib/seo.ts). See docs/launch/hardening.md §3/§7."
+  - "Cloudflare cache-rule recommendations (immutable /_astro/**, short-TTL /pagefind/**, never-cache / locale redirect) belong in docs/deploy/README.md's owner checklist, but that file is owned by P10 (status: done) and outside P47's owned_paths/shared_paths ([]). Recommendation and reasoning recorded in docs/launch/hardening.md §5/§7 instead; needs a follow-up plan or an owned_paths amendment to land in docs/deploy/README.md itself."
 ---
 
 ## Goal
@@ -75,4 +77,28 @@ A reviewer reads `docs/launch/hardening.md`, spot-checks two hreflang pairs live
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+- Full evidence trail in `docs/launch/hardening.md`. Summary: hreflang/canonical audit clean (312
+  routes, dist + live cross-check, 21-URL live sample all reciprocal); full-route-list live axe
+  audit (312 routes × 2 viewports = 624 checks against `https://cc.codechup.com`) came back 0
+  serious/critical violations; analytics (O7) confirmed to degrade cleanly with no beacon markup
+  emitted when the token is absent; Cloudflare cache headers already match the intended
+  immutable/no-cache/no-store pattern for assets/HTML/redirect (one soft gap: `/pagefind/*`'s
+  edge `cf-cache-status` is `DYNAMIC` despite a 3600s origin TTL — recommendation logged, not a
+  regression); `links-weekly.yml` fixed a real bug (STATE.md's own prose about 3 documented,
+  known non-defect URLs was being flagged as broken links every run, which would have opened a
+  spurious issue weekly forever) and both a clean pass and a deliberate-failure issue-opening
+  trigger were verified with real GitHub Actions runs (test issues #86/#87 closed, throwaway
+  branch `p47-throwaway-broken-link` deleted locally and on `origin`).
+- `src/lib/seo.ts` was read and audited but not changed — the hreflang/canonical/OG-image logic
+  is already correct; no real defect was found there.
+- One real accessibility defect was found manually (axe cannot detect it): the skip link's target
+  (`<main id="main">` in three layout files) has no `tabindex="-1"`, so keyboard activation does
+  not move focus into the page content. Out of this plan's `owned_paths` — filed in
+  `open_questions` above rather than fixed here.
+- The Cloudflare cache-rule write-up the plan asked for landed in `docs/launch/hardening.md`
+  instead of `docs/deploy/README.md`, because that file is owned by P10 (`status: done`) and
+  P47's `shared_paths` is empty — editing it would have violated D048. Filed in `open_questions`
+  above as a follow-up.
+- No blockers. All local gates (`typecheck`, `lint`, `gate`, `test`, `build`,
+  `tools/plan/cli.ts check`, `playwright test`) pass on this branch with numbers identical to the
+  M3 baseline (no regression).
