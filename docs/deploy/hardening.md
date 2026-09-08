@@ -222,3 +222,26 @@ sessions.
 
 This is why `has_discussions` stays off: a structured issue form that produces
 actionable reports beats an unmoderated forum that produces threads.
+
+## Tag protection needs three rules, not two
+
+`non_fast_forward` alone does not protect a tag. It blocks rewinding a tag to an ancestor,
+but a tag can still be advanced to a newer commit, which is exactly how a lesson's
+`repo_tag` would silently start pointing at the wrong state. This was found by testing the
+rule rather than trusting it: a `PATCH` of a lesson tag to a later commit succeeded while
+`deletion` and backward moves were refused.
+
+The tag ruleset therefore carries `deletion`, `non_fast_forward` **and** `update`. With
+`update` in place, every write to a matching tag is refused, in both directions.
+
+### Moving a tag deliberately
+
+There are no bypass actors, which is the point. When a tag genuinely must move:
+
+1. `gh api -X PUT repos/<owner>/<repo>/rulesets/<id> -f enforcement=disabled`
+2. Move the tag, and verify it against a known-good reference rather than by eye.
+3. Restore the ruleset with its full rule set (`enforcement=active`).
+4. Record what moved and why in the repository's README, next to the tag map.
+
+Verify the ruleset after any change by trying to break it: attempt a delete, a backward
+move and a forward move, and confirm all three are refused.

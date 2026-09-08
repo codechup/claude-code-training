@@ -434,7 +434,7 @@ function lessonTagRuleset() {
     conditions: { ref_name: { include: ['refs/tags/lesson/**'], exclude: [] } },
     // Every lesson names its lab tag in frontmatter (`lab.repo_tag`). A deleted
     // or moved tag silently breaks the lab of every lesson that cites it.
-    rules: [{ type: 'deletion' }, { type: 'non_fast_forward' }],
+    rules: [{ type: 'deletion' }, { type: 'non_fast_forward' }, { type: 'update' }],
   };
 }
 
