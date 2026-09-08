@@ -1,16 +1,336 @@
 ---
 title: 'Bu site nasıl inşa edildi'
-description: 'Bu deponun kendi CLAUDE.md, rules, hooks, skills, agents, plan dosyaları, içerik kapıları ve deploy hattının rehberli turu — kursun kendi işlenmiş örneği.'
+description: "Bu deponun kendi CLAUDE.md'sinin, kurallarının, hook'larının, skill'lerinin, agent'larının, plan dosyalarının, içerik kapılarının ve dağıtım hattının rehberli bir turu — kursun kendi işlenmiş örneği."
 order: 1
-draft: true
 ---
 
-> Bu sayfanın Türkçe çevirisi hazırlanıyor. İngilizce aslı:
-> [How this site was built](/en/meta/how-this-site-was-built/).
+Bu sitedeki her ders, Claude Code ile çalışmanın belirli bir yolunu savunur: bağlamı
+yazın, koruma raylarını otomatikleştirin, işi birden çok oturumun aynı anda çalışabilmesi
+için bölün ve her iddiayı gerçek çıktıyla kanıtlayın. Bu sayfa makbuzdur. Okuduğunuz site
+ilk commit'ten itibaren bu şekilde inşa edildi ve depo herkese açık ve MIT lisanslı
+olduğundan (D052) bu sayfanın bahsettiği her dosyayı okuyabilirsiniz.
 
-Bu sayfa, sitenin kendisinin nasıl inşa edildiğini anlatır: kod yazılmadan önce kaydedilen yüz
-sahip kararı, önce çizilen tasarım canvas'ı, her session'ın ilk okuduğu `CLAUDE.md` ve yola göre
-yüklenen `.claude/rules/` dosyaları, dört hook, dört skill ve beş agent, plan dosyası sistemi,
-içerik kapıları (EN/TR eşleşmesi, şema, public-repo hijyeni, tasarım token'ları) ve bir merge'den
-yayınlanmış sayfaya kadar uzanan CI/deploy hattı. Plan dosyası mekaniği burada tekrar anlatılmaz —
-onu [m18-multi-session](/tr/l4-master/m18-multi-session/) öğretir; bu sayfa örnek olaydır.
+Ne bekleyeceğinizi bilmeniz için iki sınır:
+
+- **Bu vaka çalışmasıdır, kılavuz değildir.** Plan dosyalarının, `STATE.md`'nin,
+  claim'lerin, `owned_paths`'in ve worktree'lerin mekanikleri
+  [m18 — Paralel oturumları koordine etme](/tr/l4-master/m18-multi-session/)'de öğretilir
+  ve [İşlenmiş örnek olarak bu depo](/tr/l4-master/m18-multi-session/this-repo-as-example/)
+  zaten `plans/` dizinini satır satır gezer. Bu sayfa bunları okuduğunuzu ya da
+  bakabileceğinizi varsayar ve alanını o sayfanın kapsamadığı kısımlara harcar: herhangi
+  bir kod var olmadan önce neye karar verildiği, `.claude/` dizininin gerçekte ne
+  içerdiği ve bir merge ile sunulan bir sayfa arasında ne olduğu.
+- **Yalnızca bu proje masadadır.** Kursun vaka çalışmalarının anonim ya da kurgusal
+  olması kuralı (D026) burada askıya alınmaz. Bu depo kendisini istediği kadar
+  ayrıntıyla anlatabilir; yine de başka hiçbir projeyi, onun altyapısını, host adlarını
+  ya da yollarını asla adlandırmaz, tarif etmez ya da ima etmez. Pipeline gerçek bir
+  makineye dokunduğunda, adımın şeklini ve bir GitHub secret'ının adını görürsünüz,
+  başka hiçbir şeyi. Bu alçakgönüllülük değildir — [güvenlik derslerinin](/tr/l3-advanced/m14-security/)
+  sizden istediği aynı disiplindir, onları öğreten depoya uygulanmıştır.
+
+Depo: [github.com/codechup/claude-code-training](https://github.com/codechup/claude-code-training).
+
+## Önce kararlar geldi
+
+Bir depo olmadan önce bir intake vardı: kitle, kapsam, diller, tasarım, araçlar,
+lisanslama ve yayın sırası hakkında yüz soru, birer birer cevaplanmış ve
+[`DECISIONS.md`](https://github.com/codechup/claude-code-training/blob/main/DECISIONS.md)
+olarak yazılmış — D001'den D100'e, her biri kısa bir paragraf, birkaçı hiçbir oturumun
+yeniden tartışamayacağı sahip geçersiz kılmaları olarak işaretlenmiş.
+
+Bu, depodaki tek en yüksek kaldıraçlı şeydir ve bir Claude Code özelliği bile değildir.
+Bir plan dosyasının çalıştırılabilir olmasını sağlayan şey budur. Bir belirsizliğe ulaşan
+bir oturum kararı arar; bir karar yoksa, kural (`CLAUDE.md`'de) en muhafazakâr okumayı
+almak ve bir tane uydurmak yerine soruyu planının `open_questions`'ına yazmaktır. Ürün
+kararları sahibe aittir ve dosya bunların kaydıdır.
+
+Tasarım da aynı sırayı izledi. Görsel dil önce yüksek effort'ta tek bir oturum tarafından
+bir Claude Design canvas'ı olarak yazıldı,
+[`docs/design/canvas-out/`](https://github.com/codechup/claude-code-training/tree/main/docs/design/canvas-out)'a
+dışa aktarıldı ve
+[`docs/design/CANVAS.md`](https://github.com/codechup/claude-code-training/blob/main/docs/design/CANVAS.md)'de
+yazıya döküldü. Ancak o zaman `src/styles/tokens.css` yazıldı, paleti canvas'ın token
+tablosundan kopyalayarak. Dokuz artboard, markayı, token'ları, 1280 px ve 390 px'teki
+landing sayfasını, her iki temada ders sayfasını, bileşen envanterini ve `/design`
+sayfasını yerleştirdi — böylece hiçbir sonraki oturum bir callout'un neye benzediğine
+karar vermek zorunda kalmadı. Ona baktı.
+
+## `CLAUDE.md`: her oturumun önce okuduğu dosya
+
+[`CLAUDE.md`](https://github.com/codechup/claude-code-training/blob/main/CLAUDE.md) kasıtlı
+olarak kısadır — dosyanın altındaki bir bakımcı notu onu kabaca 120 satırla sınırlar — ve
+projenin bir tarifi olarak değil bir onboarding betiği olarak yapılandırılmıştır:
+
+1. Bir **okuma sırası**: `STATE.md`, sonra `plans/README.md`, sonra `DECISIONS.md`, sonra
+   müfredat, sonra araştırma envanteri, sonra tasarım canvas'ı.
+2. **Oturum protokolü**, `git pull`'dan bir plan üstlenmeye ve PR açmaya kadar, kopyala-
+   yapıştır'lanabilir bir kabuk komutları bloğu olarak.
+3. **Sert kurallar**, her biri düz sözcüklerle belirtilmiş ve ardından karar numarasıyla
+   alıntılanmış — kanıt, uydurma transcript yok, araştırma envanterinden olgular,
+   herkese-açık-depo hijyeni, dil politikası, yalnızca tasarım token'ları,
+   `owned_paths`'in içinde kalın, `main` yalnızca PR'dır, asla secret commit'lemeyin,
+   asla bir sahip kararı uydurmayın.
+4. **Komutlar**, deponun **düzeni** ve model ile effort ipuçlarının anlamı.
+
+İçinde _olmayan_ da bir o kadar önemlidir. Bir mimari denemesi, bir tarihçe, bir dersler
+listesi yoktur — müfredat belgesi buna sahiptir ve onu tekrarlamak kopyanın bayatlamasını
+garanti ederdi. `CLAUDE.md`, "sırada ne yapmalıyım ve ne yapmamalıyım"ı cevaplar ve geri
+kalan her şeyi adlandırdığı bir dosyaya devreder.
+
+Alan başına ayrıntı bunun yerine
+[`.claude/rules/`](https://github.com/codechup/claude-code-training/tree/main/.claude/rules)'da
+yaşar, her dosya bir `paths:` frontmatter bloğu taşır, böylece yalnızca bir oturum
+yönettiği dosyalar üzerinde çalışırken yüklenir:
+
+| Rule                                                                                                              | Uygulandığı yer        | Neyi kısıtladığı                                                           |
+| ----------------------------------------------------------------------------------------------------------------- | ---------------------- | -------------------------------------------------------------------------- |
+| [`content.md`](https://github.com/codechup/claude-code-training/blob/main/.claude/rules/content.md)               | `content/**/*.mdx`     | Ders şablonu sırası, kanıt kuralı, kaynaklar bloğu                         |
+| [`design.md`](https://github.com/codechup/claude-code-training/blob/main/.claude/rules/design.md)                 | `src/**`, `public/**`  | Yalnızca token'lar, ham renk sabiti yok, önce 390 px, WCAG 2.2 AA          |
+| [`i18n.md`](https://github.com/codechup/claude-code-training/blob/main/.claude/rules/i18n.md)                     | `content/tr/**`        | Hangi İngilizce terimlerin İngilizce kaldığı, diyakritikler, slug paritesi |
+| [`plans.md`](https://github.com/codechup/claude-code-training/blob/main/.claude/rules/plans.md)                   | `plans/**`, `STATE.md` | Claim protokolü ve buradaki oturumların gerçekte yaptığı hatalar           |
+| [`public-hygiene.md`](https://github.com/codechup/claude-code-training/blob/main/.claude/rules/public-hygiene.md) | her dosya              | Herkese açık bir depoya asla commit'lenemeyecek şeyler                     |
+
+Bunları bu şekilde bölmek [yol-kapsamlı rule'ların](/tr/l1-beginner/m03-memory/rules/)
+amacıdır: bir çeviri oturumu tasarım kuralları için hiçbir bağlam ödemez, ve bir bileşen
+oturumu Türkçe terminoloji listesi için hiçbirini ödemez.
+
+## Dört hook, ve her birinin neden var olduğu
+
+[`.claude/settings.json`](https://github.com/codechup/claude-code-training/blob/main/.claude/settings.json)
+dört hook betiğini bağlar. Hiçbiri akıllı değildir; her biri, aksi hâlde bir oturumun
+sabah üçte yapacağı bir hata sınıfını ortadan kaldırır.
+
+| Olay                                           | Betik                                                                                                             | Ne yaptığı                                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PreToolUse` (`Write\|Edit\|Bash\|PowerShell`) | [`guard-hygiene.mjs`](https://github.com/codechup/claude-code-training/blob/main/.claude/hooks/guard-hygiene.mjs) | Yazılan içerik ya da çalıştırılan bir komut özel altyapı ayrıntıları ya da kimlik bilgisi malzemesi taşıyorsa exit 2 ile çıkar — tool çağrısını engelleyerek. Kendi örüntü listesini tutmak yerine `scripts/check-public-hygiene.mjs`'yi çağırır, böylece hook ve CI asla anlaşmazlığa düşemez.                                                |
+| `PreToolUse` (`Bash\|PowerShell`)              | [`guard-bash.mjs`](https://github.com/codechup/claude-code-training/blob/main/.claude/hooks/guard-bash.mjs)       | Burada her zaman bir hata olan üç komutu reddeder: yeniden üretilebilir bir build dizini olmayan herhangi bir şeyin özyinelemeli zorla silinmesi, bir force-push (ve `main`'i adlandıran herhangi bir force-push) ve bir `.env*` dosyasına bir kabuk yazması. Tanımadığı her şey exit 0 ile çıkar — bir allowlist değil bir koruma raylarıdır. |
+| `PostToolUse` (`Write\|Edit`)                  | [`format.mjs`](https://github.com/codechup/claude-code-training/blob/main/.claude/hooks/format.mjs)               | Az önce yazılan dosyada Prettier çalıştırır, böylece ağaç her zaman `prettier --check .`'in beklediği şekildedir. Her yol exit 0 ile çıkar: biçimlendirme bir oturumu asla kesintiye uğratmamalıdır.                                                                                                                                           |
+| `SessionStart`                                 | [`session-start.mjs`](https://github.com/codechup/claude-code-training/blob/main/.claude/hooks/session-start.mjs) | `STATE.md`'den `TL;DR` satırını artı `node tools/plan/cli.ts next`'in çıktısını oturumun bağlamına yazdırır, böylece yeni bir oturum önce iki dosya açmadan projenin nerede durduğunu bilir.                                                                                                                                                   |
+
+Çalınmaya değer üç ayrıntı vardır.
+
+**Guard devreder.** `guard-hygiene.mjs` tek bir regex içermez. Örüntüler
+`scripts/check-public-hygiene.mjs`'de yaşar ve aynı betik `pre-commit` git hook'u
+(`scripts/git-hooks/pre-commit`, `sh scripts/install-hooks.sh` tarafından kurulur) olarak
+ve CI'da kendi adımı olarak çalışır. Bir örüntü listesi, üç uygulama noktası — bu yüzden
+kuralı sıkılaştırmak onu her yerde aynı anda sıkılaştırır ve bir oturum hook'u geçip
+sonra aynı sebepten CI'da başarısız olamaz. (CI'daki `gitleaks` dördüncü bir ağdır, ama
+`.gitleaks.toml`'daki kendi kurallarıyla bağımsız bir tanedir.)
+
+**Engelleyen hook'lar nedeni iki kez söyler.** `guard-bash.mjs`, belgelenmiş
+`hookSpecificOutput.permissionDecision: "deny"` nesnesini stdout'a _ve_ düz nedeni
+stderr'e yazar, çünkü JSON Claude'un okuduğu şeydir ve stderr terminaldeki bir insanın
+okuduğu şeydir.
+
+**Engelleyen ve engellemeyen bir olay arasındaki ayrım bir ayrıntı değil bir tasarım
+kısıtıdır.** `PreToolUse` engelleyicidir, bu yüzden iki guard'ın başarısız olmasına izin
+verilir. `PostToolUse` ve `SessionStart` değildir, bu yüzden formatlayıcı ve bilgilendirme
+her başarısızlık yolu dahil her yolda exit 0 ile çıkar — bozuk bir Prettier kurulumu
+"dosya biçimlendirilmedi"ye düşer, asla "oturum durdu"ya değil.
+
+## Dört skill ve beş agent
+
+[Skill'ler](https://github.com/codechup/claude-code-training/tree/main/.claude/skills),
+iş akışının tekrarlayan kısımlarıdır, bir kez yazılmıştır:
+
+- [`/plan-next`](https://github.com/codechup/claude-code-training/blob/main/.claude/skills/plan-next/SKILL.md)
+  — plan CLI'ının etrafında ince bir sarmalayıcı, böylece kimsenin
+  `node tools/plan/cli.ts` çağrılarını hatırlaması gerekmez. `disable-model-invocation: true`'yu
+  ayarlar: bir insanın yazması içindir, Claude'un başvurması için değil.
+- [`/new-lesson`](https://github.com/codechup/claude-code-training/blob/main/.claude/skills/new-lesson/SKILL.md)
+  — slug'ı müfredata karşı kontrol ettikten sonra bir İngilizce dersi, yansıtılmış
+  yoldaki `draft: true` Türkçe ikizini ve paylaşılan transcript klasörünü iskeletler.
+  Yalnızca yapı: hiçbir düz yazı ve hiçbir olgu yazmaz.
+- [`/translate-lesson`](https://github.com/codechup/claude-code-training/blob/main/.claude/skills/translate-lesson/SKILL.md)
+  — hâlâ hareket eden bir İngilizce sayfada çalışmayı reddeder, sonra `translator`
+  agent'ına devreder.
+- [`/verify-sources`](https://github.com/codechup/claude-code-training/blob/main/.claude/skills/verify-sources/SKILL.md)
+  — bir dersin `sources[]`'ındaki her URL'yi yeniden getirir ve `verified_at`'i
+  tazeler, ölü ya da taşınmış bağlantıları yüksek sesle raporlar.
+
+Her biri işi tanımlayacak kadar dar bir `allowed-tools` listesi taşır — `/plan-next` plan
+CLI'ını çalıştırabilir ve dosya okuyabilir, başka hiçbir şey — ve işe uyan bir
+`model`/`effort` çifti.
+
+[Agent'lar](https://github.com/codechup/claude-code-training/tree/main/.claude/agents),
+ders üretimini ayrı ayrı değerlendirilebilen rollere böler:
+
+| Agent                                                                                                                 | Model / effort  | Tool'lar               | Rol                                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------- | --------------- | ---------------------- | ---------------------------------------------------------------------------------------------------- |
+| [`lesson-researcher`](https://github.com/codechup/claude-code-training/blob/main/.claude/agents/lesson-researcher.md) | sonnet / medium | okuma + web            | Resmî dokümanı getirir ve onu araştırma envanterine karşı uzlaştırır; bir brief üretir, düz yazı yok |
+| [`lesson-writer`](https://github.com/codechup/claude-code-training/blob/main/.claude/agents/lesson-writer.md)         | opus / high     | okuma + yazma          | Bir brief'ten ve gerçek bir transcript'ten bir İngilizce dersi taslaklar; transcript yoksa durur     |
+| [`translator`](https://github.com/codechup/claude-code-training/blob/main/.claude/agents/translator.md)               | sonnet / medium | okuma + yazma, web yok | Türkçe ikizi yazar; argümanı asla yeniden yazmaz                                                     |
+| [`fact-checker`](https://github.com/codechup/claude-code-training/blob/main/.claude/agents/fact-checker.md)           | sonnet / high   | okuma + `WebFetch`     | Her iddiayı desteklenen, çelişen ya da doğrulanamaz olarak raporlar — salt-okunur, asla düzeltmez    |
+| [`reviewer`](https://github.com/codechup/claude-code-training/blob/main/.claude/agents/reviewer.md)                   | sonnet / high   | yalnızca okuma         | Şablon sırasını, kanıtı, kaynak eksiksizliğini, hijyeni ve pariteyi kontrol eder                     |
+
+İki inceleyen agent kasıtlı olarak salt-okunurdur, `Write`, `Edit` ve `Bash`
+`disallowedTools`'ta. İnceleme adımının (D071) arkasındaki tüm hile budur: bulduğunu
+düzeltebilen bir agent, raporlamak yerine düzeltmeye ayartılır ve yazan oturum bulgunun
+doğru olup olmadığına karar verme şansını kaybeder. Her içerik planı PR'ından önce
+ikisini de çalıştırır ve sayıları — desteklenen, çelişen, doğrulanamaz — Handoff
+notlarına kaydeder.
+
+İnceleyenlerin yazarın prompt'undaki bir kontrol listesi yerine ayrı süreçler olmasının
+ikinci bir sebebi vardır: boş bir bağlamdan başlarlar. Bir dersin doğru olduğuna kendini
+ikna etmek için kırk tool çağrısı harcamış bir oturum, bunun doğru olup olmadığının
+mümkün olan en kötü hakemidir.
+
+## Plan sistemi, tek bir paragrafta
+
+İş bir Markdown dosyaları dizinidir. Her
+[`plans/PNN-slug.md`](https://github.com/codechup/claude-code-training/tree/main/plans),
+YAML frontmatter'ı olan kendi kendine yeten bir iş emridir — id, milestone, status,
+owner, branch, model ve effort ipuçları, `depends_on`, `owned_paths`, `shared_paths`,
+`open_questions` — ve sabit on bölümlük bir gövde (D047). Bir oturum bir tanesini
+üstlenir, `plan/NN-slug` branch'inde kendi worktree'sinde çalışır, yalnızca
+`owned_paths`'ine dokunur, `[PNN] …` başlıklı bir PR açar ve CI yeşil olduğunda PR
+squash-merge edilir. [`STATE.md`](https://github.com/codechup/claude-code-training/blob/main/STATE.md),
+o frontmatter'dan üretilir ve asla elle düzenlenmez, ve
+[`tools/plan/cli.ts`](https://github.com/codechup/claude-code-training/blob/main/tools/plan/cli.ts)
+her ikisine de sahiptir — `state`, `next`, `claim`, `status`, `check`, `show`. Tam
+sözleşme [`plans/README.md`](https://github.com/codechup/claude-code-training/blob/main/plans/README.md)'dir;
+mekanikler [m18](/tr/l4-master/m18-multi-session/plan-files/)'in konusudur ve bu sayfa
+onları tekrarlamayacaktır.
+
+Buraya eklemeye değer olan aritmetik. Bu sayfa yazıldığında depo beş milestone'a
+yayılmış 48 plan dosyası tutuyordu ve `node tools/plan/cli.ts check` tüm kümeyi tek bir
+komutta doğruladı:
+
+```text
+$ node tools/plan/cli.ts check
+ok: 48 plans, frontmatter valid, DAG acyclic, no owned_paths overlap, STATE.md fresh
+```
+
+Orada hiçbir incelemecinin okuyarak güvenilir şekilde yakalayamayacağı dört şey kontrol
+edilir: her `depends_on`'un var olan bir planı adlandırdığı ve grafın hiçbir döngüsü
+olmadığı; hiçbir iki aktif planın örtüşen `owned_paths` iddia etmediği, her glob'un
+statik önekinde hesaplanmış; hiçbir `in_progress` planın bitmemiş bir bağımlılığı
+olmadığı; ve `STATE.md`'nin onu yeniden üretmenin üreteceği şeyle byte-özdeş olduğu.
+Sonuncusu, `STATE.md`'nin bir bakışta güvenilebilir olmasının nedenidir — bayat olan
+biri CI'da başarısız olur.
+
+## İçerik pipeline'ı bir dizi kapıdır
+
+Ders içeriği, şemaları
+[`src/content/schema.ts`](https://github.com/codechup/claude-code-training/blob/main/src/content/schema.ts)'de
+yaşayan iki Astro koleksiyonu tarafından yüklenen, `content/en/**` ve `content/tr/**`
+altındaki MDX'tir. Bir derste ters gidebilecek her şey bir insan yerine bir betik
+tarafından kontrol edilir:
+
+| Kapı               | Komut                                                                                                                            | Neyi reddettiği                                                                                                                                                                                                                                                                                                                                   |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| İçerik kapısı      | `npm run gate` ([`scripts/content-gate.ts`](https://github.com/codechup/claude-code-training/blob/main/scripts/content-gate.ts)) | Yansıtılmış yolda Türkçe ikizi olmayan bir İngilizce sayfa (ya da tersi); zod şemasında başarısız olan frontmatter; dil etiketi olmayan bir kod bloğu; `level`/`module` frontmatter'ı yaşadığı dizinle anlaşmayan bir ders. `--no-drafts` ile, herhangi bir `draft: true` — bir yayın planı hiçbir şeyin yarım yayınlanmadığını böyle iddia eder. |
+| Hijyen             | `node scripts/check-public-hygiene.mjs`                                                                                          | İzlenen ağaçtaki herhangi bir yerde altyapı ayrıntıları ya da kimlik bilgisi malzemesi.                                                                                                                                                                                                                                                           |
+| Tasarım token'ları | `node scripts/check-raw-colors.mjs`                                                                                              | `tokens.css` dışında bir hex, `rgb()` ya da adlandırılmış renk.                                                                                                                                                                                                                                                                                   |
+| CSP                | `node scripts/check-no-inline-script.mjs`                                                                                        | Satır içi bir `<script>` gövdesi — origin, hiçbir nonce olmadan `script-src 'self'` sunar, bu yüzden kaynağa karşı _ve_ build'den sonra `dist/`'e karşı bir kez daha çalışır.                                                                                                                                                                     |
+| Planlar            | `node tools/plan/cli.ts check`                                                                                                   | Yukarıdaki plan-kümesi değişmezleri.                                                                                                                                                                                                                                                                                                              |
+
+Yazımı en çok şekillendiren kapı parite kontrolüdür. İngilizce kaynak dildir ve Türkçe
+bir çeviridir (D016), ama parite bitmiş düz yazı düzeyinde değil _dosya_ düzeyinde
+zorlanır: bir İngilizce ders geldiğinde, Türkçe ikizi var olmalıdır ve çeviri dalgası
+oraya ulaşana kadar tek paragraflık bir özetle `draft: true` bir taslak olmasına izin
+verilir. Bir taslağın hiçbir rotası, hiçbir navigasyon girdisi ve arama indeksinde
+hiçbir yeri yoktur, bu yüzden yarı-çevrilmiş bir site asla bozuk bir site değildir — ve
+bir çevirmen tamamen atlandığında parite kapısı yine de yüksek sesle başarısız olur.
+
+Kanıt kuralı (D093), arkasında hiçbir otomasyon olmayan kısımdır. Bir dersin gösterdiği
+her komut çalıştırılmıştır; [`content/_shared/transcripts/`](https://github.com/codechup/claude-code-training/tree/main/content/_shared/transcripts)'in
+altındaki her transcript, tarihi, tam komutu ve Claude Code sürümünü veren bir kaynak
+başlığıyla, kırpılmış ama asla düzenlenmemiş, lab deposuna karşı gerçek bir oturumdan
+gerçek bir kayıttır (D070, D099). Bu yazının yazıldığı sırada o dizin, her bir kaydın
+nasıl yapıldığını belgeleyen 27 ders-başına `README.md` dosyasının yanında, 21 modüle
+yayılmış 261 kayıt tutuyordu. Bir yüzey headless olarak yakalanamadığında — etkileşimli
+bir diyalog, bir klavye kısayolu — ders bunu düz yazıda söyler ve olası görünen bir
+oturum uydurmak yerine komutları gösterir. CI'daki hiçbir şey uydurulmuş bir transcript'i
+tespit edemez; tek savunma, kuralın dört yerde yazılı olması ve uydurmanın bir
+incelemenin affetmeyeceği tek şey olmasıdır.
+
+## Merge'den sunulan sayfaya
+
+[`.github/workflows/ci.yml`](https://github.com/codechup/claude-code-training/blob/main/.github/workflows/ci.yml),
+her pull request'te ve `main`'e her push'ta, dört işte çalışır:
+
+- **quality** — `npm ci`, typecheck, lint, hijyen bekçisi, ham-renk bekçisi, plan
+  öz-kontrolü, içerik kapısı, tüm tarihçe üzerinde `gitleaks`, `src/lib`, `tools/plan`
+  ve `scripts` üzerinde %70 satır kapsama tabanıyla birim testleri, ve `astro build`.
+  Build edilen siteyi `site-dist` artifact'ı olarak yükler.
+- **e2e** — o artifact'ı indirir ve axe ile Playwright çalıştırır: erişilebilirlik,
+  site kabuğu, ders sayfaları ve arama.
+- **links** — yalnızca pull request'lerde, PR'ın gerçekten değiştirdiği Markdown ve MDX
+  dosyaları üzerinde `lychee`, böylece yeni bir dersin kaynakları her seferinde tüm
+  siteyi yeniden kontrol etmeden kontrol edilir. Ayrı bir
+  [haftalık workflow](https://github.com/codechup/claude-code-training/blob/main/.github/workflows/links-weekly.yml),
+  depodaki her bağlantıyı süpürür ve bir şey çürüdüğünde bir issue açar.
+- **lighthouse** — aynı artifact'a karşı Lighthouse CI.
+
+Her üçüncü taraf action, arkasında bir sürüm olan bir yorumla bir commit SHA'sına
+pinlenmiştir. Bu, güvenlik modülünün savunduğu
+[tedarik zinciri alışkanlığıdır](/tr/l3-advanced/m14-security/), burada uygulanmıştır.
+
+[`deploy.yml`](https://github.com/codechup/claude-code-training/blob/main/.github/workflows/deploy.yml),
+`main`'e push'larda çalışır ve kopyalanmaya değer üç özelliği vardır:
+
+1. **Yeniden build etmez.** `ci.yml`'i yeniden kullanılabilir bir workflow olarak çağırır
+   ve o çalıştırmanın ürettiği artifact'ı indirir, böylece test edilen byte'lar
+   gönderilen byte'lardır.
+2. **Bir kapatma anahtarı vardır.** Bir `gate` işi yalnızca
+   `if: vars.DEPLOY_ENABLED == 'true'` çalışır ve her diğer iş buna bağımlıdır. Depo
+   değişkeni ayarlanmamışken — varsayılan — tüm workflow hiçbir şey yapmadan yeşil
+   biter.
+3. **Yükleme iki aşamalıdır.** İçerik-adresli asset'ler ve arama indeksi önce
+   `--delete` olmadan gider; HTML `--delete` ile takip eder. Bu sırada hiçbir sayfa
+   henüz yüklenmemiş bir asset'e asla referans veremez ve bir build'den kaldırılan
+   dosyalar host'tan kaybolur.
+
+Hedef, SSH üzerinden ulaşılabilir bir host'ta bir dizindir. Adresi, hesabı ve yolu
+GitHub secret'larıdır — `SSH_HOST`, `SSH_USER`, `SSH_KEY`, `DEPLOY_PATH` — ve hijyen
+bekçisi tam olarak bu değerlerin hiçbirinin "kolay bir varsayılan" olarak bu depodaki
+bir dosyaya yazılamaması için vardır. O dizini bir URL'ye cevap verir hâle getirmek
+başka bir yerde sahiplenilen bir sunucu yapılandırmasıdır; bu deponun sorumluluğu
+`rsync`'te biter. Son adım canlı URL'ye karşı bir edge smoke test'idir, çünkü
+"workflow yeşildi" ve "site ayakta" farklı iddialardır.
+
+Tam yazı:
+[`docs/deploy/README.md`](https://github.com/codechup/claude-code-training/blob/main/docs/deploy/README.md).
+
+## Gerçekte neyin fark yarattığı
+
+Build'e geriye dönüp bakınca, dört şey ağırlığın çoğunu taşıdı ve aldıkları işle eşit
+ağırlıkta değiller.
+
+**Devretmeden önce karar vermek.** Yüz karar ve tasarım canvas'ı birkaç gün maletti ve
+iki paralel oturumun uyumsuz seçimler yapıp birinin birini çöpe atmak zorunda kalacağı
+tüm bir başarısızlık sınıfını ortadan kaldırdı.
+
+**Ayrık sahiplik.** Buradaki paralellik akıllı zamanlama değildir. Her planın sahip
+olduğu dosyaları bildirmesi, bir komutun hiçbir iki aktif planın örtüşmediğini kontrol
+etmesi ve her oturumun kendi worktree'sinde çalışmasıdır. İçerikte merge çakışmaları
+şaşırtıcı olacak kadar nadir hâle geldi.
+
+**Zorlaması sıkıcı olan kuralları otomatikleştirmek.** Biçimlendirme, renk sabitleri,
+satır içi script'ler, dil paritesi, altyapı hijyeni, `STATE.md` tazeliği — bunların
+hepsi bir incelemecinin _yakalayabileceği_ ve kırkıncı pull request'e kadar güvenilir
+şekilde yakalamayı bırakacağı şeylerdir. Her biri bir hook'ta ve CI'da çalışan bir
+betiktir.
+
+**Sadece kodu değil devri de yazmak.** Her plan Handoff notlarıyla biter ve her oturum
+onları doldurur: ne değişti, ne karar verildi, ne doğrulanamadı, bir sonraki oturumun
+neyi bilmesi gerektiği. Daha sonraki bir oturumun devralması en kolay bulduğu planlar
+asla en temiz koda sahip olanlar değildi — selefinin neyden emin olmadığını yazdığı
+planlardı.
+
+Karşılık gelen dürüst not: bunların hiçbiri yanlış bir dersi doğru yapmaz. Kapılar
+yapıyı, pariteyi, hijyeni ve bayatlığı yakalar. Bir paragrafın _doğru_ olup olmadığı
+resmî dokümantasyonu getirerek ve onarmak yerine raporlayan bir fact-checking agent
+tarafından, ve nihayetinde onu okuyan bir insan tarafından kontrol edilir. Bu sitede
+yanlış bir şey bulursanız, bir sonraki sayfa bununla ilgili ne yapacağınızı söyler.
+
+## Sırada nereye bakılır
+
+| İstediğiniz şey                                 | Okuyun                                                                                                                            |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Plan dosyalarının ve `STATE.md`'nin mekanikleri | [m18 — Paralel oturumları koordine etme](/tr/l4-master/m18-multi-session/)                                                        |
+| Bir düzeltme ya da bir ders önermek             | [Katkıda bulunma](/tr/meta/contributing/)                                                                                         |
+| Bu sitenin alıntıladığı her kaynak              | [Kaynak dizini](/tr/meta/sources-index/)                                                                                          |
+| Bir `.claude/` dizininin neler tutabileceği     | [.claude dizinini keşfedin](https://code.claude.com/docs/en/claude-directory.md) (resmî dokümanlar, 2026-09-07'de doğrulanmıştır) |
+| Deponun kendisi                                 | [github.com/codechup/claude-code-training](https://github.com/codechup/claude-code-training)                                      |

@@ -1,193 +1,354 @@
 ---
 title: 'Sözlük'
-description: 'Sitede kullanılan her İngilizce teknik terim, tek satırda açıklanır.'
+description: 'Sitede İngilizce olarak korunan her teknik terim, tek satırda açıklanır ve onu tanıtan derse bağlanır.'
 order: 5
+summary: 'İkidilli sözlüğün Türkçe yarısı: Türkçe derslerin İngilizce bıraktığı ve ilk kullanımda açıkladığı terimler (D018).'
 ---
 
-Bu sayfa dersler çevrildikçe adım adım oluşturulur.
+Bu sitedeki Türkçe dersler, uydurulmuş Türkçe karşılıklar bulmak yerine İngilizce teknik
+terimleri olduğu gibi tutar, her birini ilk kullanımda açıklar ve bu ilk kullanımı sözlüğe
+bağlar (D018). Burası o sözlüktür: aynı terimler, birer satırlık tanımlarla ve onları düzgünce
+tanıtan derse bir bağlantıyla. Bu terimlerin İngilizce tanımları
+[İngilizce sözlükte](/en/playbook/glossary/) yaşar.
+
+Buradaki tanımlar kasıtlı olarak kısadır. Bir terim bir paragraf gerektiriyorsa, ders
+bağlantısı o paragraftır.
 
 ## Terimler
 
-### agentic loop
-
-Claude Code’un bir görevi tamamlarken döndüğü çevrim: bağlam toplar, bir tool ile eylem alır, sonucu doğrular ve gerekirse tekrar eder.
-
 ### agent
 
-Bir hedefi kendi başına adım adım yürüten, araç (tool) çağırabilen yapay zekâ süreci; Claude Code’un kendisi bir agent’tır.
+Bir hedefi kendi başına adım adım yürüten ve bunu yapmak için tool çağırabilen bir yapay
+zekâ süreci. Claude Code'un kendisi bir agent'tır; bir subagent ve bir teammate, onun
+başlatabildiği agent'lardır. — [Claude Code nedir ve nasıl çalışır](/tr/l1-beginner/m01-start/what-claude-code-is/)
 
-### tool
+### agent team
 
-Claude’un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç (Read, Edit, Bash, Grep …).
+Bir lead oturumun altında çalışan, birbirine mesaj gönderebilen birden çok oturum. Deneysel,
+varsayılan olarak kapalı ve pahalıdır: plan mode'daki teammate'ler standart bir oturumun
+yaklaşık yedi katı hızda çalışır. — [Agent team'ler ve oturumlar arası mesajlaşma](/tr/l4-master/m16-orchestration/agent-teams-messaging/)
 
-### prompt
+### agentic loop
 
-Claude’a verdiğiniz istek metni; iyi bir prompt hedefi, kısıtları ve kanıt beklentisini söyler.
-
-### MCP server
-
-Model Context Protocol ile Claude’a dış araç ve veri sağlayan sunucu (GitHub, veritabanı, tarayıcı …).
-
-### subagent
-
-Ana oturumun bir alt görevi devrettiği, kendi bağlam penceresi ve araç izinleri olan yardımcı agent.
-
-### effort
-
-Modelin bir yanıt için harcadığı düşünme çabası seviyesi (`/effort low…max`); kalite ile hız/maliyet arasındaki kaldıraç.
-
-### transcript
-
-Gerçek bir Claude Code oturumunun kaydı; bu sitede yalnızca gerçekten çalıştırılmış oturumlar gösterilir.
-
-### headless
-
-Etkileşimli arayüz olmadan tek komutla çalıştırma (`claude -p`); betiklerden ve CI’dan kullanım için.
-
-### plan mode
-
-Claude’un değişiklik yapmadan önce yalnızca okuyup bir plan sunduğu mod (Shift+Tab ile geçilir).
-
-### compaction
-
-Uzun bir oturumda konuşma geçmişinin özetlenerek küçültülmesi (`/compact` ya da otomatik `/autocompact`); plan mode’da yazılan bir plan bunun aksine diskten olduğu gibi yeniden enjekte edilir.
-
-### hook
-
-Claude Code’un yaşam döngüsündeki belirli anlarda (ör. bir tool çağrısından önce) otomatik çalışan komut.
-
-### skill
-
-`SKILL.md` ile tanımlanan, `/ad` ile çağrılan ya da Claude’un kendisinin yüklediği yeniden kullanılabilir talimat paketi.
+Claude Code'un bir görevi tamamlarken döndüğü çevrim: bağlam toplar, bir tool ile eylem
+alır, sonucu doğrular ve gerekirse tekrar eder. Değer, sondaki doğrulamadadır. — [Claude Code nedir ve nasıl çalışır](/tr/l1-beginner/m01-start/what-claude-code-is/)
 
 ### argument
 
-Bir skill ya da komut çağrılırken sonuna eklenen, gövdede `$ARGUMENTS` ya da adlandırılmış `$name` yer tutucularıyla kullanılan değer.
-
-### plugin
-
-Claude Code’a hook, skill, subagent ve MCP server gibi bileşenleri paket hâlinde ekleyen, kurulup etkinleştirilebilen eklenti.
-
-### matcher
-
-Bir hook’un hangi tool ya da event üzerinde ateşleneceğini daraltan, tam ad listesi ya da düzenli ifade olarak değerlendirilebilen alan.
-
-### hook event
-
-Claude Code’un yaşam döngüsünde bir hook’un bağlanabildiği belirli an, ör. bir tool çağrısından önce ya da bir oturum başlarken.
-
-### exit code
-
-Bir komutun ya da hook betiğinin bitirdiğinde döndürdüğü sayı; Claude Code bunu 0 (başarı), 2 (engelleme) ve diğer her şey (çoğu event’ta engellemeyen hata) olarak yorumlar.
-
-### debug log
-
-`--debug-file` ya da `/debug` ile açılan, hook’ların ve diğer arka plan işlemlerinin tam çıktısının yazıldığı, transcript’te görünmeyen günlük dosyası.
-
-### sandbox
-
-Bir sürecin dosya sistemi ve ağ erişimini işletim sistemi düzeyinde kısıtlayan izole çalışma ortamı.
-
-### permission mode
-
-Bir oturumun tool çağrılarını nasıl onaylayacağını belirleyen kip (`default`, `plan`, `acceptEdits`, `bypassPermissions` …).
-
-### workflow
-
-Claude Code’un bir görev için planladığı ve yürüttüğü, birden çok adımdan oluşan otomatik iş akışı.
-
-### checkpoint
-
-Claude Code’un bir oturum sırasında dosya durumunu kaydettiği, `/rewind` ile geri dönülebilen an.
-
-### auto memory
-
-Claude’un bir oturum sırasında öğrendiklerini kendiliğinden, `MEMORY.md` dosyasına kaydettiği notlar; `CLAUDE.md`’den farkı, bunu Claude’un kendisinin yazmasıdır (`autoMemoryEnabled` ile açılıp kapatılır).
-
-### import
-
-Bir dosyayı başka bir `CLAUDE.md` dosyasının içine başlangıçta olduğu gibi açıp yükleyen `@path` söz dizimi.
-
-### rule
-
-Belirli bir dosya yoluna `paths:` frontmatter’ıyla uygulanan, `.claude/rules/` altındaki talimat dosyası.
-
-### monorepo
-
-Birden çok projenin tek bir git deposunda tutulduğu düzen.
-
-### fork
-
-Bir oturumu, konuşma geçmişinin bir kopyasında ya da izole bir bağlamda devam ettirmek (`/fork`, `/branch`).
-
-### token
-
-Bir dil modelinin metni işlerken kullandığı en küçük birim; maliyet ve context window token cinsinden ölçülür.
-
-### context window
-
-Bir modelin tek bir istekte görebildiği toplam token miktarı; aşıldığında en eski içerik düşer ya da sıkıştırılır.
-
-### commit
-
-Bir git deposundaki değişiklik kümesinin kalıcı, mesajlı kaydı.
-
-### branch
-
-Bir git deposunun bağımsız bir geliştirme hattı; değişiklikler ana koddan ayrı, kendi commit zincirinde birikir.
-
-### worktree
-
-Aynı deponun farklı bir branch’ini ayrı bir dizinde çalışır durumda tutan ek bir git çalışma ağacı.
+Bir skill çağrılırken ona geçirilen, gövdede `$ARGUMENTS` ya da adlandırılmış bir yer
+tutucu olarak yerine konan değer. — [Argument'lar ve yerine koymalar](/tr/l2-intermediate/m06-skills/arguments/)
 
 ### artifact
 
-Claude Code’un yayımlayabildiği, kendi başına çalışan web sayfası (`claude.ai/code/artifact`); özel, kurum içi ya da herkese açık olabilir.
+Claude'un bir URL'ye yayınladığı, kendi başına çalışan bir sayfa — arka ucu yok, ikinci bir
+rotası yok ve kendi başına kalıcılığı yok. — [Artifact yayınlamak: güncelleme, paylaşım, yorumlar](/tr/l4-master/m19-visual/artifacts/)
 
-### routine
+### auto memory
 
-Cloud’da belirli bir zamanlamaya göre (cron, tek seferlik ya da bir GitHub olayı) kendiliğinden çalışan, `/schedule` ile oluşturulan görev.
+Claude Code'un bu makine için kendine sakladığı, bir `MEMORY.md` ile indekslenen notlar.
+Makineye özeldir, versiyon kontrolünde değildir ve fork olmayan bir subagent'a asla
+devredilmez. — [Otomatik bellek: MEMORY.md ve dört türü](/tr/l1-beginner/m03-memory/auto-memory/)
 
-### chord
+### branch
 
-Bir kısayolda art arda, boşlukla ayrılarak basılan tuş dizisi (`~/.claude/keybindings.json` içindeki `bindings`).
+Git'te adlandırılmış bir geliştirme hattı. Claude Code'da `/branch` tamamen başka bir
+şeydir: dosyalarınızı değil _konuşmayı_ kopyalar. — [Worktree'ler ve branch'ler](/tr/l2-intermediate/m08-git/worktrees-branches/)
 
-### renderer
+### channel
 
-Claude Code arayüzünü terminalde ekrana çizen katman; tam ekran (fullscreen) renderer’a `/fullscreen` ile geçilir.
-
-### marketplace
-
-Plugin’lerin yayınlandığı ve keşfedildiği kayıt; `plugin@marketplace` söz dizimiyle kurulur ve `claude plugin marketplace` alt komutuyla yönetilir.
-
-### merge
-
-İki git branch’inin tarihçesini birleştirme işlemi; bu sitede pull request’ler squash-merge ile birleştirilir.
-
-### diff
-
-Bir dosyadaki ya da commit’teki değişikliklerin satır satır gösterimi (`git diff`).
-
-### pull request
-
-Bir branch’teki değişikliklerin gözden geçirilip ana koda alınması için açılan istek.
-
-### issue
-
-Bir GitHub deposundaki takip edilen görev ya da hata kaydı.
-
-### GitHub App
-
-Claude Code’u bir GitHub deposuna bağlayan, pull request’lerde ve issue’larda otomatik olarak çalışan entegrasyon.
-
-### CI
-
-Sürekli entegrasyon: her push’ta ya da pull request’te otomatik olarak testleri ve kontrolleri çalıştıran hat.
-
-### secret
-
-Bir webhook URL’si ya da API anahtarı gibi, depoya commit’lenmemesi gereken hassas değer.
+Bir dış sistemin, oturum yoklama yapmak yerine olayları doğrudan bir oturuma göndermesini
+sağlayan, araştırma önizlemesi aşamasındaki bir bağlantı. — [Monitor'lar, channel'lar ve uyandırmalar](/tr/l4-master/m17-autonomy/monitors-and-channels/)
 
 ### checklist
 
-Bir laboratuvarın ya da görevin tamamlandığını doğrulamak için sırayla işaretlenen madde listesi.
+Bir dersin lab'ının, alıştırmayı bitmiş sayabilmeniz için çalıştırmanızı istediği
+kontrollerin listesi — yapabileceğiniz bir iddia değil, çalıştırabileceğiniz bir kontrol. — [Kısıtlar, kabul kriterleri ve kanıt](/tr/l2-intermediate/m09-prompting/constraints-and-evidence/)
+
+### checkpoint
+
+Oturumun ve düzenlediği dosyaların otomatik anlık görüntüsü; `/rewind` ile geri
+yüklenir. Sürüm kontrolü değil oturum düzeyinde bir kurtarmadır: Bash'in dokunduğunu
+kaçırır ve oturumla birlikte sona erer. — [Checkpoint'ler ve /rewind](/tr/l1-beginner/m02-interact/checkpoints-rewind/)
+
+### chord
+
+İlk tuşun bir diziyi açtığı, ikinci tuşun tamamladığı iki tuşlu bir klavye kısayolu. — [Klavye kısayolları, durum çubuğu, temalar ve çıktı biçemleri](/tr/l1-beginner/m04-commands/keybindings-statusline-theme/)
+
+### CI
+
+Sürekli entegrasyon: bir değişiklik push'landığında onu build eden, test eden ve kontrol
+eden otomatik hat. — [claude -p: headless çalıştırmalar ve yapılandırılmış çıktı](/tr/l3-advanced/m13-headless-ci/claude-p/)
+
+### CLAUDE.md
+
+Claude'un oturum başında okuduğu proje bellek dosyası. Bağlamdır, zorlama değildir —
+gerçekleşmesi gereken her şey bir hook'a ya da bir permission kuralına aittir. — [/init ile proje CLAUDE.md dosyası yazmak](/tr/l1-beginner/m03-memory/claude-md/)
+
+### commit
+
+Git tarihçesindeki, diff'i tekrarlamak yerine _neden_ olduğunu söylemesi gereken mesajlı
+kalıcı bir değişiklik kaydı. — [Commit'ler ve konvansiyonlar](/tr/l2-intermediate/m08-git/commits-and-conventions/)
+
+### compaction
+
+Bağlamı boşaltmak için o ana kadarki konuşmanın bir özetle değiştirilmesi. Ayrıntıyı atar
+ve cache'i yeniden inşa eder, dolayısıyla bir maliyet aracı değil bir bağlam aracıdır. — [Bağlam temelleri: /context, /compact ve /clear](/tr/l1-beginner/m02-interact/context-basics/)
+
+### context window
+
+Bir modelin tek bir istek için tutabildiği toplam metin miktarı — talimatlar, dosyalar,
+tool çıktısı, konuşma — token cinsinden ölçülür. — [Bağlam temelleri: /context, /compact ve /clear](/tr/l1-beginner/m02-interact/context-basics/)
+
+### debug log
+
+Claude Code'un `--debug` ya da `--debug-file` ile yazdığı, hook hatalarının ve diğer
+sessiz başarısızlıkların gerçekten göründüğü dosya. — [Hook'ları hata ayıklamak](/tr/l2-intermediate/m07-hooks/debugging-hooks/)
+
+### diff
+
+Bir dosyanın ya da bir branch'in iki durumu arasındaki satır düzeyindeki değişiklikler
+kümesi — herhangi bir şeyi onaylamadan önce okuduğunuz şey. — [Kod inceleme komutları](/tr/l2-intermediate/m08-git/code-review-commands/)
+
+### effort
+
+Modelin bir yanıt için harcadığı düşünme miktarı (`low` … `max`). Kalite ile hız ya da
+maliyet arasında bir kaldıraçtır — belirsiz bir prompt'un düzeltmesi değildir. — [Effort seviyeleri](/tr/l2-intermediate/m05-models-effort/effort-levels/)
+
+### exit code
+
+Bir komutun bittiğinde döndürdüğü sayı. Hook'larda bu bir sözleşmedir: `0` başarır, `2`
+engeller ve `1`, eylemin geçmesine izin veren engellemeyen bir hatadır. — [Hook anatomisi: olaylar, eşleştiriciler ve JSON sözleşmesi](/tr/l2-intermediate/m07-hooks/hook-anatomy/)
+
+### fast mode
+
+Güncel Opus üzerinde etkileşimli çalışma için daha yüksek fiyatlı, daha düşük gecikmeli bir
+kip. Toplu iş, CI ve uzun otonom çalıştırmalar için yanlış seçimdir. — [Fast mode](/tr/l2-intermediate/m05-models-effort/fast-mode/)
+
+### fork
+
+Soğuk başlamak yerine, geçerli konuşmanın bir kopyasıyla başlayan bir subagent. Güçlüdür
+ve aynı sebepten pahalıdır. — [Fork, background ve worktree izolasyonu](/tr/l3-advanced/m10-subagents/fork-background-worktree/)
+
+### GitHub App
+
+Claude'un bir depoda kendi kimliği altında hareket etmesini — pull request açmasını, yorum
+yapmasını, Action'ı çalıştırmasını — sağlayan kurulu uygulama. — [GitHub uygulaması](/tr/l2-intermediate/m08-git/github-app/)
+
+### goal
+
+Bir oturumun ona doğru çalıştığı, koşul sağlanana ya da bir sınıra ulaşılana kadar her
+turda yeniden değerlendirilen durum. — [/goal: bir koşul sağlanana kadar çalışmak](/tr/l4-master/m17-autonomy/goal/)
+
+### headless
+
+Etkileşimsiz bir çalıştırma: `claude -p "…"` bir kez cevap verir ve çıkar. CI'ın ve
+betiklerin, dayanacak izin istemi olmadan kullandığı kiptir. — [claude -p: headless çalıştırmalar ve yapılandırılmış çıktı](/tr/l3-advanced/m13-headless-ci/claude-p/)
+
+### hook
+
+Bir olay tetiklendiğinde Claude Code'un sizin izinlerinizle otomatik çalıştırdığı bir
+kabuk komutu. Modelin ne karar verdiğinden bağımsız olarak gerçekleşmesi gereken şeyler
+için mekanizmadır. — [Hook anatomisi: olaylar, eşleştiriciler ve JSON sözleşmesi](/tr/l2-intermediate/m07-hooks/hook-anatomy/)
+
+### hook event
+
+Bir hook'un bağlandığı adlandırılmış an — `PreToolUse`, `PostToolUse`, `SessionStart`,
+`Stop` ve kataloğun geri kalanı. — [Tam event kataloğu ve /hooks](/tr/l2-intermediate/m07-hooks/event-catalogue/)
+
+### import
+
+Başka bir dosyayı içine çeken, bir bellek dosyasının içindeki bir `@path` referansı.
+Belleği düzenler; küçültmez, çünkü import'lar başlangıçta genişletilir. — [Bellek hiyerarşisi, @imports ve claudeMdExcludes](/tr/l1-beginner/m03-memory/hierarchy-imports/)
+
+### issue
+
+Bir depo host'undaki takip edilen bir iş kalemi. GitHub app ile, birinin üzerindeki bir
+`@claude` yorumu, bir pull request açan bir çalıştırma başlatabilir. — [@claude ile issue'dan pull request'e](/tr/l3-advanced/m13-headless-ci/issue-to-pr/)
+
+### lab
+
+Bir dersin uygulamalı yarısı: kursun lab deposuna karşı çalıştırılan gerçek komutlar,
+kanıt olarak gösterilen kaydedilmiş transcript ile birlikte. — [İlk oturumunuz](/tr/l1-beginner/m01-start/first-session/)
+
+### marketplace
+
+Bir kullanıcının ya da bir organizasyonun ekleyip kurabileceği bir plugin kataloğu.
+Birini kaldırmak, ondan gelen plugin'leri kaldırır. — [Marketplace'ler ve /plugin komutu](/tr/l3-advanced/m12-plugins/marketplaces/)
+
+### matcher
+
+Bir hook'un hangi tool çağrılarına ya da olaylara uygulandığına karar veren örüntü.
+Regex matcher'lar çapasızdır, bu yüzden `Edit.*` `NotebookEdit`'i de eşler. — [Hook anatomisi: olaylar, eşleştiriciler ve JSON sözleşmesi](/tr/l2-intermediate/m07-hooks/hook-anatomy/)
+
+### MCP server
+
+Model Context Protocol üzerinden Claude'a tool ve veri sunan bir süreç — GitHub, bir
+veritabanı, bir tarayıcı. Bir bağlam maliyeti ve bir bağımlılıktır, bu yüzden yalnızca bir
+CLI işi yapamadığında bir tane ekleyin. — [MCP kavramları ve transport'lar](/tr/l3-advanced/m11-mcp/mcp-concepts/)
+
+### merge
+
+Bir branch'in commit'lerini bir başkasıyla birleştirmek. Bu kursun kendi iş akışı
+squash-merge yapar, bu yüzden bir pull request başlığı commit mesajı olur. — [Kanıtlı pull request'ler](/tr/l2-intermediate/m08-git/pull-requests/)
+
+### monitor
+
+Bir oturuma bağlı, koşulu eşleştiğinde bildirim veren arka plan gözlemcisi. `--resume`'da
+asla geri yüklenmez. — [Monitor'lar, channel'lar ve uyandırmalar](/tr/l4-master/m17-autonomy/monitors-and-channels/)
+
+### monorepo
+
+Birden çok paketin ya da uygulamanın tek bir depoda tutulduğu düzen; burada tek bir kök
+dosyadan çok alan başına bellek dosyaları ve kurallar önem kazanır. — [Büyük kod tabanlarında çalışmak](/tr/l4-master/m21-scale/large-codebases/)
+
+### permission mode
+
+Bir oturumun onayları ele alış biçimindeki genel duruş — Manual, `acceptEdits`, `plan`,
+`dontAsk`, auto, `bypassPermissions` — `Shift+Tab` ile döngülenir ya da başlangıçta ayarlanır. — [Permission mode'lar ve allow/deny kuralları](/tr/l1-beginner/m02-interact/permissions/)
+
+### plan mode
+
+Claude'un, siz onaylayana kadar hiçbir şeyi düzenlemeden keşfettiği ve bir plan önerdiği
+bir mod. — [Plan mode: keşfet, planla, onayla, uygula](/tr/l1-beginner/m02-interact/plan-mode/)
+
+### plugin
+
+Bir marketplace üzerinden dağıtılan, skill'ler, agent'lar, hook'lar ve MCP server'lardan
+oluşan paketlenmiş bir küme. Birini kurmak, kodunu sizin ayrıcalıklarınızla çalıştırır. — [Plugin anatomisi: manifest ve dizinler](/tr/l3-advanced/m12-plugins/plugin-anatomy/)
+
+### prompt
+
+Gönderdiğiniz istek. İyi bir prompt hedefi, kısıtları ve işe yaradığını gösterecek kanıtı
+adlandırır. — [Prompt temelleri: hedef, kısıt, kanıt](/tr/l1-beginner/m02-interact/prompting-basics/)
+
+### prompt caching
+
+Bir konuşmanın zaten işlenmiş önekinin yeniden kullanılması; görev ortasında model ya da
+effort değiştirmenin paraya mal olmasının sebebi budur — öneki geçersiz kılar. — [Prompt caching](/tr/l4-master/m21-scale/prompt-caching/)
+
+### prompt injection
+
+Claude'un okuduğu metnin — bir sayfa, bir dosya, bir issue başlığı — bir talimat olarak
+izlenmesi için yazıldığı bir saldırı. — [Prompt injection: bir agent'a nasıl ulaşır ve onu ne durdurur](/tr/l3-advanced/m14-security/prompt-injection/)
+
+### pull request
+
+Birleşmeden önce inceleme için açılan önerilen bir değişiklik. Kanıtın ait olduğu yer:
+çalıştırdığınız komutlar ve gerçek çıktıları. — [Kanıtlı pull request'ler](/tr/l2-intermediate/m08-git/pull-requests/)
+
+### renderer
+
+Terminal arayüzünün çizilme biçimi — standart satır içi görünüm ya da `/tui fullscreen`
+ile ulaşılan tam ekran olanı. — [Klavye kısayolları, durum çubuğu, temalar ve çıktı biçemleri](/tr/l1-beginner/m04-commands/keybindings-statusline-theme/)
+
+### routine
+
+Cloud'da çalışan, zamanlanmış ya da tetiklenen bir iş: taze bir clone, izin istemi yok ve
+bıraktığınız hangi connector varsa onlar. — [Routine'ler: cron, tek seferlik, API ve GitHub tetikleyicileri](/tr/l4-master/m17-autonomy/routines/)
+
+### rule
+
+`.claude/rules/` altında bir konu dosyası. `paths:` frontmatter'ıyla yalnızca eşleşen bir
+dosyayı Claude okuduğunda yüklenir; olmadan her oturumda yüklenir. — [`.claude/rules/` ile yol tabanlı kurallar](/tr/l1-beginner/m03-memory/rules/)
+
+### sandbox
+
+Bir Bash komutunun çalıştığında neye ulaşabileceğini sınırlayan, işletim sistemi
+düzeyindeki katman — tool çağrısının izinli olup olmadığından farklı bir sorudur. — [İzin modeli ve sandbox](/tr/l3-advanced/m14-security/permission-model-and-sandbox/)
+
+### secret
+
+Bir kimlik bilgisi: bir API anahtarı, token, özel anahtar ya da parola. Asla commit'lenmiş
+bir dosyada, asla bir prompt'ta, asla redakte edilmemiş bir taramada yazdırılmaz. — [Secret'lar: .env, gitleaks ve sızıntıyı engelleyen bir hook](/tr/l3-advanced/m14-security/secrets/)
+
+### session
+
+Bir session id ile tanımlanan, `--resume` ile devam ettirilebilen ve bir saklama
+süresinden sonra silinen, Claude Code ile tek bir konuşma. — [Oturumlar: resume, continue, branch ve fork](/tr/l1-beginner/m04-commands/sessions/)
+
+### skill
+
+Talep ettiğiniz için ya da açıklaması eşleştiği için Claude'un istek üzerine yüklediği bir
+`SKILL.md` dosyası — bir prosedür. Rehberliktir, asla zorlama değildir. — [Skill'ler ve özel komutlar](/tr/l2-intermediate/m06-skills/skills-vs-commands/)
+
+### slash command
+
+Bir mesajın başında yazılan bir komut (`/context`, `/model`, `/hooks`). Yerleşik komutlar
+oturumu kontrol eder; özel olanlar skill'dir. — [Yerleşik slash komut referansı](/tr/l1-beginner/m04-commands/slash-command-reference/)
+
+### subagent
+
+Bir oturumun bir görevi devrettiği, kendi bağlam penceresi ve tool izinleri olan ve bir
+metin özeti döndüren yardımcı bir agent. — [Agent tool'u ve yerleşik subagent'lar](/tr/l3-advanced/m10-subagents/agent-tool-and-builtins/)
+
+### token
+
+Modellerin okuduğu, ürettiği ve faturalandığı birim — kabaca bir kelime parçası. Bağlam,
+maliyet ve sınırların hepsi token cinsinden sayılır. — [Maliyet ve kullanım](/tr/l2-intermediate/m05-models-effort/cost-and-usage/)
+
+### tool
+
+Claude'un bir şey yapmak için çağırdığı yerleşik bir yetenek — `Read`, `Edit`, `Bash`,
+`Grep`, `Glob` ve geri kalanı. Siz onları çağırmazsınız; hangilerinin kullanılabilir
+olduğunu şekillendirirsiniz. — [Yerleşik araçlar: Read, Edit, Glob, Grep, Bash](/tr/l1-beginner/m02-interact/tools-read-edit-run/)
+
+### transcript
+
+Gerçek bir oturumun, kanıt olarak saklanan ve render edilen birebir kaydı. Bu sitedeki her
+transcript gerçek bir çalıştırmadan yakalanmıştır (D070, D099). — [İlk oturumunuz](/tr/l1-beginner/m01-start/first-session/)
+
+### ultracode
+
+Oturumun her önemli görev için bir workflow planlamasını sağlayan bir Claude Code ayarı ve
+anahtar kelimesi. Altıncı bir effort seviyesi değildir. — [ultracode: anahtar kelime, effort seviyesi ve bir çalıştırmanın maliyeti](/tr/l4-master/m16-orchestration/ultracode/)
+
+### workflow
+
+Claude'un yazdığı ve çalışma zamanının kalıcı kıldığı, agent'ları aşamalar hâlinde
+orkestre eden bir betik. Bir toplu iştir: başladıktan sonra girdi almaz. — [Workflow tool: ajanları orkestre eden script](/tr/l4-master/m16-orchestration/workflows/)
+
+### worktree
+
+Aynı deponun başka bir yoldaki ikinci bir checkout'u, böylece iki oturum çakışmadan
+düzenleyebilir. Tazedir ve boştur: `node_modules` yok, `.env` yok. — [Worktree'ler ve branch'ler](/tr/l2-intermediate/m08-git/worktrees-branches/)
+
+## Buradaki anlamı farklı olan terimler
+
+Üç kelimeyi iki kez okumaya değer, çünkü Claude Code'daki anlamları beklediğiniz anlam
+değildir:
+
+- **branch** — `/branch` kodu değil konuşmayı kopyalar; git türü [`--worktree`](/tr/l2-intermediate/m08-git/worktrees-branches/)'dir.
+- **fork** — bir depo kopyası değil, konuşmanızı taşıyan bir subagent'tır ([fork, background ve worktree izolasyonu](/tr/l3-advanced/m10-subagents/fork-background-worktree/)).
+- **effort** — görevin size ne kadar sürdüğüyle ilgisi olmayan, modelin düşünme bütçesidir ([effort seviyeleri](/tr/l2-intermediate/m05-models-effort/effort-levels/)).
+
+## Ek terimler
+
+Aşağıdaki terimler, İngilizce sözlükte henüz karşılığı olmayan ama Seviye 3/4 derslerinin
+bağladığı ek terimlerdir; İngilizce ikizleri bu planın Handoff notlarında önerilmiştir.
+
+### canvas
+
+Design skill'inin yayınladığı, düzenlenebilir artboard'lardan oluşan ve bir artifact
+olarak sunulan çok artboardlu tasarım çalışma alanı. — [/design canvas'ı: brief girer, artboard çıkar](/tr/l4-master/m19-visual/design-canvas/)
+
+### connector
+
+claude.ai'a bağlı, bir routine'in ya da bir oturumun kullanabileceği dış hizmet
+entegrasyonu (ör. Google Drive, Slack); Türkçede İngilizce kalır. — [Routine'ler: cron, tek seferlik, API ve GitHub tetikleyicileri](/tr/l4-master/m17-autonomy/routines/)
+
+### devcontainer
+
+Claude Code'un tutarlı, izole bir Docker ortamında çalışmasını sağlayan, bir depoya
+eklenen `.devcontainer/devcontainer.json` yapılandırması. — [Devcontainer'lar ve kurumsal başlatıcılar](/tr/l4-master/m21-scale/devcontainers/)
+
+### gateway
+
+Claude Code'u Amazon Bedrock, Google Cloud'ın Agent Platform'u ya da Microsoft Foundry
+gibi bir bulut sağlayıcısına, ya da organizasyonun kendi işlettiği bir proxy'ye bağlayan
+ara katman. — [Gateway'ler ve bulut sağlayıcıları](/tr/l4-master/m21-scale/gateways-and-clouds/)
+
+### teammate
+
+Bir [agent team](#agent-team) içinde bir lead oturumun başlattığı, paylaşılan bir görev
+listesini ve bir posta kutusunu (mailbox) paylaşan Claude Code oturumu; Türkçe derslerde
+"takım arkadaşı" olarak çevrilir. — [Agent team'ler ve oturumlar arası mesajlaşma](/tr/l4-master/m16-orchestration/agent-teams-messaging/)

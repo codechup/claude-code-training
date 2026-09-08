@@ -1,17 +1,197 @@
 ---
 title: 'Katkıda bulunma'
-description: 'Bir hatayı nasıl bildirirsiniz, bir ders nasıl önerirsiniz, bu siteye nasıl pull request açarsınız — değişikliğinizin geçmesi gereken kontroller ve MIT lisansının anlamı.'
+description: 'Bu sitede bir hata nasıl bildirilir, bir ders nasıl önerilir ya da bir pull request nasıl açılır — değişikliğinizin geçmesi gereken kontroller ve yazdığınız şey için MIT lisansının ne anlama geldiği.'
 order: 2
-draft: true
 ---
 
-> Bu sayfanın Türkçe çevirisi hazırlanıyor. İngilizce aslı:
-> [Contributing](/en/meta/contributing/).
-
-Bu site MIT lisanslıdır ve tamamı
+Bu site MIT lisansı altında açık kaynaktır (D052) ve tamamı — dersler, bileşenler, plan
+araçları, CI yapılandırması —
 [github.com/codechup/claude-code-training](https://github.com/codechup/claude-code-training)
-adresinde açık kaynaktır. Sayfa; bir hatayı issue ile bildirmeyi, doğrudan pull request açılabilen
-alanlar ile yalnızca bakımcı session'ların değiştirdiği alanlar (`plans/`, `STATE.md`,
-`docs/CURRICULUM.md`, `DECISIONS.md`) arasındaki sınırı, yerelde çalıştırılacak kontrol
-komutlarını, CI'ın ne baktığını, çeviri kurallarını ve lisans sonuçlarını anlatır. Güvenlik açıkları
-için public issue açılmaz — `security@codechup.com` adresine e-posta gönderilir.
+adresinde yaşar. Düzeltmeler gerçekten memnuniyetle karşılanır: malzeme birkaç haftada bir
+değişen bir aracı anlatıyor, ve yanlış bir cümlenin düzeltilmesinin en hızlı yolu, onu fark
+eden kişinin bunu söylemesidir.
+
+Bu sayfa bir katkıya gerçekte ne olduğunu anlatır, böylece harcamadan önce belirli bir
+değişikliğin ne kadar emeğe değdiğini değerlendirebilirsiniz.
+
+## En hızlı faydalı şey: bildirmek
+
+Yanlış bir şey bulduysanız — artık var olmayan bir komut, adı değişmiş bir bayrak, kırık bir
+bağlantı, kötü okunan bir Türkçe cümle — bir issue yeterlidir.
+[github.com/codechup/claude-code-training/issues](https://github.com/codechup/claude-code-training/issues)
+adresinde şunlarla bir tane açın:
+
+- sayfa URL'si (ya da `content/` altındaki dosya yolu),
+- ne yazdığı ve ne yazması gerektiği,
+- ve elinizde varsa, konuyu netleştiren resmî dokümantasyona bir bağlantı.
+
+Bu sonuncusu geri kalanların hepsinden daha değerlidir. Bu projenin kuralı, olguların
+[`research/feature-inventory.md`](https://github.com/codechup/claude-code-training/blob/main/research/feature-inventory.md)
+dosyasından ya da yazım anında getirilen bir dokümantasyon sayfasından gelmesi, asla
+bellekten gelmemesidir (D004, D093); dolayısıyla bir URL taşıyan bir bildirim hemen işleme
+alınabilirken, kaynaksız bir bildirim herhangi bir şey değişmeden önce araştırılmak zorundadır.
+
+Her ders sayfası, altbilgisinde sizi doğrudan doğru dosyaya götüren bir **Edit this page on
+GitHub** bağlantısı taşır (D063). Bir yazım hatası için bu bağlantı artı GitHub'ın web
+düzenleyicisi, iş akışının tamamıdır.
+
+**Güvenlik sorunları istisnadır.** Bir güvenlik açığı için herkese açık bir issue açmayın —
+[`SECURITY.md`](https://github.com/codechup/claude-code-training/blob/main/SECURITY.md)
+dosyasının anlattığı gibi `security@codechup.com` adresine e-posta gönderin.
+
+## İş akışının size ait olmayan kısmı
+
+Bu depo iç olarak, paralel Claude Code oturumlarını plan dosyaları üzerinden koordine eder:
+bir oturum bir `plans/PNN-slug.md` iş emrini üstlenir, bir dosya yolları kümesinin münhasır
+sahipliğini alır ve kendi git worktree'sinde çalışır. Bu sözleşme
+[`plans/README.md`](https://github.com/codechup/claude-code-training/blob/main/plans/README.md)
+dosyasıdır ve mekanikleri
+[m18 — Paralel oturumları koordine etme](/tr/l4-master/m18-multi-session/) dersinde öğretilir.
+
+Dışarıdan bir katkıcı olarak bir plan üstlenmezsiniz ve bir tanesini eklememeli, düzenlememeli
+ya da yeniden numaralandırmamalısınız. Plan kümesi bakımcılar tarafından küratörlüğü yapılır,
+üstlenmeler bir branch push'lanarak duyurulur ve
+[`STATE.md`](https://github.com/codechup/claude-code-training/blob/main/STATE.md) yazılmaz,
+`node tools/plan/cli.ts state` ile üretilir. Bunun pratikte anlamı bir bariyer değil bir
+sınırdır:
+
+| Alan                                                                                                  | Kim değiştirir              | Sizin yolunuz                                                                |
+| ----------------------------------------------------------------------------------------------------- | --------------------------- | ---------------------------------------------------------------------------- |
+| Zaten yayımlanmış bir ders için `content/**`                                                          | Herkes                      | Doğrudan bir PR açın                                                         |
+| `src/**`, `scripts/**`, `e2e/**`                                                                      | Herkes                      | Doğrudan bir PR açın                                                         |
+| Henüz var olmayan bir ders                                                                            | Bir içerik planı            | Bunu öneren bir issue açın — müfredat kapsamda olup olmadığına karar verir   |
+| `plans/**`, `STATE.md`                                                                                | Yalnızca bakımcı oturumları | Değişikliği bir issue'da anlatın                                             |
+| [`docs/CURRICULUM.md`](https://github.com/codechup/claude-code-training/blob/main/docs/CURRICULUM.md) | Onu sahiplenen plan         | Bir issue'da gündeme getirin; müfredat yetkilidir ve gelişigüzel düzenlenmez |
+| [`DECISIONS.md`](https://github.com/codechup/claude-code-training/blob/main/DECISIONS.md)             | Proje sahibi                | Bir issue'da önerin; kayıtlı bir karar bir PR'da asla yeniden tartışılmaz    |
+
+Pratik kural, iç oturumların izlediğiyle aynıdır: bir değişiklik sizi bir ürün, müfredat ya
+da tasarım kararı hakkında tahmin yürütmeye zorluyorsa, sorun tahmindir. Bir pull request'e
+bir cevap kodlamak yerine belirsizliğin ne olduğunu söyleyin ve karar verilmesine izin verin.
+
+## Bir pull request açmak
+
+1. **Fork'layın ve branch açın.** `main` korumalıdır ve yalnızca pull request'lerden squash
+   merge alır.
+2. **Kurun ve hook'ları ayarlayın.**
+
+   ```bash
+   npm ci
+   sh scripts/install-hooks.sh
+   ```
+
+   İkinci komut, herkese-açık-hijyen kontrolünü çalıştıran bir `pre-commit` hook'u ve
+   `main`'e doğrudan push'u reddeden bir `pre-push` hook'u kurar. Tek bir komuttur ve size
+   CI üzerinden bir gidiş-dönüş kazandırır.
+
+3. **Değişikliği yapın**, çevredeki dosyaların zaten izlediği kurallara uyarak. Yeni
+   gelenleri en çok yakalayan üç tanesi:
+   - **Tasarım token'lardan gelir.** `src/styles/tokens.css` dışında hiçbir yerde hex,
+     `rgb()` ya da adlandırılmış bir renk sabiti bulunmaz ve `scripts/check-raw-colors.mjs`
+     bunu zorunlu kılar.
+   - **Satır içi `<script>` gövdesi yok.** Site `script-src 'self'` Content Security
+     Policy'siyle ve nonce olmadan sunulur, bu yüzden her script aynı-kökenli harici bir
+     dosya olmalıdır.
+   - **İngilizce ve Türkçe ikizdir.** `content/en/` altındaki her dosyanın
+     `content/tr/` altında yansıtılmış yolda bir karşılığı vardır, ve tersi de öyledir.
+     İngilizce bir sayfa eklerseniz Türkçe dosyayı da ekleyin; tek paragraflık bir özetle
+     `draft: true` bir taslak kabul edilebilir ve çeviri dalgası oraya ulaşana kadar iç iş
+     akışının yaptığı da budur.
+
+4. **Kapıyı yerel olarak çalıştırın.** Bunlar CI'ın çalıştırdığı aynı komutlardır, en hızlı
+   başarısız olan sırada:
+
+   ```bash
+   npm run typecheck
+   npm run lint
+   npm run gate
+   npm test
+   npm run build
+   node scripts/check-public-hygiene.mjs
+   node scripts/check-raw-colors.mjs
+   ```
+
+   Değişikliğiniz render edilen sayfalara dokunuyorsa, axe ile erişilebilirlik, kabuk, ders
+   ve arama paketlerini çalıştıran `npx playwright test` ekleyin.
+
+5. **Conventional stilde commit'leyin.** `type(scope): özet`, `type` şunlardan biri
+   `feat|fix|docs|chore|test|refactor|ci|build` ve `scope` alanı adlandırır (`content`,
+   `i18n`, `design`, `ci`, `deploy`, `plans`). İç commit'ler plan kimliğiyle parantez
+   içinde biter; dışarıdan bir katkının plan kimliği yoktur ve basitçe bunu bırakır.
+
+6. **Pull request şablonunu doldurun.**
+   [`.github/PULL_REQUEST_TEMPLATE.md`](https://github.com/codechup/claude-code-training/blob/main/.github/PULL_REQUEST_TEMPLATE.md)
+   altı bölüme sahiptir — **Plan**, **What changed**, **How to try it**, **Evidence**,
+   **Definition of Done** ve **Handoff notes**. Plan bölümünü boş bırakın ya da "external
+   contribution" yazın; geri kalanı size de bir bakımcı oturumuna uygulandığı gibi tam
+   olarak uygulanır. **Evidence** altında, çalıştırdığınız komutların gerçek çıktısını
+   yapıştırın ve görsel herhangi bir şey için 390 px ve 1280 px'te ekran görüntüleri ekleyin.
+
+## PR'ınız neye karşı kontrol edilir
+
+CI [`ci.yml`](https://github.com/codechup/claude-code-training/blob/main/.github/workflows/ci.yml)
+dosyasıdır ve bir şey birleşmeden önce yeşil olmak zorundadır:
+
+| İş           | Ne çalıştırır                                                                                                                                                                                               |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `quality`    | typecheck, ESLint + Prettier, herkese-açık-hijyen bekçisi, ham-renk bekçisi, plan öz-kontrolü, içerik kapısı, tüm tarihçe üzerinde `gitleaks`, %70 satır kapsama tabanıyla birim testleri ve üretim build'i |
+| `e2e`        | Build edilen siteye karşı axe ile Playwright                                                                                                                                                                |
+| `links`      | PR'ınızın değiştirdiği Markdown ve MDX dosyaları üzerinde `lychee`                                                                                                                                          |
+| `lighthouse` | Build edilen siteye karşı Lighthouse CI                                                                                                                                                                     |
+
+Bir içerik değişikliği bir katman daha alır. Her ders, birleşmeden önce iki salt-okunur
+Claude Code subagent'ından geçirilir (D071): resmî dokümantasyona karşı her olgusal iddiayı
+desteklenen, çelişen ya da doğrulanamaz olarak raporlayan bir
+[`fact-checker`](https://github.com/codechup/claude-code-training/blob/main/.claude/agents/fact-checker.md)
+ve şablon sırasını, kaynaklar bloğunu, hijyeni ve dil paritesini kontrol eden bir
+[`reviewer`](https://github.com/codechup/claude-code-training/blob/main/.claude/agents/reviewer.md).
+İkisi de hiçbir şeyi düzenleyemez; raporlarlar ve yazar karar verir. PR'ı açmadan önce
+bunları kendiniz çalıştırabilirsiniz — depodadırlar — ama bu sizden beklenmez.
+
+Üç kural pazarlığa açık değildir ve bu kurallardan birini bozan bir PR, tartışılmak yerine
+değiştirilmesi istenir:
+
+- **Uydurma çıktı yok.** Bir derste gösterilen her komut gerçekten çalıştırılmıştır ve
+  `content/_shared/transcripts/` altındaki her transkript, kaynağı belirtilmiş, kırpılmış
+  ama asla düzenlenmemiş gerçek bir kayıttır (D070, D093, D099). Çalıştırmadıysanız, bunu
+  söyleyin — bu her zaman kabul edilebilir bir cevaptır.
+- **Herkese açık bir depoda hiçbir özel şey yok.** Barındırma adresi yok, mutlak sunucu
+  yolu yok, SSH ayrıntısı yok, sır yok, açıklayıcı bir örnek olarak bile. Dağıtım hedefleri
+  GitHub secret'larıdır. Bakınız
+  [`.claude/rules/public-hygiene.md`](https://github.com/codechup/claude-code-training/blob/main/.claude/rules/public-hygiene.md).
+- **Vaka çalışmaları anonim ya da kurgusaldır (D026).** Örnekler asla gerçek bir üçüncü
+  taraf projeyi ya da onun altyapısını adlandırmaz.
+
+## Bir çeviriye katkıda bulunmak
+
+Türkçe, İngilizce kaynağın bir çevirisidir, asla bağımsız bir yeniden yazım değildir (D016).
+İngilizce yanlışsa, önce İngilizce düzeltilir, ardından Türkçe onu takip eder.
+[`.claude/rules/i18n.md`](https://github.com/codechup/claude-code-training/blob/main/.claude/rules/i18n.md)
+bağlayıcı kontrol listesidir; en çok kaçırılan iki noktası, slug'ların asla çevrilmemesi —
+dil değiştirici İngilizce ve Türkçe'nin bunları paylaşmasına bağlıdır — ve teknik terimlerin
+uydurulmuş Türkçe karşılıklar verilmek yerine ilk kullanımda bir Türkçe açıklamayla
+İngilizce kalmasıdır (`hook`, `skill`, `subagent`, `worktree`, `permission mode`, …).
+Diyakritikler doğru olmalıdır: ç, ğ, ı, İ, ö, ş, ü.
+
+Başka bir dil, bir pull request'ten daha büyük bir konuşmadır. Önce bir issue açın: iki dil,
+sitenin etrafında inşa edildiği bir karardır, ve bir üçüncüsünün navigasyon, arama
+indeksleme, içerik kapısı ve gelecekteki her ders için sonuçları vardır.
+
+## Lisanslama
+
+Depo MIT lisanslıdır
+([`LICENSE`](https://github.com/codechup/claude-code-training/blob/main/LICENSE)) ve bu,
+kodu olduğu kadar kurs içeriğini de kapsar (D052). Bir pull request açmak, katkınızın aynı
+lisans altında sunulduğu ve onu sunma hakkına sahip olduğunuz anlamına gelir. İmzalanacak
+ayrı bir katkıcı sözleşmesi yoktur.
+
+Pratikte bu iki yönde de işler, ve her iki yön de amaçlanmıştır. Katkıda bulunduğunuz her
+şey, telif hakkı bildirimine atıf yapılarak herkes tarafından kopyalanabilir, çevrilebilir,
+öğretilebilir ve satılabilir. Ve burada zaten bulunan her şeyi — plan CLI'ı, hook'ları,
+içerik kapısını, kural dosyalarını, ders metnini — aynı koşullarda kendi projenize
+alabilirsiniz. Bu sitenin öğrettiği kalıpların birçoğu, onlar hakkında okumaktan çok dosyayı
+kopyalayarak benimsenmesi daha kolaydır, ki bu da
+[yan sayfanın konusudur](/tr/meta/how-this-site-was-built/).
+
+Katkıda bulunma hakkına sahip olmadığınız bir metni yapıştırmayın. Bir dokümantasyon
+sayfasını bir bağlantı ve bir `verified_at` tarihiyle alıntılamak, kaynak sisteminin tam
+olarak kullanılması gerektiği şekildir; başkasının dersini buna yapıştırmak değildir.

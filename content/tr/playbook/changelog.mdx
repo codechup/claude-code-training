@@ -1,10 +1,325 @@
 ---
 title: "2025'ten beri değişenler"
-description: 'Çoğu eğitim yazıldıktan sonra değişen davranışlar: ne değişti, ne zamandan beri ve eski bir rehber neyi yanlış söyler.'
+description: "Claude Code tutorial'larının çoğu yazıldıktan sonra değişen her davranış: ne değişti, ne zamandan beri ve bayat bir rehberin neyi yanlış yaptığı."
 order: 4
-draft: true
+summary: 'Üstünden geçilmiş her davranış için bir madde, güncel olanı öğreten dersle birlikte.'
 ---
 
-Bu sayfanın Türkçesi hazırlanıyor (P44). Şimdilik İngilizce sürümü okuyabilirsiniz: [Changed since 2025](/en/playbook/changelog/).
+Web'deki Claude Code malzemesinin çoğu 2025'te yazıldı, ve Claude Code o zamandan beri
+birkaç yüz sürüm yayınladı. Bu sayfa, kursun izlediği üstünden geçilmiş her davranışı tek
+bir yerde toplar, böylece bir ders kısa bir **Değişti** notu taşıyıp eski yolu iki kez
+öğretmek yerine buraya işaret edebilir (D044).
 
-Sayfa, `research/deprecations.md` dosyasındaki her "Changed" maddesini tek tek toplar: ne değişti, hangi sürümden beri ve güncel davranışı öğreten ders hangisi.
+Her madde neyin değiştiğini, ne zamandan beri — sürüm, tarih, ya da dürüst bir "belgelenmemiş" —
+ve 2025 dönemi bir tutorial'ın size ne yaptırıyor olacağını söyler. Aşağıdaki her şey
+Claude Code **2.1.263** için resmî dokümantasyona karşı doğrulanmıştır; kaynak bir
+referans sayfası yerine resmî changelog olduğunda, madde bunu belirtir.
+
+Burada hiçbir şey eski davranışı öğretmez. Güncel olanı arıyorsanız, maddedeki ders
+bağlantısını izleyin.
+
+## Tamamen kaldırılanlar
+
+### `#` hızlı not kısayolu
+
+**Değişti.** Bir mesaja `#` ile başlamak eskiden bellek dosyanıza bir satır eklerdi. Şimdi
+özel bir şey yapmaz; metin sadece bir diyezle başlayan bir prompt'tur.
+**Ne zamandan beri.** Claude Code 2.0.70, 15 Aralık 2025 (resmî changelog).
+**Bayat bir tutorial şöyle der.** "Claude'a projeniz hakkında bilgi vermek için
+`# her zaman pnpm çalıştır, npm değil` yazın." Bugün bu bir prompt gönderir ve hiçbir şeyi
+hatırlamaz.
+**Şimdi.** Claude'dan `CLAUDE.md`'yi düzenlemesini isteyin, ya da dosyayı `/memory` ile
+açın — bakınız [/memory, hızlı notlar ve belleği budama](/tr/l1-beginner/m03-memory/memory-commands/).
+
+### `/fullscreen`
+
+**Değişti.** Canlı komutlar referansında bir `/fullscreen` komutu yoktur; tam ekran
+renderer'a `/tui` üzerinden ulaşılır.
+**Ne zamandan beri.** Tarihli bir kaldırma olarak belgelenmemiş; 2.1.263'te
+`commands.md`'de yokluğu doğrulanmıştır.
+**Bayat bir tutorial şöyle der.** "Tam pencere bir oturum için `/fullscreen` çalıştırın."
+**Şimdi.** `/tui fullscreen` — bakınız [Klavye kısayolları, durum çubuğu, temalar ve çıktı biçemleri](/tr/l1-beginner/m04-commands/keybindings-statusline-theme/).
+
+### `claude config` alt komutu
+
+**Değişti.** `claude --help`'te yoktur ve var olmaz.
+**Ne zamandan beri.** Tarihli bir kaldırma olarak belgelenmemiş; 2.1.263'te yokluğu
+doğrulanmıştır.
+**Bayat bir tutorial şöyle der.** "`claude config set -g theme dark` çalıştırın."
+**Şimdi.** Bir oturumda `/config key=value`, başlangıçta `--settings`, ya da settings
+dosyasını doğrudan düzenleyin — bakınız [Alt komutlar ve ortam değişkenleri](/tr/l1-beginner/m04-commands/subcommands/).
+
+### Background subagent komutlarında bir saatlik sınır
+
+**Değişti.** Bir subagent'ın başlattığı bir background komutu eskiden bir saat sonra
+kesilirdi. Sınır kalktı; böyle bir komut şimdi ana oturumla eşleşerek çıkana ya da
+durdurulana kadar çalışır.
+**Ne zamandan beri.** Claude Code 2.1.260 — "Subagent'ların başlattığı background
+komutlarındaki bir saatlik zaman sınırı kaldırıldı; şimdi ana oturumla eşleşerek çıkana
+ya da durdurulana kadar çalışıyorlar" (resmî changelog, 2026-09-08'de okundu). Taşımaya
+değer bir uyarı: `interactive-mode.md` hâlâ `CLAUDE_SUBAGENT_BG_SHELL_MAX_MS` için
+60 dakikalık bir varsayılanı belgelerken `tools-reference.md` hiçbir sınır
+adlandırmıyor, bu yüzden iki canlı sayfa şu anda anlaşmıyor.
+**Bayat bir tutorial şöyle der.** "Uzun background işini, çalışma zamanının öldürmemesi
+için saatten kısa parçalara bölün."
+**Şimdi.** Bunun yerine işi kasıtlı olarak sınırlayın — bakınız [Fork, background ve worktree izolasyonu](/tr/l3-advanced/m10-subagents/fork-background-worktree/).
+
+### Altı dil için syntax highlighting
+
+**Değişti.** `1c`, `gml`, `isbl`, `mathematica`, `maxima` ve `sqf` için highlighting
+kaldırıldı. Bu dillerdeki kod hâlâ görüntülenir; sadece renklendirilmez.
+**Ne zamandan beri.** Tarihli bir kaldırma olarak belgelenmemiş.
+**Bayat bir tutorial şöyle der.** Önemli hiçbir şey — bu bir dipnottur, herhangi bir
+dersin buna bağımlı olmasından çok bütünlük için burada listelenmiştir.
+
+### `MultiEdit`
+
+**Değişti.** `MultiEdit`, güncel tool referansında yoktur. Birden çok yerin
+değişmesi gerektiğinde `replace_all: true` ile `Edit`, onun yaptığını kapsar.
+**Ne zamandan beri.** Tarihli bir kaldırma olarak belgelenmemiş; `tools-reference.md`'ye
+karşı 2026-09-06'da doğrulanmıştır.
+**Bayat bir tutorial şöyle der.** "Claude'un toplu düzenleme yapabilmesi için permission
+kurallarınızda `MultiEdit`'e izin verin." Var olmayan bir tool'u adlandıran bir allow
+kuralı hiçbir şey vermez.
+**Şimdi.** [Yerleşik araçlar: Read, Edit, Glob, Grep, Bash](/tr/l1-beginner/m02-interact/tools-read-edit-run/).
+
+### Oturum kontrol listesi olarak `TodoWrite`
+
+**Değişti.** `TodoWrite` varsayılan olarak kapalıdır ve `Task*` tool'ları
+(`TaskCreate`, `TaskUpdate`, `TaskList` ve benzerleri) tarafından üstünden geçilmiştir.
+**Ne zamandan beri.** Tarihli bir değişiklik olarak belgelenmemiş;
+`tools-reference.md`'ye karşı 2026-09-07'de doğrulanmıştır.
+**Bayat bir tutorial şöyle der.** "Claude'un `TodoWrite` ile tuttuğu todo listesini
+izleyin."
+**Şimdi.** [Claude Code nedir ve nasıl çalışır](/tr/l1-beginner/m01-start/what-claude-code-is/) ve [Yerleşik araçlar](/tr/l1-beginner/m02-interact/tools-read-edit-run/).
+
+## Yeniden adlandırılan ya da değiştirilen
+
+### SDK, Claude Agent SDK'dır
+
+**Değişti.** `claude-code-sdk` (Python), `claude_agent_sdk` olarak import edilen
+`claude-agent-sdk` oldu, `ClaudeCodeOptions` `ClaudeAgentOptions` olarak yeniden
+adlandırıldı; bir SDK giriş noktası olarak `@anthropic-ai/claude-code`,
+`@anthropic-ai/claude-agent-sdk` oldu.
+**Ne zamandan beri.** Onları yeniden adlandıran sürüm belgelenmemiş — "vX'ten beri"
+değil "yeniden adlandırıldı" deyin. Agent SDK geçiş rehberine karşı 2026-09-08'de
+doğrulanmıştır.
+**Bayat bir tutorial şöyle der.** `pip install claude-code-sdk`, `import claude_code_sdk`.
+**Şimdi.** [TypeScript Agent SDK ile özel bir agent](/tr/l3-advanced/m13-headless-ci/agent-sdk-typescript/) ve [Aynı agent, Python'da](/tr/l3-advanced/m13-headless-ci/agent-sdk-python/).
+
+### `includeCoAuthoredBy`, `attribution`'dır
+
+**Değişti.** Commit ve pull request atıfını kontrol eden ayar artık `attribution`'dır,
+`attribution.commit`, `attribution.pr` ve `attribution.sessionUrl` ile birlikte.
+**Ne zamandan beri.** Settings referansı eski anahtarı 2.1.263'te, onu değiştiren
+sürümü adlandırmadan deprecated olarak işaretliyor — `attribution`'ı güncel olarak ele
+alın ve deprecation'a bir sürüm okumayın.
+**Bayat bir tutorial şöyle der.** Trailer'ı düşürmek için `"includeCoAuthoredBy": false`.
+**Şimdi.** [Commit'ler ve konvansiyonlar](/tr/l2-intermediate/m08-git/commits-and-conventions/).
+
+### `disableArtifact`, `enableArtifact`'tır
+
+**Değişti.** Anahtar tersine döndü: güncel anahtar `"enableArtifact": false`'tur. Eski
+`"disableArtifact": true` hâlâ çalışır ve deprecated'tır.
+**Ne zamandan beri.** Yeniden adlandırmanın kendisi tarihli bir değişiklik olarak
+belgelenmemiştir. Artifact dersi, iki ilgili davranışı 2.1.242'ye pinler — proje ve
+yerel settings'in anahtara hiç uyup uymadığı, ve daha düşük öncelikli biri artifact'ları
+kapattıktan sonra daha yüksek öncelikli bir dosyanın onları yeniden açamaması; davranışlar
+settings referansına karşı doğrulanmıştır, sürüm numarası dersin kendisine aittir.
+**Bayat bir tutorial şöyle der.** `"disableArtifact": true`.
+**Şimdi.** [Artifact yayınlamak: güncelleme, paylaşım, yorumlar](/tr/l4-master/m19-visual/artifacts/).
+
+### `--remote`, `--cloud`'dur
+
+**Değişti.** `--remote`, deprecated bir alias'tır. Mevcut-oturum ve
+mesaj-kuyruğa-alma biçimleri dahil hâlâ çalışır.
+**Ne zamandan beri.** Tarihli bir yeniden adlandırma olarak belgelenmemiş;
+`cli-reference.md` ve `claude-code-on-the-web.md`'ye karşı 2026-09-08'de doğrulanmıştır.
+**Bayat bir tutorial şöyle der.** Bir cloud oturumu için `claude --remote` — ki bu tamamen
+farklı bir özellik olan `--remote-control` ile de karışıklığa davet çıkarır.
+**Şimdi.** [claude.ai/code, cloud ortamları, --teleport ve ultrareview](/tr/l3-advanced/m15-platforms/web-and-cloud-sessions/).
+
+### Kendi hızında kurs taşındı
+
+**Değişti.** _Claude Code in Action_, daha eski `anthropic.skilljar.com` adresinde değil,
+`academy.claude.com/courses/claude-code-in-action` adresinde yaşar.
+**Ne zamandan beri.** Tarihli bir taşınma olarak belgelenmemiş; 2026-09-06'da
+doğrulanmıştır.
+**Bayat bir tutorial şöyle der.** `anthropic.skilljar.com/claude-code-in-action`'a
+bağlantılar.
+**Şimdi.** [Bir takıma yaygınlaştırmak: kitler, savunucular ve onboarding](/tr/l4-master/m20-team/communications-and-champions/).
+
+### Özel slash komutları skill'dir
+
+**Değişti.** `.claude/commands/*.md` ve `.claude/skills/<ad>/SKILL.md` tek bir
+mekanizmadır, "davranışta bir değişiklik olmadan zihinsel modeli basitleştirerek".
+Mevcut komut dosyaları çalışmaya devam eder ve aynı frontmatter'ı alır; ikisi de var
+olduğunda skill kazanır.
+**Ne zamandan beri.** Claude Code 2.1.3. (Skill dersi bu sürümü 9 Ocak 2026'ya
+tarihlendirir; bu sayfa için getirilen changelog aralığı o kadar geriye ulaşmadı, bu
+yüzden sürümü doğrulanmış kısım olarak alın.)
+**Bayat bir tutorial şöyle der.** "Komutlar ve skill'ler farklı şeylerdir — komutlar
+çağırdığınız prompt'lardır, skill'ler modelin seçtiğidir." Şimdi aynı dosya biçimidirler
+ve bir plugin onları `skills/` altında gönderir.
+**Şimdi.** [Skill'ler ve özel komutlar](/tr/l2-intermediate/m06-skills/skills-vs-commands/) ve [Skill'leri ve plugin'leri bir takımda paylaşmak](/tr/l4-master/m20-team/team-marketplace/).
+
+## Değişen davranış
+
+### `PreToolUse` hook'ları: `decision: "block"` üstünden geçilmiştir
+
+**Değişti.** Bir `PreToolUse` hook'u kararını, bir `permissionDecisionReason` ile
+birlikte `hookSpecificOutput.permissionDecision`'da taşır. Kabul edilen değerler
+`allow`, `deny`, `ask` ve `defer`'dır; eski `"approve"` ve `"block"`, `allow` ve
+`deny`'e eşlenir. `block`, geçerli bir `permissionDecision` değeri değildir — "JSON ne
+derse desin engelle"nin eşdeğeri exit code 2'dir. `PostToolUse` ve `Stop` gibi diğer
+olaylar hâlâ üst düzey `decision` ve `reason` kullanır.
+**Ne zamandan beri.** Tarihli bir değişiklik olarak belgelenmemiş; 2.1.263 için
+`hooks.md`'ye karşı 2026-09-08'de doğrulanmıştır.
+**Bayat bir tutorial şöyle der.** Bir `PreToolUse` hook'undan
+`echo '{"decision":"block","reason":"nope"}'` — ki bugün bu ayrıştırılır, bu olay için
+görmezden gelinir ve komutun geçmesine izin verir.
+**Şimdi.** [Hook anatomisi: olaylar, eşleştiriciler ve JSON sözleşmesi](/tr/l2-intermediate/m07-hooks/hook-anatomy/), [PreToolUse koruması ile tehlikeli komutları engelleme](/tr/l2-intermediate/m07-hooks/block-dangerous-commands/) ve [Secret'lar: .env, gitleaks ve sızıntıyı engelleyen bir hook](/tr/l3-advanced/m14-security/secrets/).
+
+### `defaultMode: auto` ve `bypassPermissions`, proje settings'inde görmezden gelinir
+
+**Değişti.** Bu iki değer yalnızca user settings'inden (`~/.claude/settings.json`),
+`--settings` bayrağından ya da managed settings'den etki eder. Herhangi birini bir
+projenin `.claude/settings.json`'unda **ya da** `.claude/settings.local.json`'unda
+ayarlayın ve sessizce görmezden gelinir: `auto` yerleşik varsayılana düşer ve
+`bypassPermissions` oturumu Manual'de başlatır. Diğer her değer (`plan`, `dontAsk`,
+`default`/`manual`) herhangi bir settings dosyasından uygulanır.
+**Ne zamandan beri.** `bypassPermissions` için Claude Code 2.1.257 (changelog maddesi
+onu, zaten görmezden gelinen `auto` ile hizalıyor).
+**Bayat bir tutorial şöyle der.** "Takımınızın prompt görmeyi bırakması için
+`"defaultMode": "bypassPermissions"`'ı commit'leyin." Dosya sonra bir politika gibi
+görünür ve hiçbir şeyi zorlamaz.
+**Şimdi.** [Permission mode'lar ve allow/deny kuralları](/tr/l1-beginner/m02-interact/permissions/), [İzin modeli ve sandbox](/tr/l3-advanced/m14-security/permission-model-and-sandbox/) ve [Paylaşılan settings ve allowlist'ler](/tr/l4-master/m20-team/shared-settings/).
+
+### Kapanış parantezinden sonra metin olan Bash permission kuralları
+
+**Değişti.** `Bash(ls) x` gibi bir kural asla hiçbir şeyle eşleşmedi. Şimdi sessizce
+görmezden gelinmek yerine geçersiz bir ayar olarak raporlanıyor.
+**Ne zamandan beri.** Claude Code 2.1.260 (resmî changelog, 2026-09-08'de okundu —
+bu, `research/deprecations.md`'nin doğrulanmamış olarak tuttuğu bir maddeyi çözer).
+**Bayat bir tutorial şöyle der.** `)`'den sonraki metin bir yorummuş gibi, bir kuralın
+içinde arkadan gelen açıklamalar önerir. Hiçbir zaman çalışmadı; şimdi ayrıca yüksek
+sesle de başarısız oluyor.
+**Şimdi.** [Permission mode'lar ve allow/deny kuralları](/tr/l1-beginner/m02-interact/permissions/).
+
+### `keybindingFlavor`'ın etkisi yok
+
+**Değişti.** Kelime-düzenleme tuşları her zaman Bash-stilidir: `Ctrl+W` boşluğa kadar
+geri siler, `Alt+B`/`Alt+F` bir kelime taşır, `Alt+D` bir kelimenin sonuna kadar siler.
+`keybindingFlavor` ayarı görmezden gelinir ve referanstan kalkmıştır.
+**Ne zamandan beri.** Claude Code 2.1.261 (resmî changelog); readline konvansiyonları ve
+`keybindingFlavor`'ın etkisi olmadığı notu `interactive-mode.md`'de, 2026-09-08'de
+okunmuştur.
+**Bayat bir tutorial şöyle der.** Kelime tuşlarını almak için
+`"keybindingFlavor": "emacs"` — bugün hiçbir şeyi değiştirmeyen bir ayar.
+**Şimdi.** [Klavye kısayolları, durum çubuğu, temalar ve çıktı biçemleri](/tr/l1-beginner/m04-commands/keybindings-statusline-theme/).
+
+### `/btw` tarihçe gezinmesi
+
+**Değişti.** Çıplak bir `/btw`, en son yan sorunuzdaki katmanı yeniden açar; `Left`
+önceki cevaplar arasında geriye adım atar, `Right` şimdikine doğru hareket eder, `x`
+listeyi temizler.
+**Ne zamandan beri.** `Left`/`Right` gezinmesi 2.1.187 ya da sonrasını gerektirir; çıplak
+bir `/btw`, 2.1.212'den önce bir kullanım mesajı yazdırıyordu.
+**Bayat bir tutorial şöyle der.** Tarihçede gezinmek için `Shift+←` / `Shift+→` —
+kursun kendisinin taşıdığı daha önceki not, canlı dokümanlara karşı düzeltilmiştir
+(`interactive-mode.md`, 2026-09-08'de yeniden okundu).
+**Şimdi.** [Yerleşik slash komut referansı](/tr/l1-beginner/m04-commands/slash-command-reference/).
+
+### Model alias'ları eskisinden farklı modellere çözümlenir
+
+**Değişti.** `opus` ve `default`, 2.1.219'dan itibaren Opus 5'e çözümlenir (ondan önce
+Anthropic API'sinde Opus 4.8), ve `fable`, 2.1.255'ten itibaren Fable 5.1'e çözümlenir
+(ondan önce Fable 5). Bir alias'ı "o ailenin en sonuncusu" olarak ele alın, asla
+pinlenmiş bir id olarak değil — ve üçüncü taraf bir sağlayıcının kendi alias'larının
+nereye ulaştığına karar verdiğini unutmayın.
+**Ne zamandan beri.** Claude Code 2.1.219 ve 2.1.255 (`model-config.md`'deki sürüm
+notları).
+**Bayat bir tutorial şöyle der.** "`opus`, Claude Opus 4.x anlamına gelir" — ya da bir
+alias'ı bir runbook'a sanki bir sürümmüş gibi yazar.
+**Şimdi.** [Model ailesi ve takma adları](/tr/l2-intermediate/m05-models-effort/model-family/).
+
+### `--effort ultracode`
+
+**Değişti.** `--effort`'a `ultracode` geçirmek 2.1.203'ten itibaren kabul edilir. Daha
+eski sürümler `Unknown --effort value 'ultracode'` yazdırır ve oturumu varsayılan
+effort'ta başlatır.
+**Ne zamandan beri.** Claude Code 2.1.203.
+**Bayat bir tutorial şöyle der.** Hiçbir şey — bu tam tersi bir vakadır: 2025 dönemi bir
+rehberin bilemeyeceği ve daha eski bir build'deki meslektaşınızın sahip olmadığı _yeni_
+bir değer.
+**Şimdi.** [Effort seviyeleri](/tr/l2-intermediate/m05-models-effort/effort-levels/) ve [ultracode: anahtar kelime, effort seviyesi ve bir çalıştırmanın maliyeti](/tr/l4-master/m16-orchestration/ultracode/).
+
+### Opus 4.7'de fast mode
+
+**Değişti.** Opus 4.7 için fast mode, 25 Haziran 2026'da deprecated oldu ve 24 Temmuz
+2026'da kaldırıldı. Claude Code artık Opus 4.7'yi fast-mode desteği olmayan bir model
+olarak ele alır, bu yüzden ona geçmek fast mode'u kapatır. Fast mode güncel Opus'u
+hedefler.
+**Ne zamandan beri.** 24 Temmuz 2026 (`fast-mode.md`).
+**Bayat bir tutorial şöyle der.** "Fast mode'u açın ve daha ucuz oran için 4.7'de
+kalın."
+**Şimdi.** [Fast mode](/tr/l2-intermediate/m05-models-effort/fast-mode/).
+
+### `/simplify` ve `/review`, göründüklerinden daha gençtir
+
+**Değişti.** `/simplify` 2.1.147'de geldi — ondan önce, ad şimdi `/code-review` olan
+şeye aitti ve varsayılan olarak düzeltmeleri uyguluyordu. `/review` 2.1.223'te geldi.
+Bir `/refactor` alias'ı yoktur.
+**Ne zamandan beri.** Claude Code 2.1.147 ve 2.1.223 (canlı komut sayfalarındaki sürüm
+notları).
+**Bayat bir tutorial şöyle der.** `/simplify`'ı bir hata-bulma incelemesi olarak ele
+alır. Şimdi tasarım gereği yalnızca temizliktir; hataları arayan `/code-review --fix`'tir.
+**Şimdi.** [Kod inceleme komutları](/tr/l2-intermediate/m08-git/code-review-commands/).
+
+### MCP SSE transport'u deprecated'tır
+
+**Değişti.** HTTP, stdio ya da WebSocket kullanın. `--transport sse`, yalnızca bir SSE
+uç noktası sunan servisler için hâlâ çalışır, ve deprecated bir transport çalışan bir
+yapılandırmayı yeniden yazmak için bir sebep değildir — ama yeni bir şey için onu
+seçmeyin.
+**Ne zamandan beri.** Tarihli bir deprecation olarak belgelenmemiş; 2.1.263 için
+`mcp.md`'ye karşı doğrulanmıştır.
+**Bayat bir tutorial şöyle der.** Varsayılan uzak seçim olarak "server'ı
+`--transport sse` ile ekleyin".
+**Şimdi.** [MCP kavramları ve transport'lar](/tr/l3-advanced/m11-mcp/mcp-concepts/).
+
+### GitHub Action `@v1`'dir
+
+**Değişti.** `anthropics/claude-code-action@beta`, `@v1` tarafından üstünden
+geçilmiştir. Dört düzenleme: `@beta` → `@v1`; `mode`'u kaldırın (action bunu
+`prompt`'un ayarlanıp ayarlanmadığından algılar); `direct_prompt` → `prompt`;
+`max_turns` ve `model` gibi CLI seçeneklerini `claude_args`'ın içine taşıyın.
+`custom_instructions`, `--append-system-prompt` olur.
+**Ne zamandan beri.** Tarihli bir geçiş olarak belgelenmemiş; action'ın v1
+dokümantasyonuna karşı 2026-09-07'de doğrulanmıştır.
+**Bayat bir tutorial şöyle der.** `mode: tag` ve `direct_prompt:` ile `@beta`'ya
+pinlenmiş bir workflow — hiçbiri v1'de yoktur.
+**Şimdi.** [GitHub uygulaması](/tr/l2-intermediate/m08-git/github-app/), [claude-code-action@v1 ile PR review](/tr/l3-advanced/m13-headless-ci/github-actions-review/), [@claude ile issue'dan pull request'e](/tr/l3-advanced/m13-headless-ci/issue-to-pr/) ve [Claude'ı kod incelemesine ve CI kapılarına entegre etmek](/tr/l4-master/m20-team/review-process/).
+
+### API-key ve `setup-token` oturumlarında Chrome entegrasyonu
+
+**Değişti.** Bir API anahtarı ya da bir `claude setup-token` token'ı ile kimlik
+doğrulanmış bir oturum, `--chrome` geçirilse bile Chrome entegrasyonunu kapalı tutar,
+çünkü tarayıcı uzantısı bu kimlik bilgileriyle kimlik doğrulayamaz. 2.1.216'dan önce
+böyle bir oturum onu etkinleştirmeyi deneyebilirdi ve her bağlantı 403 ile başarısız
+olurdu.
+**Ne zamandan beri.** Claude Code 2.1.216; `chrome.md`'ye karşı 2026-09-08'de
+doğrulanmıştır.
+**Bayat bir tutorial şöyle der.** "`ANTHROPIC_API_KEY`'i export edin, `--chrome`'u
+geçirin ve tarayıcıyı sürün." O oturum tarayıcı tool'larını hiç almayacaktır.
+**Şimdi.** [Claude in Chrome: gezinme, formlar, ekran görüntüleri, konsol](/tr/l3-advanced/m15-platforms/chrome/) ve [Claude in Chrome ile bir siteyi sürmek ve kaydetmek](/tr/l4-master/m19-visual/chrome-automation/).
+
+## Hâlâ açık
+
+`research/deprecations.md`, bir maddeyi doğrulanmamış olarak taşıyordu — kapanış
+parantezinden sonra metin olan Bash permission kuralları. Bu sayfa için resmî
+changelog'u 2026-09-08'de okumak bunu çözdü: 2.1.260 maddesi yukarıdaki bölümünde
+alıntılanmıştır. Kalan uyarı genel olandır: changelog herhangi bir kurstan daha hızlı
+hareket eder, bu yüzden buradaki her sürüm numarasını "her zaman güncel" değil
+"2.1.263'te doğrulanmış" olarak ele alın ve bir komut dersindekinden farklı davrandığında
+changelog'u kontrol edin.

@@ -1,10 +1,313 @@
 ---
 title: 'En iyi pratikler özeti'
-description: 'Her seviyenin en güçlü pratikleri, birer satır hâlinde ve geldikleri derse bağlantılı.'
+description: 'Her seviyenin en güçlü pratikleri, birer satırda, onları öğreten dersle birlikte.'
 order: 2
-draft: true
+summary: 'Bir indeks, kursun ikinci bir kopyası değil: her madde geldiği derse geri bağlanır.'
 ---
 
-Bu sayfanın Türkçesi hazırlanıyor (P44). Şimdilik İngilizce sürümü okuyabilirsiniz: [Best-practice digest](/en/playbook/best-practices/).
+Bu kursun her seviyesi pratiklerini yerinde öğretir, önemli oldukları dersin içinde (D025).
+Bu sayfa özettir: seviyeden dışarı taşımaya değer olanlar, onlarla karşılaştığınız sırayla,
+her biri nedenini açıklayan derse geri bağlanarak.
 
-Sayfa, Seviye 1–4 derslerinde zaten öğretilen pratikleri seviye seviye toplar; her madde açıklamayı tekrarlamaz, ilgili derse bağlantı verir.
+Bir seviyeyi bitirdikten sonra bir kontrol listesi olarak, ya da önemsediğiniz bir oturumdan
+önce bir hatırlatıcı olarak okuyun. Kasıtlı olarak açıklamaları tekrarlamaz — asıl olan
+bağlantıdır.
+
+## Seviye 1 — Başlangıç
+
+**`git status`'ün temiz olduğu yerden başlayın.** Agent'ın değeri sondaki kontroldür, ve
+temiz bir ağaç `git diff`'i kontrol hâline getirir. — [İlk oturumunuz](/tr/l1-beginner/m01-start/first-session/)
+
+**Tek bir kurulum tutun ve kendi kendini güncellemesine izin verin.** Hiç güncellemediğiniz
+bir sürüm, hatalarını sakladığınız bir sürümdür; `claude doctor`'a gerçekten bir şey
+bozulduğunda başvurun, alışkanlıktan değil. — [claude doctor, güncellemeler ve sürüm kanalları](/tr/l1-beginner/m01-start/doctor-update-channels/)
+
+**Hedefi, kısıtları ve kanıtı söyleyin.** Sonrasında neyin farklı olması gerektiğini ve
+bunu nasıl anlayacağınızı adlandıran bir prompt, adımları dikte edenden daha iyidir. — [Prompt temelleri: hedef, kısıt, kanıt](/tr/l1-beginner/m02-interact/prompting-basics/)
+
+**Tool'ları Claude'un seçmesine izin verin.** Kaldıraçlarınız prompt ve permission
+kurallarıdır, tool adları değil. — [Yerleşik araçlar: Read, Edit, Glob, Grep, Bash](/tr/l1-beginner/m02-interact/tools-read-edit-run/)
+
+**İzinleri kapatmak yerine daraltın.** `--allowedTools` ve belirli allow kuralları,
+prompt yorgunluğunun cevabıdır; `bypassPermissions` kaybetmeye razı olduğunuz bir
+konteyner içindir. — [Permission mode'lar ve allow/deny kuralları](/tr/l1-beginner/m02-interact/permissions/)
+
+**Belirsiz olduğunuzda plan yapın, varsayılan olarak değil.** Diff'i tek cümlede
+tarif edebiliyorsanız, diff'i isteyin. — [Plan mode: keşfet, planla, onayla, uygula](/tr/l1-beginner/m02-interact/plan-mode/)
+
+**Riskli herhangi bir şeyden önce commit'leyin.** Checkpoint'ler sürüm kontrolü değil
+oturum düzeyinde bir kurtarmadır: Bash'in dokunduğunu kaçırır ve oturumla birlikte sona
+erer. — [Checkpoint'ler ve /rewind](/tr/l1-beginner/m02-interact/checkpoints-rewind/)
+
+**İlgisiz görevler arasında `/clear`; doğal bir arada `/compact`.** Bağlam hijyeni, daha
+büyük bir modelden ucuzdur. — [Bağlam temelleri: /context, /compact ve /clear](/tr/l1-beginner/m02-interact/context-basics/)
+
+**`CLAUDE.md`'yi Claude'un çıkaramayacağı şeylerle sınırlı tutun.** Tuzaklar, gerekçeler
+ve tool varsayılanlarından farklı konvansiyonlar — dizin ağacının bir turu değil. — [/init ile proje CLAUDE.md dosyası yazmak](/tr/l1-beginner/m03-memory/claude-md/)
+
+**Bir rule yalnızca bir alanda önemliyse `paths:` ile kapsamlandırın.** Bağlamdan gerçekten
+tasarruf ettiren şey budur, dosyaları bölmek değil. — [`.claude/rules/` ile yol tabanlı kurallar](/tr/l1-beginner/m03-memory/rules/)
+
+**Bir prompt'u yeniden yazmadan önce `/context` ile neyin yüklendiğini kontrol edin.**
+Şaşırtıcı bir cevap genelde unuttuğunuz bir bellek dosyasıdır. — [Bellek hiyerarşisi, @imports ve claudeMdExcludes](/tr/l1-beginner/m03-memory/hierarchy-imports/)
+
+**Belleği eklediğiniz aynı takvimde budayın.** Hiçbir şey kendiliğinden süresi dolmaz ve
+eski tavsiye cevapları şekillendirmeye devam eder. — [/memory, hızlı notlar ve belleği budama](/tr/l1-beginner/m03-memory/memory-commands/)
+
+**Slash komutlarını değil, CLI bayraklarını script'leyin.** Komutlar etkileşimli bir
+oturumun içinde yaşar ve sürümler arasında değişir; bayraklar kararlı yüzeydir. — [Yerleşik slash komut referansı](/tr/l1-beginner/m04-commands/slash-command-reference/) ve [CLI bayrakları: bir oturum nasıl başlar](/tr/l1-beginner/m04-commands/cli-flags/)
+
+**Geri dönmeyi düşündüğünüz oturumları adlandırın.** Görünen ad bir resume tutamacı
+değildir. — [Oturumlar: resume, continue, branch ve fork](/tr/l1-beginner/m04-commands/sessions/)
+
+**Kalıcı yapılandırmayı kabuk profilinize değil bir settings dosyasına koyun.** Ortam
+değişkenleri takım arkadaşları için görünmezdir ve projeler arasında sızar. — [Alt komutlar ve ortam değişkenleri](/tr/l1-beginner/m04-commands/subcommands/)
+
+## Seviye 2 — Orta
+
+**Modeli ve effort seviyesini bir kez, oturumun başında seçin.** Görev ortasındaki her
+geçiş, hiç cache isabeti almadan tüm konuşmayı yeniden işler. — [Model ailesi ve takma adları](/tr/l2-intermediate/m05-models-effort/model-family/) ve [Effort seviyeleri](/tr/l2-intermediate/m05-models-effort/effort-levels/)
+
+**Tekrarlanabilirlik önemli olduğunda tam model adını kaydedin.** Bir alias "o ailenin en
+sonuncusu" anlamına gelir ve farklı sağlayıcılarda farklı çözümlenir. — [Model ailesi ve takma adları](/tr/l2-intermediate/m05-models-effort/model-family/)
+
+**Kanıta göre yükseltin, depoyu çalıştırmalar arasında sıfırlayarak.** Zaten düzeltilmiş
+bir hata üzerinde bir karşılaştırma çalıştırması hiçbir şey ölçmez. — [Bir model seçmek](/tr/l2-intermediate/m05-models-effort/choosing-a-model/) ve [Effort laboratuvarı](/tr/l2-intermediate/m05-models-effort/effort-lab/)
+
+**Effort'u yükseltmeden önce prompt'u ve kanıt döngüsünü düzeltin.** Yanlış soru hakkında
+daha fazla düşünmek, size daha uzun bir yanlış cevap verir. — [Effort seviyeleri](/tr/l2-intermediate/m05-models-effort/effort-levels/)
+
+**Fast mode'u yalnızca klavyenin başında beklerken kullanın.** Toplu iş, CI ve uzun
+otonom çalışma, kimsenin ölçmediği bir gecikme için iki katı öder. — [Fast mode](/tr/l2-intermediate/m05-models-effort/fast-mode/)
+
+**Sınırlar için plan-kullanım çubuklarını, faturalama için Console'u okuyun.** Oturum
+maliyeti rakamı, liste fiyatından yerel bir tahmindir. — [Maliyet ve kullanım](/tr/l2-intermediate/m05-models-effort/cost-and-usage/)
+
+**Bir prosedür olduğunda bir skill, bir olgu olduğunda bir bellek girdisi yapın.** Böylece
+skill gövdesi yalnızca çalıştığında bağlama mal olur. — [Skill'ler ve özel komutlar](/tr/l2-intermediate/m06-skills/skills-vs-commands/)
+
+**Bir skill'in açıklamasına tetikleyicisiyle başlayın.** Claude bir skill'i yüklemeye
+açıklamadan karar verir; gövde sonra okuduğu şeydir. — [SKILL.md anatomisi ve frontmatter](/tr/l2-intermediate/m06-skills/skill-md-anatomy/)
+
+**Bir skill'in bir argüman olarak almak yerine ihtiyacını kendisinin getirmesine izin
+verin.** Argümanları çalıştırma başına değişen bir ya da iki değerle sınırlı tutun. — [Argument'lar ve yerine koymalar](/tr/l2-intermediate/m06-skills/arguments/)
+
+**Yalnızca prompt tabanlı bir skill'de çıktı şeklini belirtin.** `file:line — sorun —
+düzeltme` diff'lenebilirdir; düz yazı değildir. — [Yalnızca prompt tabanlı skill'ler](/tr/l2-intermediate/m06-skills/prompt-only-skills/)
+
+**`allowed-tools` kurallarını gövdedeki tam komutlardan yazın.** `Bash(npm test)`,
+`npm run typecheck` ile eşleşmez ve hiçbir şey sizi uyarmaz. — [Araç çalıştıran skill'ler](/tr/l2-intermediate/m06-skills/tool-running-skills/)
+
+**Skill listeleme bütçesini yükseltmeden önce açıklamaları kısaltın.** `/skill-doctor`,
+listelemenin her turda neye mal olduğunu gösterir. — [Skill'leri /skill-doctor ile ölçmek](/tr/l2-intermediate/m06-skills/skill-doctor/)
+
+**Exit code 2 ya da bir JSON kararıyla engelleyin, asla `exit 1` ile değil.** Ve hook'un
+stdout'unu temiz tutun, yoksa karar düz metin olarak okunur. — [Hook anatomisi: olaylar, eşleştiriciler ve JSON sözleşmesi](/tr/l2-intermediate/m07-hooks/hook-anatomy/)
+
+**Bir deny nedeninde kuralı ve güvenli alternatifi adlandırın.** Neden, modele giden tek
+kanalınızdır; "izin verilmedi" size farklı bir şekilde aynı fikri verir. — [PreToolUse koruması ile tehlikeli komutları engelleme](/tr/l2-intermediate/m07-hooks/block-dangerous-commands/)
+
+**Olay başına hook'ları hızlı tutun ve tam olarak düzenlenen dosyayı biçimlendirin.**
+`SessionStart` ve `PreToolUse` sıcak yollarda çalışır; `prettier --write .` bir
+düzenlemeyi bütün-ağaç bir diff'e çevirir. — [Bir PostToolUse hook'uyla kaydederken biçimlendirme](/tr/l2-intermediate/m07-hooks/format-on-save/) ve [SessionStart'ta bağlam yükleyin, Stop'ta testleri çalıştırın](/tr/l2-intermediate/m07-hooks/session-start-context/)
+
+**Oturumu suçlamadan önce bir hook'u içine JSON pipe'layarak test edin.** Hook hatalarının
+yarısı sıradan betik hatalarıdır. — [Hook'ları hata ayıklamak](/tr/l2-intermediate/m07-hooks/debugging-hooks/)
+
+**Kasıtlı olarak stage'leyin, ardından stage'lenmiş değişikliklerin bir commit'ini
+isteyin.** Ve PR başlığını, squash-merge altında `main`'de görmek istediğiniz commit
+olarak yazın. — [Commit'ler ve konvansiyonlar](/tr/l2-intermediate/m08-git/commits-and-conventions/) ve [Kanıtlı pull request'ler](/tr/l2-intermediate/m08-git/pull-requests/)
+
+**Ayrı kod istediğinizde bir worktree, ayrı bir konuşma istediğinizde `/branch`
+kullanın.** — [Worktree'ler ve branch'ler](/tr/l2-intermediate/m08-git/worktrees-branches/)
+
+**İncelemeyi cevabın hak ettiği effort'ta çalıştırın.** Temiz bir `low` inceleme "emin
+olduğu hiçbir şey yok" demektir, "hata yok" değil. — [Kod inceleme komutları](/tr/l2-intermediate/m08-git/code-review-commands/)
+
+**Her biri bir kontrol taşıyan adımlara ayırın.** Kontrolü olmayan bir adım bir aşamadır,
+bir adım değil. — [Bir görevi doğrulanabilir adımlara ayırmak](/tr/l2-intermediate/m09-prompting/task-decomposition/)
+
+**Her kısıt kümesini en az bir kabul kriteriyle eşleştirin.** Yalnızca yasaklar, agent'a
+hiçbir durma koşulu vermez. — [Kısıtlar, kabul kriterleri ve kanıt](/tr/l2-intermediate/m09-prompting/constraints-and-evidence/)
+
+**İki başarısız düzeltmeden sonra yeniden başlayın.** Daha iyi bir ilk prompt'la temiz bir
+oturum, başarısız yaklaşımlarla dolu uzun birinden daha iyidir. — [Sürüklenmeden iteratif iyileştirme](/tr/l2-intermediate/m09-prompting/iterative-refinement/)
+
+## Seviye 3 — İleri
+
+**Derinliği değil genişliği devredin.** Çok sayıda dosya ve bilinmeyen bir konum bir
+subagent'tır; bilinen tek bir dosya bir `Read`'dir. — [Agent tool'u ve yerleşik subagent'lar](/tr/l3-advanced/m10-subagents/agent-tool-and-builtins/)
+
+**Devredilen bir görevi baştan sona anlatın.** Fork olmayan bir subagent bellek
+dosyalarınızı ve depoyu alır, asla konuşmanızı almaz. — [Agent tool'u ve yerleşik subagent'lar](/tr/l3-advanced/m10-subagents/agent-tool-and-builtins/)
+
+**Bir agent'a rolünün ihtiyaç duyduğu tool'ları verin, fazlasını değil.** `Edit`'i olan
+bir reviewer hiçbir şeyi incelemez; düzeltir. — [`.claude/agents/` içinde özel agent'lar](/tr/l3-advanced/m10-subagents/custom-agents/) ve [Laboratuvar: işini hak eden dört agent](/tr/l3-advanced/m10-subagents/agent-lab/)
+
+**Bir modeli yalnızca çıktı bir yargı olduğunda pinleyin.** Aksi hâlde `model`'i dışarıda
+bırakın ki agent oturumu takip etsin. — [Agent başına model seçmek](/tr/l3-advanced/m10-subagents/model-per-agent/)
+
+**Bir agent yazacaksa bir worktree'de izole edin ve soğuk bir ortam bekleyin.**
+`node_modules` yok, `.env` yok, ve siz aksini söylemediğiniz sürece branch varsayılan
+branch'ten başlar. — [Fork, background ve worktree izolasyonu](/tr/l3-advanced/m10-subagents/fork-background-worktree/)
+
+**Advisor'ı uzun işler için, oturum başına açın.** Kısa görevlerde, tavsiye edecek
+hiçbir şey olmadan tam bir transcript okuması için ödersiniz. — [Advisor pattern'i](/tr/l3-advanced/m10-subagents/advisor/)
+
+**Bir MCP server'ı yalnızca bir CLI bunu tek adımda yapamadığında ekleyin.** Bağlı her
+server bağlama mal olur ve şimdi güvendiğiniz bir bağımlılık ekler. — [MCP kavramları ve transport'lar](/tr/l3-advanced/m11-mcp/mcp-concepts/)
+
+**Bir server'ı ekledikten sonra doğrulayın.** `Added …`, yapılandırmanın yazıldığı
+anlamına gelir, herhangi bir şeyin bağlandığı anlamına gelmez. — [Server ekleme, listeleme ve kaldırma: scope'lar ve OAuth](/tr/l3-advanced/m11-mcp/add-list-remove-scopes/)
+
+**Kimlik bilgilerini commit'lenmiş yapılandırmanın dışında tutun ve mümkün olduğunda
+salt-okunur yapın.** Dosyada `${TOKEN}` genişletmesi, DSN'de salt-okunur bir veritabanı
+kullanıcısı. — [GitHub MCP server'ı](/tr/l3-advanced/m11-mcp/github-mcp/) ve [Bir veritabanı MCP server'ı](/tr/l3-advanced/m11-mcp/database-mcp/)
+
+**Satırların yanında SQL'i de isteyin.** Soru olmadan yanlış bir cevabı doğru olandan
+ayıramazsınız. — [Bir veritabanı MCP server'ı](/tr/l3-advanced/m11-mcp/database-mcp/)
+
+**Yazdığınız bir server'dan veri kümesi değil özet döndürün.** Ve tanılamaları stderr'de
+tutun. — [Minimal bir MCP server yazmak](/tr/l3-advanced/m11-mcp/write-your-own-server/)
+
+**Server sürümlerini pinleyin ve server'ları bağımlılıklar gibi inceleyin.** Directory
+bir listedir, bir güvenlik denetimi değil. — [MCP güvenliği ve tedarik zinciri](/tr/l3-advanced/m11-mcp/mcp-security/)
+
+**`.claude/`'da bağımsız başlayın, paylaşmaya hazır olduğunuzda bir plugin'e
+dönüştürün.** Ve paketlenmiş dosyalara `${CLAUDE_PLUGIN_ROOT}` üzerinden gidin. — [Plugin anatomisi: manifest ve dizinler](/tr/l3-advanced/m12-plugins/plugin-anatomy/) ve [Zaten yazdığınız skill ve hook'tan bir plugin kurun](/tr/l3-advanced/m12-plugins/build-a-plugin/)
+
+**Plugin'leri terfi etmeden önce `local` scope'ta değerlendirin.** User scope, her projenin
+bağlam maliyetini sonsuza kadar ödemesi demektir. — [Marketplace'ler ve /plugin komutu](/tr/l3-advanced/m12-plugins/marketplaces/)
+
+**CI'da doğrulayın, göndermeden önce çalıştırarak deneyin.** `claude plugin validate`
+manifest'leri okur; `--plugin-dir` ile yüklemek bileşenlerin çalıştığını kanıtlayan
+şeydir. — [claude plugin validate ve eval'in eklediği](/tr/l3-advanced/m12-plugins/validate-and-eval/)
+
+**Her headless çalıştırmayı sınırlayın.** `--max-turns`, bir bütçe tavanı, açık bir
+`--allowedTools`, ve exit code ile `is_error` üzerinde bir kontrol. — [claude -p: headless çalıştırmalar ve yapılandırılmış çıktı](/tr/l3-advanced/m13-headless-ci/claude-p/)
+
+**CI izinlerini iş başına kapsamlandırın.** İnceleme işleri okur; issue-to-PR işleri
+yazar; `id-token: write` bu action için ikisinde de yer alır. — [claude-code-action@v1 ile PR review](/tr/l3-advanced/m13-headless-ci/github-actions-review/) ve [@claude ile issue'dan pull request'e](/tr/l3-advanced/m13-headless-ci/issue-to-pr/)
+
+**Saklanan bir bulut anahtarı yerine OIDC'yi tercih edin.** Ve üçüncü taraf action'ları
+bir commit SHA'sına pinleyin. — [GitLab CI/CD, bulut sağlayıcıları ve Enterprise Server](/tr/l3-advanced/m13-headless-ci/gitlab-and-others/)
+
+**Bir SDK agent'ında `settingSources`'ı açıkça ayarlayın.** Aksi hâlde host makinenin
+`~/.claude`'unun ne dediğini devralır. — [TypeScript Agent SDK ile özel bir agent](/tr/l3-advanced/m13-headless-ci/agent-sdk-typescript/) ve [Aynı agent, Python'da](/tr/l3-advanced/m13-headless-ci/agent-sdk-python/)
+
+**Permission kurallarını Claude Code'un davranışı, izolasyonu ise sınır olarak ele
+alın.** Güvenilmeyen kod için ayrıca bir konteyner ya da bir VM istersiniz. — [İzin modeli ve sandbox](/tr/l3-advanced/m14-security/permission-model-and-sandbox/)
+
+**Getirilen her sayfayı, satırı ve issue başlığını güvenilmeyen girdi olarak ele alın.**
+Saldırı string'lerini filtrelemek yerine sınırda temizleyin. — [Prompt injection: bir agent'a nasıl ulaşır ve onu ne durdurur](/tr/l3-advanced/m14-security/prompt-injection/)
+
+**Secret'ları yazma anında engelleyin, `--redact` ile tarayın, tarihçeyi yeniden
+yazmadan önce döndürün.** — [Secret'lar: .env, gitleaks ve sızıntıyı engelleyen bir hook](/tr/l3-advanced/m14-security/secrets/)
+
+**Filoya geçmeden önce dağıtılmış bir politikayı tek bir makinede doğrulayın.**
+`/status`, hangi kaynakların yüklendiğini ve hangilerinin atlandığını adlandırır. — [Managed settings ve auto mode yapılandırması](/tr/l3-advanced/m14-security/managed-settings/)
+
+**Saklama ayarlarınızın gerçekte neyi kapsadığını bilin.** Sunucu tarafı saklama,
+`~/.claude/projects/` hakkında hiçbir şey söylemez. — [Veri, saklama ve telemetri](/tr/l3-advanced/m14-security/data-and-retention/)
+
+**CLI'ı herhangi bir IDE entegrasyonunun yanında kurulu tutun.** Script'leme, SDK ve
+headless çalıştırmalar yalnızca CLI'dır. — [VS Code eklentisi: satır içi sohbet, diff görünümü, seçim bağlamı](/tr/l3-advanced/m15-platforms/vs-code/) ve [JetBrains eklentisi](/tr/l3-advanced/m15-platforms/jetbrains/)
+
+**Yüzeyi kodun nereden çalışması gerektiğine göre seçin.** `--cloud` işi uzağa gönderir;
+`--remote-control` işi burada tutar ve başka bir yerden yönetir. — [claude.ai/code, cloud ortamları, --teleport ve ultrareview](/tr/l3-advanced/m15-platforms/web-and-cloud-sessions/) ve [Remote Control ve mobil uygulama](/tr/l3-advanced/m15-platforms/remote-control-mobile/)
+
+**Tarayıcıya yalnızca yalnızca bir tarayıcının yapabileceği şey için başvurun.** Gerçek
+render, gerçek oturum açma durumu, gerçek konsol — ve asla production'da. — [Claude in Chrome: gezinme, formlar, ekran görüntüleri, konsol](/tr/l3-advanced/m15-platforms/chrome/)
+
+## Seviye 4 — Usta
+
+**Yapıyı aşamalar arasında çalışma zamanının taşımasına izin verin.** Üreten çağrıdaki
+bir `schema`, "bulguları numaralı bir liste olarak raporla"dan daha iyidir. — [Workflow tool: ajanları orkestre eden script](/tr/l4-master/m16-orchestration/workflows/) ve [Çok agent'lı bir pipeline tasarlamak: roller, sözleşmeler, devirler](/tr/l4-master/m16-orchestration/designing-multi-agent/)
+
+**Onayınızı gerektiren bir süreci aşama başına bir workflow'a bölün.** Bir workflow,
+başladıktan sonra girdi almaz. — [Laboratuvar: bir inceleme → doğrulama → düzeltme pipeline'ı](/tr/l4-master/m16-orchestration/pipeline-lab/)
+
+**`ultracode`'u orkestrasyonu hak eden görev için ayırın.** Rutin iş için oturumu
+`high`'da bırakın. — [ultracode: anahtar kelime, effort seviyesi ve bir çalıştırmanın maliyeti](/tr/l4-master/m16-orchestration/ultracode/)
+
+**Bir takıma üç ila beş teammate ile, araştırma ve incelemede başlayın.** Yalnızca
+gerçekten ayrık dosyalar üzerinde paralel çalıştıklarında büyütün. — [Agent team'ler ve oturumlar arası mesajlaşma](/tr/l4-master/m16-orchestration/agent-teams-messaging/)
+
+**Bir maliyet çarpanı alıntılamak yerine kendi çalıştırmanızı ölçün.** `/workflows` ve
+JSON zarfının `total_cost_usd`'ı savunabileceğiniz rakamlardır. — [ultracode](/tr/l4-master/m16-orchestration/ultracode/)
+
+**Bir loop'u ucuz bir kontrole yöneltin ve kontrolün karar vermesine izin verin.** Her
+ateşlemede gerçek iş yapan bir prompt'u olan bir loop, frensiz gözetimsiz bir agent'tır. — [/loop: bir prompt'u tekrar tekrar çalıştırmak](/tr/l4-master/m17-autonomy/loop/)
+
+**Güncel durumdan akıl yürüten zamanlanmış prompt'lar yazın.** "CI'ın şu an yeşil olup
+olmadığını kontrol et" bir yakalama çalıştırmasından sağ çıkar; "son bir saati özetle"
+çıkmaz. — [Routine'ler: cron, tek seferlik, API ve GitHub tetikleyicileri](/tr/l4-master/m17-autonomy/routines/) ve [Masaüstü uygulamasında zamanlanmış görevler](/tr/l4-master/m17-autonomy/desktop-scheduled-tasks/)
+
+**Her goal'ü sınırlayın ve değerlendiricinin görebileceği bir kontrol adlandırın.** — [/goal: bir koşul sağlanana kadar çalışmak](/tr/l4-master/m17-autonomy/goal/)
+
+**Yoklama yapmak yerine olayların itmesine izin verin ve bir monitor'e sessiz bir
+koşul verin.** — [Monitor'lar, channel'lar ve uyandırmalar](/tr/l4-master/m17-autonomy/monitors-and-channels/)
+
+**Planın okuma listesini ve `Out:` listesini önce yazın.** Bir sonraki oturumun işi
+yeniden keşfetmesini — ya da genişletmesini — durduran şey bağlam ve kapsamdır. — [Plan dosyaları: frontmatter, on bölüm, milestone'lar](/tr/l4-master/m18-multi-session/plan-files/)
+
+**Üstlenmeyi yaparken push'layın ve aracın durumu üretmesine izin verin.** Push'lanmamış
+bir üstlenme yok demektir. — [Üretilmiş bir STATE.md, claim protokolü ve bayat claim'ler](/tr/l4-master/m18-multi-session/state-md-and-claims/)
+
+**Worktree'leri oluşturmadan önce `owned_paths`'i bölümleyin.** Bölümlemesiz izolasyon,
+kaybedilmiş bir düzenlemeyi bir merge çakışmasıyla takas eder. — [Ayrık owned_paths, plan başına bir worktree ve paylaşılan dosyalar](/tr/l4-master/m18-multi-session/owned-paths-worktrees/)
+
+**Model ve effort ipucunu boyuta değil yargıya göre verin — ve bir karar uydururken
+yine de yükseltin.** — [İş türüne göre model ve effort ipuçları atamak](/tr/l4-master/m18-multi-session/model-effort-hints/)
+
+**Diff'te olmayanı yazın.** Kararlar, çıkmaz sokaklar, yapmamayı seçtiğiniz şey ve
+gerçekten çalıştırdığınız komut. — [Başka bir oturumun devam edebileceği handoff notları](/tr/l4-master/m18-multi-session/handoff-notes/)
+
+**İhtiyacınız olan katmanı benimseyin, tüm sistemi değil.** Ayrık sahiplik ve yazılı
+devirler taşınır; dosya adları tek bir projenin uygulamasıdır. — [İşlenmiş örnek olarak bu depo](/tr/l4-master/m18-multi-session/this-repo-as-example/)
+
+**Kalıcı kopyayı depoda, artifact'ı ise onun görünümü olarak tutun.** — [Artifact yayınlamak: güncelleme, paylaşım, yorumlar](/tr/l4-master/m19-visual/artifacts/)
+
+**Her iki genişlikte de varyant isteyin, ardından canvas'ı token'lara dönüştürün.** — [/design canvas'ı: brief girer, artboard çıkar](/tr/l4-master/m19-visual/design-canvas/)
+
+**Grafiğin biçimini renklerinden önce seçin ve gerçekten gönderdiğiniz paleti
+doğrulayın.** — [/dataviz ve grafik disiplini](/tr/l4-master/m19-visual/dataviz/)
+
+**Paylaşılan settings dosyasını küratörlüğünü yapın; kişisel onayları yerel tutun.** Ve
+klasör güvenilir sayılana kadar commit'lenmiş hiçbir şeyin uygulanmayacağını bekleyin. — [Paylaşılan settings ve allowlist'ler](/tr/l4-master/m20-team/shared-settings/)
+
+**Pazarlığa kapalı kuralları, tek bir kaynakta birleştirilmiş managed settings'e
+koyun.** Birden çok dağıtılmış kaynak varsayılan olarak toplanmaz. — [Managed ve server-managed settings](/tr/l4-master/m20-team/managed-settings/)
+
+**Dağıttığınız şeyi sürümleyin ve doğrulayın.** Marketplace deposunda CI'da
+`claude plugin validate .`, ve her değişiklikte bir `version` artışı. — [Skill'leri ve plugin'leri bir takımda paylaşmak](/tr/l4-master/m20-team/team-marketplace/)
+
+**Yalnızca-inceleme kurallarını `REVIEW.md`'de tutun ve CI'ın CI'ın yaptığını yapmasına
+izin verin.** — [Claude'ı kod incelemesine ve CI kapılarına entegre etmek](/tr/l4-master/m20-team/review-process/)
+
+**Maliyeti `query_source` ve modele göre kırın ve cache-isabet oranını izleyin.** Cache
+kaçırmaları, bir oturumun aniden beş kat daha fazlaya mal olmasının olağan sebebidir. — [Bütçeler, analitik ve kullanım raporları](/tr/l4-master/m20-team/cost-budgeting/)
+
+**Bir yaygınlaştırmayı yapılandırılmış depolardan başlatın ve benimsemeyi genişlik
+olarak raporlayın.** — [Bir takıma yaygınlaştırmak: kitler, savunucular ve onboarding](/tr/l4-master/m20-team/communications-and-champions/)
+
+**Her alanın konvansiyonlarını o alanın kendi `CLAUDE.md`'sine itin.** Ve seyrek bir
+worktree için `sparsePaths`'te `.claude`'ı ilk sıraya koyun. — [Büyük kod tabanlarında çalışmak](/tr/l4-master/m21-scale/large-codebases/)
+
+**Bağlamı kasıtlı olarak harcayın: bir daha ihtiyacınız olmayacak okumaları devredin,
+sınırlarda compact'leyin, yanlış bir dönüşü özetlemek yerine rewind edin.** — [Context mühendisliği](/tr/l4-master/m21-scale/context-engineering/)
+
+**Prompt caching'i rahat bırakın ve bunun yerine daha az bağlam taşıyın.** — [Prompt caching](/tr/l4-master/m21-scale/prompt-caching/)
+
+**Modelleri pinleyin ve sağlayıcı yapılandırmasını managed settings üzerinden
+sunun.** Bir kabuk profili, arka plan oturumlarına öngörülemez şekilde ulaşır. — [Gateway'ler ve bulut sağlayıcıları](/tr/l4-master/m21-scale/gateways-and-clouds/)
+
+**Host secret'larını asla bir konteynere mount etmeyin ve konteyneri bir sınır olarak
+okumayın.** — [Devcontainer'lar ve kurumsal başlatıcılar](/tr/l4-master/m21-scale/devcontainers/)
+
+## Sırada ne var
+
+Yan sayfalar: bir mekanizma seçmek için [karar ağaçları](/tr/playbook/decision-trees/),
+bu pratiklerin önlediği başarısızlık kalıpları için
+[anti-pattern kataloğu](/tr/playbook/anti-patterns/) ve başka bir yerde okuduğunuz bir
+şey buradaki bir dersle çeliştiğinde [2025'ten beri değişenler](/tr/playbook/changelog/).
