@@ -1,0 +1,42 @@
+---
+title: 'Bütçeler, analytics ve kullanım raporları'
+description: 'Bir ekibin Claude Code harcamasının nerede görüldüğü, nerede sınırlandığı ve kullanıcı başına sayıların nasıl alındığı — `/usage` ekranı ve JSON zarfından OpenTelemetry export’a ve analytics panolarına kadar.'
+level: 4
+module: 'm20-team'
+order: 5
+duration_min: 15
+difficulty: core
+tags: ['team', 'cost', 'analytics', 'telemetry', 'budget']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Manage costs effectively'
+    url: 'https://code.claude.com/docs/en/costs.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Track team usage with analytics'
+    url: 'https://code.claude.com/docs/en/analytics.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Monitoring'
+    url: 'https://code.claude.com/docs/en/monitoring-usage.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Set up Claude Code for your organization'
+    url: 'https://code.claude.com/docs/en/admin-setup.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Özet
+
+Bu ders bir ekibin Claude Code maliyetini nerede göreceğini, nerede sınırlayacağını ve kullanıcı başına sayıları nasıl çıkaracağını anlatır. Claude for Teams/Enterprise'da koltuk başına bir kullanım hakkı vardır ve harcama sınırları admin konsolundan kurulur; Claude Console'da bütün Claude Code kullanımı otomatik oluşturulan bir workspace üzerinden izlenir; Bedrock, Agent Platform ve Foundry'de ise sayılar Anthropic'e hiç gitmez, dolayısıyla OpenTelemetry veya bir gateway tek kullanıcı-bazlı kaynak olur. Geliştirici tarafında `/usage` (`/cost`, `/stats` takma adlarıyla) oturum maliyetini, plan limitlerini ve prompt cache oranını gösterir; script'ler için doğru kaynak `claude -p --output-format json` zarfındaki `total_cost_usd` ve `modelUsage` alanlarıdır. `modelPricing` yalnızca managed ayarlardan okunur ve raporlanan rakamları sözleşme fiyatlarına çeker. Laboratuvarda `OTEL_METRICS_EXPORTER=console` ile gerçek `claude_code.cost.usage` ve `claude_code.token.usage` metrikleri üretilip okunur.
+
+Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.

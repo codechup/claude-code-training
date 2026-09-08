@@ -1,0 +1,358 @@
+---
+title: 'Budgets, analytics and usage reports'
+description: 'Where a team’s Claude Code spend is visible, where it can be capped, and how to get per-user numbers — from the `/usage` screen and the JSON envelope up to OpenTelemetry export and the analytics dashboards.'
+level: 4
+module: 'm20-team'
+order: 5
+duration_min: 15
+difficulty: core
+tags: ['team', 'cost', 'analytics', 'telemetry', 'budget']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Manage costs effectively'
+    url: 'https://code.claude.com/docs/en/costs.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Track team usage with analytics'
+    url: 'https://code.claude.com/docs/en/analytics.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Monitoring'
+    url: 'https://code.claude.com/docs/en/monitoring-usage.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Set up Claude Code for your organization'
+    url: 'https://code.claude.com/docs/en/admin-setup.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Map your organisation's setup — Teams/Enterprise, Claude Console, or a cloud provider — to where spend is visible, where it can be capped, and how per-user numbers come out.
+- Read a session's own cost from `/usage` and from a headless run's JSON envelope, and say why both are estimates.
+- Turn on OpenTelemetry export, name the eight metrics Claude Code emits, and know which attributes carry per-user and per-team attribution.
+- Explain what `modelPricing` fixes, and why it must be deployed through managed settings.
+- Know what the analytics dashboards do and do not cover, and what turning telemetry off costs you.
+
+**Prerequisites.** Lesson 02's managed-settings delivery, since the two org-wide controls here — `modelPricing` and a locked OTLP destination — are managed keys.
+
+<WhenNotToUse>
+  Do not use any of these numbers as an invoice. Claude Code computes cost locally from token counts
+  at list price; the authoritative figure is your Anthropic bill or the Console usage page. Do not
+  build a per-developer leaderboard out of them either: the metrics carry `user.email` and account
+  identifiers, and a team that discovers it is being ranked by token spend will optimise for the
+  ranking. And on a Pro or Max plan there is nothing here to manage — usage is included in the
+  subscription and the session cost figure is not a billing number.
+</WhenNotToUse>
+
+## Concept
+
+### Where the money is, by setup
+
+| Your setup                         | See spend                     | Cap spend                      | Per-user numbers                                         |
+| ---------------------------------- | ----------------------------- | ------------------------------ | -------------------------------------------------------- |
+| Claude for Teams / Enterprise      | Spend report in org analytics | Spend limits in admin settings | Spend report CSV; Enterprise Analytics API on Enterprise |
+| Claude Console (API)               | Console usage page            | Workspace spend limits         | Console dashboard; Claude Code Analytics API             |
+| Bedrock / Agent Platform / Foundry | Your cloud billing console    | Your cloud's budget controls   | OpenTelemetry, a Claude apps gateway, or an LLM gateway  |
+
+OpenTelemetry export works on every setup and is the only option that streams per-user token and cost metrics into your own observability stack in near real time.
+
+On Teams and Enterprise, each member's usage draws from a **per-seat allowance** on a rolling five-hour window and a weekly window, shared with Claude chat and Cowork, sized by seat tier. That allowance is the default ceiling; to let people continue past it you turn on usage credits and set spend limits at organisation, group or member level. Usage _inside_ the allowance is not metered in dollars at all, which is why the spend report only appears once usage credits are on.
+
+On the Console, spend is managed through **workspaces**. Authenticating Claude Code with a Console account automatically creates a workspace called "Claude Code" — you cannot create API keys in it; it exists so all Claude Code usage is tracked and capped in one place. Set a workspace rate limit there to stop Claude Code crowding out your production traffic.
+
+### What a developer sees
+
+`/usage` (aliases `/cost` and `/stats`) shows the session's token usage and a locally computed dollar figure, the plan usage bars, and — on Pro, Max, Team and Enterprise — a breakdown of what counts against the plan limits: **attribution** by skill, subagent, plugin and MCP server; **behaviour flags** for things like long context or cache misses when one accounts for 10% or more of recent usage; and **loops**, a row for each of the heaviest scheduled tasks. Press `d` or `w` to switch between 24 hours and 7 days. Those figures come from local session history on this machine, so another device's usage is not in them.
+
+Two smaller things on the same screen. Since 2.1.251 there is a `Prompt cache (main)` line reporting the request count, the share of input tokens served from cache, misses with a likely cause, expected rebuilds from compaction, and whether the cache is currently warm — the single most useful number when a session's cost climbs. And session totals reset on `/clear`; before 2.1.211 they accumulated for the life of the process.
+
+`/insights` is the other local report: it analyses up to 200 recent sessions on this machine and writes an HTML report to `~/.claude/usage-data/report.html` about how you work rather than how much you spent. It runs on any plan, and its own analysis costs tokens.
+
+### The number a script can read
+
+For anything automated, the JSON envelope of a headless run is the source: `total_cost_usd` for the run, and `modelUsage` broken down per model with input, output, cache-read and cache-creation tokens and a `costUSD` each. That is what a CI job should log, and it is what makes a nightly automation's budget an observable quantity rather than a hope.
+
+Here is this lesson's worked example prompt, aimed at exactly that:
+
+```text
+Run our nightly triage prompt headlessly with --output-format json, and append
+total_cost_usd and modelUsage from the envelope to a CSV I can chart.
+```
+
+### OpenTelemetry: the option that works everywhere
+
+Telemetry is off by default and turned on with one variable, plus an exporter and an endpoint:
+
+<CodeBlock title="turn on metrics and logs export">
+
+```bash
+export CLAUDE_CODE_ENABLE_TELEMETRY=1
+export OTEL_METRICS_EXPORTER=otlp      # otlp | prometheus | console | none
+export OTEL_LOGS_EXPORTER=otlp         # otlp | console | none
+export OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer your-token"
+```
+
+</CodeBlock>
+
+Claude Code has no default protocol, so set `OTEL_EXPORTER_OTLP_PROTOCOL` for every `otlp` exporter you enable. To verify a metrics setup, look for `claude_code.session.count` in your backend; for a logs-only setup, submit a prompt and look for the `claude_code.user_prompt` event. If nothing arrives, `claude --debug` reports exporter failures as `[3P telemetry]` lines — the `[Anthropic telemetry]` lines are Anthropic's own operational telemetry and are not your problem.
+
+The eight metrics are `claude_code.session.count`, `lines_of_code.count`, `pull_request.count`, `commit.count`, `cost.usage` (USD), `token.usage` (tokens), `code_edit_tool.decision` and `active_time.total` (seconds).
+
+Every metric carries the standard attributes: `session.id`, `organization.id`, `user.account_uuid`, `user.account_id`, `user.email`, an anonymous `user.id`, `terminal.type`, and whatever you put in `OTEL_RESOURCE_ATTRIBUTES` — which is how you get `team.id` or `department` onto every data point for multi-team reporting. The cost and token counters add `model`, `query_source` (`main`, `subagent` or `auxiliary`), `effort`, and attribution for `agent.name`, `skill.name`, `plugin.name`, `marketplace.name`, `mcp_server.name` and `mcp_tool.name`, with third-party names redacted to `"third-party"` or `"custom"`.
+
+An administrator sets all of this once, in the `env` block of managed settings, and Claude Code then **removes conflicting developer-set variables at startup**: set the generic endpoint and every developer-set per-signal endpoint is dropped; set credentials and the per-signal versions plus every developer endpoint go too. Exporter selectors follow ordinary precedence, so lock those in managed settings as well if a developer must not be able to switch a signal to `console` or `none`.
+
+### Making the reported number match your bill
+
+By default every figure Claude Code shows is computed at **list price**, so an organisation on contracted rates sees numbers that do not match its invoice. `modelPricing` fixes that: a `multiplier` for a flat discount, per-model `overrides` for the four per-token rates, or both. It is a managed-only key — ignored in user, project and local settings and in `--settings` — and it changes what Claude Code _reports_, not what Anthropic charges. When it is in effect, `/usage`'s `Total cost` line carries the note `at your organization's configured rates`. Requires Claude Code 2.1.242 or later. Claude Code does not fetch the rates from the Console, so update them when the contract changes.
+
+### The dashboards
+
+| Plan                          | Dashboard                         | Includes                                                                             |
+| ----------------------------- | --------------------------------- | ------------------------------------------------------------------------------------ |
+| Claude for Teams / Enterprise | `claude.ai/analytics/claude-code` | Usage metrics, contribution metrics with GitHub integration, leaderboard, CSV export |
+| API (Claude Console)          | `platform.claude.com/claude-code` | Usage metrics, spend tracking, team insights                                         |
+
+Admins and Owners can view the Teams/Enterprise dashboard. Contribution metrics — PRs and lines of code shipped with Claude Code assistance — are in public beta, need the Claude GitHub App installed by a GitHub admin and the analytics toggles enabled by a Claude Owner, cover only users inside your claude.ai organisation, and are **not available with Zero Data Retention**, where the dashboard shows usage metrics only.
+
+The dashboards are fed by the same telemetry that `DISABLE_TELEMETRY` turns off. Deploy that variable for a group of developers and you also lose their analytics data — and their feature-flag fetching, which takes Remote Control and default auto mode with it. On Bedrock, Agent Platform and Foundry, metrics are never sent back to Anthropic at all, so the dashboards and the Analytics API do not cover that usage: OpenTelemetry or a gateway is the only per-user attribution you will get.
+
+### When a developer asks about a limit
+
+Four different messages get reported as "I hit a limit", and they need different answers. A **session or weekly limit** is a seat-based window shared across models, so `/model` will not restore access — but a model-specific "You've hit your Opus limit" _is_ solved by switching family. A **gateway spend-limit message** means they passed a cap you set. A **context or auto-compact warning** is not a limit at all. And **unexpectedly high spend** on an API or cloud plan usually traces to long sessions never cleared, or Opus left as the default.
+
+## Hands-on lab
+
+<Callout>
+  The analytics dashboards and spend limits live in a Team or Enterprise admin console, so they are
+  described here rather than recorded. What this lab does is the part that works on any plan and any
+  provider: emit real cost and token metrics from your own machine and read them.
+</Callout>
+
+<Lab
+  title="Lab · make one session’s cost observable"
+  lessonId="en/l4-master/m20-team/cost-budgeting"
+  repoTag="none"
+  steps={[
+    "Run a trivial headless session with the console metrics exporter: set `CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER=console` and `OTEL_METRIC_EXPORT_INTERVAL=5000`, then `claude -p 'Reply with the word OK and nothing else.' --model sonnet --max-turns 2 --output-format text`.",
+    'Find the `claude_code.cost.usage` block in the output. Read the `dataPoints`: there is more than one, because a session bills several models.',
+    'Note the attributes on each data point — `model`, `query_source`, `effort` — and the identity attributes an OTLP collector would receive. Decide which of them your organisation is willing to store.',
+    'Run any headless prompt again with `--output-format json` and read `total_cost_usd` and `modelUsage` from the envelope. Compare the per-model split with what the metrics showed.',
+    'Inside an interactive session, run `/usage` and read the `Prompt cache (main)` line: the share of input tokens served from cache is the number that explains most surprises in a long session.',
+    'Write down which of the three — metrics, envelope, `/usage` — you would wire into a nightly job, and why the other two are for humans.',
+  ]}
+  expected="The console exporter prints `claude_code.session.count`, `cost.usage`, `token.usage` and `active_time.total`; the cost metric has one data point per model, and the JSON envelope's `modelUsage` shows the same split with cache-read tokens dominating the input count."
+  checklist={[
+    'Telemetry produced output without an OTLP collector, because `console` is a valid exporter',
+    'You found at least two data points under `claude_code.cost.usage` with different `model` values',
+    'You can say what `query_source: "auxiliary"` means and why it bills a different model',
+    '`total_cost_usd` in the envelope is a locally computed estimate at list price, and you can say what would change that',
+    'You noticed which personal identifiers the metrics carry',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m20-team/05-cost-budgeting/01-otel-console-metrics.txt"
+    range="3-48"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m20-team/05-cost-budgeting/02-json-envelope-cost.txt"
+    range="3-38"
+  />
+</Lab>
+
+Two things in those recordings change how you budget.
+
+The first is that a one-turn session billed **two different models**. The `main` request went to `claude-sonnet-5` at `effort: high` and cost about 2.2 cents; a second data point with `query_source: "auxiliary"` went to `claude-haiku-4-5` for a tenth of a cent. Auxiliary requests are the small internal calls a session makes on your behalf, and they are why per-model budgeting from the model you _chose_ is always slightly wrong. The `query_source` attribute is exactly the dimension to break a dashboard down by.
+
+The second is the cache. In the JSON envelope, the Sonnet request reports 4 input tokens and 69,398 **cache-read** tokens. Almost the entire prompt was served from cache, at cache-read rates. That is the single biggest lever on a team's bill, and it is why the `Prompt cache (main)` line in `/usage` and a cache-hit-ratio panel in your dashboard are worth more than a token-count leaderboard.
+
+Note also what the metrics carry: `user.email`, `organization.id` and two account identifiers on every data point. Redact or drop what you do not need before it lands in a shared store — the transcript above is redacted for exactly that reason.
+
+### Turning telemetry on, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+export CLAUDE_CODE_ENABLE_TELEMETRY=1
+export OTEL_METRICS_EXPORTER=console
+export OTEL_METRIC_EXPORT_INTERVAL=5000
+claude -p 'Reply with the word OK and nothing else.' --model sonnet --max-turns 2 --output-format text
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+export CLAUDE_CODE_ENABLE_TELEMETRY=1
+export OTEL_METRICS_EXPORTER=console
+export OTEL_METRIC_EXPORT_INTERVAL=5000
+claude -p 'Reply with the word OK and nothing else.' --model sonnet --max-turns 2 --output-format text
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$env:CLAUDE_CODE_ENABLE_TELEMETRY = '1'
+$env:OTEL_METRICS_EXPORTER = 'console'
+$env:OTEL_METRIC_EXPORT_INTERVAL = '5000'
+claude -p 'Reply with the word OK and nothing else.' --model sonnet --max-turns 2 --output-format text
+```
+
+  </Fragment>
+</OSTabs>
+
+For a fleet, none of that belongs in a developer's shell — it goes in the `env` block of managed settings, where the destination is locked and cannot be pointed elsewhere.
+
+## Anti-patterns
+
+**Reporting the `/usage` figure as spend.** It is computed locally from token counts at list price, and on a subscription it is not a billing number at all. _Fix:_ take spend from the Console usage page, the org spend report, or your cloud's billing console; deploy `modelPricing` if you want the local figures to match contracted rates.
+
+**Ranking developers by tokens.** The metrics make it easy and it measures the wrong thing — a developer who deletes a feature spends fewer tokens than one who generates a thousand lines nobody asked for. _Fix:_ track cost against outcomes at the team level, and use the attribution breakdown to find expensive _habits_ rather than expensive people.
+
+**Turning `DISABLE_TELEMETRY` on for the whole fleet and then asking for a dashboard.** The dashboard is fed by that data, and the variable also disables feature-flag fetching. _Fix:_ decide once, deliberately; if you need numbers without Anthropic-bound telemetry, export OpenTelemetry to your own collector.
+
+**Letting developers set the OTLP endpoint.** A per-signal endpoint in someone's shell used to redirect that signal away from your collector. _Fix:_ set the endpoint and credentials in managed settings — Claude Code then removes conflicting developer variables at startup — and lock the exporter selectors too.
+
+**Budgeting per model from the model you chose.** Auxiliary requests bill a different model, and subagents bill separately again. _Fix:_ break your dashboard down by `query_source` and `model`, not by the session's headline model.
+
+**Ignoring the cache-hit ratio.** Cache misses are the usual cause of a session that suddenly costs five times more. _Fix:_ watch the `Prompt cache (main)` line, and treat a `likely cause: tool definitions changed` note as an actionable finding.
+
+<Callout variant="changed">
+  `/cost` is now an alias of `/usage`, not a separate command, and `/stats` is a third alias. The
+  `Prompt cache (main)` line requires Claude Code 2.1.251 or later, `modelPricing` requires 2.1.242,
+  and session totals reset on `/clear` — before 2.1.211 they accumulated for the lifetime of the
+  process.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m20-team/cost-budgeting"
+  questionId="q1"
+  lang="en"
+  prompt="Your developers authenticate through Amazon Bedrock. Which of these gives you per-user cost attribution?"
+  options={[
+    {
+      text: 'The claude.ai analytics dashboard',
+      explanation:
+        'Claude Code does not send metrics from a cloud provider back to Anthropic, so the dashboards do not cover that usage.',
+    },
+    {
+      text: 'OpenTelemetry export to your own collector',
+      correct: true,
+      explanation:
+        'It works on every provider, and a Claude apps gateway or an LLM gateway are the other two options named in the docs.',
+    },
+    {
+      text: 'The Claude Code Analytics API',
+      explanation: 'That covers Claude Console organisations, not cloud-provider usage.',
+    },
+    {
+      text: 'The `/usage` command on each developer’s machine',
+      explanation:
+        'It reports that machine’s local session history only — useful to the developer, not a report.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m20-team/cost-budgeting"
+  questionId="q2"
+  lang="en"
+  prompt="Where must `modelPricing` be set for a team’s reported costs to use contracted rates?"
+  options={[
+    {
+      text: 'In each developer’s `~/.claude/settings.json`',
+      explanation: 'Claude Code ignores the key in user, project and local settings.',
+    },
+    {
+      text: 'In managed settings — server-managed, MDM, `managed-settings.json`, or a policy helper',
+      correct: true,
+      explanation:
+        'It is a managed-only key. Note it changes what Claude Code reports, not what Anthropic charges.',
+    },
+    {
+      text: 'In the repository’s `.claude/settings.json`, so it travels with the project',
+      explanation: 'Also ignored — a repository file cannot set it.',
+    },
+    {
+      text: 'Passed per session with `--settings`',
+      explanation: '`--settings` cannot set managed-only keys.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m20-team/cost-budgeting"
+  questionId="q3"
+  lang="en"
+  prompt="An OpenTelemetry data point on `claude_code.cost.usage` carries `query_source: auxiliary`. What does that tell you?"
+  options={[
+    {
+      text: 'The request came from a subagent.',
+      explanation: 'A subagent’s requests carry `query_source: "subagent"`.',
+    },
+    {
+      text: 'The request was issued by an internal subsystem rather than the main conversation, and may bill a different model.',
+      correct: true,
+      explanation:
+        'The three documented values are `main`, `subagent` and `auxiliary` — which is why per-model budgets from the model you selected are always a little wrong.',
+    },
+    {
+      text: 'The request failed and was retried.',
+      explanation: 'Errors are reported as events, not as a `query_source` value.',
+    },
+    {
+      text: 'The metric is an estimate rather than a measurement.',
+      explanation:
+        'Every cost figure is a local estimate; `query_source` says who issued the request.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m20-team/cost-budgeting"
+  questionId="q4"
+  lang="en"
+  prompt="What else stops working when you deploy `DISABLE_TELEMETRY=1` to a group of developers?"
+  options={[
+    {
+      text: 'Their analytics data and feature-flag fetching, which takes Remote Control and default auto mode with it.',
+      correct: true,
+      explanation:
+        'Both consequences are documented on the managed-settings page; decide the trade deliberately.',
+    },
+    {
+      text: 'Nothing else — it only stops Anthropic-bound operational telemetry.',
+      explanation:
+        'It also ends the usage data behind your dashboard and turns off feature-flag fetching.',
+    },
+    {
+      text: 'Their OpenTelemetry export to your own collector.',
+      explanation:
+        'That is configured separately with `CLAUDE_CODE_ENABLE_TELEMETRY` and the OTLP variables.',
+    },
+    {
+      text: 'Their ability to run `/usage`.',
+      explanation: '`/usage` reads local session history and the plan-limits endpoint.',
+    },
+  ]}
+/>
+
+**Next:** `06-communications-and-champions` — the part of a rollout that no setting can deliver.

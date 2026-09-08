@@ -1,0 +1,12 @@
+# 2026-09-07 · Claude Code 2.1.263 · scratch project team-demo · .claude/settings.json now also denies Bash(node src/math.js); the personal allow rule is still in .claude/settings.local.json
+# $ claude -p 'Run the shell command `node src/math.js` and report exactly what it printed. Answer with one short line.' --model sonnet --max-turns 4 --output-format json < /dev/null > out.json 2> err.txt; jq '{subtype, permission_denials: [.permission_denials[] | {tool_name, command: .tool_input.command}]}' out.json
+{
+  "subtype": "success",
+  "permission_denials": [
+    {
+      "tool_name": "Bash",
+      "command": "node src/math.js"
+    }
+  ]
+}
+exit=0

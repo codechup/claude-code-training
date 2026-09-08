@@ -1,0 +1,39 @@
+# 2026-09-07 · Claude Code 2.1.263 · run from the scratch project team-demo, marketplace is the sibling folder
+# $ claude plugin marketplace add ../team-marketplace --scope project
+Adding marketplace…✔ Successfully added marketplace: acme-tools (declared in project settings)
+# $ claude plugin marketplace list --json
+[
+  {
+    "name": "acme-tools",
+    "source": "directory",
+    "path": "<scratch>\\team-marketplace",
+    "installLocation": "<scratch>\\team-marketplace"
+  },
+  {
+    "name": "claude-plugins-official",
+    "source": "github",
+    "repo": "anthropics/claude-plugins-official",
+    "installLocation": "~\\.claude\\plugins\\marketplaces\\claude-plugins-official"
+  }
+]
+# $ claude plugin install lint-kit@acme-tools --scope project
+Installing plugin "lint-kit@acme-tools"...✔ Successfully installed plugin: lint-kit@acme-tools (scope: project)
+# $ claude plugin list
+Installed plugins:
+
+  ❯ lint-kit@acme-tools
+    Version: 0.1.0
+    Scope: project
+    Status: ✔ enabled
+# $ cat .claude/settings.json   (the two keys the two commands added)
+  "extraKnownMarketplaces": {
+    "acme-tools": {
+      "source": {
+        "source": "directory",
+        "path": "<scratch>\\team-marketplace"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "lint-kit@acme-tools": true
+  }

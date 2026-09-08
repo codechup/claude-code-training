@@ -1,0 +1,394 @@
+---
+title: 'Integrating Claude into code review and CI gates'
+description: 'Three different things get called "Claude reviews our PRs": the managed Code Review service, a GitHub Actions workflow you own, and the local `/code-review` command. Learn what each one is, what it reads, and where the gate belongs.'
+level: 4
+module: 'm20-team'
+order: 4
+duration_min: 15
+difficulty: core
+tags: ['team', 'code-review', 'ci', 'github-actions']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Code Review'
+    url: 'https://code.claude.com/docs/en/code-review.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code GitHub Actions'
+    url: 'https://code.claude.com/docs/en/github-actions.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Slash commands'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage costs effectively'
+    url: 'https://code.claude.com/docs/en/costs.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Tell the three review mechanisms apart — managed Code Review, the `claude-code-action` workflow you own, and the local `/code-review` command — and choose between them.
+- Say what each one reads: `REVIEW.md` for the managed service, `CLAUDE.md` for all of them, and neither for a plain workflow prompt.
+- Write a `REVIEW.md` that recalibrates severity, caps nits and skips paths.
+- Gate a merge on review findings without letting the review block merges by itself, by reading the check run's severity counts.
+- Run a real review headlessly and know what `-p` changes about it.
+
+**Prerequisites.** A git repository with something to review. The managed Code Review service is a research preview for Team and Enterprise subscriptions and is not available with Zero Data Retention; the local command and the GitHub Actions path work on any plan.
+
+<WhenNotToUse>
+  An automated review is not a substitute for a human reviewer, and treating it as one is the
+  failure mode this lesson is written against: the findings do not approve or block, and the check
+  run always completes neutral, deliberately. Do not turn on push-triggered reviews for a
+  high-traffic repository before you have watched the cost on a few PRs — reviews average \$15–25
+  each and scale with PR size. Do not point a review at generated code, lockfiles or vendored
+  dependencies. And do not ask a review to enforce what your linter already enforces: you will pay
+  tokens for an opinion CI could give you for free in two seconds.
+</WhenNotToUse>
+
+## Concept
+
+### Three mechanisms, one name
+
+| Mechanism                         | Where it runs                                | Availability                                        | Reads                            |
+| --------------------------------- | -------------------------------------------- | --------------------------------------------------- | -------------------------------- |
+| **Code Review** (managed)         | Anthropic infrastructure, on your GitHub PRs | Research preview; Team and Enterprise; not with ZDR | `CLAUDE.md` and `REVIEW.md`      |
+| **`claude-code-action`** workflow | Your GitHub Actions runners                  | Any plan with a key or subscription token           | `CLAUDE.md`; whatever you prompt |
+| **`/code-review`** command        | Your machine, in the session                 | Any plan                                            | `CLAUDE.md`, not `REVIEW.md`     |
+
+They are complementary. The managed service is the one that posts inline comments on the lines it found problems on; the workflow is what you reach for when the review must run inside your own CI, on your own runners, on a self-hosted GitHub, or as part of a job that does other things too; the command is what an author runs before pushing.
+
+### The managed Code Review service
+
+An Owner enables it once for the organisation at the Claude Code admin settings page and picks which repositories are included, which installs the Claude GitHub App. Then each repository gets a **Review Behavior**: _Once after PR creation_, _After every push_, or _Manual_. In any mode, commenting `@claude review` on a PR starts a review, and `@claude review always` subscribes that PR to push-triggered reviews. A pull request from a fork is only ever reviewed on an explicit `@claude review`.
+
+When a review runs, several agents analyse the diff and the surrounding code in parallel, a verification step checks each candidate finding against actual code behaviour to filter false positives, and the results are deduplicated, ranked and posted as inline comments. Findings carry a severity: 🔴 Important (a bug to fix before merging), 🟡 Nit (minor), 🟣 Pre-existing (a bug the PR did not introduce). Reviews complete in 20 minutes on average.
+
+Each review also populates a **Claude Code Review** check run whose Details view lists every finding in one table, and writes annotations onto the diff lines in the Files changed tab. The check run **always completes with a neutral conclusion**, so it never blocks a merge through branch protection. That is a design decision, not an omission: if you want a gate, build it yourself from the machine-readable severity counts in the check run output.
+
+<CodeBlock title="read the severity counts in your own CI">
+
+```bash
+gh api repos/OWNER/REPO/commits/<commit-sha>/check-runs --jq '.check_runs[] | {id, name}'
+gh api repos/OWNER/REPO/check-runs/CHECK_RUN_ID \
+  --jq '.output.text | split("bughunter-severity: ")[1] | split(" -->")[0] | fromjson'
+```
+
+</CodeBlock>
+
+That returns something like `{"normal": 2, "nit": 1, "pre_existing": 0}` — `normal` is the Important count, so a non-zero value means Claude found at least one bug worth fixing before merge. Fail your own job on it if that is the policy you want.
+
+### Tuning what gets flagged: `REVIEW.md`
+
+The managed service reads two files. `CLAUDE.md` is your ordinary project memory; Code Review treats newly introduced violations of it as **nit-level** findings, and it works bidirectionally — a change that makes a `CLAUDE.md` statement outdated gets flagged as documentation to update. `REVIEW.md`, at the repository root, is review-only instruction: the agents that find and verify findings receive it as your repository's review guidance, and the agents that rank and report consult it before settling severity.
+
+`REVIEW.md` is read as plain text. `@` imports are not expanded and referenced files are not fetched, so the rules must be in the file. The patterns that pay off:
+
+- **Severity**: redefine what Important means here. The default calibration targets production code; a docs or config repository wants a much narrower definition.
+- **Nit volume**: cap it. "Report at most five nits, mention the rest as a count" keeps a review actionable.
+- **Skip rules**: name the paths, branch patterns and finding categories to stay out of — generated code, lockfiles, anything CI already enforces. For paths that deserve some scrutiny, raise the bar instead of skipping: "in `scripts/`, only report if near-certain and severe."
+- **Verification bar**: "behaviour claims need a `file:line` citation, not an inference from naming" removes a whole class of false positive.
+- **Re-review convergence**: "after the first review, suppress new nits and post Important findings only" stops a one-line fix reaching round seven on style.
+
+Keep it short. A long `REVIEW.md` dilutes the rules that matter.
+
+### The workflow you own
+
+`anthropics/claude-code-action@v1` runs Claude Code in your own GitHub Actions job. It has two modes, detected from the workflow rather than configured: **interactive** when you provide no `prompt` input, in which case Claude waits for the `@claude` trigger phrase in a comment, review or new issue; and **automation** when you do provide a `prompt`, in which case it runs unprompted and writes to the run log unless the prompt tells it to post.
+
+Two checks run on the triggering actor before Claude starts, and the job fails if either rejects: the actor needs **write access** on issue and PR events (`allowed_non_write_users` plus your own `github_token` widens it), and a **bot actor is rejected** unless listed in `allowed_bots` — which also applies to scheduled runs, since GitHub attributes those to a user.
+
+The inputs you will actually use are `prompt`, `claude_args` (any CLI argument — `--max-turns`, `--model`, `--allowedTools`, `--mcp-config`), one of `anthropic_api_key` or `claude_code_oauth_token`, and optionally `settings`, `plugin_marketplaces`, `plugins` and `trigger_phrase`. `/install-github-app` from inside Claude Code does the whole setup — app, secret, workflow branch and pull request — and re-running it offers to update a workflow an older version generated.
+
+Cost control on this path is workflow-shaped: cap `--max-turns` in `claude_args`, set a job timeout, use concurrency limits, keep `CLAUDE.md` short since it is read on every run, and remember you are spending GitHub Actions minutes as well as tokens.
+
+### A CI gate that is not a review at all
+
+Not every quality gate should be an LLM. This course's own repository is the worked example: its CI job runs `npm run typecheck`, `npm run lint`, `node scripts/check-public-hygiene.mjs`, `node scripts/check-raw-colors.mjs`, `node tools/plan/cli.ts check`, `node scripts/content-gate.ts` and `gitleaks` — all deterministic, all fast, all free. Its `.claude/settings.json` then wires a `PreToolUse` hook that blocks the same hygiene violations _before_ a write reaches the tree, so the rule is enforced at three moments: while Claude works, at commit time, and in CI.
+
+<CodeBlock title=".claude/settings.json — the guard hooks from this repository">
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|Bash|PowerShell",
+        "hooks": [{ "type": "command", "command": "node .claude/hooks/guard-hygiene.mjs" }]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [{ "type": "command", "command": "node .claude/hooks/guard-bash.mjs" }]
+      }
+    ]
+  }
+}
+```
+
+</CodeBlock>
+
+The rule of thumb: if a check can be written as a script, write it as a script and put it in CI. Save the review for the judgements a script cannot make.
+
+### The local command
+
+`/code-review` reviews your branch's commits ahead of its upstream plus any uncommitted changes; pass a target to review something else — a path, a PR number, a branch, or a ref range like `main...my-feature`. `--fix` applies the findings, `--comment` posts them as inline PR comments, `ultra` escalates to a cloud review. `/review` is an alias.
+
+Effort trades coverage for confidence: `low` and `medium` report only the findings the review is most confident in; `high` through `max` broaden coverage and may include less certain ones. With no level typed, it reuses the last level you typed, even from an earlier session.
+
+Two behaviours matter for a team. The review normally runs as a **background subagent** with its own context window, so it does not fill your conversation — but in a `-p` run it runs in the foreground and the findings come back in the response. And Claude can start it on its own, or a scheduled task can; to keep the command available to you while stopping that, add `"skillOverrides": { "code-review": "user-invocable-only" }` to a settings file.
+
+Here is this lesson's worked example prompt, which is what you should be able to say once the gate exists:
+
+```text
+Review my branch against main, apply only the correctness fixes, and leave the style notes as comments.
+```
+
+## Hands-on lab
+
+<Callout>
+  The managed Code Review service needs a Team or Enterprise organisation and an installed GitHub
+  App, so this lab uses the local command, which does the same kind of analysis on the same diff.
+  The GitHub Actions workflow is shown as a file to copy, not as a transcript: an Actions run cannot
+  be captured from a laptop, and inventing one would be a fabricated recording.
+</Callout>
+
+<Lab
+  title="Lab · plant a bug, review it, then write the rules that would have caught it"
+  lessonId="en/l4-master/m20-team/review-process"
+  repoTag="none"
+  steps={[
+    'Create a scratch repository with one file: `src/discount.js` exporting `applyDiscount(price, percent)` that correctly returns `price - (price * percent) / 100`. Commit it as the baseline.',
+    'Now break it in the working tree, the way a real PR does: drop the `/100`, and add a comment claiming a clamp prevents negative prices while the clamp only guards `percent > 100`.',
+    'Add a `REVIEW.md` that narrows Important to findings which change a computed result, lose data or leak credentials, and caps nits at three.',
+    "Run the review headlessly: `claude -p '/code-review medium' --model sonnet --max-turns 30 --output-format text < /dev/null`. Give it time — a review takes minutes, and in `-p` it runs in the foreground.",
+    'Read the findings against your own knowledge of the bug: did it catch both the missing `/100` and the one-sided clamp, and did it notice that the comment contradicts the code?',
+    'Finally, decide where each finding belongs: which of them a unit test should have caught, which a linter, and which genuinely needed a reviewer.',
+  ]}
+  expected="The review reports both defects with concrete failing inputs — `applyDiscount(100, 20)` returning -1900 instead of 80, and a negative `percent` producing a price increase — and points out that the clamp comment does not hold."
+  checklist={[
+    'The review ran against the uncommitted diff, not the whole file',
+    'Both defects were found, each with a worked failing input',
+    'The contradiction between the comment and the code was flagged',
+    'You can say why `REVIEW.md` did not shape this run (the local command does not read it)',
+    'You wrote down which findings a test or linter should own instead',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m20-team/04-review-process/01-code-review-local.txt"
+    range="3-15"
+  />
+</Lab>
+
+Three things in that recording are worth stopping on.
+
+The review did not merely restate the diff: it produced **failing inputs**. `applyDiscount(100, 20)` returning `-1900` instead of `80` is a claim you can check in one line, which is exactly the bar a review should meet before it costs a reviewer's attention. That is the verification step doing its job.
+
+It also caught the comment. The code said one thing and the comment claimed another, and a reviewer skimming a three-line diff is precisely the reader who accepts the comment's claim. This is where a review earns its keep.
+
+And the language is mixed, which is instructive rather than untidy. The machine that recorded this has global preferences asking for Turkish answers, so the framing sentences are Turkish; the findings themselves are English because the scratch repository's `CLAUDE.md` says review output must be English. That is `CLAUDE.md` steering a review in real time. Note what it is _not_: the `REVIEW.md` in that repository had no effect here, because the local `/code-review` command does not read it — only the managed service does.
+
+### Running a review, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+claude -p '/code-review medium' --model sonnet --max-turns 30 --output-format text < /dev/null
+claude -p '/code-review high main...HEAD' --output-format text < /dev/null
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+claude -p '/code-review medium' --model sonnet --max-turns 30 --output-format text < /dev/null
+claude -p '/code-review high main...HEAD' --output-format text < /dev/null
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+claude -p '/code-review medium' --model sonnet --max-turns 30 --output-format text
+claude -p '/code-review high main...HEAD' --output-format text
+```
+
+  </Fragment>
+</OSTabs>
+
+### A workflow to copy
+
+<CodeBlock title=".github/workflows/claude.yml">
+
+```yaml
+name: Claude Code
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+jobs:
+  claude:
+    if: contains(github.event.comment.body, '@claude')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+</CodeBlock>
+
+`id-token: write` is required for the action's default GitHub App authentication, `actions: read` lets Claude read CI results on the PR, and the `if` keeps runners from starting on comments that do not mention `@claude`. If you authenticate with a subscription instead of an API key, replace the key line with `claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}`.
+
+## Anti-patterns
+
+**Making the review a required check.** The Claude Code Review check run always completes neutral by design, so a branch-protection rule on it gates nothing — and the version that would gate everything would block merges on nits. _Fix:_ read the severity counts in your own job and fail on `normal > 0` if that is your policy.
+
+**Turning on push-triggered reviews everywhere on day one.** Every push runs a review, and reviews average \$15–25. _Fix:_ start in Manual or _Once after PR creation_, watch the per-repository average cost in the admin table, and promote the repositories where it pays.
+
+**Putting review rules in `CLAUDE.md`.** They reach the review only as nit-level project context, and they lengthen the file every ordinary session reads. _Fix:_ put review-only rules in `REVIEW.md`; keep `CLAUDE.md` for how the project works.
+
+**Expecting `REVIEW.md` to shape `/code-review`.** The local command reads `CLAUDE.md` and not `REVIEW.md`. _Fix:_ know which mechanism you are tuning; test managed-service rules on a real PR.
+
+**Replying to a finding and waiting.** Replying to an inline comment does not prompt Claude to respond or update the PR. _Fix:_ fix the code and push, or comment `@claude review` at top level for a fresh run.
+
+**Asking the review to do the linter's job.** Formatting, import order and type errors are cheaper, faster and more reliable as CI steps. _Fix:_ list them under "do not report" in `REVIEW.md`, and put the check in the pipeline.
+
+**Letting `--fix` edits vanish.** A background review's `--fix` edits are applied outside your session's checkpoints, so `/rewind` will not undo them. _Fix:_ use git.
+
+<Callout variant="changed">
+  Workflows still on `anthropics/claude-code-action@beta` need updating: change `@beta` to `@v1`,
+  drop the `mode` input (the action detects the mode from whether you pass a `prompt`), rename
+  `direct_prompt` to `prompt`, and move CLI options such as `max_turns` and `model` into
+  `claude_args`. `custom_instructions` becomes `--append-system-prompt`.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m20-team/review-process"
+  questionId="q1"
+  lang="en"
+  prompt="Your team wants merges blocked when Claude finds an Important bug. What actually works?"
+  options={[
+    {
+      text: 'Add the Claude Code Review check to branch protection as a required check.',
+      explanation:
+        'The check run always completes with a neutral conclusion, so requiring it gates nothing.',
+    },
+    {
+      text: 'Read the severity counts from the check run output in your own CI job and fail on a non-zero Important count.',
+      correct: true,
+      explanation:
+        'The last line of the Details text is machine-readable; `normal` holds the Important count.',
+    },
+    {
+      text: 'Set the repository’s Review Behavior to “After every push”.',
+      explanation: 'That changes when reviews run, not whether they block.',
+    },
+    {
+      text: 'Run `/code-review --fix` in a workflow so there is nothing left to block on.',
+      explanation: 'Applying fixes automatically is not a gate, and it removes the human decision.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m20-team/review-process"
+  questionId="q2"
+  lang="en"
+  prompt="Which file does the local `/code-review` command read?"
+  options={[
+    {
+      text: 'REVIEW.md only',
+      explanation: 'The local command does not read `REVIEW.md` at all.',
+    },
+    {
+      text: 'CLAUDE.md, but not REVIEW.md',
+      correct: true,
+      explanation:
+        'The review follows your `CLAUDE.md` like any session; `REVIEW.md` reaches only the managed Code Review service.',
+    },
+    { text: 'Both', explanation: 'Only the managed service reads both.' },
+    {
+      text: 'Neither — the local command reviews the diff with no project context.',
+      explanation: 'It is an ordinary Claude Code session, so project memory applies.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m20-team/review-process"
+  questionId="q3"
+  lang="en"
+  prompt="Your workflow passes a `prompt` input to `anthropics/claude-code-action@v1`. What does that change?"
+  options={[
+    {
+      text: 'Nothing; `prompt` is an alias for the trigger phrase.',
+      explanation: '`trigger_phrase` is the separate input for that.',
+    },
+    {
+      text: 'It selects automation mode: Claude runs without waiting for an `@claude` mention, and writes to the run log unless the prompt tells it to post.',
+      correct: true,
+      explanation:
+        'The action detects the mode from whether a `prompt` is present — there is no `mode` input any more.',
+    },
+    {
+      text: 'It disables the write-access and bot-actor checks on the triggering user.',
+      explanation: 'Those checks apply in both modes.',
+    },
+    {
+      text: 'It forces the review to post inline comments.',
+      explanation:
+        'Posting needs the prompt to say so and a tool that can post, as in the code-review example.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m20-team/review-process"
+  questionId="q4"
+  lang="en"
+  prompt="A reviewer complains that every PR gets thirty style comments. Which `REVIEW.md` change addresses it most directly?"
+  options={[
+    {
+      text: 'Cap the number of Nit findings per review and ask for the rest as a count in the summary.',
+      correct: true,
+      explanation:
+        'Nit volume is one of the documented tuning patterns, and a cap keeps the review actionable.',
+    },
+    {
+      text: 'Lower the effort level.',
+      explanation:
+        'Effort tunes the local `/code-review` command; it is not how the managed service is calibrated.',
+    },
+    {
+      text: 'Move the style rules into CLAUDE.md.',
+      explanation:
+        'That makes them worse: newly introduced `CLAUDE.md` violations are reported as nits.',
+    },
+    {
+      text: 'Switch the repository to Manual review behaviour.',
+      explanation: 'That reduces how often reviews run, not how noisy each one is.',
+    },
+  ]}
+/>
+
+**Next:** `05-cost-budgeting` turns to the number that decides how much of any of this you can afford.

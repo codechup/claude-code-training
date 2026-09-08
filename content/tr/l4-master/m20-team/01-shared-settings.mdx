@@ -1,0 +1,42 @@
+---
+title: 'Paylaşılan ayarlar ve allowlist’ler'
+description: 'Tek bir `.claude/settings.json` dosyasını commit ederek bütün ekibe aynı permission, hook ve plugin setini verin — ve commit edilen bir kuralın takım arkadaşlarınıza gerçekten ulaşıp ulaşmadığını belirleyen iki kuralı öğrenin: precedence ve workspace trust.'
+level: 4
+module: 'm20-team'
+order: 1
+duration_min: 15
+difficulty: core
+tags: ['team', 'settings', 'permissions', 'allowlist']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Claude Code settings'
+    url: 'https://code.claude.com/docs/en/settings.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure permissions'
+    url: 'https://code.claude.com/docs/en/permissions.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Example settings files'
+    url: 'https://code.claude.com/docs/en/settings-example.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Slash commands'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Özet
+
+Bu ders Claude Code'un dört ayar kapsamını (user, paylaşılan proje, proje-yerel ve managed) ve bunların precedence sırasını anlatır: en üstte managed ayarlar, sonra komut satırı, `.claude/settings.local.json`, `.claude/settings.json` ve `~/.claude/settings.json`. Liste tipindeki anahtarlar — örneğin `permissions.allow` — üzerine yazmak yerine birleşir. Permission kuralları her kapsamda önce `deny`, sonra `ask`, sonra `allow` sırasıyla değerlendirilir; bu yüzden bir takım arkadaşınızın kendi dosyasından iptal edemeyeceği tek şey `deny` kuralıdır. Dersin can alıcı noktası workspace trust'tır: commit edilmiş bir `allow` kuralı, o klasöre güvenilene kadar uygulanmaz ve `claude -p` çalıştırmalarında trust diyaloğu hiç gösterilmediği için kural sessizce atlanır — stderr'e bir uyarı yazılarak. Laboratuvarda bir scratch projede dört gerçek headless çalıştırma yapılır ve `permission_denials` alanı ile stream-json çıktısındaki `tool_result` üzerinden kanıtlanır.
+
+Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.

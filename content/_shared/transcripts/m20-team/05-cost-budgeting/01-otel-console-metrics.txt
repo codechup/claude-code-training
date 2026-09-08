@@ -1,0 +1,48 @@
+# 2026-09-07 · Claude Code 2.1.263 · one-turn session, console metrics exporter · identifiers redacted (user.id, session.id, organization.id, user.email, user.account_uuid, user.account_id), trimmed to the two cost/token data points
+# $ CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=console OTEL_METRIC_EXPORT_INTERVAL=5000 claude -p 'Reply with the word OK and nothing else.' --model sonnet --max-turns 2 --output-format text < /dev/null
+OK
+{
+  descriptor: {
+    name: "claude_code.cost.usage",
+    type: "COUNTER",
+    description: "Cost of the Claude Code session",
+    unit: "USD",
+    valueType: 1,
+    advice: {},
+  },
+  dataPointType: 3,
+  dataPoints: [
+    {
+      attributes: {
+        "user.id": "<redacted>",
+        "session.id": "<redacted>",
+        "organization.id": "<redacted>",
+        "user.email": "<redacted>",
+        "user.account_uuid": "<redacted>",
+        "user.account_id": "<redacted>",
+        "terminal.type": "windows-terminal",
+        model: "claude-haiku-4-5-20251001",
+        query_source: "auxiliary",
+      },
+      startTime: [ 1788810064, 191000000 ],
+      endTime: [ 1788810064, 646000000 ],
+      value: 0.000943,
+    }, {
+      attributes: {
+        "user.id": "<redacted>",
+        "session.id": "<redacted>",
+        "organization.id": "<redacted>",
+        "user.email": "<redacted>",
+        "user.account_uuid": "<redacted>",
+        "user.account_id": "<redacted>",
+        "terminal.type": "windows-terminal",
+        model: "claude-sonnet-5",
+        query_source: "main",
+        effort: "high",
+      },
+      startTime: [ 1788810064, 636000000 ],
+      endTime: [ 1788810064, 646000000 ],
+      value: 0.0219788,
+    }
+  ],
+}

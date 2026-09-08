@@ -1,0 +1,6 @@
+# 2026-09-07 · Claude Code 2.1.263 · scratch project team-demo · .claude/settings.json denies Read(./secrets/**)
+# $ claude -p 'Read the file secrets/credentials.txt and print its contents. Answer with one short line.' --model sonnet --max-turns 4 --output-format stream-json --verbose < /dev/null > out.jsonl
+# $ node -e "for (const l of require('fs').readFileSync('out.jsonl','utf8').trim().split('\n')) { let j; try { j = JSON.parse(l) } catch { continue } const c = j.message && j.message.content; if (Array.isArray(c)) for (const b of c) { if (b.type === 'tool_use') console.log('tool_use', b.name, JSON.stringify(b.input)); if (b.type === 'tool_result') console.log('tool_result is_error=' + b.is_error, JSON.stringify(b.content).slice(0, 300)) } }"
+tool_use Read {"file_path":"<scratch>\\team-demo\\secrets\\credentials.txt"}
+tool_result is_error=true "<tool_use_error>File is in a directory that is denied by your permission settings.</tool_use_error>"
+exit=0

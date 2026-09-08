@@ -1,0 +1,264 @@
+---
+title: 'Rolling out to a team: kits, champions and onboarding'
+description: 'The rollout work no setting performs: a starter kit a new joiner can clone, a verification step that proves it landed, the support answers a champion needs ready, and honest limits on what any of it can promise.'
+level: 4
+module: 'm20-team'
+order: 6
+duration_min: 10
+difficulty: advanced
+tags: ['team', 'rollout', 'onboarding', 'adoption']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Set up Claude Code for your organization'
+    url: 'https://code.claude.com/docs/en/admin-setup.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code settings'
+    url: 'https://code.claude.com/docs/en/settings.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Track team usage with analytics'
+    url: 'https://code.claude.com/docs/en/analytics.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Manage costs effectively'
+    url: 'https://code.claude.com/docs/en/costs.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code in Action (Anthropic Academy course)'
+    url: 'https://academy.claude.com/courses/claude-code-in-action'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Assemble a repository starter kit — `CLAUDE.md`, `.claude/settings.json`, one or two project skills — that a new joiner gets by cloning, and prove headlessly that it loads.
+- Run the documented verification step for a rollout and read the answer.
+- Answer the four support questions that actually arrive: a login failure, a missing enterprise option, a "you haven't been added to your organization yet" message, and each of the four different limit messages.
+- Choose adoption measures that do not corrupt the behaviour they measure.
+- Say what the analytics dashboards can and cannot tell you about whether the rollout worked.
+
+**Prerequisites.** The five lessons before this one: you are rolling out something that already has settings, a policy, a plugin source, a review gate and a budget.
+
+<WhenNotToUse>
+  This lesson is the soft half of an adoption, and it is the half that is easiest to fake. If the
+  tooling is not ready — no shared settings, no policy decision, no budget — a launch communication
+  does not create readiness, it creates a support queue. Skip the champion structure entirely for a
+  team of five, where the answer is to sit together for an afternoon. And treat every adoption
+  number here with suspicion: the moment a leaderboard becomes a target, it stops measuring adoption
+  and starts measuring people's willingness to appear on it. There is no official guidance that says
+  a leaderboard improves outcomes, and this page does not claim one.
+</WhenNotToUse>
+
+## Concept
+
+### The rollout is a decision list, not an announcement
+
+The official administrator path is five decisions in order: **choose your API provider**; **decide how settings reach devices**; **decide what to enforce**; **set up usage visibility**; **review data handling**. Then, and only then, verify and onboard. Every earlier lesson in this module was one of those rows. What is left is the part the documentation itself hands to a person rather than a setting: getting a developer from a working install to a productive first week.
+
+### The starter kit
+
+Three files, committed, do most of the onboarding that a wiki page pretends to do:
+
+- **`CLAUDE.md`** — how this project works: test and lint commands, conventions, the things a reviewer will ask about anyway. It is read on every run, so keep it short; long instructions belong in skills.
+- **`.claude/settings.json`** — the allow / ask / deny lists from lesson 01, plus hooks and `extraKnownMarketplaces` if the team has them.
+- **One or two project skills** — the repetitive tasks this repository has, written down once: a PR checklist, a release step, a migration recipe.
+
+A new joiner clones the repository and has all three. That is the difference between "here is a link to our Claude Code guide" and "your checkout is already configured."
+
+Two limits to state plainly. The `allow` rules and `extraKnownMarketplaces` in that file wait for the joiner to trust the folder — so an onboarding step that says "open Claude Code here once and accept the trust dialog" is not busywork, it is the step that switches the kit on. And nothing in the kit reaches a machine that is under a managed policy the kit contradicts: managed settings win.
+
+Here is this lesson's worked example prompt — the sentence a starter kit is built to make true on day one:
+
+```text
+Read CLAUDE.md, then run our PR checklist against my branch and tell me what is missing.
+```
+
+### Verify, then onboard
+
+The documented verification is one command. After configuring managed settings, have a developer run `/status` inside Claude Code: on the Status tab, the `Setting sources` line shows `Enterprise managed settings` followed in parentheses by the source that won. If your organisation deploys no policy, the same line still tells you which of your own files loaded — which is the check for a starter kit too.
+
+For onboarding material, the docs point at three things: the **Quickstart** for a first session, **Common workflows** for the everyday patterns, and Anthropic Academy's self-paced courses — _Claude 101_ and _Claude Code in Action_, the latter a free course of nine lessons and a quiz, about an hour.
+
+### The four support questions
+
+Have the answers written down before you need them.
+
+**"I can't log in."** The documented first fixes are `/logout` then `/login` to switch accounts, `claude update` when the enterprise sign-in option is missing, and restarting the terminal after an update.
+
+**"You haven't been added to your organization yet."** That seat does not include Claude Code access; it is fixed in the admin console, not on the developer's machine.
+
+**"I hit a limit."** Four different messages, four different answers — a seat-based session or weekly limit (shared across models, so `/model` will not help, but the message says when it resets), a model-specific limit (switching family _does_ help), a gateway spend-limit message, or an auto-compact warning that is not a limit at all. Lesson 05 has the detail.
+
+**"A setting I put in doesn't apply."** `/status` for which files loaded, `/permissions` for which rule came from where, `claude doctor` for entries that were rejected.
+
+### Champions, honestly
+
+The pattern most organisations land on is a small group of early adopters who answer questions in a shared channel and carry improvements back into the starter kit. There is no official Anthropic guidance prescribing that structure, and this page does not invent one. What the documentation does support is narrower and more useful: the person who fields questions needs the four answers above, a way to see whether a policy actually reached a machine, and write access to the repository files everyone else inherits — because the highest-value thing a champion produces is not an answer in a channel, it is the commit that stops the question being asked again.
+
+The counterpart for administrators is the consumption planning reference: budget more for a coding seat than a chat seat, because one debugging session carries file contents, tool calls and multi-step reasoning.
+
+### Measuring the rollout without corrupting it
+
+The Teams and Enterprise analytics dashboard shows daily active users, sessions, and contribution metrics — PRs and lines of code shipped with Claude Code assistance — with a leaderboard and CSV export. It is genuinely useful for one question: is anyone using this at all, and where. Four caveats belong on the same slide:
+
+- Contribution metrics are a public beta needing the GitHub App and a Claude Owner's toggles.
+- They cover only users inside your claude.ai organisation, not Console API or third-party usage.
+- They are unavailable with Zero Data Retention, which leaves usage metrics only.
+- Lines of code is an output measure. A team that ships less code and fewer defects has improved, and the dashboard will show it going the wrong way.
+
+## Hands-on lab
+
+<Callout>
+  This lab builds a starter kit in a scratch folder and proves it loads. There is no transcript of
+  an organisation-wide rollout on this site, because a rollout is not a command.
+</Callout>
+
+<Lab
+  title="Lab · build a starter kit and prove it reaches a session"
+  lessonId="en/l4-master/m20-team/communications-and-champions"
+  repoTag="none"
+  steps={[
+    'Create a scratch project with three files and nothing else: a short `CLAUDE.md` naming the test and lint commands and two or three conventions; a `.claude/settings.json` with a small allow list, one `ask` rule and one `deny` rule; and a project skill at `.claude/skills/pr-checklist/SKILL.md` whose body is your repository’s pull-request checklist.',
+    "Prove the skill is discoverable and runs: `claude -p '/pr-checklist' --model sonnet --max-turns 3 --output-format text < /dev/null`.",
+    "Prove `CLAUDE.md` reaches the session with a question only that file can answer: `claude -p 'According to this project, what must a new API route have? Answer in one short sentence.' --model sonnet --max-turns 3 --output-format text < /dev/null`.",
+    'Read the stderr line about untrusted allow rules, and write the onboarding step that makes it go away — the one line your new-joiner instructions must contain.',
+    'Open an interactive session in the folder, run `/status`, and confirm the `Setting sources` line lists the project file.',
+    'Draft the launch note: which repositories are configured, what the deny list forbids and why, which channel takes questions, and the four support answers from the concept section.',
+  ]}
+  expected="The skill runs and prints your checklist; the second run answers from `CLAUDE.md` alone; both runs print the untrusted-allow-rules warning, because a headless session never sees the trust dialog."
+  checklist={[
+    'The skill was found without being installed — a project skill travels with the clone',
+    'The `CLAUDE.md` answer could not have come from anywhere else',
+    'You can quote the exact stderr warning and say what an onboarding step must tell a joiner to do about it',
+    '`/status` lists the project settings file among its sources',
+    'Your launch note says what is forbidden and why, not only what is allowed',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m20-team/06-communications-and-champions/01-starter-kit-loads.txt"
+    range="3-10"
+  />
+</Lab>
+
+The recording makes two points at once.
+
+The checklist came back as a numbered list from a skill nobody installed — it was in the clone. That is the whole argument for a repository starter kit over a wiki page: the instructions arrive with the code, are reviewed in the same pull request, and cannot drift out of date without someone noticing.
+
+And the same trust warning from lesson 01 appears twice, because a headless session never sees the dialog. The kit's _restrictions_ were live immediately; its _conveniences_ were not. Write that into the onboarding step — "open Claude Code in the repository once and accept the trust dialog" — rather than letting each joiner discover it as a mystery.
+
+The checklist also came back translated, because the recording machine's global preferences ask for Turkish. Nobody configured that in the project; it is a user-scope preference reaching a project-scope skill. When a joiner reports odd behaviour, ask what is in _their_ user settings before you doubt the repository's.
+
+## Anti-patterns
+
+**Launching before the kit exists.** An announcement with no committed settings turns into a queue of "how do I stop it asking me about npm test?" _Fix:_ configure two or three real repositories first, and launch with those as the examples.
+
+**A wiki page instead of a repository.** Documentation that lives away from the code drifts within a month and is invisible at the moment of use. _Fix:_ `CLAUDE.md`, `.claude/settings.json` and a skill — reviewed like code.
+
+**Onboarding that skips the trust step.** The joiner gets the deny rules, not the allow rules, and concludes the setup is broken. _Fix:_ one explicit line in the instructions.
+
+**Making the leaderboard the goal.** Contribution metrics are an output measure in a discipline where deleting code is often the win. _Fix:_ report adoption as breadth — how many teams have a configured repository — and let outcomes be measured the way you measured them before.
+
+**A champion with no commit rights.** Answering the same question in a channel forever is the failure mode; the fix is a commit. _Fix:_ give the people who field questions ownership of the starter-kit files.
+
+**Promising what the plan does not include.** Code Review is a Team and Enterprise research preview; server-managed settings need an Owner role; contribution metrics are unavailable under Zero Data Retention. _Fix:_ check availability before it reaches a slide.
+
+<Callout variant="changed">
+  Anthropic's self-paced course has moved: *Claude Code in Action* lives at
+  `academy.claude.com/courses/claude-code-in-action`, not at the older `anthropic.skilljar.com`
+  address that some material still links to.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m20-team/communications-and-champions"
+  questionId="q1"
+  lang="en"
+  prompt="A new joiner clones a repository whose `.claude/settings.json` has both allow and deny rules, and starts working. What is true before they accept the trust dialog?"
+  options={[
+    {
+      text: 'Both lists apply — the file is part of the clone.',
+      explanation: 'Allow rules grant capability and wait for trust.',
+    },
+    {
+      text: 'The deny rules apply; the allow rules do not, so they see more prompts, not fewer.',
+      correct: true,
+      explanation:
+        'Which is exactly why an onboarding step should tell them to open a session in the folder once.',
+    },
+    {
+      text: 'Neither applies until an administrator approves the repository.',
+      explanation: 'There is no administrator approval step for a project settings file.',
+    },
+    {
+      text: 'Both are ignored, because settings only apply on the machine that wrote them.',
+      explanation: 'A committed project file applies to everyone who works in the folder.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m20-team/communications-and-champions"
+  questionId="q2"
+  lang="en"
+  prompt="A developer reports “You haven’t been added to your organization yet.” What is the fix?"
+  options={[
+    {
+      text: 'Their seat does not include Claude Code access; update it in the admin console.',
+      correct: true,
+      explanation: 'It is an account-level seat problem, not a machine problem.',
+    },
+    {
+      text: 'Run `claude update` and restart the terminal.',
+      explanation: 'That is the fix for a missing enterprise sign-in option.',
+    },
+    {
+      text: 'Deploy managed settings with `forceLoginOrgUUID`.',
+      explanation: 'That restricts which organisation may log in; it does not grant a seat.',
+    },
+    {
+      text: 'Ask them to run `/logout` then `/login`.',
+      explanation:
+        'That is the first fix for a general authentication problem, not for a seat without access.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m20-team/communications-and-champions"
+  questionId="q3"
+  lang="en"
+  prompt="Which limitation of the contribution metrics should be on the slide when you present adoption?"
+  options={[
+    {
+      text: 'They cover only users inside your claude.ai organisation, and are unavailable with Zero Data Retention.',
+      correct: true,
+      explanation:
+        'Both are documented; usage through the Console API or third-party integrations is not included either.',
+    },
+    {
+      text: 'They are computed from each developer’s local session history.',
+      explanation: 'That describes the `/usage` breakdown, not the dashboard.',
+    },
+    {
+      text: 'They require OpenTelemetry export to be configured first.',
+      explanation:
+        'OpenTelemetry is the alternative for per-user token and cost data, not a prerequisite for the dashboard.',
+    },
+    {
+      text: 'They are only available to Primary Owners.',
+      explanation:
+        'Admins and Owners can view the dashboard; the Owner role is needed to configure it.',
+    },
+  ]}
+/>
+
+**Next:** you have finished Team. The Playbook's checklists page collects the rollout steps from this module into a form you can work through.

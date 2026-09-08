@@ -1,0 +1,361 @@
+---
+title: 'Sharing skills and plugins across a team'
+description: 'Package your team’s skills, agents and hooks as plugins in a marketplace, declare it in the repository so everyone gets it, and let an administrator decide which marketplaces are allowed at all.'
+level: 4
+module: 'm20-team'
+order: 3
+duration_min: 15
+difficulty: core
+tags: ['team', 'plugins', 'marketplace', 'skills']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Create and distribute a plugin marketplace'
+    url: 'https://code.claude.com/docs/en/plugin-marketplaces.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Create plugins'
+    url: 'https://code.claude.com/docs/en/plugins.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Discover and install plugins'
+    url: 'https://code.claude.com/docs/en/discover-plugins.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure permissions'
+    url: 'https://code.claude.com/docs/en/permissions.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Write a `marketplace.json` that lists your team's plugins, and validate it before anyone installs from it.
+- Choose a plugin source — relative path, GitHub repository, git URL, npm package, archive or command — and say which ones organisation sync accepts.
+- Declare the marketplace in `.claude/settings.json` with `extraKnownMarketplaces` and record which plugins should be on with `enabledPlugins` — and say why an external-sourced plugin still needs one `claude plugin install` per teammate.
+- Manage marketplaces non-interactively with `claude plugin marketplace add | list | remove | update`, including at project scope.
+- Explain the administrator's controls: `strictKnownMarketplaces`, `disableSideloadFlags`, `disableCommandPluginSources`, `pluginSuggestionMarketplaces`.
+
+**Prerequisites.** Lesson 01's settings scopes and workspace trust, and Level 2's skills and plugins modules — this lesson distributes plugins rather than teaching how to build one.
+
+<WhenNotToUse>
+  A marketplace is distribution machinery, and it costs something to maintain. For a skill only this
+  repository needs, `.claude/skills/<name>/SKILL.md` committed alongside the code is simpler,
+  reviewable in the same pull request, and needs no install step at all. Reach for a marketplace when
+  the same skills, agents or hooks have to reach several repositories, when you want versioning and a
+  release channel between authoring and adoption, or when an administrator needs to allowlist what
+  people may install. And a marketplace is not a security boundary: installing a plugin runs its
+  hooks and MCP servers, so review a third-party one the way you would review a dependency.
+</WhenNotToUse>
+
+## Concept
+
+### What a marketplace is
+
+A marketplace is a `.claude-plugin/marketplace.json` file in a repository. It names the marketplace, its owner, and a list of plugins with a `source` telling Claude Code where to fetch each one. Users add it with `/plugin marketplace add owner/repo` and install from it with `/plugin install <plugin>@<marketplace>`; they refresh with `/plugin marketplace update`.
+
+The required fields are three: `name` (kebab-case, public-facing), `owner` (with at least a `name`), and `plugins`. Each plugin entry needs at minimum `name` and `source`, and may carry any field from the plugin manifest — `description`, `version`, `author`, `license`, `keywords` — plus the marketplace-specific `category`, `tags`, `strict`, `relevance`, `headers` and `headersHelper`.
+
+Two `name` rules bite teams. Each user can register only **one marketplace per name**: adding a second with the same name replaces the first, so publish all your plugins from one `marketplace.json` rather than several sharing a name. And a set of names is **reserved for Anthropic** — `claude-code-marketplace`, `claude-plugins-official`, `anthropic-plugins`, `agent-skills` and others, plus names that impersonate them like `official-claude-plugins`. Claude Code re-checks reserved names on every load, so a marketplace registered before a name became reserved stops loading and reports that it is registered from an untrusted source.
+
+### Sources, and which ones your organisation can sync
+
+`source` may be a relative path (`"./plugins/lint-kit"`), or an object naming a `github` repository, a git URL, a git subdirectory, an npm package, a zip archive, or a command that produces the plugin. Claude Code copies each installed plugin into `~/.claude/plugins/cache`, except a `command` source in link mode, which it uses in place.
+
+If you distribute through **Organization settings → Plugins** on a Team or Enterprise plan, the rules narrow:
+
+- The marketplace repository must be private or internal; organisation sync reads it through the Claude GitHub App or your GitHub Enterprise App.
+- Each plugin source must be `github`, `url`, `git-subdir`, or a relative path starting with `./`. A bare name resolved under `metadata.pluginRoot` is rejected — write the path out.
+- A plugin source may be private only when it shares the marketplace repository's owner on github.com, or sits on your GHE host with the app installed. Everything else is fetched without credentials, so it must be public.
+- Do not ship a top-level `bin/` directory in any plugin: claude.ai rejects it, by sync or by upload. Put executables in `scripts/` and reference them as `${CLAUDE_PLUGIN_ROOT}/scripts/<name>`.
+
+The simplest private arrangement is to keep the plugin folders inside the marketplace repository and reference them with `./` paths; organisation sync packages each plugin during distribution, so users never need access to a second repository.
+
+### Making the whole team get the marketplace
+
+Adding a marketplace by hand is a step every teammate will forget. Declare it in the repository instead:
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "acme-tools": {
+      "source": { "source": "github", "repo": "your-org/claude-plugins" }
+    }
+  },
+  "enabledPlugins": {
+    "lint-kit@acme-tools": true
+  }
+}
+```
+
+</CodeBlock>
+
+Claude Code then adds the marketplace for anyone working in the repository — **once they trust the project folder**. That is the same gate as lesson 01's `allow` rules, and it has the same consequence: an untrusted folder, or a `claude -p` run that never sees the trust dialog, gets no marketplace and therefore no plugins from it. Marketplace state itself is stored once per user in `~/.claude/plugins/known_marketplaces.json`, not per project, and a relative `directory` or `file` source resolves against the main checkout even when you run from a worktree.
+
+**Declaring is not installing, for an external source.** Since Claude Code 2.1.195, adding the marketplace does not install a plugin that comes from an external source — a GitHub repository or an npm package — on any path that loads plugins. A plugin that only the project's `.claude/settings.json` enables, and that comes from such a source, does not load until each team member installs it; until then Claude Code reports it as not installed and prints the `claude plugin install` command to run. So `extraKnownMarketplaces` genuinely removes the "add the marketplace" step for everyone, and `enabledPlugins` records which plugins should be on — but with the GitHub source above, the last step is still one command per person:
+
+```bash
+claude plugin install lint-kit@acme-tools
+```
+
+Two ways to close that gap for real: keep the plugin folders inside the marketplace repository and reference them with `./` relative paths, so they are not an external source; or, for images and CI, seed the plugin cache at build time as below.
+
+For container images and CI, there is a build-time alternative that clones nothing at runtime: point `CLAUDE_CODE_PLUGIN_SEED_DIR` at a directory that mirrors `~/.claude/plugins`, and Claude Code starts with those marketplaces and plugin caches already available. Layer several by separating paths with `:` on Unix or `;` on Windows.
+
+Here is this lesson's worked example prompt — the reason a team bothers with any of this:
+
+```text
+Use the run-lint skill from lint-kit on this package, and fix whatever it reports.
+```
+
+The point is that the same sentence works for every engineer who has the plugin, because the skill travels with the plugin instead of being copy-pasted into six `CLAUDE.md` files — the repository declares where it comes from and that it should be on, and each engineer installs it once (or gets it pre-seeded).
+
+### The administrator's side
+
+Managed settings decide which marketplaces exist at all:
+
+| Key                            | Effect                                                                                                                       |
+| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
+| `strictKnownMarketplaces`      | Undefined: no restriction. `[]`: total lockdown, including the official Anthropic marketplace. A list: an enforced allowlist |
+| `disableSideloadFlags`         | Rejects the CLI flags that sideload plugins, agents and MCP servers for a single run                                         |
+| `disableCommandPluginSources`  | Blocks `command`-sourced plugins, which `strictKnownMarketplaces` alone does not                                             |
+| `pluginSuggestionMarketplaces` | Allowlists whose plugins may appear as contextual install suggestions                                                        |
+
+`strictKnownMarketplaces` matches the marketplace a plugin comes from, not the entries inside it, which is why the command-source key is a separate control. Matching for a single-repository entry is exact: an entry does not cover `ref` or `path` variants of the same repository.
+
+### Versions and release channels
+
+If a plugin entry sets `version` — in the marketplace file or in the plugin's own `plugin.json` — the plugin is pinned to that string and users receive an update only when it changes. A plugin with a `command` source is never pinned by either field. `renames` maps a former plugin name to its current one, or to `null` when you removed it, so existing users migrate automatically instead of silently losing a plugin.
+
+## Hands-on lab
+
+<Callout>
+  This lab builds a marketplace in a scratch folder rather than against the course lab repository,
+  and it removes what it added at the end. Adding a marketplace writes to your own
+  `~/.claude/plugins/` as well as to the project settings file, so the last step matters.
+</Callout>
+
+<Lab
+  title="Lab · publish, install and withdraw a team plugin"
+  lessonId="en/l4-master/m20-team/team-marketplace"
+  repoTag="none"
+  steps={[
+    'Create `team-marketplace/` next to your scratch project. Inside it, write `.claude-plugin/marketplace.json` naming one plugin, `lint-kit`, with `"source": "./plugins/lint-kit"`.',
+    'Create the plugin: `plugins/lint-kit/.claude-plugin/plugin.json` with a name, description, version and author, and one skill at `plugins/lint-kit/skills/run-lint/SKILL.md` with `name` and `description` frontmatter.',
+    'Validate before anyone installs: `cd team-marketplace && claude plugin validate .`',
+    'From your scratch project, declare the marketplace at project scope: `claude plugin marketplace add ../team-marketplace --scope project`, then `claude plugin marketplace list --json`.',
+    'Install the plugin at project scope: `claude plugin install lint-kit@acme-tools --scope project`, then `claude plugin list`. Open `.claude/settings.json` and find the `extraKnownMarketplaces` and `enabledPlugins` keys the two commands wrote.',
+    'Withdraw it: `claude plugin marketplace remove acme-tools`, then list again. Confirm both settings keys are empty.',
+  ]}
+  expected="Validation passes; the marketplace appears in `list --json` alongside the official one with `source: directory`; the plugin installs at project scope and shows as enabled; the two settings keys appear and then empty out again after the removal."
+  checklist={[
+    '`claude plugin validate .` printed “Validation passed” before you added anything',
+    '`marketplace add --scope project` reported “declared in project settings”, not user settings',
+    '`extraKnownMarketplaces` and `enabledPlugins` are both in `.claude/settings.json` — the two keys a teammate would get from a commit',
+    'After `marketplace remove`, `claude plugin marketplace list --json` no longer lists it',
+    'Your `~/.claude/plugins/` is back to whatever it held before the lab',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m20-team/03-team-marketplace/01-validate.txt"
+    range="3-5"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m20-team/03-team-marketplace/02-add-and-install.txt"
+    range="2-38"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m20-team/03-team-marketplace/03-remove.txt"
+    range="2-15"
+  />
+</Lab>
+
+The recording shows the two facts that make this a team mechanism rather than a personal one.
+
+First, `--scope project` wrote the declaration into `.claude/settings.json`, not into your user file. That file is the artefact you commit; a teammate who clones the repository and trusts the folder gets the marketplace without running any of these commands.
+
+Second, the removal emptied both keys. That is the documented behaviour and it is sharper than it looks: removing a marketplace from its **last remaining scope also uninstalls any plugins you installed from it**. When you only want fresh content, run `claude plugin marketplace update` instead.
+
+### Adding a marketplace, per OS
+
+The CLI is the same everywhere; only the path syntax differs.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+claude plugin marketplace add your-org/claude-plugins --scope project
+claude plugin marketplace add ../team-marketplace --scope project   # local, for testing
+claude plugin marketplace list --json
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+claude plugin marketplace add your-org/claude-plugins --scope project
+claude plugin marketplace add ../team-marketplace --scope project   # local, for testing
+claude plugin marketplace list --json
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+claude plugin marketplace add your-org/claude-plugins --scope project
+claude plugin marketplace add ..\team-marketplace --scope project   # local, for testing
+claude plugin marketplace list --json
+```
+
+  </Fragment>
+</OSTabs>
+
+Pin to a branch or tag by appending `@ref` to the GitHub shorthand or `#ref` to a git URL. For a monorepo, `--sparse .claude-plugin plugins` limits the checkout to the directories that hold plugin content. A URL must include its scheme: since 2.1.196, a bare host such as `gitlab.example.com/team/plugins` is rejected as an invalid `owner/repo` shorthand, with an error telling you to add `https://` or `./`.
+
+## Anti-patterns
+
+**Publishing without validating.** A malformed `marketplace.json` fails for every teammate at once, and the first symptom is usually "plugins stopped working". _Fix:_ run `claude plugin validate .` in CI on the marketplace repository, so a bad manifest never reaches `main`.
+
+**Telling people to run `marketplace add` themselves.** Half will not, and the half that do will pin different refs. _Fix:_ commit `extraKnownMarketplaces` and `enabledPlugins`. That removes the add step for everyone — but remember an external-sourced plugin still needs one `claude plugin install` per person, so put that line in your onboarding note, ship the plugins as `./` paths inside the marketplace repository, or seed the cache in your image.
+
+**Forgetting that the declaration waits for trust.** A fresh clone, or any `claude -p` run in an untrusted folder, gets no marketplace — so a CI job that depends on a plugin quietly runs without it. _Fix:_ trust the folder deliberately in your images, or seed plugins at build time with `CLAUDE_CODE_PLUGIN_SEED_DIR`.
+
+**Shipping an unversioned plugin.** Without a `version`, users take whatever the source currently holds, and you cannot say which revision produced a bug report. _Fix:_ set `version` in `plugin.json`, bump it on every change, and use `renames` when you rename or retire an entry.
+
+**Removing a marketplace to force a refresh.** Removing the last scope uninstalls its plugins with it. _Fix:_ `claude plugin marketplace update`.
+
+**Treating an allowlist of marketplaces as an allowlist of code.** `strictKnownMarketplaces` constrains where plugins come from, not what they contain — and a `command`-sourced plugin from an allowed marketplace still runs a command. _Fix:_ pair it with `disableCommandPluginSources`, and review plugins like dependencies.
+
+<Callout variant="changed">
+  Custom slash commands are no longer a separate mechanism from skills: since Claude Code 2.1.3 a
+  command file is a skill, so a plugin ships them under `skills/<name>/SKILL.md`. A marketplace entry
+  may still point `commands` at flat `.md` skill files for compatibility.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m20-team/team-marketplace"
+  questionId="q1"
+  lang="en"
+  prompt="You commit `extraKnownMarketplaces` to `.claude/settings.json`. A teammate clones the repository and runs `claude -p` in it without ever opening an interactive session there. What do they get?"
+  options={[
+    {
+      text: 'The marketplace and its enabled plugins, because the file is part of the clone.',
+      explanation:
+        'The file is read, but `extraKnownMarketplaces` from a repository grants capability and waits for workspace trust.',
+    },
+    {
+      text: 'Nothing from that key — the entry is not used, because a `-p` run never shows the trust dialog.',
+      correct: true,
+      explanation:
+        'Exactly. Trust the folder deliberately in CI images, or seed the plugin cache at build time.',
+    },
+    {
+      text: 'A prompt asking whether to add the marketplace.',
+      explanation: 'Headless runs do not prompt.',
+    },
+    {
+      text: 'The marketplace but not the plugins, which need a separate install command.',
+      explanation:
+        '`enabledPlugins` would handle the install — if the marketplace entry had been applied at all.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m20-team/team-marketplace"
+  questionId="q2"
+  lang="en"
+  prompt="Your administrator sets `strictKnownMarketplaces: []` in managed settings. What can developers install?"
+  options={[
+    {
+      text: 'Anything from the official Anthropic marketplace, but no third-party sources.',
+      explanation:
+        'An empty array is total lockdown — it blocks the official marketplace too. Allowlisting it takes an explicit entry.',
+    },
+    {
+      text: 'Nothing: every marketplace source is blocked, the official one included.',
+      correct: true,
+      explanation: 'That is what the empty array means in the documented table.',
+    },
+    {
+      text: 'Anything, because an empty allowlist is treated as “no restriction”.',
+      explanation: 'Undefined means no restriction; an empty array means lockdown.',
+    },
+    {
+      text: 'Only plugins with a `command` source.',
+      explanation:
+        'Command sources are governed separately, by `disableCommandPluginSources` — and lockdown still blocks the marketplace they would come from.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m20-team/team-marketplace"
+  questionId="q3"
+  lang="en"
+  prompt="You want a marketplace to pick up new plugin versions without disturbing what people already have installed. Which command?"
+  options={[
+    {
+      text: 'claude plugin marketplace update',
+      correct: true,
+      explanation:
+        'It refreshes marketplaces from their sources; a pinned `ref` updates to that ref’s latest commit.',
+    },
+    {
+      text: 'claude plugin marketplace remove, then add again',
+      explanation:
+        'Removing the last scope also uninstalls every plugin installed from that marketplace.',
+    },
+    {
+      text: 'claude plugin validate .',
+      explanation: 'That checks a manifest; it fetches nothing.',
+    },
+    {
+      text: 'claude plugin list --json',
+      explanation: 'That reports what is installed.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m20-team/team-marketplace"
+  questionId="q4"
+  lang="en"
+  prompt="Which plugin source is rejected when you distribute through Organization settings → Plugins?"
+  options={[
+    {
+      text: 'A relative path such as "./plugins/deploy-tools"',
+      explanation:
+        'Relative paths starting with `./` are explicitly supported, and are the recommended way to ship private plugins.',
+    },
+    {
+      text: 'A bare plugin name resolved under `metadata.pluginRoot`',
+      correct: true,
+      explanation:
+        'Organisation sync rejects it as an unsupported source; write the path out instead.',
+    },
+    {
+      text: 'A `github` source in the same organisation as the marketplace repository',
+      explanation: 'That is one of the two cases where a private source is allowed.',
+    },
+    {
+      text: 'A public `url` source',
+      explanation: '`url` is one of the accepted source types.',
+    },
+  ]}
+/>
+
+**Next:** `04-review-process` takes the same "make it the default, not a habit" idea into code review and CI.

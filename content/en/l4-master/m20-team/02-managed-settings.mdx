@@ -1,0 +1,392 @@
+---
+title: 'Managed and server-managed settings'
+description: 'The policy tier: what an organisation can enforce that a developer cannot override, the four ways it reaches a machine, how Claude Code picks between them, and how to verify a policy is actually in force.'
+level: 4
+module: 'm20-team'
+order: 2
+duration_min: 15
+difficulty: core
+tags: ['team', 'managed-settings', 'policy', 'enterprise']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Deploy managed settings'
+    url: 'https://code.claude.com/docs/en/managed-settings.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure server-managed settings'
+    url: 'https://code.claude.com/docs/en/server-managed-settings.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code settings'
+    url: 'https://code.claude.com/docs/en/settings.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Set up Claude Code for your organization'
+    url: 'https://code.claude.com/docs/en/admin-setup.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say what managed settings are, where they sit in the precedence stack, and the short list of keys where a stricter local value still wins.
+- Name the four delivery mechanisms — server-managed, MDM/OS policy, `managed-settings.json`, HKCU registry — and the exact file path or registry key for each OS.
+- Predict which source Claude Code uses when a machine receives more than one, and say what `managedSourcesBehavior: "merge"` changes.
+- Point at the keys only a managed source can set, and explain why `allowManagedPermissionRulesOnly` is the one that turns an allowlist into a policy.
+- Verify from a developer's machine whether a policy is in force, using `/status` and `claude doctor`.
+
+**Prerequisites.** The previous lesson's four scopes and precedence stack. Deploying a real policy needs administrator rights on the machines and, for the server-managed path, the Owner or Primary Owner role in a Claude for Teams or Enterprise organisation.
+
+<WhenNotToUse>
+  Managed settings are an administrative control, not a convenience. Do not deploy them to express a
+  preference the team could simply commit to `.claude/settings.json` — a policy that developers keep
+  wanting around is a policy that will be worked around. Do not deploy them to a machine you do not
+  administer; and do not treat them as a substitute for the operating system's own controls. Managed
+  settings bind Claude Code only: a developer who calls the Claude API from another tool is not
+  under them, and a developer with local administrator rights can edit the policy source itself,
+  which is why MDM tooling redeploys on a schedule. Nothing on this page should be installed on a
+  personal machine to "try it out".
+</WhenNotToUse>
+
+## Concept
+
+### The tier above everything
+
+Managed settings are the settings your organisation deploys to every developer's machine. Claude Code applies them above every other level: no user, project, local or `--settings` value overrides them, and a flag such as `--model` picks only from the models the organisation allows.
+
+Two qualifications keep that from being absolute.
+
+**A managed `model` is a default, not a lock.** `--model` and `ANTHROPIC_MODEL` still choose the model for a session. The lock is `availableModels`, which constrains `/model`, `--model` and the `model` key in every other file; add `enforceAvailableModels` to constrain the auto-selected default too.
+
+**A few security-sensitive keys honour the stricter value from below.** The settings page lists them; the pattern is that each can only _deny_. `disableClaudeAiConnectors: true` and `isolatePeerMachines: true` count from any scope; `enableArtifact: false` (and `disableArtifact: true`) count from any scope and nothing turns the Artifact tool back on; `remoteControlAtStartup: false` counts from a project or local file; `crossSessionInbound` takes the stricter rung of `accept < hold < refuse` from a project or local file; `useAutoModeDuringPlan` and `syncClaudeAiSkills` take a `false` from any managed source, `--settings`, user settings or the local file.
+
+### Four ways in
+
+Every mechanism carries the same keys as a `settings.json` file. What differs is where the policy is stored and when Claude Code re-reads it.
+
+| Mechanism                   | Where it lives                                                                                    | When Claude Code reads it                   |
+| --------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| Server-managed              | The claude.ai admin console, or a self-hosted Claude apps gateway                                 | Fetched at startup, polled hourly           |
+| MDM / OS policy             | macOS `com.anthropic.claudecode` managed preferences; Windows `HKLM\SOFTWARE\Policies\ClaudeCode` | Startup, then checked every 30 minutes      |
+| File-based                  | `managed-settings.json` in the system directory                                                   | Startup, and reloaded when the file changes |
+| HKCU registry (Windows/WSL) | `HKCU\SOFTWARE\Policies\ClaudeCode`                                                               | Startup, then every 30 minutes              |
+
+The MDM and file rows together are called **endpoint-managed** settings, because the policy is stored on the device. The system directory for the file-based path is `/Library/Application Support/ClaudeCode/` on macOS, `/etc/claude-code/` on Linux and WSL, and `C:\Program Files\ClaudeCode\` on Windows. The legacy Windows path `C:\ProgramData\ClaudeCode\managed-settings.json` is not read.
+
+Which one to choose follows from how you already manage machines. Server-managed settings need no device-management infrastructure and are the only mechanism that reaches an Anthropic-hosted cloud session; endpoint-managed settings give stronger guarantees because the OS can protect the file from the user, but they do not reach the cloud. Organisations that use Claude Code on the web configure both.
+
+If several teams own parts of a file-based policy, split it: put each part in its own `*.json` file in `managed-settings.d/`, alongside `managed-settings.json` in the same system directory. Claude Code merges `managed-settings.json` first, then every file in the directory in alphabetical order, so numeric prefixes (`10-telemetry.json`, `20-security.json`) control the order. Single values are replaced by the later file; lists combine with duplicates removed.
+
+### When more than one source arrives
+
+By default — `managedSourcesBehavior: "first-wins"` — Claude Code uses the **highest-ranked source that delivers at least one policy key** and ignores the rest. It does not merge them, and it shows no warning for the ones it skipped. The ranking is:
+
+1. Remote settings (server-managed, or from a Claude apps gateway)
+2. MDM or OS-level policy — the macOS plist or the HKLM registry key
+3. Managed settings files — `managed-settings.json` and `managed-settings.d/*.json` merged together
+4. The HKCU registry, which is user-writable and is used only when no source above it delivers a policy key
+
+Set `managedSourcesBehavior` to `"merge"` in the highest-ranked source you deploy (Claude Code 2.1.242 or later) and every admin source contributes instead: higher-ranked values win on most keys, lists union, and locks take the strictest value. A lower source cannot opt itself into merging with the source above it.
+
+A handful of keys are read from **every** admin source even under `first-wins`, so a lower-ranked file can still set them: the sandbox allowlist locks, `allowAllClaudeAiMcps`, the sandbox binary paths, `useAutoModeDuringPlan` and `syncClaudeAiSkills` (a `false` from any source wins), `enableArtifact`, the commit-trailer opt-out in `attribution`, `forceRemoteSettingsRefresh`, and `env`, which merges per variable so lower sources fill in variables the higher ones leave unset.
+
+### Keys only a managed source can set
+
+Some keys have no effect anywhere but a managed source. They are mostly locks — the value being locked (permission rules, `sandbox.network.allowedDomains`) is an ordinary key that any level can set, and the lock tells Claude Code to honour only the managed value:
+
+- `allowManagedPermissionRulesOnly` — makes managed settings the only source of permission rules. Without it, your organisation's `allow` rules simply merge alongside everyone else's, which is usually what you want and occasionally not.
+- `allowManagedMcpServersOnly` — makes the managed `allowedMcpServers` allowlist the only one that applies.
+- `strictKnownMarketplaces`, `blockedMarketplaces`, `disableSideloadFlags`, `disableCommandPluginSources`, `pluginSuggestionMarketplaces` — plugin-source control (the next lesson).
+- `allowManagedHooksOnly` — restricts which hooks run at all.
+- `strictPluginOnlyCustomization` — skills, agents, hooks and MCP servers may come only from plugins or managed settings.
+- `requiredMinimumVersion` / `requiredMaximumVersion` — refuse to start outside an approved range, which is stronger than `minimumVersion`'s block on downgrades.
+- `sandbox.network.allowManagedDomainsOnly` and `sandbox.filesystem.allowManagedReadPathsOnly` — the sandbox equivalents of the permission lock.
+- The delivery controls `policyHelper`, `wslInheritsWindowsSettings` and `managedSourcesBehavior`, which server-managed settings cannot deliver: deploy them by MDM or a system file.
+
+Read the pattern carefully, because it is easy to get backwards: the **lock** is managed-only, the **list it locks** is not. `allowedMcpServers`, `deniedMcpServers` and `allowedHttpHookUrls` are all `Any file` scope and merge across every settings file — deploying them in managed settings is how you enforce them, but it is the matching `allowManaged*Only` key that stops a developer's own file adding to the allowlist. The settings reference's Scope column is the authority for any key not in the managed-only table.
+
+Two related keys sit just outside that rule. `permissions.disableBypassPermissionsMode` works from any scope — a developer can even set it on themselves — but is normally placed in managed settings so it cannot be removed. And the login-enforcement pair `forceLoginMethod` / `forceLoginOrgUUID` is `Any file` too, with a managed-source caveat on each: `forceLoginMethod`'s `"gateway"` value counts only from an on-machine managed source, and `forceLoginOrgUUID` only _enforces_ from a managed source — set anywhere else it merely pre-selects the organisation at login.
+
+A smaller-scale example of the same idea is this course's own repository, which is not an enterprise deployment at all: its committed `.claude/settings.json` carries a short `permissions.allow` list and four hooks, and everything genuinely non-negotiable is enforced a second time by CI. That is the right shape when you cannot deploy policy to machines — belt in the settings file, braces in the pipeline.
+
+Here is this lesson's worked example prompt, the sort of question a developer asks when they meet a policy for the first time:
+
+```text
+I can't switch to Opus and /permissions shows a deny rule I didn't write.
+Work out where both are coming from and tell me which file or console to ask my admin about.
+```
+
+The answer is a `/status` line and a `claude doctor` report, not a guess — which is what the lab does.
+
+### Failing closed, and failing loudly
+
+Managed settings are validated more forgivingly than your own files, and more strictly where it matters. Claude Code repairs what it can — dropping one invalid permission rule with a warning — then drops any top-level key that still fails, and keeps enforcing everything valid. Your own user, project and local files are stricter: a file whose JSON or top-level shape fails is rejected whole.
+
+A few enforcement keys never simply drop out when invalid; they **fail closed** until fixed. `allowedMcpServers` is enforced as an empty allowlist, `allowManagedHooksOnly` and `allowManagedMcpServersOnly` and `disableCommandPluginSources` and `enforceAvailableModels` are treated as `true`, `availableModels` is enforced as empty so only the Default model remains, `forceLoginOrgUUID` permits no organisation to log in, and `crossSessionInbound` becomes `refuse`. `requiredMinimumVersion` and `requiredMaximumVersion` fail open by design.
+
+And a managed source that is present but cannot be parsed as a JSON object makes Claude Code **refuse to start**, naming the source — even when another admin source delivers a valid policy. An absent source is not a failure, and an empty managed settings file counts as `{}`.
+
+### Server-managed settings, specifically
+
+Server-managed settings are configured by an Owner or Primary Owner at **Admin Settings → Claude Code → Managed settings** in the claude.ai console, and every key that works in `settings.json` is supported except the ones restricted to OS-level delivery. Clients fetch them when the session authenticates with a Team or Enterprise OAuth login, an OAuth token in `CLAUDE_CODE_OAUTH_TOKEN`, or a directly configured API key.
+
+Two operational details matter. Settings apply uniformly to the whole organisation — per-group configuration is not supported yet, though a self-hosted Claude apps gateway delivers per IdP group. And because hooks and `env` variables execute or influence shell commands, a change to one waits for the developer to accept a security approval dialog in an interactive session; other changes apply on the next hourly poll.
+
+Turning telemetry off for everyone is a one-key example of the whole mechanism:
+
+<CodeBlock title="managed-settings.json">
+
+```json
+{
+  "env": {
+    "DISABLE_TELEMETRY": "1"
+  }
+}
+```
+
+</CodeBlock>
+
+A value of `1` applies without the approval dialog. It also stops the usage data that feeds your organisation's analytics dashboard, and turns off feature-flag fetching — so Remote Control, default auto mode and the other flag-gated features become unavailable for those developers. Decide that trade deliberately.
+
+## Hands-on lab
+
+<Callout>
+  Managed settings are an OS-level deployment to machines you administer. This lab therefore does
+  **not** install one — installing a policy on your own laptop to see it work is exactly the change
+  you should never make casually. There is no transcript of an enforced policy on this site, because
+  no session here has ever had one. What the lab does instead is teach you the two commands you will
+  actually run against a developer's machine, and show you what they say when no policy is present.
+</Callout>
+
+<Lab
+  title="Lab · read the policy state of a machine"
+  lessonId="en/l4-master/m20-team/managed-settings"
+  repoTag="none"
+  steps={[
+    'Run `claude doctor` and read the `Managed settings (remote)` line. It reports one of four outcomes: the settings loaded, your organisation has none configured, the fetch failed, or the fetch was skipped with a reason. The line needs Claude Code 2.1.248 or later.',
+    'Check whether an endpoint policy is deployed, using the path for your OS from the tabs below. On Windows also check both registry keys — `HKLM\\SOFTWARE\\Policies\\ClaudeCode` and the user-writable `HKCU\\SOFTWARE\\Policies\\ClaudeCode`.',
+    'Start an interactive session and run `/status`. Read the `Setting sources` line: with a policy in force it reads `Enterprise managed settings` followed by the selected source in parentheses — `(remote)`, `(plist)`, `(HKLM)`, `(file)`, `(drop-ins)`, `(file + drop-ins)`, `(HKCU)`, `(parent process)`, `(helper)`, or a list ending in `, merged`.',
+    'If the line names a source other than the one you deployed, read the `Skipped sources` line beneath it (Claude Code 2.1.242 or later): that distinguishes a policy that never reached the machine from one that a higher-priority source overrode.',
+    'Write — but do not deploy — the `managed-settings.json` you would hand to your fleet, using the example under the transcripts as a starting point, and check it with a JSON validator.',
+  ]}
+  expected="On an unmanaged machine, `claude doctor` reports that the remote fetch did not happen and why, the documented policy paths do not exist, and `/status` shows no `Enterprise managed settings` line at all."
+  checklist={[
+    '`claude doctor` printed a `Managed settings (remote)` line and you can say which of the four outcomes it reported',
+    'You checked the file path for your own OS, not the one from the example',
+    'You know what a missing `Setting sources` managed line means: no source delivered a policy key',
+    'Your draft policy is valid JSON whose top level is an object',
+    'Nothing was installed on your machine',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m20-team/02-managed-settings/01-no-managed-policy.txt"
+    range="2-15"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m20-team/02-managed-settings/02-policy-paths-absent.txt"
+    range="2-7"
+  />
+</Lab>
+
+The `claude doctor` recording is from a personal Max account, which is why the remote fetch reports `not fetched — requires an Enterprise or Team subscription` — the fourth of the four documented outcomes, a skipped fetch with its reason, seen from a plan that cannot use server-managed settings at all. The PowerShell recording confirms the other half: the documented file path and both registry keys are absent, so no endpoint policy is deployed either. Between them they are the check you run when a developer says a policy "is not applying": establish first whether any source reached the machine at all.
+
+### Where a policy file goes, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+ls -l "/Library/Application Support/ClaudeCode/managed-settings.json"
+ls -l "/Library/Application Support/ClaudeCode/managed-settings.d/"
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+ls -l /etc/claude-code/managed-settings.json
+ls -l /etc/claude-code/managed-settings.d/
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+Test-Path 'C:\Program Files\ClaudeCode\managed-settings.json'
+Test-Path 'HKLM:\SOFTWARE\Policies\ClaudeCode'
+Test-Path 'HKCU:\SOFTWARE\Policies\ClaudeCode'
+```
+
+  </Fragment>
+</OSTabs>
+
+On Windows the policy is stored as JSON in a `REG_SZ` or `REG_EXPAND_SZ` value named `Settings` under those keys. On macOS the same keys go into the `com.anthropic.claudecode` managed preferences domain, with nested settings as dictionaries and lists as plist arrays.
+
+### A starter policy
+
+<CodeBlock title="managed-settings.json">
+
+```json
+{
+  "permissions": {
+    "deny": ["Read(./.env)", "Read(./secrets/**)"],
+    "disableBypassPermissionsMode": "disable"
+  },
+  "allowManagedPermissionRulesOnly": true
+}
+```
+
+</CodeBlock>
+
+Three keys, three different jobs. The `deny` list is the rule nobody can lift. `disableBypassPermissionsMode` removes the escape hatch. `allowManagedPermissionRulesOnly` is the one that changes the character of the whole file: with it, permission rules from user, project and local files — and from `--allowedTools` — are ignored, and your policy is the only allowlist there is. Deploy it knowing that every convenience rule a team had is now yours to maintain.
+
+## Anti-patterns
+
+**Deploying a policy without a verification step.** A policy that silently lost to a higher-priority source looks exactly like a policy that works. _Fix:_ roll out to one machine, read `Setting sources` and `Skipped sources` in `/status`, and only then push to the fleet.
+
+**Assuming an endpoint policy covers cloud sessions.** A `managed-settings.json` or MDM profile on a laptop does not reach an Anthropic-hosted cloud session; only server-managed settings do. _Fix:_ if your developers use Claude Code on the web, configure server-managed settings as well.
+
+**Expecting several deployed sources to add up.** By default they do not: the highest-ranked source with a policy key wins outright and the others are skipped without a warning. _Fix:_ consolidate into one source, or set `managedSourcesBehavior: "merge"` in the highest-ranked one.
+
+**Locking `model` and thinking you have restricted models.** A managed `model` sets what each session starts on; `--model` still moves. _Fix:_ deploy `availableModels`, and `enforceAvailableModels` if the default matters too.
+
+**Turning telemetry off without noticing what goes with it.** `DISABLE_TELEMETRY` also ends the usage data behind your own analytics dashboard and turns off feature-flag fetching for those developers. _Fix:_ decide it as a trade, and if you need per-user numbers, replace it with your own OpenTelemetry export (lesson 05).
+
+**Editing a fleet policy in one shared file across teams.** Merge conflicts on a security policy are a bad way to spend a Friday. _Fix:_ split it into `managed-settings.d/10-…json`, `20-…json` and let Claude Code merge them in a defined order.
+
+<Callout variant="changed">
+  Composing several managed sources with `managedSourcesBehavior: "merge"`, and the `Skipped
+  sources` line in `/status` that tells you which sources were ignored, both require Claude Code
+  2.1.242 or later; the `Managed settings (remote)` line in `claude doctor` requires 2.1.248 or
+  later. On older clients the default `first-wins` behaviour applies with no way to see what was
+  skipped.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m20-team/managed-settings"
+  questionId="q1"
+  lang="en"
+  prompt="A machine has both a server-managed policy and a `managed-settings.json` file, each setting different keys, and `managedSourcesBehavior` is left at its default. What applies?"
+  options={[
+    {
+      text: 'Both, merged, with the server-managed values winning on conflicts.',
+      explanation: 'That is what `"merge"` does — it is not the default.',
+    },
+    {
+      text: 'Only the server-managed policy; the file is skipped entirely, apart from a few cross-source keys.',
+      correct: true,
+      explanation:
+        'Under `first-wins`, the highest-ranked source with a policy key supplies the policy and the rest are ignored, silently.',
+    },
+    {
+      text: 'Only the file, because a local file is more trustworthy than a fetched one.',
+      explanation: 'Remote settings rank above MDM and file sources.',
+    },
+    {
+      text: 'Claude Code refuses to start until the conflict is resolved.',
+      explanation: 'It refuses to start only when a source is present but unparseable.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m20-team/managed-settings"
+  questionId="q2"
+  lang="en"
+  prompt="Your managed settings set `enableArtifact: true`. A developer sets `enableArtifact: false` in their user settings. What happens?"
+  options={[
+    {
+      text: 'The managed value wins; the Artifact tool stays on.',
+      explanation:
+        'This is one of the security-sensitive exceptions where the stricter value from below is honoured.',
+    },
+    {
+      text: 'The developer’s `false` wins and nothing turns the Artifact tool back on.',
+      correct: true,
+      explanation:
+        'Right — `enableArtifact: false` (and `disableArtifact: true`) count from any scope. Requires Claude Code 2.1.242 or later.',
+    },
+    {
+      text: 'Claude Code reports a policy violation to the administrator.',
+      explanation: 'There is no such report; the key simply resolves to the stricter value.',
+    },
+    {
+      text: 'It depends on whether the developer has local administrator rights.',
+      explanation:
+        'Local admin rights let someone edit the policy source, which is a different matter from this key’s resolution rule.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m20-team/managed-settings"
+  questionId="q3"
+  lang="en"
+  prompt="Which key makes managed settings the only source of permission rules?"
+  options={[
+    {
+      text: 'permissions.disableBypassPermissionsMode',
+      explanation:
+        'That removes bypass mode, and it works from any scope — it does not touch where rules may come from.',
+    },
+    {
+      text: 'allowManagedPermissionRulesOnly',
+      correct: true,
+      explanation:
+        'It is managed-only, and it makes Claude Code ignore permission rules from user, project and local files and from `--allowedTools`.',
+    },
+    {
+      text: 'strictPluginOnlyCustomization',
+      explanation:
+        'That restricts where skills, agents, hooks and MCP servers may come from, not permission rules.',
+    },
+    {
+      text: 'allowManagedHooksOnly',
+      explanation: 'That restricts which hooks run.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m20-team/managed-settings"
+  questionId="q4"
+  lang="en"
+  prompt="An administrator deploys a policy whose `availableModels` value is invalid. What does Claude Code enforce until it is fixed?"
+  options={[
+    {
+      text: 'Nothing — the invalid key is dropped and every model stays available.',
+      explanation:
+        'That is how most invalid managed keys behave, but `availableModels` is on the fail-closed list.',
+    },
+    {
+      text: 'An empty allowlist, so only the Default model is available.',
+      correct: true,
+      explanation:
+        'It fails closed. A non-string entry is stripped and the valid subset enforced; a wholly invalid value leaves an empty allowlist.',
+    },
+    {
+      text: 'The previous valid value, cached from the last successful fetch.',
+      explanation:
+        'A cache exists for server-managed settings, but it is not the fallback for an invalid key.',
+    },
+    {
+      text: 'Claude Code refuses to start.',
+      explanation:
+        'That is reserved for a source that cannot be parsed as a JSON object at all, or a failing `policyHelper`.',
+    },
+  ]}
+/>
+
+**Next:** `03-team-marketplace` puts the same policy machinery to a different use — deciding which plugins and skills a team may install, and shipping your own.

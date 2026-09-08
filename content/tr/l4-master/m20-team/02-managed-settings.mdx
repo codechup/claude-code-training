@@ -1,0 +1,42 @@
+---
+title: 'Managed ve server-managed ayarlar'
+description: 'Policy katmanı: bir organizasyonun geliştiricinin geçersiz kılamayacağı biçimde neleri dayatabildiği, bunun makineye ulaşmasının dört yolu, Claude Code’un kaynaklar arasında nasıl seçim yaptığı ve bir policy’nin gerçekten yürürlükte olduğunun nasıl doğrulanacağı.'
+level: 4
+module: 'm20-team'
+order: 2
+duration_min: 15
+difficulty: core
+tags: ['team', 'managed-settings', 'policy', 'enterprise']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: true
+sources:
+  - type: official
+    title: 'Deploy managed settings'
+    url: 'https://code.claude.com/docs/en/managed-settings.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure server-managed settings'
+    url: 'https://code.claude.com/docs/en/server-managed-settings.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Claude Code settings'
+    url: 'https://code.claude.com/docs/en/settings.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Set up Claude Code for your organization'
+    url: 'https://code.claude.com/docs/en/admin-setup.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Özet
+
+Bu ders managed (yönetilen) ayarları anlatır: precedence yığınının en üstünde duran, geliştiricinin kendi dosyalarıyla geçersiz kılamadığı katman. Dört teslim mekanizması vardır — claude.ai konsolundan gelen server-managed ayarlar, MDM/OS policy'leri (macOS plist veya `HKLM\SOFTWARE\Policies\ClaudeCode`), sistem dizinindeki `managed-settings.json` dosyası ve kullanıcının yazabildiği `HKCU` registry anahtarı. Varsayılan `first-wins` davranışında Claude Code, policy anahtarı taşıyan en yüksek öncelikli kaynağı kullanır ve diğerlerini sessizce atlar; `managedSourcesBehavior: "merge"` bunu değiştirir. Yalnızca managed kaynaklardan okunan anahtarlar (`allowManagedPermissionRulesOnly`, `availableModels`, `strictKnownMarketplaces`, `forceLoginMethod` ve diğerleri) ile geçersiz olduğunda "fail closed" davranan anahtarlar ayrı ayrı ele alınır. Laboratuvar hiçbir policy kurmaz: `claude doctor` ve `/status` ile bir makinede policy'nin yürürlükte olup olmadığını okumayı öğretir.
+
+Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.

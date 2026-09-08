@@ -1,0 +1,376 @@
+---
+title: 'Shared settings and allowlists'
+description: 'Commit one `.claude/settings.json` so a whole team gets the same permissions, hooks and plugins — and learn the two rules that decide whether a committed rule actually reaches your teammates: precedence and workspace trust.'
+level: 4
+module: 'm20-team'
+order: 1
+duration_min: 15
+difficulty: core
+tags: ['team', 'settings', 'permissions', 'allowlist']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Claude Code settings'
+    url: 'https://code.claude.com/docs/en/settings.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Configure permissions'
+    url: 'https://code.claude.com/docs/en/permissions.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Settings reference'
+    url: 'https://code.claude.com/docs/en/settings-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Example settings files'
+    url: 'https://code.claude.com/docs/en/settings-example.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Slash commands'
+    url: 'https://code.claude.com/docs/en/commands.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Name the four settings scopes — user, shared project, project local and managed — and say which file each one is and who it reaches.
+- Recite the precedence stack and predict which value wins when two files set the same key.
+- Write a shared `.claude/settings.json` with `allow`, `ask` and `deny` rules, and explain why `deny` beats `allow` from any scope.
+- Explain workspace trust: why a committed `allow` rule does nothing for a teammate until they trust the folder, and why `deny` rules apply immediately.
+- Prove all of that headlessly, by reading `permission_denials` out of a `claude -p --output-format json` run.
+
+**Prerequisites.** Claude Code 2.1.263 or later, Node.js on your PATH for the lab script, and a project you can create files in. Level 1's permissions lesson (`m14-security`) covers rule syntax in depth; this lesson is about sharing rules with other people.
+
+<WhenNotToUse>
+  A shared settings file is for what a team agrees on, not for what one person prefers. Don't commit
+  your theme, your default model or the Bash approvals you happened to click through — those belong
+  in your own `~/.claude/settings.json` or in `.claude/settings.local.json`. Don't reach for a
+  project file at all when the rule must not be removable by whoever can push a commit: that is what
+  managed settings are for (next lesson). And don't use an allowlist as a security boundary against
+  a hostile repository — permission rules are enforced by Claude Code, not by the operating system;
+  sandboxing is the layer that stops a shell command reaching the network.
+</WhenNotToUse>
+
+## Concept
+
+### Four scopes, four files
+
+Claude Code reads settings from four sources, and each one has a **scope**: the set of people and projects a value in it applies to.
+
+| Scope          | File                                                               | Who it reaches                                                                   |
+| -------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| User           | `~/.claude/settings.json`                                          | You, in every project on this machine                                            |
+| Shared project | `.claude/settings.json`                                            | Everyone working in the folder that contains it — commit it and teammates get it |
+| Project local  | `.claude/settings.local.json`                                      | You, in this one project only                                                    |
+| Managed        | `managed-settings.json`, an MDM policy, or server-managed settings | Everyone your organisation deploys it to; your files do not override it          |
+
+On Windows, `~/.claude` means `%USERPROFILE%\.claude`. There is a fifth file, `~/.claude.json`, that Claude Code writes for itself — sign-in state, MCP server configuration, per-project trust decisions — and that you do not normally edit.
+
+The shared file is the one this lesson is about. Commit it and everyone who clones the repository gets the same permissions, hooks, telemetry and plugins. Each teammate can still override it for themselves in `.claude/settings.local.json`, so a personal exception never needs a commit. Claude Code adds `**/.claude/settings.local.json` to your global git excludes the first time it writes that file in a repository that does not already ignore it; if you create it by hand, add it to `.gitignore` yourself.
+
+### Precedence: highest wins, lists merge
+
+When two files set the same key, the highest level that sets it wins. Highest first:
+
+1. **Managed settings** — nothing you set overrides them, apart from a short list of security-sensitive exceptions.
+2. **Command line** — `--settings '<json or path>'`, for one session.
+3. **Project local** — `.claude/settings.local.json`.
+4. **Shared project** — `.claude/settings.json`.
+5. **User** — `~/.claude/settings.json`.
+
+Two qualifications matter for teams. First, **lists merge instead of overriding**: set `permissions.allow` in three files and Claude Code combines all three, so your file adds entries without deleting anyone else's. (Four model-shaped keys — `fallbackModel`, `modelPicker`, `availableModels` and `modelSettings` — follow their own rules.) Second, environment variables are not a level in this stack; whether `ANTHROPIC_MODEL` or the `model` key wins is decided per pair on the environment-variables reference.
+
+### Permission rules: deny, then ask, then allow
+
+Each entry under `permissions` names a tool, optionally with a specifier: `Bash(npm run lint)`, `Read(./.env)`, `WebFetch`. Rules are evaluated **deny, then ask, then allow**, and the first match in that order decides. Specificity does not change the order, which has two consequences teams trip over:
+
+- A broad `deny` such as `Bash(aws *)` blocks every matching call, including one that also matches a narrower `allow` like `Bash(aws s3 ls)`. A deny rule cannot carry allowlist exceptions.
+- Deny wins across scopes as well as within one file. If your user settings allow something and the project denies it, it is denied — and the reverse is true too.
+
+A bare tool name in a deny rule (`Bash`) removes the tool from Claude's context entirely, so Claude never sees it; a scoped rule (`Bash(rm *)`) leaves the tool available and blocks matching calls. `EndConversation` is the one exception: a deny rule cannot remove it while any other tool remains.
+
+Here is this lesson's worked example prompt — the kind of request a team allowlist is designed to make friction-free:
+
+```text
+Run the lint and test scripts, then fix whatever they report.
+Don't touch anything under secrets/.
+```
+
+The first half only works without prompts if `Bash(npm run lint)` and `Bash(npm run test *)` are on the shared allowlist; the second half is better expressed as a `deny` rule than as a sentence, because a sentence in a prompt or a `CLAUDE.md` shapes what Claude _tries_ to do, while a rule decides what Claude Code _permits_.
+
+### The catch: workspace trust
+
+`permissions.allow` rules and `permissions.additionalDirectories` **grant capability**, so Claude Code applies them from a repository file only after the person working there has accepted the workspace-trust dialog for that folder. `deny` and `ask` rules only restrict, so they apply right away. The same trust gate covers `extraKnownMarketplaces` entries from a repository — which is why the next-but-one lesson's team marketplace also waits for trust.
+
+The dialog appears in interactive sessions only. A `claude -p` run or an Agent SDK session never shows it, so in headless mode an untrusted repository's `allow` rules are simply skipped and Claude Code prints a warning to stderr. You will see that warning for yourself in the lab.
+
+Trust is keyed on the git repository root, and in a worktree on the main checkout's root. To accept it by hand — in a container image, say — set `projects["<path>"].hasTrustDialogAccepted` to `true` in `~/.claude.json`.
+
+### Getting the allowlist right without guessing
+
+Rather than inventing an allowlist, harvest one. The bundled `/fewer-permission-prompts` skill scans your transcripts for the read-only Bash and MCP calls you keep approving and writes a prioritised allowlist into the project's `.claude/settings.json`. `/permissions` shows every active rule together with the settings file it came from, which is the fastest way to answer "why is Claude still asking me this?". And `/status` lists the settings sources the session actually loaded.
+
+Two smaller notes on shared files. They are strict JSON — a `//` comment or a trailing comma is a syntax error, and Claude Code reports the file as a Settings Error at the next start. And a `$schema` line pointing at `https://json.schemastore.org/claude-code-settings.json` gives you autocomplete and validation in any editor that supports JSON schema.
+
+### Not every key works from a repository file
+
+Some keys are ignored in a committed file — the Scope column of the settings reference marks them `User, local, or managed`, `User or managed`, `Managed` or `Global config`. `permissions.defaultMode` is the one that bites teams: the values `auto` and `bypassPermissions` do not take effect from project or local settings. Set them in user or managed settings, or pass `--permission-mode` for one session.
+
+## Hands-on lab
+
+<Callout>
+  This lab runs in a scratch folder, not against the course lab repository: it needs a project whose
+  settings files you can rewrite between runs, and it must not inherit rules from a repository you
+  already trust.
+</Callout>
+
+<Lab
+  title="Lab · prove a team allowlist, headlessly"
+  lessonId="en/l4-master/m20-team/shared-settings"
+  repoTag="none"
+  steps={[
+    'Create a scratch project outside any repository you care about: `mkdir team-demo && cd team-demo && git init`. Add `src/math.js` that prints `add(2,3) = 5`, and `secrets/credentials.txt` with a placeholder line in it.',
+    'Write the team file `.claude/settings.json` with `"permissions": { "allow": ["Bash(node src/math.js)"], "deny": ["Read(./secrets/**)"] }` and a `$schema` line.',
+    "Run the command headlessly and read both streams: `claude -p 'Run the shell command `node src/math.js` and report exactly what it printed. Answer with one short line.' --model sonnet --max-turns 4 --output-format json < /dev/null > out.json 2> err.txt`, then `cat err.txt` and `jq '{subtype, permission_denials}' out.json`.",
+    'Now add the *same* allow rule to your own `.claude/settings.local.json`, leaving the team file exactly as it is, and run the identical command again. Compare `permission_denials` — and note that the untrusted-allow warning still names the team file, because that copy of the rule is still being skipped.',
+    'Add `"Bash(node src/math.js)"` to the team file’s `deny` list — leaving your personal allow rule in place — and run it a third time.',
+    "Finally, ask for the denied file: `claude -p 'Read the file secrets/credentials.txt and print its contents. Answer with one short line.' --model sonnet --max-turns 4 --output-format stream-json --verbose < /dev/null` and look at the `tool_result` for the `Read` call.",
+  ]}
+  expected="Run 1 is denied and prints an 'this workspace has not been trusted' warning to stderr; run 2 succeeds with an empty permission_denials; run 3 is denied again even though your local file allows it; the Read call comes back as a tool error saying the directory is denied by your permission settings."
+  checklist={[
+    'The stderr warning names the exact `hasTrustDialogAccepted` key you would set to trust the folder',
+    'Run 1 shows the Bash call in `permission_denials` although the team file allows it',
+    'Run 2 shows `permission_denials: []` and the real program output',
+    'Run 3 shows the denial again — the project `deny` beat your local `allow`',
+    'The Read tool result is `is_error=true` with a permission-settings message, not an empty answer',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m20-team/01-shared-settings/01-team-allow-untrusted.txt"
+    range="3-13"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m20-team/01-shared-settings/02-personal-allow-applies.txt"
+    range="3-9"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m20-team/01-shared-settings/03-team-deny-wins.txt"
+    range="3-12"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m20-team/01-shared-settings/04-deny-read-refused.txt"
+    range="4-6"
+  />
+</Lab>
+
+Three things in those recordings are worth stopping on.
+
+The first is the stderr line: `Ignoring 1 permissions.allow entry from .claude/settings.json: this workspace has not been trusted.` That is the whole team-adoption problem in one sentence. The rule was committed, the file was read, and the rule was still skipped — because a headless run never gets a trust dialog. In your CI images, accept trust up front rather than wondering why the allowlist "does not work".
+
+The second is what changed between runs 1 and 2: one copy of the same rule was added to the local file, and nothing else. Read the second recording's stderr closely — it _still_ says `Ignoring 1 permissions.allow entry from .claude/settings.json`, because the team file's copy is still being skipped for want of trust. The command ran anyway, on the strength of the local copy alone. A rule in your own local file is yours, not the repository's, so Claude Code applies it without the trust step; the identical rule in the committed file is still waiting.
+
+The third is run 3. Your personal `allow` was still in place, and the command was still refused, because the project's `deny` is evaluated first. That is the property that makes a shared deny list worth writing: a teammate cannot un-deny it from their own file. (The permissions reference goes further — a deny at any level also beats `--allowedTools` on the command line.)
+
+The second transcript's `result` line comes back in Turkish. That is not an editing mistake: the machine that recorded these runs has global Claude Code preferences asking for Turkish answers, and a headless session loads them like any other. Your standing preferences reach every session, including the ones you script.
+
+### Where the files live, per OS
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+cat ~/.claude/settings.json          # user scope
+cat .claude/settings.json            # shared project scope (commit this)
+cat .claude/settings.local.json      # personal, per project (git-ignored)
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+cat ~/.claude/settings.json          # user scope
+cat .claude/settings.json            # shared project scope (commit this)
+cat .claude/settings.local.json      # personal, per project (git-ignored)
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+Get-Content $env:USERPROFILE\.claude\settings.json   # user scope
+Get-Content .claude\settings.json                    # shared project scope (commit this)
+Get-Content .claude\settings.local.json              # personal, per project (git-ignored)
+```
+
+  </Fragment>
+</OSTabs>
+
+One Windows-specific detail: in a git repository Claude Code normally keeps `.claude/settings.local.json` at the repository root, so an approval you grant in a subdirectory applies repository-wide. On Windows — and outside a git repository, and when the repository root is your home directory — it keeps the file beside `.claude/settings.json` in the starting directory instead.
+
+### A team file worth copying
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npm run lint)",
+      "Bash(npm run test *)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)"
+    ],
+    "ask": ["Bash(git push:*)"],
+    "deny": ["Read(./.env)", "Read(./.env.*)", "Read(./secrets/**)"]
+  }
+}
+```
+
+</CodeBlock>
+
+Read it as three separate decisions. The `allow` list is the friction you have chosen to remove: commands your CI runs anyway, that no reviewer would question. The `ask` list is the pause you want kept — a push is cheap to confirm and expensive to undo. The `deny` list is the part that survives a teammate disagreeing with it.
+
+## Anti-patterns
+
+**Committing your personal approvals.** The "Yes, and don't ask again" rules Claude Code saves for you land in `.claude/settings.local.json` for a reason: they reflect one person's session, not a team decision. Copying them wholesale into the shared file grants everyone whatever you happened to click. _Fix:_ curate the shared list, and use `/fewer-permission-prompts` to generate a candidate list you then edit down.
+
+**Writing a deny rule with an exception.** `deny: ["Bash(aws *)"]` plus `allow: ["Bash(aws s3 ls)"]` does not allow `aws s3 ls`; deny is evaluated first and there is no "except". _Fix:_ narrow the deny rule itself, or express the exception as a `PreToolUse` hook that can reason about the command.
+
+**Assuming the committed allowlist works on a fresh clone.** It does not, until the teammate trusts the folder — and in `claude -p` it never does. _Fix:_ expect the stderr warning, and in CI or a container set `hasTrustDialogAccepted` deliberately.
+
+**Putting `permissions.defaultMode: "bypassPermissions"` in the repository.** It is ignored from project and local settings, so the file looks like a policy and enforces nothing. _Fix:_ set it in user settings if it is your own choice, or in managed settings if it is the organisation's, and pass `--permission-mode` for a one-off.
+
+**Treating the allowlist as a security control.** Permission rules constrain Claude Code, not the shell. If `Bash` is allowed at all, a command can still reach the network, whatever `WebFetch` says. _Fix:_ pair permission rules with sandboxing, and keep the genuinely non-negotiable rules in managed settings.
+
+**Debugging a rule by re-reading the file.** Files merge; a rule can come from four places at once. _Fix:_ run `/permissions` to see each active rule with the file it came from, and `/status` for the list of sources that loaded.
+
+<Callout variant="changed">
+  `permissions.defaultMode` values `auto` and `bypassPermissions` no longer take effect from project
+  or local settings — set them in user or managed settings instead. Before Claude Code 2.1.257,
+  `bypassPermissions` took effect from any file.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m20-team/shared-settings"
+  questionId="q1"
+  lang="en"
+  prompt="Your team's `.claude/settings.json` denies `Bash(node src/math.js)`. Your own `.claude/settings.local.json` allows the same command. What happens?"
+  options={[
+    {
+      text: 'It runs — project local sits above shared project in the precedence stack.',
+      explanation:
+        'Precedence decides which value wins for the same key, but permission rules are evaluated deny → ask → allow first, across every scope.',
+    },
+    {
+      text: 'It is denied — deny rules are evaluated before allow rules, whichever scope they come from.',
+      correct: true,
+      explanation:
+        'Exactly. A deny at any level beats an allow at any level, including `--allowedTools`.',
+    },
+    {
+      text: 'Claude Code reports a settings conflict and asks you to resolve it.',
+      explanation: 'There is no conflict dialog; the ordering rule resolves it silently.',
+    },
+    {
+      text: 'The more specific rule wins, so it depends on which pattern is narrower.',
+      explanation: 'Specificity does not change the order — the docs say so explicitly.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m20-team/shared-settings"
+  questionId="q2"
+  lang="en"
+  prompt="A teammate clones the repository and runs `claude -p` in it. Which of the committed settings takes effect immediately?"
+  options={[
+    {
+      text: 'The `permissions.allow` rules.',
+      explanation:
+        'Allow rules grant capability, so they wait for workspace trust — and a `-p` run never shows the trust dialog.',
+    },
+    {
+      text: 'The `permissions.deny` rules.',
+      correct: true,
+      explanation:
+        'Deny and ask rules only restrict, so Claude Code applies them without the trust step.',
+    },
+    {
+      text: 'The `extraKnownMarketplaces` entries.',
+      explanation: 'Those also wait for trust; the teammate gets no plugins from them until then.',
+    },
+    {
+      text: 'Nothing — an untrusted repository’s settings file is not read at all.',
+      explanation:
+        'The file is read; only the capability-granting entries are held back, with a warning on stderr.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m20-team/shared-settings"
+  questionId="q3"
+  lang="en"
+  prompt="Which command tells you which settings file a particular permission rule came from?"
+  options={[
+    {
+      text: '/permissions',
+      correct: true,
+      explanation:
+        'The dialog lists every rule together with the `settings.json` file that supplied it.',
+    },
+    {
+      text: '/status',
+      explanation:
+        'Its `Setting sources` line names the files that loaded, but not which file supplied each key.',
+    },
+    {
+      text: '/config',
+      explanation:
+        'The Config tab is a short list of personal options, not a view of your settings file.',
+    },
+    {
+      text: 'claude --version',
+      explanation: 'That prints the installed version.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m20-team/shared-settings"
+  questionId="q4"
+  lang="en"
+  prompt="Your team sets `permissions.allow` in the shared file, you set it in your local file, and you also have entries in your user file. What does Claude Code do with the three lists?"
+  options={[
+    {
+      text: 'It merges them; each file adds entries without removing another file’s.',
+      correct: true,
+      explanation:
+        'List keys such as `permissions.allow` combine across scopes. A few model-shaped keys are the exception.',
+    },
+    {
+      text: 'It takes the list from the highest-precedence file only.',
+      explanation:
+        'That is how single-valued keys behave; lists merge. `fallbackModel` and `modelPicker` are among the exceptions.',
+    },
+    {
+      text: 'It takes the union only after you trust the folder for every scope.',
+      explanation: 'Trust gates the repository file’s allow rules, not your own files.',
+    },
+    {
+      text: 'It refuses to start until the duplicate key is removed.',
+      explanation: 'Duplicate keys across scopes are normal and expected.',
+    },
+  ]}
+/>
+
+**Next:** `02-managed-settings` moves one level up the stack — the settings an organisation deploys that nothing in your own files can override.

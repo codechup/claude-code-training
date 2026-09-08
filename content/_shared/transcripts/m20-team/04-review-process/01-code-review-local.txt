@@ -1,0 +1,15 @@
+# 2026-09-07 · Claude Code 2.1.263 · scratch git repo review-demo · one committed baseline, one uncommitted change to src/discount.js
+# $ claude -p '/code-review medium' --model sonnet --max-turns 30 --output-format text < /dev/null
+İnceleme tamamlandı. `src/discount.js` üzerinde 3 satırlık değişiklik incelendi ve iki doğrulanmış hata bulundu (İngilizce, depo kuralı gereği):
+
+**1. Line 4 — Missing `/100` scaling**
+The `/100` scaling was dropped, so `percent` is now treated as a fraction of price rather than a percentage. The clamp comment claims it prevents negative prices, but it doesn't.
+- Failure: `applyDiscount(100, 20)` → returns `-1900` instead of `80`.
+- Even with the clamp, `applyDiscount(100, 100)` → returns `-9900`, contradicting the "cannot make the price negative" comment.
+
+**2. Line 3 — Clamp only covers the upper bound**
+The clamp only guards `percent > 100`; negative percent values pass through unclamped.
+- Failure: `applyDiscount(100, -50)` → returns `5100` (with bug #1) or `150` (if #1 is fixed) — a price *increase* instead of a discount.
+
+Her iki bulgu da `src/discount.js`'teki mevcut değişikliği doğrudan etkiliyor. Düzeltmemi ister misiniz?
+exit=0
