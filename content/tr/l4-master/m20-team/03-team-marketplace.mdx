@@ -1,15 +1,15 @@
 ---
-title: 'Skill ve plugin’leri ekip genelinde paylaşmak'
-description: 'Ekibinizin skill, agent ve hook’larını bir marketplace içinde plugin olarak paketleyin, repository’de tanımlayarak herkese ulaştırın ve hangi marketplace’lere izin verileceğine bir yöneticinin karar vermesini sağlayın.'
+title: 'Skill’leri ve plugin’leri bir takımda paylaşmak'
+description: 'Takımınızın skill’lerini, agent’larını ve hook’larını bir marketplace’te plugin olarak paketleyin, herkes alsın diye onu depoda beyan edin ve bir yöneticinin hangi marketplace’lere tamamen izin verildiğine karar vermesine izin verin.'
 level: 4
 module: 'm20-team'
 order: 3
 duration_min: 15
 difficulty: core
-tags: ['team', 'plugins', 'marketplace', 'skills']
+tags: ['takım', 'plugin', 'marketplace', 'skill']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Create and distribute a plugin marketplace'
@@ -35,8 +35,328 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders bir ekibin skill, agent ve hook'larını plugin olarak paketleyip bir marketplace üzerinden dağıtmasını anlatır. Bir marketplace, repository kökündeki `.claude-plugin/marketplace.json` dosyasıdır; zorunlu alanları `name`, `owner` ve `plugins`'tir ve her plugin girdisi en az bir `name` ile bir `source` taşır. Kullanıcı başına marketplace adı tekildir ve bir dizi ad Anthropic için rezervedir. Ekibin tamamının ek bir adım atmadan aynı plugin'leri almasının yolu, `.claude/settings.json` içine `extraKnownMarketplaces` ve `enabledPlugins` anahtarlarını commit etmektir — ancak bunlar da workspace trust'a tabidir. Yönetici tarafında `strictKnownMarketplaces`, `disableSideloadFlags`, `disableCommandPluginSources` ve `pluginSuggestionMarketplaces` anahtarları hangi kaynaklara izin verildiğini belirler. Laboratuvarda gerçek bir marketplace oluşturulur, `claude plugin validate` ile doğrulanır, project scope'ta eklenip kurulur ve sonra geri kaldırılır.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.
+- Takımınızın plugin’lerini listeleyen bir `marketplace.json` yazmak ve kimse ondan kurulum yapmadan önce onu doğrulamak.
+- Bir [plugin](/tr/playbook/glossary/#plugin) (Claude Code'a hook, skill, subagent ve MCP server gibi bileşenler ekleyen paket) kaynağı seçmek — göreli yol, GitHub deposu, git URL’si, npm paketi, arşiv ya da komut — ve organizasyon senkronizasyonunun hangilerini kabul ettiğini söylemek.
+- Marketplace’i `.claude/settings.json`’da `extraKnownMarketplaces` ile beyan etmek ve hangi plugin’lerin açık olması gerektiğini `enabledPlugins` ile kaydetmek — ve dış kaynaklı bir plugin’in neden hâlâ takım arkadaşı başına bir `claude plugin install` gerektirdiğini söylemek.
+- `claude plugin marketplace add | list | remove | update` ile marketplace’leri, proje kapsamı dâhil, etkileşimsiz yönetmek.
+- Yöneticinin kontrollerini açıklamak: `strictKnownMarketplaces`, `disableSideloadFlags`, `disableCommandPluginSources`, `pluginSuggestionMarketplaces`.
+
+**Ön koşullar.** 01. dersin settings kapsamları ve workspace trust, ve Seviye 2’nin skill ve plugin modülleri — bu ders bir plugin inşa etmeyi değil, plugin’leri dağıtmayı öğretir.
+
+<WhenNotToUse>
+  Bir marketplace dağıtım makinesidir ve bakımının bir bedeli vardır. Yalnızca bu deponun ihtiyaç
+  duyduğu bir [skill](/tr/playbook/glossary/#skill) (`SKILL.md` ile tanımlanan yeniden kullanılabilir talimat paketi) için, kodun yanına [commit](/tr/playbook/glossary/#commit)'lenmiş (bir git deposundaki değişiklik kümesinin kalıcı kaydı) `.claude/skills/<name>/SKILL.md` daha
+  basittir, aynı [pull request](/tr/playbook/glossary/#pull-request)'te (bir branch'teki değişikliklerin gözden geçirilip ana koda alınması için açılan istek) gözden geçirilebilir ve hiç kurulum adımı gerektirmez. Aynı
+  skill'ler, [agent](/tr/playbook/glossary/#agent)'lar (bir hedefi kendi başına adım adım yürüten yapay zekâ süreci) ya da [hook](/tr/playbook/glossary/#hook)'lar (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan komut) birkaç depoya ulaşması gerektiğinde, yazma ile benimseme
+  arasında sürümleme ve bir yayın kanalı istediğinizde, ya da bir yöneticinin insanların neyi
+  kurabileceğini allowlist'lemesi gerektiğinde bir marketplace'e başvurun. Ve bir marketplace bir
+  güvenlik sınırı değildir: bir plugin kurmak onun hook'larını ve [MCP server](/tr/playbook/glossary/#mcp-server)'larını (Model Context Protocol ile Claude'a dış araç ve veri sağlayan sunucu) çalıştırır, bu
+  yüzden üçüncü taraf birini bir bağımlılığı gözden geçirir gibi gözden geçirin.
+</WhenNotToUse>
+
+## Kavram
+
+### Bir marketplace nedir
+
+Bir marketplace, bir depodaki bir `.claude-plugin/marketplace.json` dosyasıdır. Marketplace'i, sahibini ve Claude Code'a her birini nereden getireceğini söyleyen bir `source`'a sahip bir plugin listesini adlandırır. Kullanıcılar onu `/plugin marketplace add owner/repo` ile ekler ve `/plugin install <plugin>@<marketplace>` ile ondan kurar; `/plugin marketplace update` ile tazelerler.
+
+Zorunlu alanlar üçtür: `name` (kebab-case, kullanıcıya açık), `owner` (en az bir `name` ile) ve `plugins`. Her plugin girdisi en az `name` ve `source` gerektirir ve plugin manifestinden herhangi bir alanı taşıyabilir — `description`, `version`, `author`, `license`, `keywords` — artı marketplace'e özgü `category`, `tags`, `strict`, `relevance`, `headers` ve `headersHelper`.
+
+İki `name` kuralı takımları ısırır. Her kullanıcı **isim başına yalnızca bir marketplace** kaydedebilir: aynı isimle ikinci birini eklemek ilkinin yerini alır, bu yüzden bütün plugin'lerinizi aynı isme sahip birkaçından değil, tek bir `marketplace.json`'dan yayınlayın. Ve bir isim kümesi **Anthropic için ayrılmıştır** — `claude-code-marketplace`, `claude-plugins-official`, `anthropic-plugins`, `agent-skills` ve diğerleri, artı `official-claude-plugins` gibi onları taklit eden isimler. Claude Code ayrılmış isimleri her yüklemede yeniden kontrol eder, bu yüzden bir isim ayrılmış olmadan önce kaydedilmiş bir marketplace yüklenmeyi durdurur ve güvenilmeyen bir kaynaktan kayıtlı olduğunu bildirir.
+
+### Kaynaklar ve organizasyonunuzun senkronize edebilecekleri
+
+`source`, göreli bir yol (`"./plugins/lint-kit"`) ya da bir `github` deposunu, bir git URL'sini, bir git alt dizinini, bir npm paketini, bir zip arşivini ya da plugin'i üreten bir komutu adlandıran bir nesne olabilir. Claude Code, link modundaki bir `command` kaynağı hariç, kurulan her plugin'i `~/.claude/plugins/cache`'e kopyalar; o kaynağı olduğu yerde kullanır.
+
+Bir Team ya da Enterprise planında **Organization settings → Plugins** üzerinden dağıtırsanız, kurallar daralır:
+
+- Marketplace deposu özel ya da dahili olmalıdır; organizasyon senkronizasyonu onu Claude [GitHub App](/tr/playbook/glossary/#github-app)'i (Claude Code'u bir GitHub deposuna bağlayan, pull request'lerde ve issue'larda otomatik çalışan entegrasyon) ya da GitHub Enterprise App'iniz üzerinden okur.
+- Her plugin kaynağı `github`, `url`, `git-subdir` ya da `./` ile başlayan göreli bir yol olmalıdır. `metadata.pluginRoot` altında çözülen çıplak bir isim reddedilir — yolu tam yazın.
+- Bir plugin kaynağı yalnızca github.com'da marketplace deposuyla aynı sahibi paylaştığında ya da uygulama kurulu GHE host'unuzda oturduğunda özel olabilir. Geri kalan her şey kimlik bilgisi olmadan getirilir, bu yüzden herkese açık olmalıdır.
+- Herhangi bir plugin'de üst düzey bir `bin/` dizini göndermeyin: claude.ai, senkronizasyonla ya da yüklemeyle onu reddeder. Çalıştırılabilir dosyaları `scripts/`'e koyun ve onlara `${CLAUDE_PLUGIN_ROOT}/scripts/<name>` olarak başvurun.
+
+En basit özel düzenleme, plugin klasörlerini marketplace deposunun içinde tutmak ve onlara `./` yollarıyla başvurmaktır; organizasyon senkronizasyonu her plugin'i dağıtım sırasında paketler, bu yüzden kullanıcıların ikinci bir depoya erişime hiç ihtiyacı olmaz.
+
+### Bütün takımın marketplace'i almasını sağlamak
+
+Bir marketplace'i elle eklemek, her takım arkadaşının unutacağı bir adımdır. Bunun yerine onu depoda beyan edin:
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "acme-tools": {
+      "source": { "source": "github", "repo": "your-org/claude-plugins" }
+    }
+  },
+  "enabledPlugins": {
+    "lint-kit@acme-tools": true
+  }
+}
+```
+
+</CodeBlock>
+
+Claude Code, ardından depoda çalışan herkes için — **proje klasörüne güvendikten sonra** — marketplace'i ekler. Bu, 01. dersin `allow` kurallarıyla aynı kapıdır ve aynı sonucu taşır: güvenilmeyen bir klasör, ya da trust diyaloğunu hiç görmeyen bir `claude -p` çalıştırması, marketplace'i ve dolayısıyla ondan hiçbir plugin'i almaz. Marketplace durumunun kendisi proje başına değil, kullanıcı başına bir kez `~/.claude/plugins/known_marketplaces.json`'da depolanır ve göreli bir `directory` ya da `file` kaynağı, bir [worktree](/tr/playbook/glossary/#worktree)'den (aynı deponun farklı bir branch'ini ayrı bir dizinde çalışır tutan git çalışma ağacı) çalıştırdığınızda bile ana checkout'a karşı çözülür.
+
+**Beyan etmek, dış bir kaynak için kurmak değildir.** Claude Code 2.1.195'ten beri, marketplace'i eklemek, harici bir kaynaktan — bir GitHub deposu ya da bir npm paketi — gelen bir plugin'i, plugin yükleyen herhangi bir yolda kurmaz. Yalnızca projenin `.claude/settings.json`'ının etkinleştirdiği ve böyle bir kaynaktan gelen bir plugin, her takım üyesi onu kurana kadar yüklenmez; o zamana kadar Claude Code onu kurulu değil olarak bildirir ve çalıştırılacak `claude plugin install` komutunu yazdırır. Yani `extraKnownMarketplaces`, "marketplace'i ekle" adımını herkes için gerçekten kaldırır ve `enabledPlugins` hangi plugin'lerin açık olması gerektiğini kaydeder — ama yukarıdaki GitHub kaynağıyla, son adım hâlâ kişi başına bir komuttur:
+
+```bash
+claude plugin install lint-kit@acme-tools
+```
+
+Bu boşluğu gerçekten kapatmanın iki yolu var: plugin klasörlerini marketplace deposunun içinde tutup onlara `./` göreli yollarıyla başvurmak, böylece dış bir kaynak olmazlar; ya da imajlar ve [CI](/tr/playbook/glossary/#ci) (her push'ta ya da pull request'te otomatik olarak testleri ve kontrolleri çalıştıran hat) için, aşağıdaki gibi plugin önbelleğini derleme zamanında tohumlamak.
+
+Konteyner imajları ve CI için, çalışma zamanında hiçbir şey klonlamayan bir derleme-zamanı alternatifi var: `CLAUDE_CODE_PLUGIN_SEED_DIR`'ı `~/.claude/plugins`'i yansıtan bir dizine işaret edin ve Claude Code o marketplace'ler ve plugin önbellekleri zaten kullanılabilir hâlde başlar. `:` (Unix) ya da `;` (Windows) ile yolları ayırarak birkaçını katmanlayın.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni) — bir takımın bunlarla uğraşmasının nedeni:
+
+```text
+Use the run-lint skill from lint-kit on this package, and fix whatever it reports.
+```
+
+Mesele şu ki aynı cümle, plugin'e sahip her mühendis için çalışır, çünkü skill altı `CLAUDE.md` dosyasına kopyala-yapıştır yapılmak yerine plugin'le birlikte seyahat eder — depo onun nereden geldiğini ve açık olması gerektiğini beyan eder ve her mühendis onu bir kez kurar (ya da önceden tohumlanmış hâlde alır).
+
+### Yöneticinin tarafı
+
+Managed settings, hangi marketplace'lerin var olduğuna tamamen karar verir:
+
+| Anahtar                        | Etki                                                                                                                 |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `strictKnownMarketplaces`      | Tanımsız: kısıtlama yok. `[]`: resmi Anthropic marketplace'i dâhil tam kilitlenme. Bir liste: zorlanan bir allowlist |
+| `disableSideloadFlags`         | Tek bir çalıştırma için plugin'leri, agent'ları ve MCP server'ları sideload eden CLI bayraklarını reddeder           |
+| `disableCommandPluginSources`  | `command`-kaynaklı plugin'leri engeller, ki bunu `strictKnownMarketplaces` tek başına engellemez                     |
+| `pluginSuggestionMarketplaces` | Hangi marketplace'lerin plugin'lerinin bağlamsal kurulum önerisi olarak görünebileceğini allowlist'ler               |
+
+`strictKnownMarketplaces`, bir plugin'in geldiği marketplace'i eşleştirir, içindeki girdileri değil, komut-kaynağı anahtarının ayrı bir kontrol olmasının nedeni de bu. Tek bir depo girdisi için eşleştirme tamdır: bir girdi, aynı deponun `ref` ya da `path` varyantlarını kapsamaz.
+
+### Sürümler ve yayın kanalları
+
+Bir plugin girdisi `version`'ı ayarlarsa — marketplace dosyasında ya da plugin'in kendi `plugin.json`'ında — plugin o dizeye sabitlenir ve kullanıcılar yalnızca o değiştiğinde bir güncelleme alır. `command` kaynaklı bir plugin ikisiyle de asla sabitlenmez. `renames`, eski bir plugin adını şimdikine, ya da onu kaldırdığınızda `null`'a eşler, böylece mevcut kullanıcılar sessizce bir plugin kaybetmek yerine otomatik olarak geçiş yapar.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Bu laboratuvar, kurs laboratuvar deposuna karşı değil, kullan-at bir klasörde bir marketplace inşa
+  eder ve sonunda eklediğini kaldırır. Bir marketplace eklemek proje settings dosyasına olduğu kadar
+  kendi `~/.claude/plugins/`'inize de yazar, bu yüzden son adım önemlidir.
+</Callout>
+
+<Lab
+  title="Laboratuvar · bir takım plugin'ini yayınlayın, kurun ve geri çekin"
+  lessonId="tr/l4-master/m20-team/team-marketplace"
+  repoTag="none"
+  steps={[
+    'Kullan-at projenizin yanına `team-marketplace/` oluşturun. İçine, `"source": "./plugins/lint-kit"` ile bir plugin, `lint-kit`\'i adlandıran `.claude-plugin/marketplace.json`\'ı yazın.',
+    "Plugin'i oluşturun: bir isim, açıklama, sürüm ve yazarla `plugins/lint-kit/.claude-plugin/plugin.json` ve `name` ile `description` frontmatter'ına sahip `plugins/lint-kit/skills/run-lint/SKILL.md`'de bir skill.",
+    'Kimse kurmadan önce doğrulayın: `cd team-marketplace && claude plugin validate .`',
+    "Kullan-at projenizden, marketplace'i proje kapsamında beyan edin: `claude plugin marketplace add ../team-marketplace --scope project`, ardından `claude plugin marketplace list --json`.",
+    "Plugin'i proje kapsamında kurun: `claude plugin install lint-kit@acme-tools --scope project`, ardından `claude plugin list`. `.claude/settings.json`'ı açın ve iki komutun yazdığı `extraKnownMarketplaces` ve `enabledPlugins` anahtarlarını bulun.",
+    'Onu geri çekin: `claude plugin marketplace remove acme-tools`, ardından tekrar listeleyin. Her iki settings anahtarının da boş olduğunu doğrulayın.',
+  ]}
+  expected="Doğrulama geçer; marketplace, `source: directory` ile resmi olanın yanında `list --json`'da görünür; plugin proje kapsamında kurulur ve etkin olarak görünür; kaldırmadan sonra iki settings anahtarı önce görünür sonra tekrar boşalır."
+  checklist={[
+    '`claude plugin validate .`, hiçbir şey eklemeden önce "Validation passed" yazdırdı',
+    '`marketplace add --scope project`, user settings\'i değil "declared in project settings"\'i bildirdi',
+    "`extraKnownMarketplaces` ve `enabledPlugins`'in ikisi de `.claude/settings.json`'da — bir takım arkadaşının bir commit'ten alacağı iki anahtar",
+    "`marketplace remove`'dan sonra `claude plugin marketplace list --json` artık onu listelemiyor",
+    "`~/.claude/plugins/`'iniz laboratuvardan önce ne tutuyorsa ona geri döndü",
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m20-team/03-team-marketplace/01-validate.txt"
+    range="3-5"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m20-team/03-team-marketplace/02-add-and-install.txt"
+    range="2-38"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m20-team/03-team-marketplace/03-remove.txt"
+    range="2-15"
+  />
+</Lab>
+
+Kayıt, bunu kişisel değil bir takım mekanizması yapan iki gerçeği gösteriyor.
+
+Birincisi, `--scope project`, beyanı user dosyanıza değil `.claude/settings.json`'a yazdı. Bu, commit'lediğiniz üründür; depoyu klonlayıp klasöre güvenen bir takım arkadaşı, bu komutların hiçbirini çalıştırmadan marketplace'i alır.
+
+İkincisi, kaldırma her iki anahtarı da boşalttı. Bu belgelenen davranıştır ve göründüğünden daha keskindir: bir marketplace'i **kalan son kapsamından** kaldırmak, ondan kurduğunuz her plugin'i de kaldırır. Yalnızca taze içerik istediğinizde, bunun yerine `claude plugin marketplace update`'i çalıştırın.
+
+### Bir marketplace eklemek, işletim sistemine göre
+
+CLI her yerde aynıdır; yalnızca yol sözdizimi farklıdır.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+claude plugin marketplace add your-org/claude-plugins --scope project
+claude plugin marketplace add ../team-marketplace --scope project   # local, for testing
+claude plugin marketplace list --json
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+claude plugin marketplace add your-org/claude-plugins --scope project
+claude plugin marketplace add ../team-marketplace --scope project   # local, for testing
+claude plugin marketplace list --json
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+claude plugin marketplace add your-org/claude-plugins --scope project
+claude plugin marketplace add ..\team-marketplace --scope project   # local, for testing
+claude plugin marketplace list --json
+```
+
+  </Fragment>
+</OSTabs>
+
+GitHub kısayoluna `@ref` ya da bir git URL'sine `#ref` ekleyerek bir branch'e ya da tag'e sabitleyin. Bir monorepo için, `--sparse .claude-plugin plugins`, checkout'u plugin içeriğini tutan dizinlerle sınırlar. Bir URL şemasını içermelidir: 2.1.196'dan beri, `gitlab.example.com/team/plugins` gibi çıplak bir host, `https://` ya da `./` eklemenizi söyleyen bir hatayla geçersiz bir `owner/repo` kısayolu olarak reddedilir.
+
+## Anti-pattern'ler
+
+**Doğrulamadan yayınlamak.** Biçimsiz bir `marketplace.json`, bütün takım arkadaşları için aynı anda başarısız olur ve ilk belirti genellikle "plugin'ler çalışmayı durdurdu" olur. _Düzeltme:_ marketplace deposunda CI'da `claude plugin validate .`'i çalıştırın, böylece kötü bir manifest asla `main`'e ulaşmaz.
+
+**İnsanlara `marketplace add`'i kendilerinin çalıştırmasını söylemek.** Yarısı çalıştırmayacak ve çalıştıranların yarısı farklı ref'leri sabitleyecek. _Düzeltme:_ `extraKnownMarketplaces` ve `enabledPlugins`'i commit'leyin. Bu, herkes için ekleme adımını kaldırır — ama dış kaynaklı bir plugin'in hâlâ kişi başına bir `claude plugin install` gerektirdiğini unutmayın, bu satırı onboarding notunuza koyun, plugin'leri marketplace deposunun içinde `./` yolları olarak gönderin ya da önbelleği imajınızda tohumlayın.
+
+**Beyanın trust'ı beklediğini unutmak.** Taze bir klon, ya da güvenilmeyen bir klasördeki herhangi bir `claude -p` çalıştırması, hiç marketplace almaz — bu yüzden bir plugin'e bağımlı bir CI işi sessizce onsuz çalışır. _Düzeltme:_ imajlarınızda klasöre bilerek güvenin, ya da plugin'leri derleme zamanında `CLAUDE_CODE_PLUGIN_SEED_DIR` ile tohumlayın.
+
+**Sürümsüz bir plugin göndermek.** Bir `version` olmadan, kullanıcılar kaynağın o anda tuttuğu her neyse onu alır ve bir hata raporunu hangi revizyonun ürettiğini söyleyemezsiniz. _Düzeltme:_ `plugin.json`'da `version`'ı ayarlayın, her değişiklikte artırın ve bir girdiyi yeniden adlandırdığınızda ya da emekliye ayırdığınızda `renames`'i kullanın.
+
+**Bir yenileme zorlamak için bir marketplace'i kaldırmak.** Son kapsamı kaldırmak plugin'lerini de kaldırır. _Düzeltme:_ `claude plugin marketplace update`.
+
+**Bir marketplace allowlist'ini bir kod allowlist'i olarak ele almak.** `strictKnownMarketplaces`, plugin'lerin nereden geldiğini kısıtlar, içeriklerini değil — ve izin verilen bir marketplace'ten `command`-kaynaklı bir plugin yine de bir komut çalıştırır. _Düzeltme:_ onu `disableCommandPluginSources` ile eşleştirin ve plugin'leri bağımlılıklar gibi gözden geçirin.
+
+<Callout variant="changed">
+  Özel slash komutları artık skill'lerden ayrı bir mekanizma değil: Claude Code 2.1.3'ten beri bir
+  komut dosyası bir skill'dir, bu yüzden bir plugin onları `skills/<name>/SKILL.md` altında
+  gönderir. Bir marketplace girdisi, uyumluluk için `commands`'ı hâlâ düz `.md` skill dosyalarına
+  işaret edebilir.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/team-marketplace"
+  questionId="q1"
+  lang="tr"
+  prompt="`extraKnownMarketplaces`'i `.claude/settings.json`'a commit'liyorsunuz. Bir takım arkadaşı depoyu klonlar ve orada hiç etkileşimli bir oturum açmadan `claude -p` çalıştırır. Ne alır?"
+  options={[
+    {
+      text: "Marketplace ve etkin plugin'leri, çünkü dosya klonun bir parçası.",
+      explanation:
+        "Dosya okunur, ama bir depodan gelen `extraKnownMarketplaces` yetenek verir ve workspace trust'ı bekler.",
+    },
+    {
+      text: 'O anahtardan hiçbir şey — girdi kullanılmaz, çünkü bir `-p` çalıştırması asla trust diyaloğunu göstermez.',
+      correct: true,
+      explanation:
+        'Tam olarak. CI imajlarında klasöre bilerek güvenin, ya da plugin önbelleğini derleme zamanında tohumlayın.',
+    },
+    {
+      text: "Marketplace'i eklemek isteyip istemediğini soran bir prompt.",
+      explanation: 'Headless çalıştırmalar prompt göstermez.',
+    },
+    {
+      text: "Marketplace ama plugin'ler değil, ayrı bir kurulum komutu gerektirir.",
+      explanation:
+        '`enabledPlugins` kurulumu halledecekti — marketplace girdisi hiç uygulanmış olsaydı.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/team-marketplace"
+  questionId="q2"
+  lang="tr"
+  prompt="Yöneticiniz managed settings'te `strictKnownMarketplaces: []`'i ayarlıyor. Geliştiriciler ne kurabilir?"
+  options={[
+    {
+      text: "Resmi Anthropic marketplace'inden herhangi bir şey, ama üçüncü taraf kaynak yok.",
+      explanation:
+        "Boş bir dizi tam kilitlenmedir — resmi marketplace'i de engeller. Onu allowlist'lemek açık bir girdi gerektirir.",
+    },
+    {
+      text: 'Hiçbir şey: resmi olan dâhil her marketplace kaynağı engellenir.',
+      correct: true,
+      explanation: 'Belgelenen tabloda boş dizinin anlamı budur.',
+    },
+    {
+      text: 'Herhangi bir şey, çünkü boş bir allowlist "kısıtlama yok" olarak ele alınır.',
+      explanation: 'Tanımsız kısıtlama yok anlamına gelir; boş bir dizi kilitlenme anlamına gelir.',
+    },
+    {
+      text: "Yalnızca bir `command` kaynağına sahip plugin'ler.",
+      explanation:
+        "Komut kaynakları ayrı olarak, `disableCommandPluginSources` ile yönetilir — ve kilitlenme yine de geldikleri marketplace'i engeller.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/team-marketplace"
+  questionId="q3"
+  lang="tr"
+  prompt="İnsanların zaten kurduğu şeyi rahatsız etmeden bir marketplace'in yeni plugin sürümlerini almasını istiyorsunuz. Hangi komut?"
+  options={[
+    {
+      text: 'claude plugin marketplace update',
+      correct: true,
+      explanation:
+        "Marketplace'leri kaynaklarından tazeler; sabitlenmiş bir `ref`, o ref'in en son commit'ine güncellenir.",
+    },
+    {
+      text: 'claude plugin marketplace remove, sonra tekrar add',
+      explanation: "Son kapsamı kaldırmak, o marketplace'ten kurulan her plugin'i de kaldırır.",
+    },
+    {
+      text: 'claude plugin validate .',
+      explanation: 'Bu bir manifesti kontrol eder; hiçbir şey getirmez.',
+    },
+    {
+      text: 'claude plugin list --json',
+      explanation: 'Bu neyin kurulu olduğunu bildirir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/team-marketplace"
+  questionId="q4"
+  lang="tr"
+  prompt="Organization settings → Plugins üzerinden dağıttığınızda hangi plugin kaynağı reddedilir?"
+  options={[
+    {
+      text: '"./plugins/deploy-tools" gibi göreli bir yol',
+      explanation:
+        "`./` ile başlayan göreli yollar açıkça desteklenir ve özel plugin'leri göndermenin önerilen yoludur.",
+    },
+    {
+      text: '`metadata.pluginRoot` altında çözülen çıplak bir plugin adı',
+      correct: true,
+      explanation:
+        'Organizasyon senkronizasyonu bunu desteklenmeyen bir kaynak olarak reddeder; onun yerine yolu tam yazın.',
+    },
+    {
+      text: 'Marketplace deposuyla aynı organizasyondaki bir `github` kaynağı',
+      explanation: 'Bu, özel bir kaynağa izin verilen iki durumdan biri.',
+    },
+    {
+      text: 'Herkese açık bir `url` kaynağı',
+      explanation: '`url`, kabul edilen kaynak türlerinden biri.',
+    },
+  ]}
+/>
+
+**Sonraki:** `04-review-process`, aynı "onu alışkanlık değil varsayılan yap" fikrini kod incelemesine ve CI'a taşıyor.

@@ -1,6 +1,6 @@
 ---
 title: 'Devcontainer’lar ve kurumsal başlatıcılar'
-description: "Claude Code'u bir dev container içine koyun; sonra yeniden derlemeler arasında kimlik doğrulamayı koruyun, managed settings uygulayın, dışa ağ trafiğini kısıtlayın ve her süreci zorunlu bir kurumsal başlatıcıdan geçirin."
+description: 'Komutların her mühendisin paylaştığı izole bir ortamda çalışması için Claude Code’u bir dev container’ın içine koyun — sonra kimlik doğrulamayı yeniden derlemeler boyunca koruyun, managed settings’i zorlayın, çıkışı kısıtlayın ve her süreci zorunlu bir kurumsal başlatıcı üzerinden yönlendirin.'
 level: 4
 module: 'm21-scale'
 order: 5
@@ -9,7 +9,7 @@ difficulty: advanced
 tags: ['devcontainer', 'docker', 'managed-settings', 'kurumsal-başlatıcı']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Development containers'
@@ -35,11 +35,277 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders, resmi Dev Container Feature ile Claude Code'u bir dev container'a eklemeyi; `:1.0` etiketinin Claude Code sürümünü değil feature'ın kurulum betiğini sabitlediğini; `~/.claude` üzerine volume bağlamanın tek başına yetmediğini (OAuth hesabı, kişisel MCP server'ları ve proje güveni `~/.claude.json` içinde yaşar, bu yüzden `CLAUDE_CONFIG_DIR` de aynı yolu göstermelidir); `/etc/claude-code/managed-settings.json` ile politika dağıtmanın Dockerfile üzerinden yapıldığında kurcalanabilir olduğunu; container içinde `--dangerously-skip-permissions`'ın neyi korumadığını; ve `CLAUDE_CODE_PROCESS_WRAPPER` / `processWrapper` başlatıcı sözleşmesini — Windows'ta bu değişkenin tamamen yok sayıldığı dahil — anlatır.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur: `/en/l4-master/m21-scale/devcontainers/`.
+- Resmi Dev Container Feature ile Claude Code'u mevcut bir dev container'a (Docker tabanlı, kod ve araçları önceden yapılandırılmış taşınabilir bir geliştirme ortamı) eklemek ve üzerindeki sürüm etiketinin neyi sabitlediğini söylemek.
+- `~/.claude`'a bir volume bağlayarak **ve** `CLAUDE_CONFIG_DIR`'ı ayarlayarak kimlik doğrulamayı yeniden derlemeler boyunca korumak — ve yalnızca volume'ün neden yetmediğini açıklamak.
+- Organizasyon ilkesini `/etc/claude-code/managed-settings.json` ve `containerEnv` üzerinden bir konteynere teslim etmek ve Dockerfile yolunun neden kurcalamaya karşı korumalı olmadığını söylemek.
+- Güvenlik sınırını dürüstçe belirtmek: bir konteynerin içindeki `--dangerously-skip-permissions`'ın neyi koruyup neyi korumadığı.
+- `CLAUDE_CODE_PROCESS_WRAPPER` sözleşmesini karşılayan bir kurumsal başlatıcı yazmak ve ulaşmadığı süreçleri adlandırmak.
+
+**Ön koşullar.** Laboratuvarı çalıştırmak istiyorsanız Docker ve dev-container-uyumlu bir editör; önceki dersin managed settings'i ve ağ yapılandırması; izin modları için `m14-security`.
+
+<WhenNotToUse>
+  Bir takımın tek bir özdeş araç zincirine ihtiyacı olduğunda ya da Claude'un komutlarının ana
+  bilgisayarınızdan başka bir yerde çalışmasını istediğinizde bir dev container ağırlığınca
+  değerlidir. İzin sisteminin yerine geçmez: resmi uyarı açık sözlüdür —
+  `--dangerously-skip-permissions` ile, bir dev container, kötü niyetli bir projenin
+  `~/.claude`'daki Claude Code kimlik bilgileri dâhil, içinde erişilebilen herhangi bir şeyi dışarı
+  sızdırmasını durdurmaz. Konteynerleri güvendiğiniz depolarla kullanın ve asla `~/.ssh` gibi ana
+  bilgisayar sırlarını ya da bulut kimlik bilgisi dosyalarını birine bağlamayın. İnceleme adımını
+  kaldırmadan daha az [prompt](/tr/playbook/glossary/#prompt) (Claude'a verilen istek metni)
+  istiyorsanız, gerçekten istediğiniz özellik auto mode'dur. Ve ikinci yarıdaki kurumsal başlatıcı
+  yalnızca gerçekten bir tane zorunlu kılan organizasyonlar içindir — Windows'ta değişken tamamen
+  yok sayılır.
+</WhenNotToUse>
+
+## Kavram
+
+### Claude Code'u bir dev container'a eklemek
+
+Bir dev container, deponuzun tanımladığı bir Docker konteyneridir; [Dev Containers spesifikasyonunu](https://containers.dev/) destekleyen bir editör ona bağlanır: dosyaları her zamanki gibi düzenlersiniz, ama terminal, dil sunucuları ve build araçları konteynerin içinde çalışır. Claude Code, resmi Dev Container Feature aracılığıyla bunlardan herhangi birine kurulur.
+
+<CodeBlock title=".devcontainer/devcontainer.json">
+
+```json
+{
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+  "features": {
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
+  }
+}
+```
+
+</CodeBlock>
+
+Ardından konteyneri yeniden derleyin — VS Code komut paletinde **Dev Containers: Rebuild Container**, ya da aracınızın eşdeğeri — içinde bir terminal açın ve giriş yapmak için `claude`'u çalıştırın.
+
+`:1.0` etiketi, Claude Code sürümünü değil _feature'ın kurulum betiğini_ sabitler: feature en son Claude Code'u kurar, ki bu daha sonra konteynerin içinde kendini otomatik günceller. Bir derleme `Failed to install Node.js and npm` ile başarısız olursa, Claude Code feature'ının üstüne `"ghcr.io/devcontainers/features/node:1": {}` ekleyin.
+
+Girişin nasıl göründüğü sağlayıcınıza bağlıdır. Anthropic'e giderken, bu bir tarayıcı girişidir; Bedrock, Agent Platform ya da Foundry'de, Claude Code bulut kimlik bilgilerinizi tarayıcı prompt'u olmadan kullanır. Bunları `containerEnv` üzerinden, bir Codespaces [secret](/tr/playbook/glossary/#secret)'ı (depoya commit'lenmemesi gereken hassas değer) üzerinden ya da bulutunuzun workload identity'si üzerinden geçirin — ana bilgisayardan kimlik bilgisi dosyalarını bağlayarak **değil**.
+
+### Bir yeniden derlemeden sağ çıkmak
+
+Varsayılan olarak konteynerin ana dizini yeniden derlemede atılır, bu yüzden herkes tekrar giriş yapar. Tuzak şu ki `~/.claude`'a bir volume bağlamak tek başına yeterli değildir: OAuth hesabı, kişisel [MCP server](/tr/playbook/glossary/#mcp-server)'lar (Model Context Protocol ile Claude'a dış araç ve veri sağlayan sunucu) ve proje-başına trust, o dizinin _dışında_ ayrı bir dosya olan `~/.claude.json`'da yaşar. Volume'ü bağlayın ve `CLAUDE_CONFIG_DIR`'ı aynı yola işaret edin, böylece o dosya da içinde yazılır.
+
+<CodeBlock title="devcontainer.json (remoteUser konteynerin root olmayan kullanıcısıdır)">
+
+```json
+"mounts": ["source=claude-code-config,target=/home/<user>/.claude,type=volume"],
+"containerEnv": { "CLAUDE_CONFIG_DIR": "/home/<user>/.claude" }
+```
+
+</CodeBlock>
+
+`<user>`'ı konteynerinizin `remoteUser`'ıyla değiştirin — resmi örnek `node` kullanıcısını kullanır. Depolar arasında paylaşılan tek bir volume yerine proje başına durum tutmak için, kaynak adına `${devcontainerId}`'ı koyun. GitHub Codespaces'te `~/.claude`, bir durdurma ve başlatmadan sağ çıkar ama bir yeniden derlemeyle temizlenir, bu yüzden aynı yapılandırma geçerlidir; kimlik doğrulamayı codespace'ler arasında taşımak için, `claude setup-token`'dan bir `ANTHROPIC_API_KEY` ya da bir `CLAUDE_CODE_OAUTH_TOKEN`'ı bir Codespaces secret'ı olarak saklayın.
+
+### Konteynerin içindeki ilke
+
+Bir konteyner, ilke uygulamak için kullanışlı bir yerdir, çünkü aynı imaj her makinede çalışır. Claude Code, Linux'ta `/etc/claude-code/managed-settings.json`'ı settings hiyerarşisinde en yüksek öncelikte okur — bir mühendisin `~/.claude`'da ya da projenin `.claude/`'ında ayarladığı her şeyin üstünde.
+
+<CodeBlock title="Dockerfile">
+
+```dockerfile
+RUN mkdir -p /etc/claude-code
+COPY managed-settings.json /etc/claude-code/managed-settings.json
+```
+
+</CodeBlock>
+
+Bunun neyi başardığı konusunda dürüst olun: Dockerfile depoda yaşar, bu yüzden yazma erişimi olan herkes o adımı değiştirebilir ya da kaldırabilir. Mühendislerin atlayamayacağı bir ilke için, bunun yerine server-managed settings ya da MDM'iniz üzerinden managed settings'i teslim edin.
+
+Konteynerdeki her oturum için ortam değişkenleri `containerEnv`'e gider:
+
+<CodeBlock title="devcontainer.json">
+
+```json
+"containerEnv": {
+  "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+  "DISABLE_AUTOUPDATER": "1"
+}
+```
+
+</CodeBlock>
+
+Belirtmeye değer iki sonuç. `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, feature-flag değerlendirmesini de devre dışı bırakır, bu yüzden Remote Control ve feature-flag getirmesine bağlı diğer her şey o konteynerde çalışmayı durdurur. Ve feature her zaman en son sürümü kurduğu için, tekrarlanabilir olması gereken bir build, feature'ı kullanmak yerine Dockerfile'dan sabitlenmiş bir sürüm kurmalıdır — `npm install -g @anthropic-ai/claude-code@X.Y.Z` — `DISABLE_AUTOUPDATER` ayarlanmış olarak.
+
+Konteynerin içindeki MCP server'lar için, onları depo kökündeki bir `.mcp.json`'da proje kapsamında tanımlayın, herhangi bir stdio server ikili dosyasını Dockerfile'da kurun ve uzak server alan adlarını çıkış allowlist'inize ekleyin.
+
+### Çıkış ve dürüst güvenlik sınırı
+
+Konteynerin giden trafiğini Claude Code'un ihtiyaç duyduğu alan adlarıyla sınırlayabilirsiniz — önceki dersteki ağ-erişimi tablosu listedir. `anthropics/claude-code` deposundaki referans konteyner, bunu yapan bir `init-firewall.sh` içerir ve bir konteynerin içinde bir güvenlik duvarı çalıştırmak bunları gerektirdiği için `runArgs` aracılığıyla `NET_ADMIN` ve `NET_RAW` yeteneklerini ekler. Ne betik ne de o yetenekler Claude Code'un kendisi tarafından gerektirilir; onları dışarıda bırakıp kendi ağ kontrollerinizi kullanabilirsiniz.
+
+Konteyner, Claude Code'u root olmayan bir kullanıcı olarak çalıştırıp komut yürütmesini sınırladığı için, `--dangerously-skip-permissions`, gözetimsiz iş için uygulanabilir hâle gelir — CLI, root olarak başlatıldığında bayrağı reddeder, bu yüzden `remoteUser`'ın root olmayan bir hesap olduğunu doğrulayın. Neden vazgeçtiğinizi anlayın: [tool](/tr/playbook/glossary/#tool) (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) çağrılarının hiçbir incelemesi yok, Claude yine de bind-mount'lanmış workspace'teki (ana bilgisayarınızda görünür) herhangi bir dosyayı değiştirebilir ve konteynerin ağ ilkesinin izin verdiği her şeye ulaşabilir. Onu çıkış kısıtlamalarıyla eşleştirin, ya da bunun yerine auto mode kullanın. Mühendislerin bayrağı hiç kullanmasını durdurmak için, managed settings'te `permissions.disableBypassPermissionsMode`'u `"disable"`'a ayarlayın.
+
+### Kurumsal başlatıcılar
+
+Bazı organizasyonlar, bir iş istasyonundaki her sürecin, güvenlik duruşlarının bağlı olduğu [sandbox](/tr/playbook/glossary/#sandbox)'ı (bir sürecin dosya sistemi ve ağ erişimini işletim sistemi düzeyinde kısıtlayan izole çalışma ortamı), ağ kontrollerini ya da kimlik bilgisi enjeksiyonunu uygulayan zorunlu bir başlatıcı üzerinden başlamasını gerektirir. `PATH`'teki `claude` komutunu saran bir başlatıcı, Claude Code'un başlattığı çoğu şeyi kaçırır, çünkü o süreçler bir `PATH` aramasısı olmadan ikili dosyanın doğrudan yolundan başlar.
+
+`CLAUDE_CODE_PROCESS_WRAPPER` (v2.1.208+), ya da `processWrapper` ayarı (v2.1.210+), bunları kapsar: arka plan hizmeti, sıcak bekleme olanlar dâhil her [agent](/tr/playbook/glossary/#agent) (bir hedefi kendi başına adım adım yürüten yapay zekâ süreci) görünümü oturumu, bir güncelleme ya da çökmeden sonra yeniden doğan oturumlar ve Claude Code'un bir güncellemeyi bitirmek için kendini yeniden başlatması. Remote Control'un oturum süreçleri ve agent team'lerin bölünmüş-panel teammate oturumları da kapsanır, ama yalnızca v2.1.210 ya da üstünde — o sürüm kapısı hem ortam değişkeni hem ayar için geçerlidir.
+
+<CodeBlock title="/usr/local/sbin/corp-launcher">
+
+```bash
+#!/bin/sh
+# Your organisation's setup: enter the sandbox, apply
+# network controls, or inject credentials.
+exec "$@"
+```
+
+</CodeBlock>
+
+Sözleşme katıdır ve Claude Code, başlatıcı çalışamadığında sarmalanmamış bir şekilde başlatmak yerine bir süreci başlatmayı reddeder. `exec "$@"` ile bitirin. Argümanları yeniden sıralamayın, özümsemeyin ya da başına eklemeyin. Miras alınan her ortam değişkenini geçirin — oturum-başına kimlik doğrulama token'ları, model ve sağlayıcı seçimi ve wrapper değişkeninin kendisi hepsi oradan seyahat eder, bu yüzden ortamı bir allowlist'ten yeniden inşa eden bir başlatıcı, başlattığı oturumları bozar. Her seferinde kabaca üç saniye içinde `exec`'e ulaşın. Kendi içinden çağrılmaya tahammül edin. `exec`'ten önce hiçbir şey yazdırmayın.
+
+Bazı süreçler bunun dışındadır: bir terminalde kendinizin başlattığı bir oturum, birimi yapılandırmadan önce gelen kurulu bir arka plan hizmeti, bir `claude-cli://` derin bağlantısının ilk süreci, `--worktree`-artı-`--tmux` yeniden başlatması ve Claude in Chrome native-messaging host'u. **Windows'ta değişken tamamen yok sayılır** — sözleşme `exec`'e bağlıdır — bu yüzden bir yaygınlaştırma planlarken Windows makinelerini sarmalanmamış sayın. Çözülen başlatma komutunu görmek için `/status`'u çalıştırıp **Self-exec** girdisine bakın, ya da `claude daemon status`'u çalıştırın; ayarı dağıttıktan sonra, bir sonraki arka plan oturumunın ona saygı gösteren bir süpervizör başlatması için `claude daemon stop --any` yapın.
+
+Onu, Claude'un _sizin adınıza_ çalıştırdığı shell komutlarını saran ve her birini tek bir shell-tırnaklanmış dize olarak geçiren `CLAUDE_CODE_SHELL_PREFIX` ile karıştırmayın. Biri için yazılmış bir başlatıcı diğeri olarak çalışmaz.
+
+Bu dersin işlenmiş örnek prompt'u, devraldığınız bir konteyner tanımını denetlemek için:
+
+```text
+Read .devcontainer/devcontainer.json and the Dockerfile, and tell me whether a rebuild
+would sign me out, whether managed settings are actually enforced, and what egress is allowed.
+```
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Laboratuvar deposunda hiç `lesson/m21-scale-*` etiketi yok. Bu laboratuvar kısa bir
+  `devcontainer.json`'dan gerçek bir konteyner inşa eder; aşağıdaki
+  [transcript](/tr/playbook/glossary/#transcript) (gerçek bir Claude Code oturumunun kaydı) gerçek
+  build'dir, başarısızlığıyla birlikte. Makinenizde Docker yoksa, build adımlarını okuyun ve
+  denetimi bunun yerine `anthropics/claude-code` deposundaki referans yapılandırmaya karşı yapın.
 </Callout>
+
+<Lab
+  title="Laboratuvar · feature'la bir konteyner inşa edin, sonra onu denetleyin"
+  lessonId="tr/l4-master/m21-scale/devcontainers"
+  repoTag="none"
+  steps={[
+    "`mcr.microsoft.com/devcontainers/base:ubuntu` imajı, `ghcr.io/anthropics/devcontainer-features/claude-code:1.0` feature'ı ve `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` ile `DISABLE_AUTOUPDATER`'ı \"1\"'e ayarlayan bir `containerEnv` bloğuyla, boş kullan-at bir dizinde `.devcontainer/devcontainer.json`'ı yazın.",
+    'Onu bir editör olmadan derleyin: `npx -y @devcontainers/cli build --workspace-folder .` — ve bu temel imajda başarısız olmasını bekleyin.',
+    'Başarısızlığı okuyun, Claude Code feature\'ının üstüne `"ghcr.io/devcontainers/features/node:1": {}`\'i ekleyin ve tekrar derleyin.',
+    "Başarılı build'in gerçekte neyi sabitlediğini not edin: `:1.0` etiketi feature'ın kurulum betiğini sabitledi ve feature, o anda güncel olan hangi Claude Code sürümü ise onu kurdu.",
+    "Kalıcılık çiftini ekleyin — remoteUser'ın `~/.claude`'una bağlanmış adlandırılmış bir volume ve aynı yola işaret eden `CLAUDE_CONFIG_DIR` — ve yalnızca volume'ün hangi dosyayı kaçıracağını tek cümlede söyleyin.",
+    "Denetleyin: kendi dosyanız için, bir yeniden derlemenin sizi çıkış yaptırıp yaptırmadığını, içindeki ilkenin kurcalamaya karşı korumalı olup olmadığını ve konteynerinizin ağ-erişimi host'larından hangilerinin hâlâ ulaşılabilir olması gerektiğini yanıtlayın.",
+  ]}
+  expected="İlk build, `Node.js and npm are required but could not be installed!` ile ve feature'ın kendi önerilen düzeltmesiyle başarısız olur. node feature'ı eklendiğinde, ikinci build success ve bir imageName sonucuyla biter. Denetiminiz, CLAUDE_CONFIG_DIR çifti olmadan bir yeniden derlemenin ~/.claude.json'ı (OAuth hesabı, kişisel MCP server'lar, proje-başına trust) kaybettiğini, deponun kendi Dockerfile'ı üzerinden teslim edilen her şeyin yazma erişimi olan herkes tarafından düzenlenebilir olduğunu ve sabitlenmiş bir Claude Code sürümünün feature yerine npm install gerektirdiğini sonuçlandırır."
+  checklist={[
+    'İlk build, farklı bir nedenle değil, belgelenen nedenle başarısız oldu',
+    'İkinci build, outcome: success ve bir imaj adı bildirdi',
+    "Feature'ın `:1.0` etiketinin neyi sabitleyip neyi sabitlemediğini söyleyebiliyorsunuz",
+    'Kalıcılık çifti yalnızca mount değil, bir volume mount VE CLAUDE_CONFIG_DIR',
+    "Çıkış kısıtlandığında bile ulaşılabilir kalması gereken en az bir host'u adlandırdınız",
+    "--dangerously-skip-permissions'ın konteynerin içinde neyi korumadığını belirtebiliyorsunuz",
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m21-scale/05-devcontainers/01-feature-build.txt"
+    range="3-17"
+  />
+</Lab>
+
+O başarısızlık, ilk bir devcontainer build'inde ters gitmesi en olası tek şeydir ve dikkatle okunmaya değer. Claude Code feature'ı, temel imaj sağlamadığında — `mcr.microsoft.com/devcontainers/base:ubuntu` sağlamaz — Node.js'i kendisi kurar ve o kurulum başarısız olduğunda, feature onu düzeltecek tam `features` bloğunu yazdırır. Doğruluk için iki ayrıntı: dokümanlar bu başarısızlığı `Failed to install Node.js and npm` ile durma olarak tarif eder, feature'ın burada gerçekte yazdırdığı mesaj ise `Node.js and npm are required but could not be installed!` idi; ve feature'ın kendi önerisi, dokümanların gösterdiği `:1.0` yerine `:1` majör etiketini kullanır. Dizeye değil anlama göre eşleştirin.
+
+## Anti-pattern'ler
+
+**`~/.claude`'a bir volume bağlayıp kimlik doğrulamayı kalıcı olarak adlandırmak.** `~/.claude.json` — OAuth hesabı, kişisel MCP server'lar, proje-başına trust — o dizinin dışında yaşar, bu yüzden yeniden derlemeler yine de sizi çıkış yaptırır. _Düzeltme:_ `CLAUDE_CONFIG_DIR`'ı mount ile aynı yola ayarlayın.
+
+**Dockerfile ile teslim edilmiş bir `managed-settings.json`'ı zorlama olarak ele almak.** Depoda oturur, bu yüzden yazma erişimi olan herkes `COPY`'yi düzenleyebilir ya da silebilir. _Düzeltme:_ mühendislerin atlamaması gereken ilke için server-managed settings ya da MDM'inizi kullanın.
+
+**Kolaylık için `~/.ssh`'ı ya da bulut kimlik bilgisi dosyalarını konteynere bağlamak.** Belgelenen uyarı, bir konteynerin içinde erişilebilen herhangi bir şeyin dışarı sızdırılmasını durdurmadığını açıkça belirtir. _Düzeltme:_ kısa ömürlü, depo-kapsamlı kimlik bilgilerini `containerEnv` üzerinden, bir Codespaces secret'ı üzerinden ya da workload identity üzerinden geçirin.
+
+**Konteynerin `--dangerously-skip-permissions` için güvenlik sınırı olduğunu varsaymak.** Claude, bind-mount'lanmış workspace'teki — ki bu ana bilgisayarınızdadır — her dosyayı yine de yazabilir ve ağ ilkesinin izin verdiği her şeye ulaşabilir. _Düzeltme:_ çıkışı da kısıtlayın, ya da auto mode kullanın ve inceleme adımını koruyun.
+
+**Feature etiketini sabitleyip sabitlenmiş bir CLI beklemek.** `:1.0`, kurulum betiğini sabitler; feature en son sürümü kurar ve o daha sonra kendini otomatik günceller. _Düzeltme:_ Dockerfile'da `npm install -g @anthropic-ai/claude-code@X.Y.Z` artı `DISABLE_AUTOUPDATER=1`.
+
+**`PATH`'teki `claude`'ı sarıp başlatıcı yaygınlaştırmasının tamamlandığını bildirmek.** Kendini doğuran süreçler asla `PATH`'e başvurmaz ve Windows'ta `CLAUDE_CODE_PROCESS_WRAPPER` tamamen yok sayılır. _Düzeltme:_ `processWrapper`'ı settings üzerinden teslim edin, `claude daemon stop --any`'i çalıştırın ve Windows makinelerini sarmalanmamış sayın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/devcontainers"
+  questionId="q1"
+  lang="tr"
+  prompt="remoteUser'ın ~/.claude'una adlandırılmış bir volume bağlıyorsunuz ve mühendisler her yeniden derlemeden sonra hâlâ çıkış yapmış oluyor. Neden?"
+  options={[
+    {
+      text: "Adlandırılmış volume'ler yeniden derlemede temizlenir",
+      explanation: "Temizlenmezler; ana dizin temizlenir, volume'ün var olma nedeni de budur.",
+    },
+    {
+      text: "`~/.claude.json` — OAuth hesabı, kişisel MCP server'lar ve proje-başına trust — o dizinin dışında yaşar, bu yüzden `CLAUDE_CONFIG_DIR` de volume'e işaret etmelidir",
+      correct: true,
+      explanation: 'Mount ve değişken bir çifttir; ikisinden yalnızca biri eksiktir.',
+    },
+    {
+      text: "Feature Claude Code'u yeniden kurar ve kimlik bilgilerini siler",
+      explanation: 'Kurulum, depolanmış kimlik bilgilerine dokunmaz.',
+    },
+    {
+      text: 'Kimlik doğrulama bir konteynerde hiç kalıcı olamaz',
+      explanation: "Mount artı değişkenle — ya da bir Codespaces secret'ıyla — olabilir.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/devcontainers"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir dev container'ın içinde `--dangerously-skip-permissions` çalıştırmak hakkında hangi ifade doğrudur?"
+  options={[
+    {
+      text: "Konteyner Claude'u tamamen izole eder, bu yüzden dışındaki hiçbir şey etkilenemez",
+      explanation:
+        "Bind-mount'lanmış workspace doğrudan ana bilgisayarınızda görünür ve ağ ilkesi hâlâ erişimi yönetir.",
+    },
+    {
+      text: "Gözetimsiz iş için uygulanabilirdir, ama kötü niyetli bir proje yine de konteynerde erişilebilen her şeyi — ~/.claude'daki kimlik bilgileri dâhil — dışarı sızdırabilir",
+      correct: true,
+      explanation:
+        'Dokümanların güvenilen depolarla konteyner kullanmayı ve bayrağı çıkış kısıtlamalarıyla eşleştirmeyi söylemesinin nedeni bu.',
+    },
+    {
+      text: 'Bayrak, konteyner root olarak çalışsın ya da çalışmasın aynı şekilde çalışır',
+      explanation:
+        'CLI, root olarak başlatıldığında onu reddeder; remoteUser root olmayan olmalıdır.',
+    },
+    {
+      text: "Prompt'ları azaltmanın önerilen yoludur",
+      explanation:
+        "İnceleme adımını kaldırmadan prompt'ları azaltmanın önerilen yolu auto mode'dur.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/devcontainers"
+  questionId="q3"
+  lang="tr"
+  prompt="Bunlardan hangisi bir `CLAUDE_CODE_PROCESS_WRAPPER` başlatıcısı tarafından KAPSANMAZ?"
+  options={[
+    {
+      text: "`claude agents`'ın talep üzerine başlattığı arka plan hizmeti",
+      explanation: 'Değişkenin var olma nedeni tam olarak bu.',
+    },
+    {
+      text: 'Bir terminalde `claude` yazarak kendinizin başlattığı bir oturum',
+      correct: true,
+      explanation:
+        "Onu nasıl çağırdıysanız öyle çalışır; onu PATH'te daha önceki bir `claude` betiğiyle kapsayın — kendini doğurmalar asla PATH'e başvurmaz, bu yüzden ikisi asla üst üste binmez.",
+    },
+    {
+      text: 'Hizmetin bir güncellemeden sonra yeniden doğurduğu oturumlar',
+      explanation: 'Kapsanır.',
+    },
+    {
+      text: "Agent team'lerin bölünmüş-panel teammate oturumları, v2.1.210 ya da üstünde",
+      explanation: 'Kapsanır — Claude Code o panelleri kendi ikili dosyasından başlatır.',
+    },
+  ]}
+/>
+
+**Sonraki:** Seviye 4'ün sonu bu. Playbook'un karar ağaçları ve [checklist](/tr/playbook/glossary/#checklist)'leri (bir görevin tamamlandığını doğrulamak için sırayla işaretlenen madde listeleri), her seviyenin materyalini tek bir yere geri çeker.

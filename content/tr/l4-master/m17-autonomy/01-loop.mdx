@@ -1,6 +1,6 @@
 ---
-title: '/loop: bir promptu tekrar tekrar çalıştırmak'
-description: "Açık bir oturumun içinde bir promptu zamanlayın — sabit bir cron aralığı ya da Claude'un her yinelemede kendi seçtiği bir aralık — varsayılanı loop.md ile değiştirin, oluşturduğunuz her görevi listeleyin, sınırlayın ve iptal edin."
+title: '/loop: bir prompt’u tekrar tekrar çalıştırmak'
+description: 'Açık bir oturumun içinde /loop ile bir prompt zamanlayın — sabit bir cron aralığı ya da Claude’un her yinelemede seçtiği bir aralık — varsayılanı loop.md ile özelleştirin ve oluşturduğunuz her görevi listeleyin, sınırlayın, iptal edin.'
 level: 4
 module: 'm17-autonomy'
 order: 1
@@ -9,7 +9,7 @@ difficulty: core
 tags: ['otonomi', 'loop', 'zamanlama', 'cron']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Run prompts on a schedule'
@@ -35,8 +35,315 @@ lab:
   repo_tag: 'lesson/m17-01-start'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders `/loop`'u anlatır: `/loop 15m <prompt>` ile sabit aralıklı çalıştırma, aralığı hiç vermediğinizde Claude'un her yinelemede bir ile altmış dakika arasında kendi seçtiği aralık, `/loop` argümansız çağrıldığında çalışan yerleşik bakım promptu ve onun yerine geçen `.claude/loop.md` / `~/.claude/loop.md` dosyaları. Ayrıca `/loop`'un arkasındaki `CronCreate`, `CronList` ve `CronDelete` tool'ları, 8 karakterlik iş kimlikleri, oturum başına 50 görev sınırı, fire zamanlarına eklenen jitter ve unutulmuş bir döngüyü sınırlayan yedi günlük süre dolumu ele alınır. Laboratuvarda `lesson/m17-01-start` etiketine karşı ucuz ve idempotent bir kontrol script'i (`scripts/loop-check.sh`) yazılır, bir görev oluşturulur, listelenir ve iptal edilir — geride zamanlanmış hiçbir şey bırakılmaz.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.
+- `/loop 15m <prompt>` ile bir [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni) sabit bir aralıkta çalıştırmak ve aralığın bir cron ifadesine nasıl dönüştüğünü açıklamak.
+- Sabit bir aralık ile Claude'un her yinelemeden sonra bir sonraki gecikmeyi kendisinin seçtiği kendi hızında bir döngü arasında bilinçli seçim yapmak.
+- Yerleşik bakım prompt'unu kendi `.claude/loop.md`'nizle değiştirmek ve iki `loop.md` konumundan hangisinin kazandığını söylemek.
+- Zamanlanmış görevleri listelemek, sınırlamak ve iptal etmek; unutulan bir döngünün sonsuza kadar çalışmasını durduran iki mekanizmayı adlandırmak.
+- Bir `/loop` görevinin ne yapamadığını söylemek — oturumdan sağ çıkmak, kaçırılan tetiklenmeleri telafi etmek ya da Claude tur ortasındayken tetiklenmek.
+
+**Ön koşullar.** Seviye 1–3: etkileşimli bir oturum, [permission mode](/tr/playbook/glossary/#permission-mode)'lar (bir oturumun tool çağrılarını nasıl onaylayacağını belirleyen kip) ve [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) `claude -p`. Aşağıdaki laboratuvar için [laboratuvar deposunun](https://github.com/codechup/claude-code-lab) bir checkout'u.
+
+<WhenNotToUse>
+  Bir `/loop` görevi tek bir açık oturumda yaşar ve onunla birlikte ölür, bu yüzden siz klavyenin
+  başında olsanız da olmasanız da çalışması gereken herhangi bir şey için yanlış araçtır — bunun
+  için bir cloud routine (Claude Code'un tetikleyici bir olaya bağlı olarak bulutta ya da
+  masaüstünde çalıştırdığı, oturum açık olmasa da devam eden zamanlanmış görev) ya da bir masaüstü
+  zamanlanmış görevi kullanın. Bir şeyin olayı size itebileceği durumlarda da yanlış araçtır: bir
+  webhook uç noktasını iki dakikada bir yoklamak her boş kontrolde
+  [token](/tr/playbook/glossary/#token) (bir dil modelinin metni işlerken kullandığı en küçük birim)
+  yakar, oysa bir kanal başarısızlığı olduğu anda iletir. Ve arkasında ucuz, idempotent bir kontrol
+  olmayan bir görev için de yanlış araçtır — her tetiklenmede gerçek iş yapan bir prompt'u olan bir
+  döngü, bir yoklayıcı değil, frensiz bir gözetimsiz [agent](/tr/playbook/glossary/#agent)'tır (bir
+  hedefi kendi başına adım adım yürüten yapay zekâ süreci).
+</WhenNotToUse>
+
+## Kavram
+
+### Tekrarlanan işin zamanlanabileceği üç yer
+
+Claude Code, tekrarlanan işi üç farklı yerde zamanlar ve yanlışını seçmek bu modüldeki en yaygın hatadır. Resmi karşılaştırma:
+
+|                                        | Cloud routine                                  | Masaüstü görevi                 | `/loop`                                     |
+| -------------------------------------- | ---------------------------------------------- | ------------------------------- | ------------------------------------------- |
+| Nerede çalışır                         | Bulutta, varsayılan olarak Anthropic-yönetimli | Sizin makinenizde               | Sizin makinenizde                           |
+| Makinenin açık olmasını gerektirir mi  | Hayır                                          | Evet                            | Evet                                        |
+| Açık bir oturum gerektirir mi          | Hayır                                          | Hayır                           | Evet                                        |
+| Yeniden başlatmalar arasında kalıcı mı | Evet                                           | Evet                            | Süresi dolmamışsa `--resume` ile geri gelir |
+| Yerel dosyalara erişim                 | Hayır (taze klon)                              | Evet                            | Evet                                        |
+| Permission soruları                    | Hayır (otonom çalışır)                         | Görev başına yapılandırılabilir | Oturumdan miras alır                        |
+| Minimum aralık                         | 1 saat                                         | 1 dakika                        | 1 dakika                                    |
+
+`/loop` hızlı olanıdır: hiçbir kuruluma ihtiyacı yoktur, oturumunuzun izinlerini ve [MCP server](/tr/playbook/glossary/#mcp-server)'larını miras alır ve konuşma bittiğinde yok olur. Çalışırken bir şeyi yoklamak için kullanın.
+
+### `/loop`'un üç biçimi
+
+`/loop` paketlenmiş bir [skill](/tr/playbook/glossary/#skill)'dir (`SKILL.md` ile tanımlanan, `/ad` ile çağrılan yeniden kullanılabilir talimat paketi) ve her iki argümanı da isteğe bağlıdır. Verdiğiniz şey nasıl davranacağına karar verir:
+
+| Ne verdiğiniz                  | Örnek                       | Ne olur                                                            |
+| ------------------------------ | --------------------------- | ------------------------------------------------------------------ |
+| Aralık ve prompt               | `/loop 5m check the deploy` | Prompt'unuz sabit bir cron zamanlamasında çalışır                  |
+| Yalnızca prompt                | `/loop check the deploy`    | Prompt'unuz, Claude'un her yinelemede seçtiği bir aralıkta çalışır |
+| Yalnızca aralık, ya da hiçbiri | `/loop`                     | Yerleşik bakım prompt'u çalışır, ya da varsa sizin `loop.md`'niz   |
+
+Bir skill de geçebilirsiniz: `/loop 20m /review-pr 1234` o skill'i her yirmi dakikada bir yeniden çalıştırır. Zamanlanmış bir tetiklenme yalnızca Claude'un kendi başına çağırmasına izin verilen skill'leri çalıştırır — `/permissions`, `/model` ya da `/clear` gibi yerleşik komutlar, `disable-model-invocation: true` işaretli skill'ler, bir `skillOverrides` ayarı ya da bir `Skill` deny kuralı tarafından tutulan skill'ler ve MCP prompt'larının hepsi çalıştırılmak yerine düz metin olarak gelir.
+
+İşte bu dersin işlenmiş örnek prompt'u — ucuz, idempotent ve "hiçbir şey olmadı" konusunda dürüst bir döngü hedefi:
+
+```text
+/loop 15m run bash scripts/loop-check.sh. If it exits 0, reply with one line and
+nothing else. If it exits non-zero, show the failing test's output and stop the loop.
+```
+
+### Sabit aralıklar
+
+Bir aralık verdiğinizde Claude bunu bir cron ifadesine dönüştürür, işi zamanlar ve sıklığı ile iş kimliğini onaylar. Aralık, prompt'un başında çıplak bir belirteç olarak (`30m`) ya da sonunda bir yan tümce olarak (`every 2 hours`) gelebilir. Birimler `s`, `m`, `h` ve `d`'dir.
+
+Cron'un bir dakikalık ayrıntı düzeyinden iki yuvarlama kuralı çıkar: saniyeler en yakın dakikaya **yukarı** yuvarlanır ve temiz bir cron adımı olmayan bir aralık — `7m`, `90m` — Claude'un ne seçtiğini size söylediği en yakın olana yuvarlanır.
+
+### Kendi hızında döngüler
+
+Aralığı atlarsanız Claude bir sonraki gecikmeyi bir dakika ile bir saat arasında, yinelemenin az önce gördüğüne göre kendisi seçer: bir build bitmek üzereyken kısa beklemeler, beklemede hiçbir şey yokken daha uzun olanlar. Seçilen gecikme ve nedeni her yinelemenin sonunda yazdırılır.
+
+Perde arkasında Claude, bir sonraki yinelemeyi ayırtmak için `ScheduleWakeup` [tool](/tr/playbook/glossary/#tool)'unu (Claude'un dosya okuma, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) çağırır. Onu asla kendiniz çağırmazsınız. `stop: true` ile çağırmak bekleyen uyandırmayı iptal eder, ki bu Claude'un bitmiş saydığı kendi hızındaki bir döngüyü nasıl sonlandırdığıdır; bir yineleme ne yeniden zamanlama ne de durdurma yapmadan biterse, Claude Code yaklaşık 20 dakika sonra bir yedek uyandırma ayırtır ve o yineleme de yeniden zamanlama yapmazsa döngüyü sonlandırır.
+
+`Monitor` tool'unun kullanılabildiği yerlerde, dinamik bir zamanlama istediğinizde Claude bunun yerine ona başvurabilir: bir monitor (bir arka plan sürecinin çıktısını göründükçe akıtan, bir zamanlayıcıda prompt'u yeniden çalıştırmak yerine kullanılan araç), arka planda çalışan bir script'in her çıktı satırını göründükçe akıtır; bu hem token'da hem de gecikmede bir prompt'u zamanlayıcıda yeniden çalıştırmaktan üstündür. Bu, 5. dersin konusudur.
+
+<Callout>
+  Dinamik olarak seçilen aralıklar ve yerleşik bakım prompt'u her sağlayıcıda çalışır. Amazon
+  Bedrock'ta, AWS'de Claude Platform'da, Google Cloud'un Agent Platform'unda ve Microsoft Foundry'de
+  — ya da özellik bayrağı getirme kapalıyken — ikisi de Claude Code v2.1.248 ya da sonrasını
+  gerektirir. Bu durumlarda daha eski sürümlerde, aralıksız bir prompt sabit 10 dakikalık bir
+  zamanlamada çalışır ve çıplak bir `/loop` kullanım mesajını yazdırır.
+</Callout>
+
+### Yerleşik bakım prompt'u ve `loop.md`
+
+Çıplak bir `/loop`, dinamik olarak seçilen bir aralıkta yerleşik bir bakım prompt'u çalıştırır. Her yineleme sırasıyla şunları işler: konuşmadan bitmemiş iş; mevcut [branch](/tr/playbook/glossary/#branch)'in (bir git deposunun bağımsız bir geliştirme hattı) [pull request](/tr/playbook/glossary/#pull-request)'i (inceleme yorumları, başarısız [CI](/tr/playbook/glossary/#ci) (her push'ta otomatik testleri çalıştıran hat) çalıştırmaları, [merge](/tr/playbook/glossary/#merge) çakışmaları); sonra başka bir şey beklemedeyken hata avı ya da sadeleştirme gibi temizlik geçişleri. Bu kapsamın dışında yeni girişimler başlatmaz ve push etmek ya da silmek gibi geri alınamaz eylemler yalnızca [transcript](/tr/playbook/glossary/#transcript)'in (gerçek bir Claude Code oturumunun kaydı) zaten yetkilendirdiği bir şeyi sürdürdüklerinde ilerler.
+
+O prompt'u kendinizinkiyle değiştirmek için bir `loop.md` yazın:
+
+| Yol                 | Kapsam                                                                   |
+| ------------------- | ------------------------------------------------------------------------ |
+| `.claude/loop.md`   | Proje seviyesi. Her iki dosya da varsa öncelik alır.                     |
+| `~/.claude/loop.md` | Kullanıcı seviyesi. Kendi dosyasını tanımlamayan her projede geçerlidir. |
+
+Dosya, gerekli bir yapısı olmayan düz Markdown'dır — sanki prompt'u yazıyormuşsunuz gibi yazın. Çıplak bir `/loop` için tek bir varsayılan prompt tanımlar, bir görev listesi değil, ve komut satırında bir prompt verdiğinizde yok sayılır. Düzenlemeler bir sonraki yinelemede etkili olur, bu yüzden bir döngü çalışırken talimatları rafine edebilirsiniz. 25.000 bayttan fazla içerik kırpılır.
+
+### Listeleme, sınırlama ve iptal
+
+Düz dille sorun — "hangi zamanlanmış görevlerim var?", "deploy kontrol işini iptal et" — ve Claude üç tool'a başvurur:
+
+| Tool         | Amaç                                                                                          |
+| ------------ | --------------------------------------------------------------------------------------------- |
+| `CronCreate` | Bir görev zamanlar: 5 alanlı bir cron ifadesi, çalıştırılacak prompt ve tekrarlayıp etmediği. |
+| `CronList`   | Kimlikleri, zamanlamaları ve prompt'larıyla birlikte tüm zamanlanmış görevleri listeler.      |
+| `CronDelete` | Bir görevi kimliğine göre iptal eder.                                                         |
+
+Her görevin 8 karakterlik bir kimliği vardır ve bir oturum aynı anda en fazla 50 görev tutabilir.
+
+İki mekanizma unuttuğunuz bir döngüyü sınırlar. **Tekrarlayan görevler oluşturulduktan yedi gün sonra süresi dolar**: görev bir kez daha tetiklenir, sonra kendini siler. Ve **yeni bir konuşma başlatmak oturuma kapsamlı her görevi temizler** — `claude --resume` ya da `--continue`, süresi dolmamış tekrarlayan görevleri ve zamanı geçmemiş tek seferlik görevleri geri getirir, ama arka plan Bash ve monitor görevleri asla geri getirilmez.
+
+Tek bir tetiklenme için `/loop`'u atlayın ve doğrudan söyleyin: "saat 3'te release branch'ini push etmemi hatırlat" ya da "45 dakika sonra entegrasyon testlerinin geçip geçmediğini kontrol et". Claude, saati belirli bir dakika ve saate sabitler ve ne zaman tetikleneceğini onaylar.
+
+### Karşı savaşmamanız gereken zamanlama
+
+Zamanlayıcı, süresi gelen görevler için her saniye kontrol eder ve onları düşük öncelikle kuyruğa alır. Zamanlanmış bir prompt **turlar arasında** tetiklenir, asla yanıt ortasında değil: Claude bir görevin zamanı geldiğinde meşgulse, mevcut tur bitene kadar bekler. Tüm saatler yereldir — `0 9 * * *`, bulunduğunuz yerde saat 9 demektir, UTC değil.
+
+Tetiklenmeler ayrıca bilerek titretilir, böylece her oturum aynı duvar saati saniyesinde API'ye çarpmaz. Tekrarlayan görevler, zamanlanan saatten en fazla 30 dakika sonra, ya da saatte birden sık çalışan görevler için aralığın en fazla yarısı kadar sonra tetiklenir; saatin başına ya da yarısına zamanlanmış tek seferlik görevler en fazla 90 saniye erken tetiklenir. Ofset görev kimliğinden türetilir, bu yüzden bir görev her zaman aynısını alır. Tam zamanlama önemliyse, `:00` ya da `:30` olmayan bir dakika seçin — `0 9 * * *` yerine `3 9 * * *` — ve tek seferlik titretme uygulanmaz.
+
+`CronCreate`, joker karakterler, tek değerler, adımlar (`*/15`), aralıklar (`1-5`) ve listelerle (`1,15,30`) standart 5 alanlı cron ifadeleri alır — `dakika saat ayın-günü ay haftanın-günü`:
+
+| Örnek          | Anlamı                        |
+| -------------- | ----------------------------- |
+| `*/5 * * * *`  | Her 5 dakikada bir            |
+| `0 * * * *`    | Her saat başı                 |
+| `0 9 * * 1-5`  | Hafta içi yerel saatle 9'da   |
+| `30 14 15 3 *` | 15 Mart yerel saatle 14:30'da |
+
+Haftanın günü, Pazar için `0` ya da `7`'den Cumartesi için `6`'ya kadardır. Genişletilmiş sözdizimi — `L`, `W`, `?` ve `MON` ya da `JAN` gibi isim takma adları — desteklenmez. Hem ayın günü hem de haftanın günü kısıtlandığında, vixie-cron semantiğini izleyerek **ikisinden biri** eşleşirse bir tarih eşleşir.
+
+Zamanlayıcının tamamını kapatmak için `CLAUDE_CODE_DISABLE_CRON=1` ayarlayın: cron tool'ları ve `/loop` kullanılamaz hale gelir ve zaten zamanlanmış görevler tetiklenmeyi durdurur.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  `/loop`'un kendisi etkileşimli TUI'de bir eğik çizgi komutudur, bu yüzden headless olarak
+  yakalanamaz. Aşağıdaki ikinci transcript, `/loop`'un yönlendirdiği tool'ları — `CronCreate`,
+  `CronList`, `CronDelete` — gerçek bir headless çalıştırmada kaydeder, ki bir görevin oluşturulup
+  sonra iptal edildiğini kanıtlayan kısım budur. Adım 4, TUI'de yazdığınız şeydir; onun bilerek
+  hiçbir transcript'i yoktur.
+</Callout>
+
+<Lab
+  title="Laboratuvar · bir döngüyü ucuz, idempotent bir kontrole yöneltin"
+  repoTag="lesson/m17-01-start"
+  lessonId="tr/l4-master/m17-autonomy/loop"
+  steps={[
+    'Laboratuvar deposunu klonlayın ve başlangıç etiketini checkout edin: `git checkout lesson/m17-01-start`, sonra `npm ci`.',
+    '`scripts/loop-check.sh` yazın: `npm test` ve `npm run typecheck`\'i çalıştırın, ikisi de geçtiğinde "green — nothing to do" diyen tek bir satır yazdırıp 0 ile çıkın, ve yalnızca gerçek bir regresyonda sıfır olmayanla çıkın. `bash scripts/loop-check.sh`\'ı çalıştırın ve 0 ile çıktığını doğrulayın.',
+    "Script'inizin adil bir döngü hedefi olduğunu doğrulayın: onu art arda iki kez çalıştırın ve ikinci çalıştırmanın hiçbir şeyi değiştirmediğini, yine de 0 ile çıktığını kontrol edin.",
+    'O dizinde etkileşimli bir oturumda `/loop 15m run bash scripts/loop-check.sh and reply in one line if it exits 0` yazın. Claude sıklığı ve 8 karakterlik bir iş kimliğini onaylar.',
+    '"hangi zamanlanmış görevlerim var?" diye sorun, sonra "o işi iptal et", sonra tekrar sorun — ikinci listeleme boş olmalı. Döngüyü çalışır bırakmak bu laboratuvarın konu edindiği arıza modudur.',
+    "Bir kayıt tutmak için adım 5'i headless olarak tekrarlayın, üç tool'u doğrudan sürerek: `claude -p \"Do exactly this, reporting each tool's raw result verbatim and nothing else: (1) call CronCreate with cron expression '*/5 * * * *', recurring, prompt 'run scripts/loop-check.sh and report whether it exited 0'; (2) call CronList; (3) call CronDelete on the id you just created; (4) call CronList again. Do not run any other tool.\" --allowedTools \"CronCreate,CronList,CronDelete\" --model sonnet --max-turns 8 --output-format text`.",
+  ]}
+  expected="loop-check.sh 0 ile çıkar ve tek bir yeşil satır yazdırır. CronCreate, oturuma-özel işaretlenmiş ve 7 gün sonra otomatik süresi dolan, 8 karakterlik kimliği olan tekrarlayan bir iş raporlar; CronDelete'ten sonra CronList 'No scheduled jobs.' raporlar."
+  checklist={[
+    '`bash scripts/loop-check.sh` temiz bir checkout üzerinde 0 ile çıkıyor',
+    'Onu iki kez çalıştırmak hiçbir şeyi değiştirmiyor — idempotent',
+    '`/loop 15m …` bir sıklık ve bir iş kimliği onayladı',
+    'İş iptal edildi ve son listeleme boş',
+    'Onu oluşturduğunuz oturumu hiçbir şey atlatmıyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/01-loop/01-loop-check.txt"
+    range="2-14"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/01-loop/02-cron-tools.txt"
+    range="2-11"
+  />
+</Lab>
+
+`CronCreate` satırını dikkatle okuyun: `Session-only (not written to disk, dies when Claude exits). Auto-expires after 7 days.` Sınırlama hikâyesinin her iki yarısı da tek bir gerçek çıktı cümlesinde: görev kalıcı değildir ve öyle olsaydı bile yedi gün onun tavanıdır.
+
+## Anti-pattern'ler
+
+**Pahalı bir şeyi döngüye almak.** Prompt'u projeyi yeniden derleyen bir `/loop 5m`, size beş dakikada bir bir build'e artı tam bir tur token'a mal olur, sonsuza kadar. _Düzeltme:_ döngüyü hızlı çıkan ve "yapılacak bir şey yok" diyen ucuz bir kontrole yöneltin ve pahalı işin garanti olup olmadığına kontrolün karar vermesine izin verin.
+
+**"Hiçbir şey olmadı"yı raporlayamayan bir döngü.** Hedef script, basitçe yeni bir şey olmadığında sıfır olmayanla çıkarsa, her yineleme bir başarısızlık gibi görünür ve onları okumayı bırakırsınız. _Düzeltme:_ laboratuvarın `loop-check.sh`'ının yaptığı gibi sıfır olmayanı gerçek regresyonlar için ayırın.
+
+**`/loop`'u kalıcı iş için kullanmak.** Bir `/loop`'ta "gecelik regresyon kontrolünü çalıştır", yalnızca o terminal açıkken çalışır ve ne olursa olsun yedi günlük son kullanma tarihinde ölür. _Düzeltme:_ bir cloud routine (2. ders) ya da bir masaüstü zamanlanmış görevi (4. ders).
+
+**Hiç listelemediğiniz bir döngüden uzaklaşmak.** Unutulmuş sabit aralıklı bir döngü, siz iptal edene ya da yedi gün geçene kadar tetiklenmeye devam eder. _Düzeltme:_ dizüstü bilgisayarı kapatmadan önce "hangi zamanlanmış görevlerim var?" diye sorun ve istemediğinizi iptal edin; bunu, bir arka plan sunucusunu kapatır gibi bitirmenin bir parçası sayın.
+
+**Telafi beklemek.** Claude uzun bir istekle meşgulken zamanı geçen bir görev, Claude boşta kaldığında bir kez tetiklenir — kaçırılan aralık başına bir kez değil. _Düzeltme:_ varsayılan bir çalıştırma sayısından değil, mevcut durumdan akıl yürüten prompt'lar yazın ("CI'ın şu anda yeşil olup olmadığını kontrol et").
+
+**Titretmeyle savaşmak.** Bir raporu tam olarak `0 9 * * *`'a zamanlayıp sonra neden 9:17'de çalıştığını sormak. _Düzeltme:_ ofseti kabul edin ya da `:00` veya `:30` olmayan bir dakika seçin.
+
+<Callout>
+  Burada işaretlenecek eskimiş bir davranış yok: `research/deprecations.md`, Claude Code 2.1.263
+  itibarıyla zamanlanmış görevler için hiçbir şey listelemiyor. İki yetenek değişmek yerine sürüm
+  kapılıdır — `ScheduleWakeup`, `stop: true`'yu v2.1.202'den itibaren kabul eder ve kendi hızındaki
+  aralık ile yerleşik bakım prompt'u yukarıda adı geçen sağlayıcılarda v2.1.248 gerektirir.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/loop"
+  questionId="q1"
+  lang="tr"
+  prompt="Aralık vermeden `/loop check whether CI passed` yazıyorsunuz. Ne olur?"
+  options={[
+    {
+      text: 'Claude, her yinelemeden sonra gördüğüne göre bir dakika ile bir saat arasında bir gecikme seçer.',
+      correct: true,
+      explanation:
+        'Kendi hızında bir döngü: bir şey devam ederken kısa beklemeler, beklemede hiçbir şey yokken daha uzun olanlar, gecikme ve nedeni her yinelemede yazdırılır.',
+    },
+    {
+      text: 'Komut başarısız olur, çünkü aralık zorunludur.',
+      explanation: "/loop'un her iki argümanı da isteğe bağlıdır.",
+    },
+    {
+      text: 'Bir kez çalışır ve durur.',
+      explanation: 'Bu tek seferlik bir hatırlatma olurdu, ki bunu düz dille istersiniz.',
+    },
+    {
+      text: 'Varsayılan olarak her 5 dakikada bir çalışır.',
+      explanation:
+        '5 dakikalık bir varsayılan yoktur. Tek sabit yedek, 10 dakikalık bir zamanlamadır ve yalnızca v2.1.248 altındaki sağlayıcı ya da yapılandırmalarda.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/loop"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir `/loop` görevinin ömrü hakkında hangi ifade doğrudur?"
+  options={[
+    {
+      text: 'Oturuma kapsamlıdır, süresi dolmamışsa --resume ile geri gelir ve tekrarlayan bir görev oluşturulduktan 7 gün sonra süresi dolar.',
+      correct: true,
+      explanation:
+        'Tam olarak öyle — ve son tetiklenme görev kendini silmeden önce olur, ki bu unutulmuş bir döngüyü sınırlar.',
+    },
+    {
+      text: 'Diske yazılır ve terminali kapattıktan sonra da tetiklenmeye devam eder.',
+      explanation:
+        'Oturuma kapsamlı görevler kalıcı değildir; görevler yalnızca Claude Code çalışır ve boştayken tetiklenir.',
+    },
+    {
+      text: 'Siz iptal edene kadar sonsuza kadar çalışır.',
+      explanation: 'Tekrarlayan görevlerin 7 gün sonra süresi dolar.',
+    },
+    {
+      text: 'Yeni bir konuşma başlatmak onu korur, ama --resume onu düşürür.',
+      explanation:
+        'Bu tam tersidir: yeni bir konuşma görevleri temizler ve --resume süresi dolmamışları geri getirir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/loop"
+  questionId="q3"
+  lang="tr"
+  prompt="Hem `.claude/loop.md` hem de `~/.claude/loop.md` var ve çıplak bir `/loop` yazıyorsunuz. Hangi prompt çalışır?"
+  options={[
+    {
+      text: 'Proje seviyesindeki `.claude/loop.md`.',
+      correct: true,
+      explanation:
+        'Claude her iki konuma da bakar ve bulduğu ilkini kullanır; proje dosyası öncelik alır.',
+    },
+    {
+      text: 'Kullanıcı seviyesindeki `~/.claude/loop.md`.',
+      explanation: 'İkisi de varken proje dosyası kazanır.',
+    },
+    {
+      text: 'İkisi birden, birleştirilmiş olarak.',
+      explanation:
+        'loop.md bir liste değil, tek bir varsayılan prompt tanımlar; yalnızca bir dosya kullanılır.',
+    },
+    {
+      text: "Yerleşik bakım prompt'u, çünkü loop.md yalnızca açık bir prompt ile geçerlidir.",
+      explanation: 'Tam tersi — komut satırında bir prompt verdiğinizde loop.md yok sayılır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/loop"
+  questionId="q4"
+  lang="tr"
+  prompt="Claude uzun bir tool çağrısının ortasındayken zamanlanmış bir görevin zamanı geliyor. Zamanlayıcı ne yapar?"
+  options={[
+    {
+      text: 'Onu kuyruğa alır ve mevcut tur bitince tetikler.',
+      correct: true,
+      explanation:
+        "Zamanlanmış prompt'lar turlar arasında düşük öncelikle tetiklenir — asla yanıt ortasında değil — ve Claude meşgulken kaçırılan aralıklar için telafi yoktur.",
+    },
+    {
+      text: "Mevcut turu keser ve prompt'u hemen çalıştırır.",
+      explanation: 'Devam eden bir turu hiçbir şey kesmez.',
+    },
+    {
+      text: 'Claude boşta kaldığında kaçırılan aralık başına bir kez tetikler.',
+      explanation: 'Bilerek telafi yoktur: bir kez tetiklenir.',
+    },
+    {
+      text: 'Sessizce düşürür ve bir sonraki zamanlanmış zamanı bekler.',
+      explanation: 'Düşürülmek yerine turun bitmesini bekler.',
+    },
+  ]}
+/>
+
+**Sonraki:** `02-routines`, aynı fikri makinenizden çıkarır — dizüstü bilgisayar kapalıyken de çalışmaya devam eden, bir cron, bir HTTP çağrısı ya da bir GitHub olayıyla tetiklenen cloud routine'ler.

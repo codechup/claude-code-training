@@ -1,15 +1,15 @@
 ---
-title: 'Çok ajanlı bir hat tasarlamak: roller, sözleşmeler, devir teslimler'
-description: 'Doğru ilkeli seçin, her ajana tek bir iş ve tek bir çıktı biçimi verin, kararları prompt’a değil script’e koyun ve ancak birden fazla ajan çalışırken ortaya çıkan hata biçimlerine karşı tasarım yapın.'
+title: 'Çok agent’lı bir pipeline tasarlamak: roller, sözleşmeler, devirler'
+description: 'Doğru ilkeliyi seçin, her agent’a bir iş ve bir çıktı şekli verin, kararları prompt yerine kodda tutun ve yalnızca birkaç agent çalışırken ortaya çıkan başarısızlık modlarına karşı tasarlayın.'
 level: 4
 module: 'm16-orchestration'
 order: 5
 duration_min: 20
 difficulty: advanced
-tags: ['orkestrasyon', 'tasarım', 'workflow', 'agent-team', 'hata-biçimleri']
+tags: ['orkestrasyon', 'tasarım', 'workflow', 'agent-team', 'başarısızlık-modları']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Orchestrate subagents at scale with dynamic workflows'
@@ -35,11 +35,329 @@ lab:
   repo_tag: 'lesson/m16-04-start'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders yeni bir API öğretmez; prompt'u yazmadan önce verdiğiniz kararlarla ilgilenir. Önce ilkel seçimi: yalnızca sonucun önemli olduğu yan işler subagent, prosedürler skill, işçiler arasındaki tartışmanın değer ürettiği işler agent team, aynı adımın çok sayıda öğe üzerinde tekrarlandığı ve orkestrasyonun kendisinin tekrarlanabilir olması gereken işler workflow. Sonra rol tanımı: bir rol, tek bir iş artı tek bir çıktı biçimidir ve `agent()` çağrısındaki `schema` aşamalar arasındaki sözleşmedir — düzyazı devir teslim, sonraki ajanı yapıyı yeniden türetmeye zorlar. Kural nettir: modele ihtiyaç duyan yargı için ajan, duymayan mantık (filtreleme, birleştirme, sayma, eşik, kesişim) için kod. Ardından tasarlanması gereken beş hata biçimi gelir: doğrulayıcının her şeyi onaylaması, kapsamı belirsiz yazma yetkisi, fan-out ortasındaki bir hatanın sonraki her ajanı yeniden çalıştırması, koordinasyon maliyeti (3–5 teammate, teammate başına 5–6 görev) ve insan onayına yer bırakmamak — bir workflow başladıktan sonra girdi almadığı için onay, iki workflow arasındaki sınırdır. Laboratuvar, kendi çalıştırmanızın ürettiği script üzerinde bir tasarım incelemesidir.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur.
+- Verilen bir görev için [subagent](/tr/playbook/glossary/#subagent) (ana oturumun bir alt görevi devrettiği yardımcı agent), [skill](/tr/playbook/glossary/#skill) (Claude'un izlediği paketlenmiş talimatlar), agent team ve [workflow](/tr/playbook/glossary/#workflow) (Claude Code'un bir görev için planlayıp yürüttüğü çok adımlı otomatik iş akışı) arasında seçim yapmak ve seçimi tek cümlede savunmak.
+- Bir rolü bir iş artı bir çıktı şekli olarak yazmak ve şeklin neden sözleşme olduğunu söylemek.
+- [Prompt](/tr/playbook/glossary/#prompt)'a (Claude'a verilen istek metni) neyin, scripte neyin ait olduğuna karar vermek.
+- Yalnızca birkaç [agent](/tr/playbook/glossary/#agent)'la (bir hedefi kendi başına adım adım yürüten yapay zekâ süreci) ortaya çıkan başarısızlık modlarını — her şeyi onaylama, sınırsız yazma, tekrar maliyeti, belirsizlik, koordinasyon ek yükü — ve her birini önleyen tasarımı adlandırmak.
+- Bir çalıştırmayı boyutlandırmak: kaç agent, ne kadar büyük bir görev ve insan onayının nereye gideceği.
+
+**Ön koşullar.** `01-workflows`'tan `04-pipeline-lab`'a kadar olan dersler. Bu derste yeni bir API
+yoktur: prompt'u yazmadan önce verdiğiniz kararlarla ilgilidir.
+
+<WhenNotToUse>
+  Elle bir kez çözmediğiniz bir problem için bir pipeline tasarlamayın. Orkestrasyon, sürecinizin
+  zaten ne olduğunu çoğaltır: inceleme kriterleri belirsizse, beş agent beş belirsiz inceleme ve
+  onları ortalayan bir sentez üretir. Ve titiz görünmek için orkestre etmeyin — daha fazla agent
+  daha fazla [token](/tr/playbook/glossary/#token) (bir dil modelinin metni işlerken kullandığı en
+  küçük birim), daha fazla koordinasyon ve bir kötü devrin sonucu zehirlemesi için daha fazla yüzey
+  demektir. Test paketi olan, iyi prompt'lanmış tek bir oturum, her zaman kötü tasarlanmış bir
+  takımı yener.
+</WhenNotToUse>
+
+## Kavram
+
+### Önce ilkeliyi seçin
+
+Dört mekanizma çok adımlı bir görevi çalıştırabilir ve belirleyici soru, planı kimin tuttuğu ve ara
+sonuçların nerede yaşadığıdır.
+
+- **Subagent** — ara çıktısını hiç görmek istemediğiniz bir yan görev için Claude'un spawn ettiği bir
+  işçi. En ucuzu. Yalnızca sonucun önemli olduğu durumlarda seçin.
+- **Skill** — Claude'un kendi context'inde izlediği talimatlar. İş bir fan-out değil bir prosedürse
+  seçin.
+- **Agent team** — bir lead tarafından denetlenen, birbirine meydan okuyabilen, paylaşılan bir görev
+  listesine sahip eş oturumlar. Değer, işçiler arasındaki tartışmadan geliyorsa — rakip hipotezler,
+  katmanlar arası iş — ve bunun bedelini ödemeye razıysanız seçin.
+- **Workflow** — döngüyü, dallanmayı ve ara sonuçları tutan, runtime'ın çalıştırdığı bir script. Aynı
+  adım birçok öğe üzerinde çalışıyorsa, orkestrasyonun kendisi tekrarlanabilir olmalıysa ya da bir
+  kalite deseninin (çapraz kontrol, çekişmeli inceleme) her seferinde aynı şekilde uygulanmasını
+  istiyorsanız seçin.
+
+Dokümanların kendi sayılarından çıkan kaba bir sezgisel kural: birkaç uzun süre çalışan eş bir
+takımdır; çalıştırma başına onlarca ile yüzlerce agent bir workflow'dur; tur başına birkaç delege
+edilmiş görev bir subagent'tır.
+
+### Bir rol, bir iş artı bir çıktı şeklidir
+
+`04-pipeline-lab`'daki pipeline'ın üç rolü vardır ve her biri tek bir iştir:
+
+| Rol       | İş                                                      | Gördüğü             | Yazabileceği                   | Döndürdüğü                                             |
+| --------- | ------------------------------------------------------- | ------------------- | ------------------------------ | ------------------------------------------------------ |
+| İnceleme  | Aday doğruluk hatalarını bulmak                         | Dosya, `BUGS.md`    | Hiçbir şey                     | `{ findings: [{ id, file, line, summary, details }] }` |
+| Doğrulama | Her adayı bağımsız olarak yeniden kontrol etmek         | Aday listesi, dosya | Hiçbir şey                     | `{ verdicts: [{ id, verdict, reason }] }`              |
+| Düzeltme  | Onaylanmış bir bulgu için minimal değişikliği uygulamak | Onaylanmış bulgular | Yalnızca adlandırılan dosyalar | Değişiklik artı bir test sonucu                        |
+
+Bir `agent()` çağrısındaki `schema`, dekorasyon değildir: aşamalar arasındaki **sözleşmedir**. Düz
+metin devirleri, bir sonraki agent'ı harekete geçmeden önce yapıyı yeniden çıkarmaya zorlar ve bir
+yeniden çıkarım, yanlış olunacak bir yerdir. Kararlı bir `id` alanı da geri kalanı kadar önemlidir —
+bu, aşağı akış aşamasının metne göre eşleştirmeden iki agent'ın cevaplarını birleştirmesini sağlayan
+şeydir.
+
+Rollerin _paylaşmadığı_ şeye dikkat edin: doğrulayıcı, incelemecinin muhakemesini otorite olarak
+almaz, yalnızca iddialarını alır. Bağımsızlık, aşamanın bütün amacıdır.
+
+### Kararları scriptte tutun
+
+İki agent cevap verdikten sonra, "ikisi de hemfikirdi"nin ne anlama geldiğine bir şeyin karar vermesi
+gerekir. Bu, düz JavaScript olarak scriptte olmalıdır — okuyabileceğiniz, çalıştırmalar arasında [diff](/tr/playbook/glossary/#diff)
+alabileceğiniz ve yeniden çalıştırabileceğiniz bir yerde — dördüncü bir agent'ın yargısında değil.
+Laboratuvardan üretilen script tam olarak bunu yapıyor: iki karar haritasının kesişimini alıp yalnızca
+her ikisinin de `confirmed` olarak işaretlediği bulguları geçiriyor.
+
+Genel kural: **model gerektiren yargı için agent'lar, gerektirmeyen mantık için kod.** Filtreleme,
+birleştirme, sayma, eşikleme, tekilleştirme ve sıralama koddur. Bir dosyayı okuyup onun hakkında bir
+görüş oluşturmak bir agent'tır.
+
+Runtime da sizi aynı yöne iter. Bir script dosya sistemine ya da shell'e dokunamaz, modül
+yükleyemez ve `Date.now()`, `Math.random()` ya da argümansız bir `new Date()` çağıramaz — bunlar hata
+fırlatır, böylece yeniden başlatılan bir çalıştırma aynı `agent()` çağrılarını tekrarlar.
+Orkestrasyondaki belirlenimlilik (determinism) bir özelliktir: bir devam ettirilen çalıştırmayı yeniden
+tahmin etmek yerine yeniden oynatan şey de budur.
+
+### Devirleri tasarlayın, ve başarısızlıkları
+
+Her devir, bir çalıştırmanın sessizce yanlış gitmesi için bir yerdir. Önemli olan beş tanesi:
+
+**Her şeyi onaylama.** Dosya yerine incelemecinin tarifini okuyan bir doğrulayıcı, her şeyi onaylar.
+_Buna karşı tasarlayın:_ doğrulayıcıya argümanı değil işaretçiyi verin; yeniden okumasını sağlayın;
+ve temiz olduğunu bildiğiniz bir kontrol vakası çalıştırın.
+
+**Sınırsız yazmalar.** `Edit`'i olan ve sınırı olmayan bir düzeltme agent'ı, kimsenin incelemediği
+dosyaları düzenler. _Buna karşı tasarlayın:_ [tool](/tr/playbook/glossary/#tool)'ları (Claude'a işlem yaptıran araçlar) rol başına sınırlayın, dosyaları bulguda
+adlandırın ve bir düzelt-düzeltmeyi-düzelt döngüsü başlamasına izin vermek yerine kırmızı bir testte
+durun.
+
+**Tekrar maliyeti.** Bir agent fan-out'un ortasında başarısız olduğunda, yeniden başlatmak ondan
+önce tamamlanan agent'ları önbellekten döndürür ama onu ve ondan sonra başlayan her şeyi yeniden
+çalıştırır — dolayısıyla geniş bir fan-out'un başındaki bir başarısızlık pahalıdır. _Buna karşı
+tasarlayın:_ pahalı agent'ların fan-out'larını dar tutun, ucuz keşfi öne koyun ve `agent()`'ın `null`
+sonucunun (`pipeline()` `null`'ı dizide tutar) scripti çökertmek yerine ele alınmasını sağlayın.
+
+**Koordinasyon ek yükü.** Takımlar için dokümanlar somuttur: 3-5 takım arkadaşıyla başlayın, her
+biri için 5-6 görev hedefleyin ve azalan getiriler bekleyin — üç odaklı takım arkadaşı genellikle beş
+dağınık olandan daha iyi performans gösterir. Aynı dosyayı düzenleyen iki takım arkadaşı birbirinin
+üzerine yazar; hiçbir şey hakemlik etmez. _Buna karşı tasarlayın:_ ayrık dosya sahipliği ve net bir
+teslim edilebilir üreten kendi kendine yeten görevler.
+
+**İnsana yer olmaması.** Bir workflow başladıktan sonra girdi almaz. Bir aşama gerçekten onayınıza
+ihtiyaç duyuyorsa, bu, bir workflow'un içinde bir aşama değil, iki workflow arasında bir sınırdır.
+
+### Boyutlandırma ve maliyet, bilerek
+
+Bir boyut kılavuzu ayarlayın (`small` 5'ten az agent, `medium` 15'ten az, `large` 50'den az) ve
+bunun Claude'a bir öneri olduğunu, bir sınır olmadığını unutmayın; runtime'ın sınırları — 16
+eşzamanlı agent, `parallel()`/`pipeline()` çağrısı başına 4.096 öğe, çalıştırma başına 1.000 agent —
+gerçek tavandır. Önce küçük bir dilim çalıştırın: bir dizin, dar bir soru. En güçlü modele ihtiyaç
+duymayan aşamalar için daha küçük bir model isteyin, çünkü workflow agent'ları subagent'larla aynı
+model seçim sırasını izler.
+
+Tasarlanmaya değer bir verimlilik ayrıntısı: aynı çalıştırmadaki agent'lar, model, [effort](/tr/playbook/glossary/#effort) (modelin bir yanıt için harcadığı düşünme çabası seviyesi) seviyesi,
+agent tipi, tool'lar, çıktı şeması ve çalışma dizininde eşleştiklerinde birbirlerinin prompt
+önbelleğini okuyabilir. Bir fan-out'ta Claude Code, ilkinin cevabı başlayana kadar ilki dışındaki
+hepsini bekletir — `CLAUDE_CODE_WORKFLOW_PREFIX_STAGGER_MS` ile sınırlı, varsayılan olarak 5.000 ms —
+böylece geri kalanı önbelleğe alınmış öneki okur. Pratikte: **bir fan-out'taki agent'ları girdileri
+dışında birbirinin aynısı yapın.** On farklı tool listesine sahip on agent bunu çöpe atar.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Bu laboratuvarın yeni bir komutu yok: `04-pipeline-lab`'da zaten yaptığınız bir çalıştırmanın,
+  kendi kanıtlarını kullanan bir tasarım incelemesidir. O dersi atladıysanız önce onu çalıştırın —
+  aşağıdaki script, o çalıştırmanın ürettiği scripttir.
 </Callout>
+
+<Lab
+  title="Laboratuvar · kendi çalıştırmanızın ürettiği orkestrasyonu inceleyin"
+  lessonId="tr/l4-master/m16-orchestration/designing-multi-agent"
+  repoTag="lesson/m16-04-start"
+  steps={[
+    'Pipeline çalıştırmanızdan kalıcı hâle getirilmiş scripti açın: `~/.claude/projects/*/<session-id>/workflows/scripts/*.js`.',
+    'Her `agent()` çağrısı için, rolünü beş kelimeyle, ne yazabileceğini ve döndürdüğü tam şekli yazın. Çıktı şeklini adlandıramıyorsanız, aşamanın sözleşmesi yoktur — bulgu budur.',
+    "Scriptin bir agent olmadan verdiği her kararı (filtreler, birleştirmeler, kesişimler) bulun. Her biri için bir modele ihtiyaç olup olmadığını sorun. Sonra bir agent'ın verdiği, kod olabilecek her kararı bulun.",
+    "Kontrol vakasını belirleyin: doğrulayıcılar hangi adayı reddetti ve neden? Her şeyi onayladılarsa, `src/store.ts`'e bilerek zararsız bir satır ekleyin ve doğrulama aşamasının onu yakalayıp yakalamadığını görmek için salt-okunur pipeline'ı yeniden çalıştırın.",
+    "Tasarımı maliyetlendirin: JSON zarfından, `total_cost_usd`'yi journal'daki agent sayısına bölün, sonra aynı görevi tek bir delege edilmiş subagent olarak tahmin edin. Doğrulama aşamasının kendini karşılayıp karşılamadığını söyleyen tek bir cümle yazın.",
+    "Çalıştırmayı yalnızca düzyazı olarak bir agent team olarak yeniden yazın — lead kim, her teammate neyin sahibi, paylaşılan görev listesine ne girerdi — ve burada workflow'un neden daha iyi ya da daha kötü bir uyum olduğunu tek bir cümlede söyleyin.",
+  ]}
+  expected="Kısa, yazılı bir tasarım incelemesi: sözleşmeleriyle üç rol, agent yerine kodda yaşayan kararların listesi, bir kontrol vakası, agent başına bir maliyet ve bu görev için 'workflow mu takım mı?' sorusuna savunulabilir bir cevap."
+  checklist={[
+    'Scriptteki her `agent()` çağrısının tek işlik bir tarifi ve adlandırılmış bir çıktı şekli var',
+    'Scriptin konsensüse karar verdiği satırı gösterebilirsiniz ve bu bir agent değildir',
+    'Reddedilmiş bir bulgunuz var, ya da bir tane üreten bir yeniden çalıştırmanız var',
+    'Kendi zarfınızdan, bir tahmin değil, agent başına bir maliyetiniz var',
+    'Takım-mı-workflow-mu cevabınız planı kimin tuttuğunu adlandırıyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m16-orchestration/01-workflows/01-generated-script.txt"
+    range="2-7"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m16-orchestration/01-workflows/01-generated-script.txt"
+    range="72-88"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m16-orchestration/04-pipeline-lab/04-journal.txt"
+    range="2-8"
+  />
+</Lab>
+
+O scriptin kuyruğu, tasarımın küçük ölçekte hâlidir: aynı şemayla sınırlanmış iki doğrulayıcı agent,
+sonra hayatta kalanı belirleyen dört satır düz JavaScript. Bir model gerektiren her şey `agent()`'ın
+içinde olur; geri kalan her şey on saniyede okuyabileceğiniz koddur. Kendi pipeline'larınızı
+incelerken, bakılacak ilk şey bu orandır.
+
+## Anti-pattern'ler
+
+**Örtüşen roller.** Aynı prompt'a sahip "İncelemeci" ve "ikinci incelemeci", ilişkili görüşler
+üretir ve iki katı maliyete mal olur. _Çözüm:_ her role farklı bir lens (güvenlik, performans, test
+kapsamı) ya da farklı bir iş (bul, doğrula, düzelt) verin — aynı işi asla iki kez vermeyin.
+
+**Aslında bir filtre olan bir sentez agent'ı.** İki listeyi birleştirmek için bir agent spawn etmek,
+bir kesişim için bir [context window](/tr/playbook/glossary/#context-window)'a (Claude'un o oturumda tuttuğu bağlam alanı) ödeme yapmaktır. _Çözüm:_ birleştirmeyi scriptte yapın; bir
+agent'ı yalnızca tartması, sıralaması ya da açıklaması gerektiğinde sentez için kullanın.
+
+**Yapı taşıyan prompt'lar.** "Bulguları numaralı bir liste olarak raporla", mümkün olan en zayıf
+şekilde yazılmış bir şemadır. _Çözüm:_ bir `schema` geçirin ve şekli runtime'a zorlatın.
+
+**Heterojen agent'lardan oluşan bir fan-out.** Agent başına farklı tool'lar, modeller ya da şemalar,
+paylaşılan prompt önbelleği önekini çöpe atar ve aynı girişi birçok kez ödersiniz. _Çözüm:_ bir
+fan-out'u tekdüze tutun; girdiyi değiştirin, yapılandırmayı değil.
+
+**Mutlu yol için tasarlamak.** Agent'lar başarısız olur, durdurulur ve API hatalarına çarpar;
+`agent()` o zaman `null`'a çözümlenir ve bir yeniden başlatma başarısızlığın aşağısındaki her şeyi
+yeniden çalıştırır. _Çözüm:_ `null`'ı ele alın, pahalı fan-out'ları dar tutun ve ucuz aşamaları öne
+koyun.
+
+**Eksik bir kontrol noktasını orkestre ederek gidermeye çalışmak.** Gerçekten istediğiniz şey bir şey
+değiştirilmeden önce bulgulara bakmaksa, tek bir workflow'un içindeki hiçbir miktarda aşama size bunu
+vermez. _Çözüm:_ aranızda siz olan iki workflow.
+
+<Callout variant="changed">
+  Agent team'ler deneysel ve varsayılan olarak kapalıdır (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`)
+  ve iç içe geçemezler — takım arkadaşları takım arkadaşı spawn edemez ve yalnızca lead takımı
+  yönetir. Açık takım oluşturma varsayan 2025 dönemi herhangi bir tasarım güncel değildir:
+  `TeamCreate`/`TeamDelete` tool'ları 2.1.178'den itibaren artık yoktur.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m16-orchestration/designing-multi-agent"
+  questionId="q1"
+  lang="tr"
+  prompt="Beş yüz dosya, her biri sonradan doğrulanan aynı mekanik göçü gerektiriyor. Hangi ilkeli?"
+  options={[
+    {
+      text: 'Bir workflow: aynı adım birçok öğe üzerinde, orkestrasyonun kendisi tekrarlanabilir',
+      correct: true,
+      explanation:
+        'pipeline() öğe başına bir agent çalıştırır; runtime sınırları ve boyut kılavuzu çalıştırmayı sınırlar.',
+    },
+    {
+      text: 'On takım arkadaşlı bir agent team',
+      explanation:
+        'Takımlar birkaç uzun süre çalışan eştir ve koordinasyon ek yükü sayıyla birlikte büyür.',
+    },
+    {
+      text: 'Çok uzun bir prompt’lu tek bir subagent',
+      explanation: 'Tek bir context window beş yüz dosyalık işi tutamaz.',
+    },
+    {
+      text: 'Bir skill',
+      explanation:
+        'Bir skill, Claude’un izlediği bir prosedürdür, bir fan-out mekanizması değildir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m16-orchestration/designing-multi-agent"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir agent() çağrısındaki bir JSON şeması neden aşamalar arasındaki sözleşme olarak adlandırılır?"
+  options={[
+    {
+      text: 'Sonraki aşamanın güvenebileceği alanları sabitler, böylece hiçbir agent düz metinden yapı çıkarmak zorunda kalmaz',
+      correct: true,
+      explanation:
+        'Kararlı bir id ayrıca scriptin iki agent’ın cevaplarını metne göre eşleştirmeden birleştirmesini sağlar.',
+    },
+    {
+      text: 'Agent’ın kullanmaması gereken tool’ları kullanmasını engeller',
+      explanation: 'Bunu tool sınırlaması yapar; şema cevabı şekillendirir.',
+    },
+    {
+      text: 'Sonucu önbelleğe alır',
+      explanation: 'Önbellekleme, şemalarla değil prompt önekleriyle ilgilidir.',
+    },
+    {
+      text: 'Agent’ı belirlenimli yapar',
+      explanation: 'Muhakemeyi değil, çıktının şeklini sınırlar.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m16-orchestration/designing-multi-agent"
+  questionId="q3"
+  lang="tr"
+  prompt="Pipeline'ınız bulguları okuyana kadar hiçbir şeyi değiştirmemeli. Bunu nasıl kurarsınız?"
+  options={[
+    {
+      text: 'Salt-okunur aşamaları tek bir workflow olarak çalıştırın, raporu okuyun, sonra düzeltmeyi ikinci bir workflow olarak çalıştırın',
+      correct: true,
+      explanation:
+        'Bir workflow başladıktan sonra girdi almaz, dolayısıyla bir onay çalıştırmalar arasındaki bir sınırdır.',
+    },
+    {
+      text: 'Workflow’un içine bir onay aşaması ekleyin',
+      explanation:
+        'Çalıştırma sırasında kullanıcı girdisi yoktur; bir çalıştırmayı yalnızca agent izin istemleri durdurabilir.',
+    },
+    {
+      text: 'Çalıştırmayı /workflows’ta duraklatın ve okuduktan sonra sürdürün',
+      explanation:
+        'Duraklatmak bir çalıştırmayı durdurmanıza yardımcı olur, ama scriptin kararınızı alacağı bir yeri yoktur.',
+    },
+    {
+      text: 'Claude önce sorsun diye ultracode kullanın',
+      explanation: 'Ultracode istemleri eklemek yerine kaldırır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m16-orchestration/designing-multi-agent"
+  questionId="q4"
+  lang="tr"
+  prompt="Hangi fan-out tasarımı prompt önbelleklemeyi en iyi kullanır?"
+  options={[
+    {
+      text: 'Model, effort, agent tipi, tool’lar, şema ve çalışma dizinini paylaşan, yalnızca girdilerinde farklılaşan agent’lar',
+      correct: true,
+      explanation:
+        'Aynı öneki inşa ederler, dolayısıyla ilki dışındaki hepsi ilkinin yazdığı önbelleği okur.',
+    },
+    {
+      text: 'Her agent farklı bir modelde, yükü dağıtmak için',
+      explanation: 'Farklı bir model, farklı bir önek ve paylaşılan önbellek olmaması demektir.',
+    },
+    {
+      text: 'Her agent kendi tool listesiyle, dosyasına göre sınırlı',
+      explanation:
+        'Tool listeleri önekin parçasıdır; agent başına listeler paylaşılan önbelleği çöpe atar.',
+    },
+    {
+      text: 'Tüm agent’ları tam olarak aynı anda başlatmak',
+      explanation:
+        'Claude Code bilerek geri kalanları ilk cevap başlayana kadar bekletir, böylece onun önbelleğini okuyabilirler.',
+    },
+  ]}
+/>
+
+**Sırada:** `m17-autonomy` — sizin her birini başlatmanız gerekmeden çalışan döngüler, rutinler ve
+hedeflerle, orkestrasyonun bıraktığı yerden devam eder.

@@ -1,15 +1,15 @@
 ---
-title: 'Bütçeler, analytics ve kullanım raporları'
-description: 'Bir ekibin Claude Code harcamasının nerede görüldüğü, nerede sınırlandığı ve kullanıcı başına sayıların nasıl alındığı — `/usage` ekranı ve JSON zarfından OpenTelemetry export’a ve analytics panolarına kadar.'
+title: 'Bütçeler, analitik ve kullanım raporları'
+description: 'Bir takımın Claude Code harcamasının nerede görünür olduğu, nerede sınırlandırılabildiği ve kullanıcı başına sayıların nasıl elde edileceği — `/usage` ekranından ve JSON zarfından OpenTelemetry export’una ve analiz panolarına kadar.'
 level: 4
 module: 'm20-team'
 order: 5
 duration_min: 15
 difficulty: core
-tags: ['team', 'cost', 'analytics', 'telemetry', 'budget']
+tags: ['takım', 'maliyet', 'analitik', 'telemetri', 'bütçe']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Manage costs effectively'
@@ -35,8 +35,325 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders bir ekibin Claude Code maliyetini nerede göreceğini, nerede sınırlayacağını ve kullanıcı başına sayıları nasıl çıkaracağını anlatır. Claude for Teams/Enterprise'da koltuk başına bir kullanım hakkı vardır ve harcama sınırları admin konsolundan kurulur; Claude Console'da bütün Claude Code kullanımı otomatik oluşturulan bir workspace üzerinden izlenir; Bedrock, Agent Platform ve Foundry'de ise sayılar Anthropic'e hiç gitmez, dolayısıyla OpenTelemetry veya bir gateway tek kullanıcı-bazlı kaynak olur. Geliştirici tarafında `/usage` (`/cost`, `/stats` takma adlarıyla) oturum maliyetini, plan limitlerini ve prompt cache oranını gösterir; script'ler için doğru kaynak `claude -p --output-format json` zarfındaki `total_cost_usd` ve `modelUsage` alanlarıdır. `modelPricing` yalnızca managed ayarlardan okunur ve raporlanan rakamları sözleşme fiyatlarına çeker. Laboratuvarda `OTEL_METRICS_EXPORTER=console` ile gerçek `claude_code.cost.usage` ve `claude_code.token.usage` metrikleri üretilip okunur.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.
+- Organizasyonunuzun kurulumunu — Teams/Enterprise, Claude Console ya da bir bulut sağlayıcısı — harcamanın nerede görünür olduğuna, nerede sınırlandırılabileceğine ve kullanıcı başına sayıların nasıl çıktığına eşlemek.
+- Bir oturumun kendi maliyetini `/usage`'dan ve headless bir çalıştırmanın JSON zarfından okumak ve ikisinin de neden tahmin olduğunu söylemek.
+- OpenTelemetry export'unu açmak, Claude Code'un yaydığı sekiz metriği adlandırmak ve hangi özniteliklerin kullanıcı başına ve takım başına atıf taşıdığını bilmek.
+- `modelPricing`'in neyi düzelttiğini ve neden managed settings üzerinden dağıtılması gerektiğini açıklamak.
+- Analiz panolarının neyi kapsayıp neyi kapsamadığını ve telemetriyi kapatmanın size neye mal olduğunu bilmek.
+
+**Ön koşullar.** 02. dersin managed-settings teslimi, çünkü buradaki iki organizasyon-geneli kontrol — `modelPricing` ve kilitli bir OTLP hedefi — managed anahtarlardır.
+
+<WhenNotToUse>
+  Bu sayılardan hiçbirini fatura olarak kullanmayın. Claude Code, maliyeti liste fiyatından token
+  sayılarından yerel olarak hesaplar; yetkili rakam Anthropic faturanız ya da Console kullanım
+  sayfasıdır. Onlardan geliştirici başına bir lider tablosu da inşa etmeyin: metrikler `user.email`
+  ve hesap kimlik bilgilerini taşır ve token harcamasına göre sıralandığını keşfeden bir takım,
+  sıralama için optimize eder. Ve bir Pro ya da Max planında burada yönetilecek bir şey yok —
+  kullanım aboneliğe dâhildir ve oturum maliyeti rakamı bir faturalandırma sayısı değildir.
+</WhenNotToUse>
+
+## Kavram
+
+### Kuruluma göre para nerede
+
+| Kurulumunuz                        | Harcamayı görün                        | Harcamayı sınırlandırın             | Kullanıcı başına sayılar                                         |
+| ---------------------------------- | -------------------------------------- | ----------------------------------- | ---------------------------------------------------------------- |
+| Claude for Teams / Enterprise      | Organizasyon analizinde harcama raporu | Admin settings'te harcama sınırları | Harcama raporu CSV'si; Enterprise'da Enterprise Analytics API    |
+| Claude Console (API)               | Console kullanım sayfası               | Workspace harcama sınırları         | Console panosu; Claude Code Analytics API                        |
+| Bedrock / Agent Platform / Foundry | Bulut faturalandırma konsolunuz        | Bulutunuzun bütçe kontrolleri       | OpenTelemetry, bir Claude apps gateway'i ya da bir LLM gateway'i |
+
+OpenTelemetry export'u her kurulumda çalışır ve kullanıcı başına [token](/tr/playbook/glossary/#token) (bir dil modelinin metni işlerken kullandığı en küçük birim) ve maliyet metriklerini neredeyse gerçek zamanlı olarak kendi gözlemlenebilirlik yığınınıza akıtan tek seçenektir.
+
+Teams ve Enterprise'da, her üyenin kullanımı, Claude chat ve Cowork ile paylaşılan, koltuk seviyesine göre boyutlandırılmış, kayan beş saatlik bir pencerede ve haftalık bir pencerede bir **koltuk başına ödenek**ten çekilir. O ödenek varsayılan tavandır; insanların onun ötesine geçmesine izin vermek için kullanım kredilerini açar ve organizasyon, grup ya da üye düzeyinde harcama sınırları ayarlarsınız. Ödenek _içindeki_ kullanım dolar olarak hiç ölçülmez, bu yüzden harcama raporu yalnızca kullanım kredileri açıldığında görünür.
+
+Console'da, harcama **workspace**'ler üzerinden yönetilir. Claude Code'u bir Console hesabıyla kimlik doğrulamak otomatik olarak "Claude Code" adlı bir workspace oluşturur — onda API anahtarları oluşturamazsınız; bütün Claude Code kullanımının tek bir yerde izlenip sınırlandırılması için var. Claude Code'un üretim trafiğinizi sıkıştırmasını durdurmak için orada bir workspace hız sınırı ayarlayın.
+
+### Bir geliştirici ne görür
+
+`/usage` (takma adları `/cost` ve `/stats`), oturumun token kullanımını ve yerel olarak hesaplanan bir dolar rakamını, plan kullanım çubuklarını ve — Pro, Max, Team ve Enterprise'da — plan sınırlarına karşı neyin sayıldığının bir dökümünü gösterir: [skill](/tr/playbook/glossary/#skill) (`SKILL.md` ile tanımlanan yeniden kullanılabilir talimat paketi), [subagent](/tr/playbook/glossary/#subagent) (ana oturumun bir alt görevi devrettiği yardımcı agent), [plugin](/tr/playbook/glossary/#plugin) (Claude Code'a paket hâlinde bileşen ekleyen eklenti) ve [MCP server](/tr/playbook/glossary/#mcp-server)'a (Model Context Protocol ile Claude'a dış araç ve veri sağlayan sunucu) göre **atıf**; uzun context ya da önbellek kaçırmaları gibi şeyler yakın kullanımın %10'u ya da daha fazlasını oluşturduğunda **davranış bayrakları**; ve en ağır zamanlanmış görevlerin her biri için bir satır olan **loop'lar**. 24 saat ile 7 gün arasında geçiş yapmak için `d` ya da `w`'ye basın. Bu rakamlar bu makinedeki yerel oturum geçmişinden gelir, bu yüzden başka bir cihazın kullanımı içlerinde yoktur.
+
+Aynı ekranda iki küçük şey daha. 2.1.251'den beri, istek sayısını, önbellekten sunulan girdi token'larının payını, olası bir nedenle kaçırmaları, sıkıştırmadan beklenen yeniden inşaları ve önbelleğin şu anda sıcak olup olmadığını bildiren bir `Prompt cache (main)` satırı var — bir oturumun maliyeti tırmandığında en yararlı tek sayı. Ve oturum toplamları `/clear`'da sıfırlanır; 2.1.211'den önce sürecin ömrü boyunca birikirlerdi.
+
+`/insights`, diğer yerel rapordur: bu makinedeki son 200 oturuma kadar analiz eder ve ne kadar harcadığınız değil nasıl çalıştığınız hakkında `~/.claude/usage-data/report.html`'e bir HTML raporu yazar. Her planda çalışır ve kendi analizi token'a mal olur.
+
+### Bir betiğin okuyabileceği sayı
+
+Herhangi bir otomasyon için, [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) bir çalıştırmanın JSON zarfı kaynaktır: çalıştırma için `total_cost_usd` ve girdi, çıktı, önbellek-okuma ve önbellek-oluşturma token'ları ile her biri için bir `costUSD` olan, model başına bölünmüş `modelUsage`. Bir [CI](/tr/playbook/glossary/#ci) (her push'ta ya da pull request'te testleri ve kontrolleri otomatik çalıştıran hat) işinin kaydetmesi gereken şey budur ve gecelik bir otomasyonun bütçesini bir umut yerine gözlemlenebilir bir nicelik yapan da budur.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni) tam olarak buna yönelik:
+
+```text
+Run our nightly triage prompt headlessly with --output-format json, and append
+total_cost_usd and modelUsage from the envelope to a CSV I can chart.
+```
+
+### OpenTelemetry: her yerde çalışan seçenek
+
+Telemetri varsayılan olarak kapalıdır ve bir değişkenle, artı bir exporter ve bir endpoint ile açılır:
+
+<CodeBlock title="metrik ve log export'unu açın">
+
+```bash
+export CLAUDE_CODE_ENABLE_TELEMETRY=1
+export OTEL_METRICS_EXPORTER=otlp      # otlp | prometheus | console | none
+export OTEL_LOGS_EXPORTER=otlp         # otlp | console | none
+export OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer your-token"
+```
+
+</CodeBlock>
+
+Claude Code'un varsayılan bir protokolü yoktur, bu yüzden etkinleştirdiğiniz her `otlp` exporter'ı için `OTEL_EXPORTER_OTLP_PROTOCOL`'ü ayarlayın. Bir metrik kurulumunu doğrulamak için, backend'inizde `claude_code.session.count`'a bakın; yalnızca log kurulumu için, bir prompt gönderin ve `claude_code.user_prompt` olayına bakın. Hiçbir şey gelmezse, `claude --debug`, exporter başarısızlıklarını `[3P telemetry]` satırları olarak bildirir — `[Anthropic telemetry]` satırları Anthropic'in kendi operasyonel telemetrisidir ve sizin sorununuz değildir.
+
+Sekiz metrik şunlardır: `claude_code.session.count`, `lines_of_code.count`, `pull_request.count`, `commit.count`, `cost.usage` (USD), `token.usage` (token), `code_edit_tool.decision` ve `active_time.total` (saniye).
+
+Her metrik standart öznitelikleri taşır: `session.id`, `organization.id`, `user.account_uuid`, `user.account_id`, `user.email`, anonim bir `user.id`, `terminal.type` ve `OTEL_RESOURCE_ATTRIBUTES`'a koyduğunuz her şey — bu, çoklu takım raporlaması için her veri noktasına `team.id` ya da `department`'ı almanın yoludur. Maliyet ve token sayaçları `model`, `query_source` (`main`, `subagent` ya da `auxiliary`), `effort` ekler ve `agent.name`, `skill.name`, `plugin.name`, `marketplace.name`, `mcp_server.name` ve `mcp_tool.name` için atıf ekler, üçüncü taraf isimleri `"third-party"` ya da `"custom"` olarak sansürlenir.
+
+Bir yönetici bütün bunu bir kez, managed settings'in `env` bloğunda ayarlar ve Claude Code sonra **başlangıçta çelişen geliştirici-tanımlı değişkenleri kaldırır**: genel endpoint'i ayarlayın ve geliştiricinin ayarladığı sinyal başına her endpoint düşürülür; kimlik bilgilerini ayarlayın ve sinyal başına sürümler artı geliştiricinin her endpoint'i de gider. Exporter seçicileri sıradan önceliği izler, bu yüzden bir geliştiricinin bir sinyali `console` ya da `none`'a çeviremeyeceğinden eminseniz onları da managed settings'te kilitleyin.
+
+### Bildirilen sayıyı faturanızla eşleştirmek
+
+Varsayılan olarak Claude Code'un gösterdiği her rakam **liste fiyatından** hesaplanır, bu yüzden sözleşmeli oranlara sahip bir organizasyon faturasıyla eşleşmeyen sayılar görür. `modelPricing` bunu düzeltir: düz bir indirim için bir `multiplier`, dört token-başına oran için model başına `overrides`, ya da ikisi birden. Bu yalnızca managed olan bir anahtardır — user, project ve local settings'te ve `--settings`'te yok sayılır — ve Claude Code'un neyi _bildirdiğini_ değiştirir, Anthropic'in neyi ücretlendirdiğini değil. Yürürlükte olduğunda, `/usage`'ın `Total cost` satırı `at your organization's configured rates` notunu taşır. Claude Code 2.1.242 ya da üstünü gerektirir. Claude Code oranları Console'dan getirmez, bu yüzden sözleşme değiştiğinde onları güncelleyin.
+
+### Panolar
+
+| Plan                          | Pano                              | İçerir                                                                                  |
+| ----------------------------- | --------------------------------- | --------------------------------------------------------------------------------------- |
+| Claude for Teams / Enterprise | `claude.ai/analytics/claude-code` | Kullanım metrikleri, GitHub entegrasyonuyla katkı metrikleri, lider tablosu, CSV export |
+| API (Claude Console)          | `platform.claude.com/claude-code` | Kullanım metrikleri, harcama izleme, takım içgörüleri                                   |
+
+Admin'ler ve Owner'lar Teams/Enterprise panosunu görüntüleyebilir. Katkı metrikleri — Claude Code yardımıyla gönderilen PR'lar ve kod satırları — kamuya açık beta'da, bir GitHub admin'i tarafından kurulan Claude [GitHub App](/tr/playbook/glossary/#github-app)'i (Claude Code'u bir GitHub deposuna bağlayan, pull request'lerde ve issue'larda otomatik olarak çalışan entegrasyon) ve bir Claude Owner tarafından etkinleştirilen analiz anahtarlarını gerektirir, yalnızca claude.ai organizasyonunuzun içindeki kullanıcıları kapsar ve panonun yalnızca kullanım metriklerini gösterdiği Zero Data Retention ile **kullanılamaz**.
+
+Panolar, `DISABLE_TELEMETRY`'nin kapattığı aynı telemetriyle beslenir. O değişkeni bir geliştirici grubu için dağıtın ve onların analiz verisini de kaybedersiniz — ve Remote Control'u ve varsayılan otomatik modu da beraberinde götüren feature-flag getirmelerini. Bedrock, Agent Platform ve Foundry'de, metrikler asla Anthropic'e geri gönderilmez, bu yüzden panolar ve Analytics API o kullanımı kapsamaz: OpenTelemetry ya da bir gateway alacağınız tek kullanıcı-başına atıftır.
+
+### Bir geliştirici bir sınırı sorduğunda
+
+Dört farklı mesaj "bir sınıra çarptım" olarak bildirilir ve farklı yanıtlar gerektirirler. Bir **oturum ya da haftalık sınır**, modeller arasında paylaşılan koltuk-tabanlı bir penceredir, bu yüzden `/model` erişimi geri getirmez — ama modele özgü bir "Opus sınırınıza ulaştınız" mesajı, aile değiştirilerek _çözülür_. Bir **gateway harcama-sınırı mesajı**, ayarladığınız bir tavanı aştıkları anlamına gelir. Bir **context ya da otomatik sıkıştırma uyarısı** hiçbir sınır değildir. Ve bir API ya da bulut planında **beklenmedik derecede yüksek harcama** genellikle hiç temizlenmemiş uzun oturumlara ya da varsayılan olarak bırakılmış Opus'a kadar izlenir.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Analiz panoları ve harcama sınırları bir Team ya da Enterprise admin konsolunda yaşar, bu yüzden
+  burada kaydedilmek yerine tarif edilirler. Bu laboratuvarın yaptığı şey, herhangi bir planda ve
+  herhangi bir sağlayıcıda çalışan kısımdır: kendi makinenizden gerçek maliyet ve token metriklerini
+  yayınlamak ve onları okumak.
+</Callout>
+
+<Lab
+  title="Laboratuvar · bir oturumun maliyetini gözlemlenebilir kılın"
+  lessonId="tr/l4-master/m20-team/cost-budgeting"
+  repoTag="none"
+  steps={[
+    "Console metrik exporter'ıyla önemsiz bir headless oturum çalıştırın: `CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER=console` ve `OTEL_METRIC_EXPORT_INTERVAL=5000`'i ayarlayın, ardından `claude -p 'Reply with the word OK and nothing else.' --model sonnet --max-turns 2 --output-format text`.",
+    "Çıktıdaki `claude_code.cost.usage` bloğunu bulun. `dataPoints`'i okuyun: birden fazla var, çünkü bir oturum birkaç modeli faturalandırır.",
+    'Her veri noktasındaki öznitelikleri — `model`, `query_source`, `effort` — ve bir OTLP toplayıcısının alacağı kimlik özniteliklerini not edin. Hangilerini organizasyonunuzun depolamaya razı olduğuna karar verin.',
+    "Herhangi bir headless prompt'u `--output-format json` ile tekrar çalıştırın ve zarftan `total_cost_usd` ve `modelUsage`'ı okuyun. Model başına bölünmeyi metriklerin gösterdiğiyle karşılaştırın.",
+    "Etkileşimli bir oturum içinde `/usage`'ı çalıştırın ve `Prompt cache (main)` satırını okuyun: önbellekten sunulan girdi token'larının payı, uzun bir oturumdaki çoğu sürprizi açıklayan sayıdır.",
+    'Üçünden — metrikler, zarf, `/usage` — hangisini gecelik bir işe bağlayacağınızı ve diğer ikisinin neden insanlar için olduğunu yazın.',
+  ]}
+  expected="Console exporter'ı `claude_code.session.count`, `cost.usage`, `token.usage` ve `active_time.total`'ı yazdırır; maliyet metriğinin model başına bir veri noktası var ve JSON zarfının `modelUsage`'ı, önbellek-okuma token'larının girdi sayısına hâkim olduğu aynı bölünmeyi gösterir."
+  checklist={[
+    'Telemetri, bir OTLP toplayıcısı olmadan çıktı üretti, çünkü `console` geçerli bir exporter',
+    '`claude_code.cost.usage` altında farklı `model` değerlerine sahip en az iki veri noktası buldunuz',
+    '`query_source: "auxiliary"`\'nin ne anlama geldiğini ve neden farklı bir modeli faturalandırdığını söyleyebiliyorsunuz',
+    'Zarftaki `total_cost_usd`, liste fiyatından yerel olarak hesaplanan bir tahmindir ve neyin bunu değiştireceğini söyleyebiliyorsunuz',
+    'Metriklerin hangi kişisel tanımlayıcıları taşıdığını fark ettiniz',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m20-team/05-cost-budgeting/01-otel-console-metrics.txt"
+    range="3-48"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m20-team/05-cost-budgeting/02-json-envelope-cost.txt"
+    range="3-38"
+  />
+</Lab>
+
+O kayıtlardaki iki şey bütçelemenizi değiştiriyor.
+
+Birincisi, tek turlu bir oturumun **iki farklı modeli** faturalandırmasıydı. `main` isteği `effort: high`'ta `claude-sonnet-5`'e gitti ve yaklaşık 2,2 sent tuttu; `query_source: "auxiliary"`'ye sahip ikinci bir veri noktası bir sentin onda biri için `claude-haiku-4-5`'e gitti. Auxiliary istekler, bir oturumun sizin adınıza yaptığı küçük iç çağrılardır ve _seçtiğiniz_ modelden model başına bütçelemenin her zaman biraz yanlış olmasının nedeni budur. `query_source` özniteliği, bir panoyu buna göre bölmek için tam olarak doğru boyuttur.
+
+İkincisi önbellek. JSON zarfında, Sonnet isteği 4 girdi token'ı ve 69.398 **önbellek-okuma** token'ı bildiriyor. Prompt'un neredeyse tamamı önbellek-okuma oranlarında önbellekten sunuldu. Bu, bir takımın faturasındaki en büyük tek kaldıraçtır ve `/usage`'daki `Prompt cache (main)` satırının ve panonuzdaki bir önbellek-isabet-oranı panelinin bir token-sayısı lider tablosundan daha değerli olmasının nedeni budur.
+
+Metriklerin neyi taşıdığına da dikkat edin: her veri noktasında `user.email`, `organization.id` ve iki hesap tanımlayıcısı. Paylaşılan bir depoya düşmeden önce ihtiyacınız olmayanı sansürleyin ya da atın — yukarıdaki [transcript](/tr/playbook/glossary/#transcript) (gerçek bir Claude Code oturumunun kaydı) tam olarak bu nedenle sansürlenmiştir.
+
+### Telemetriyi açmak, işletim sistemine göre
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+export CLAUDE_CODE_ENABLE_TELEMETRY=1
+export OTEL_METRICS_EXPORTER=console
+export OTEL_METRIC_EXPORT_INTERVAL=5000
+claude -p 'Reply with the word OK and nothing else.' --model sonnet --max-turns 2 --output-format text
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+export CLAUDE_CODE_ENABLE_TELEMETRY=1
+export OTEL_METRICS_EXPORTER=console
+export OTEL_METRIC_EXPORT_INTERVAL=5000
+claude -p 'Reply with the word OK and nothing else.' --model sonnet --max-turns 2 --output-format text
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$env:CLAUDE_CODE_ENABLE_TELEMETRY = '1'
+$env:OTEL_METRICS_EXPORTER = 'console'
+$env:OTEL_METRIC_EXPORT_INTERVAL = '5000'
+claude -p 'Reply with the word OK and nothing else.' --model sonnet --max-turns 2 --output-format text
+```
+
+  </Fragment>
+</OSTabs>
+
+Bir filo için, bunların hiçbiri bir geliştiricinin shell'ine ait değildir — hedefin kilitli olduğu ve başka bir yere yönlendirilemeyeceği managed settings'in `env` bloğuna gider.
+
+## Anti-pattern'ler
+
+**`/usage` rakamını harcama olarak bildirmek.** Liste fiyatından token sayılarından yerel olarak hesaplanır ve bir abonelikte hiçbir faturalandırma sayısı değildir. _Düzeltme:_ harcamayı Console kullanım sayfasından, organizasyon harcama raporundan ya da bulutunuzun faturalandırma konsolundan alın; yerel rakamların sözleşmeli oranlarla eşleşmesini istiyorsanız `modelPricing`'i dağıtın.
+
+**Geliştiricileri token'lara göre sıralamak.** Metrikler bunu kolaylaştırır ve yanlış şeyi ölçer — bir özelliği silen bir geliştirici, kimsenin istemediği bin satır üreten birinden daha az token harcar. _Düzeltme:_ maliyeti takım düzeyinde sonuçlara karşı izleyin ve pahalı _insanları_ değil pahalı _alışkanlıkları_ bulmak için atıf dökümünü kullanın.
+
+**Bütün filo için `DISABLE_TELEMETRY`'yi açıp sonra bir pano istemek.** Pano o veriyle beslenir ve değişken feature-flag getirmesini de devre dışı bırakır. _Düzeltme:_ bir kez, bilerek karar verin; Anthropic'e bağlı telemetri olmadan sayılara ihtiyacınız varsa, OpenTelemetry'yi kendi toplayıcınıza export edin.
+
+**Geliştiricilerin OTLP endpoint'ini ayarlamasına izin vermek.** Birinin shell'indeki sinyal başına bir endpoint, o sinyali toplayıcınızdan uzağa yönlendirebilirdi. _Düzeltme:_ endpoint'i ve kimlik bilgilerini managed settings'te ayarlayın — Claude Code sonra başlangıçta çelişen geliştirici değişkenlerini kaldırır — ve exporter seçicilerini de kilitleyin.
+
+**Seçtiğiniz modelden model başına bütçelemek.** Auxiliary istekler farklı bir modeli faturalandırır ve subagent'lar tekrar ayrı faturalandırılır. _Düzeltme:_ panonuzu oturumun manşet modeline göre değil, `query_source` ve `model`'e göre bölün.
+
+**Önbellek-isabet oranını görmezden gelmek.** Önbellek kaçırmaları, aniden beş kat daha maliyetli hâle gelen bir oturumun olağan nedenidir. _Düzeltme:_ `Prompt cache (main)` satırını izleyin ve bir `likely cause: tool definitions changed` notunu eyleme geçirilebilir bir bulgu olarak ele alın.
+
+<Callout variant="changed">
+  `/cost` artık ayrı bir komut değil, `/usage`'ın bir takma adı ve `/stats` üçüncü bir takma ad.
+  `Prompt cache (main)` satırı Claude Code 2.1.251 ya da üstünü, `modelPricing` 2.1.242'yi
+  gerektirir ve oturum toplamları `/clear`'da sıfırlanır — 2.1.211'den önce sürecin ömrü boyunca
+  birikirlerdi.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/cost-budgeting"
+  questionId="q1"
+  lang="tr"
+  prompt="Geliştiricileriniz Amazon Bedrock üzerinden kimlik doğruluyor. Bunlardan hangisi size kullanıcı başına maliyet atfı verir?"
+  options={[
+    {
+      text: 'claude.ai analiz panosu',
+      explanation:
+        "Claude Code, bir bulut sağlayıcısından metrikleri Anthropic'e geri göndermez, bu yüzden panolar o kullanımı kapsamaz.",
+    },
+    {
+      text: "Kendi toplayıcınıza OpenTelemetry export'u",
+      correct: true,
+      explanation:
+        "Her sağlayıcıda çalışır ve dokümanlarda adlandırılan diğer iki seçenek bir Claude apps gateway'i ya da bir LLM gateway'idir.",
+    },
+    {
+      text: 'Claude Code Analytics API',
+      explanation:
+        'Bu, bulut-sağlayıcısı kullanımını değil Claude Console organizasyonlarını kapsar.',
+    },
+    {
+      text: 'Her geliştiricinin makinesindeki `/usage` komutu',
+      explanation:
+        'Yalnızca o makinenin yerel oturum geçmişini bildirir — geliştiriciye yararlı, bir rapor değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/cost-budgeting"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir takımın bildirilen maliyetlerinin sözleşmeli oranları kullanması için `modelPricing` nerede ayarlanmalıdır?"
+  options={[
+    {
+      text: "Her geliştiricinin `~/.claude/settings.json`'ında",
+      explanation: "Claude Code, anahtarı user, project ve local settings'te yok sayar.",
+    },
+    {
+      text: "Managed settings'te — server-managed, MDM, `managed-settings.json` ya da bir policy helper",
+      correct: true,
+      explanation:
+        "Yalnızca managed bir anahtardır. Claude Code'un neyi bildirdiğini değiştirdiğini, Anthropic'in neyi ücretlendirdiğini değil unutmayın.",
+    },
+    {
+      text: "Deponun `.claude/settings.json`'ında, böylece projeyle birlikte seyahat eder",
+      explanation: 'Bu da yok sayılır — bir depo dosyası onu ayarlayamaz.',
+    },
+    {
+      text: 'Oturum başına `--settings` ile geçirilir',
+      explanation: '`--settings`, yalnızca managed olan anahtarları ayarlayamaz.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/cost-budgeting"
+  questionId="q3"
+  lang="tr"
+  prompt="`claude_code.cost.usage`'da bir OpenTelemetry veri noktası `query_source: auxiliary` taşıyor. Bu size ne söyler?"
+  options={[
+    {
+      text: "İstek bir subagent'tan geldi.",
+      explanation: 'Bir subagent\'ın istekleri `query_source: "subagent"` taşır.',
+    },
+    {
+      text: 'İstek, ana konuşma yerine dahili bir alt sistem tarafından verildi ve farklı bir modeli faturalandırabilir.',
+      correct: true,
+      explanation:
+        "Belgelenen üç değer `main`, `subagent` ve `auxiliary`'dir — seçtiğiniz modelden model başına bütçelerin her zaman biraz yanlış olmasının nedeni de bu.",
+    },
+    {
+      text: 'İstek başarısız oldu ve yeniden denendi.',
+      explanation: 'Hatalar `query_source` değeri olarak değil, olaylar olarak bildirilir.',
+    },
+    {
+      text: 'Metrik bir ölçüm değil bir tahmindir.',
+      explanation:
+        'Her maliyet rakamı yerel bir tahmindir; `query_source` isteği kimin verdiğini söyler.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/cost-budgeting"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir geliştirici grubuna `DISABLE_TELEMETRY=1`'i dağıttığınızda başka ne çalışmayı durdurur?"
+  options={[
+    {
+      text: "Onların analiz verisi ve Remote Control'u ve varsayılan otomatik modu da beraberinde götüren feature-flag getirmesi.",
+      correct: true,
+      explanation: 'Her iki sonuç da managed-settings sayfasında belgelenir; takası bilerek verin.',
+    },
+    {
+      text: "Başka hiçbir şey — yalnızca Anthropic'e bağlı operasyonel telemetriyi durdurur.",
+      explanation:
+        'Aynı zamanda panonuzun arkasındaki kullanım verisini de bitirir ve feature-flag getirmesini kapatır.',
+    },
+    {
+      text: "Kendi toplayıcınıza OpenTelemetry export'ları.",
+      explanation:
+        'Bu ayrı olarak `CLAUDE_CODE_ENABLE_TELEMETRY` ve OTLP değişkenleriyle yapılandırılır.',
+    },
+    {
+      text: "`/usage`'ı çalıştırma yetenekleri.",
+      explanation: "`/usage`, yerel oturum geçmişini ve plan-sınırları endpoint'ini okur.",
+    },
+  ]}
+/>
+
+**Sonraki:** `06-communications-and-champions` — hiçbir settings'in teslim edemeyeceği, bir yaygınlaştırmanın kısmı.

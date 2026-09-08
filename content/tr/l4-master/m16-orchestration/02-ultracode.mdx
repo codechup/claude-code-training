@@ -1,15 +1,15 @@
 ---
-title: 'ultracode: anahtar kelime, efor seviyesi ve bir çalıştırmanın maliyeti'
-description: 'ultracode bir model efor seviyesi değil, bir Claude Code ayarıdır: xhigh muhakeme artı otomatik workflow orkestrasyonu. Anahtar kelimenin nerede çalıştığı, nerede bilinçli olarak çalışmadığı, boyut kılavuzu ve dokümanların maliyet hakkında gerçekten söylediği.'
+title: 'ultracode: anahtar kelime, effort seviyesi ve bir çalıştırmanın maliyeti'
+description: 'ultracode bir model effort seviyesi değil, bir Claude Code ayarıdır: xhigh muhakeme artı otomatik workflow orkestrasyonu. Anahtar kelimenin nerede çalıştığı, nerede bilinçli olarak çalışmadığı, boyut kılavuzunun bir çalıştırmayı nasıl sınırladığı ve dokümanların maliyet hakkında gerçekten söylediği.'
 level: 4
 module: 'm16-orchestration'
 order: 2
 duration_min: 15
 difficulty: core
-tags: ['ultracode', 'efor', 'workflow', 'maliyet']
+tags: ['ultracode', 'effort', 'workflow', 'maliyet']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Orchestrate subagents at scale with dynamic workflows'
@@ -31,11 +31,334 @@ lab:
   repo_tag: 'lesson/m16-04-start'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-`/effort` menüsündeki `ultracode`, `low`–`max` arasındaki model efor seviyelerinden biri değildir: modele `xhigh` gönderen ve ayrıca Claude'a her kayda değer görev için dinamik workflow planlatan bir Claude Code ayarıdır. Ders, onu açan bütün yolları (`/effort ultracode`, `claude --effort ultracode`, settings dosyasındaki `ultracode` anahtarı, `/model` seçicisindeki efor kaydırıcısı, Agent SDK) ve iki tuzağı anlatır: kalıcı `effortLevel` anahtarı ile `CLAUDE_CODE_EFFORT_LEVEL` değişkeni `ultracode` değerini kabul etmez, ve bu değişken `xhigh` dışında bir değere ayarlıysa orkestrasyon kısmı sessizce devre dışı kalır. Anahtar kelimenin yalnızca sizin yazdığınız prompt'ta bir opt-in olduğu — `-p` prompt'unda, zamanlanmış görevde, webhook veya PR yorumunda çalışmadığı — bölüm dersin merkezidir; laboratuvar tam olarak bunu ölçer. Boyut kılavuzu (`small` 5'ten, `medium` 15'ten, `large` 50'den az ajan) ve dokümanların maliyet hakkında söylediği tek somut şeyler (25 ajan / 1,5 milyon token'lık `Large workflow` uyarısı, runtime sınırları) — uydurma çarpanlar olmadan — ele alınır.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur.
+- `ultracode`'un neden bir model [effort](/tr/playbook/glossary/#effort) (çaba) seviyesi değil bir Claude Code ayarı olduğunu ve `xhigh` muhakemenin ötesinde neyi açtığını söylemek.
+- Onu açan her yolu ve orkestrasyon yarısını sessizce devre dışı bırakan tek ortam değişkenini adlandırmak.
+- Verilen bir [prompt](/tr/playbook/glossary/#prompt) (Claude'a verilen istek metni) için `ultracode` anahtar kelimesinin tetiklenip tetiklenmeyeceğini — bilerek tetiklenmediği yollar dâhil — tahmin etmek.
+- Bir boyut kılavuzu seçmek ve her değerin hedeflediği [agent](/tr/playbook/glossary/#agent) (bir hedefi kendi başına adım adım yürüten yapay zekâ süreci) sayısını söylemek.
+- Dokümanların [workflow](/tr/playbook/glossary/#workflow) (Claude Code'un bir görev için planlayıp yürüttüğü çok adımlı otomatik iş akışı) maliyeti hakkında gerçekte ne iddia ettiğini ve neyi iddia etmediğini belirtmek.
+
+**Ön koşullar.** `01-workflows` dersi (Workflow tool'u ve scripti) ve L2 `m05-models-effort`'tan effort seviyeleri.
+
+<WhenNotToUse>
+  `ultracode`, oturumdaki _her_ önemli görev için bir workflow planlar, dolayısıyla her istek daha
+  düşük effort seviyelerine göre daha fazla [token](/tr/playbook/glossary/#token) (bir dil modelinin
+  metni işlerken kullandığı en küçük birim) kullanır ve daha uzun sürer. Bu, rutin işler için —
+  küçük bir düzenleme, bir dosya hakkında bir soru, bir [commit](/tr/playbook/glossary/#commit) (bir
+  git deposundaki değişiklik kümesinin kalıcı kaydı) mesajı — yanlış bir ödünleşimdir; ve maliyeti
+  yakından izlediğiniz herhangi bir oturum için de öyle, çünkü ultracode oturumları büyük çalıştırma
+  uyarısını da kapatır. `xhigh` effort'u olmayan modellerde kullanılamaz ve bir workflow'u bir kez
+  istemenin yerini tutmaz: oturumdaki yalnızca tek bir görev orkestrasyonu hak ediyorsa, o tek
+  görevi isteyin ve oturumu `high`'da bırakın.
+</WhenNotToUse>
+
+## Kavram
+
+### Bir effort seviyesi değil, bir ayar
+
+`/effort`, `low`, `medium`, `high`, `xhigh` ve `max` — model muhakeme seviyeleri — sunar, sonra da
+başka bir şey olan `ultracode`'u sunar. **Ultracode bir Claude Code ayarıdır**: modele `xhigh`
+gönderir _ve_ Claude'a önemli görevler için dinamik workflow'lar orkestre ettirir. Açıkken Claude,
+siz istemeyi beklemek yerine her önemli görev için bir workflow planlar ve tek bir istek art arda
+birkaç workflow'a dönüşebilir — biri kodu anlamak için, biri değişikliği yapmak için, biri de
+doğrulamak için.
+
+Onu açan her yol:
+
+| Yol                                                                       | Ne yaptığı                                                                                                                   |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `/effort ultracode`                                                       | Geçerli oturum için açar                                                                                                     |
+| `claude --effort ultracode`                                               | Oturumu ultracode açık `xhigh`'da başlatır (2.1.203 ya da üzeri)                                                             |
+| Bir settings dosyasında `"ultracode": true`, ya da `--settings` üzerinden | Kalıcı hâle getirir, böylece her oturum onunla başlar                                                                        |
+| `/model` seçicisinin effort kaydırıcısı                                   | Ok tuşlarıyla `ultracode`'a taşıyın; o modeli varsayılanınız olarak kaydetseniz bile yalnızca geçerli oturum için geçerlidir |
+| Agent SDK                                                                 | `applyFlagSettings()`, `effortLevel: "ultracode"`'u kabul eder                                                               |
+
+Ezberlemeye değer iki boşluk var. Kalıcı `effortLevel` ayarı ile `CLAUDE_CODE_EFFORT_LEVEL` ortam
+değişkeni **`ultracode`'u kabul etmez** — bu değerin kendi `ultracode` settings anahtarı vardır. Ve
+`CLAUDE_CODE_EFFORT_LEVEL`, `xhigh` dışında bir şeye ayarlıysa istekler o seviyede çalışır ve
+ultracode'un workflow orkestrasyonu etkin olmaz; ultracode'u seçmek o zaman değişkenin oturum için
+effort'u geçersiz kıldığı konusunda sizi uyarır. Workflow'ların tamamen kapalı olduğu yerde
+`--effort ultracode` yalnızca `xhigh` effort'u ayarlar.
+
+`/effort ultracode` geçerli oturum boyunca sürer. Rutin işe döndüğünüzde `/effort high` ile geri
+dönün.
+
+### Anahtar kelime ve tetiklenmediği yerler
+
+Oturumun effort seviyesini değiştirmeden tek bir görevi workflow olarak çalıştırmak için prompt'unuza
+`ultracode` anahtar kelimesini ekleyin — ya da kendi cümlelerinizle isteyin, çünkü Claude "bir
+workflow kullan" ifadesini aynı opt-in olarak kabul eder:
+
+```text
+ultracode: audit every API endpoint under src/routes/ for missing auth checks
+```
+
+Claude Code, girdinizdeki anahtar kelimeyi vurgular. Anahtar kelime yalnızca Claude'un işi nasıl
+yapılandıracağını seçer: agent'ların [tool](/tr/playbook/glossary/#tool) (Claude'a işlem yaptıran araç)
+çağrıları, oturumdaki diğer her tool çağrısıyla aynı izin kontrollerinden ve
+[sandbox](/tr/playbook/glossary/#sandbox)'tan (komutları kısıtlı bir ortamda çalıştıran izolasyon) geçer. Kastetmediyseniz, bu prompt için vurgulamayı kaldırmak üzere
+`Option+W`'ye (macOS) ya da `Alt+W`'ye (Windows ve Linux) basın, ya da imleç vurgulanmış anahtar
+kelimenin hemen sağındayken backspace yapın. Tamamen tetiklenmesini durdurmak için `/config`'te
+**Ultracode keyword trigger**'ı kapatın.
+
+Anahtar kelime **yalnızca kendi yazdığınız bir prompt'ta** bir opt-in'dir: etkileşimli prompt'ta, bir
+IDE eklentisi panelinde, bir Remote Control istemcisinde ya da klavye girdinizin `origin`'ini
+`{ kind: "human" }` olarak damgalayan bir Agent SDK uygulamasında. Oturuma başka bir yoldan
+ulaştığında bir workflow başlatmaz:
+
+- `-p` ile geçirilen bir prompt
+- bir Agent SDK uygulamasının insan girdisi olarak damgalamadan gönderdiği bir prompt
+- zamanlanmış bir görev prompt'u
+- konuşmaya aktarılan bir webhook yükü ya da [pull request](/tr/playbook/glossary/#pull-request) (bir branch'teki değişikliklerin gözden geçirilip ana koda alınması için açılan istek) yorumu
+
+Sonuncusu bir tuhaflık değil, güvenlik meselesidir: herkesin bir PR yorumuna koyabileceği bir anahtar
+kelime, token'larınızı harcamanın bir yolu olurdu. Aşağıdaki laboratuvar tam olarak bu kuralı, ölçerek
+gösterir.
+
+### Boyutu sınırlamak
+
+Bir **boyut kılavuzu** (size guideline), Claude'a bir workflow yazarken kaç agent hedeflemesi
+gerektiğini söyler. Claude Code onu bir sınır değil bir öneri olarak gönderir, dolayısıyla farklı bir
+ölçek gerektiren bir prompt yine de onu geçersiz kılar (2.1.202 ya da üzeri):
+
+| Değer          | Claude'un hedeflediği agent sayısı                       |
+| -------------- | -------------------------------------------------------- |
+| `unrestricted` | Kılavuz yok: Claude workflow'u göreve göre boyutlandırır |
+| `small`        | 5'ten az agent                                           |
+| `medium`       | 15'ten az agent                                          |
+| `large`        | 50'den az agent                                          |
+
+Varsayılan `medium`'dur (2.1.219 ya da üzeri; önceki sürümler `unrestricted`'ı varsayılan alırdı).
+Bunu `/config`'in **Dynamic workflow size** satırından, `/config workflowSizeGuideline=small` ile ya
+da bir settings dosyasındaki `workflowSizeGuideline` anahtarıyla ayarlayın — settings dosyası kazanır
+ve Claude Code o zaman `/config` satırını gizler. Değişiklikler bir sonraki prompt'ta etkili olur ve
+runtime'ın kendi sınırları yine de geçerlidir.
+
+### Dokümanların maliyet hakkında söyledikleri
+
+Burada dikkatli olun: ultracode için yayımlanmış bir çarpan yoktur ve bir tane uydurmamalısınız.
+Resmî sayfaların belirttiği şey şudur:
+
+- Bir workflow birçok agent başlatır, dolayısıyla tek bir çalıştırma aynı görevi konuşma içinde
+  yapmaktan **anlamlı ölçüde daha fazla token kullanabilir**. Çalıştırmalar, herhangi bir oturum gibi
+  planınızın kullanım ve rate limit'lerine sayılır.
+- Ultracode açıkken **her istek daha düşük effort seviyelerine göre daha fazla token kullanır ve daha
+  uzun sürer**, ve tek bir istek art arda birkaç workflow'a dönüşebilir.
+- Claude Code, alışılmadık şekilde büyüyen bir çalıştırmayı işaretler: bir workflow **25'ten fazla
+  agent** planladığında ya da öngörülen token toplamı **1,5 milyonu** geçtiğinde, ilerleme satırı
+  sizi `/workflows`'a yönlendiren bir `Large workflow` uyarısı gösterir. Uyarı danışma niteliğindedir
+  — çalıştırmayı durdurmaz ya da sınırlamaz. Bir boyut kılavuzu seçmek 25 agent eşiğini o kılavuzun
+  sayısıyla değiştirir ve **ultracode açık oturumlar uyarıyı hiç göstermez**, çünkü onu açmak zaten
+  sizi büyük çalıştırmalara dahil eder.
+- Runtime'ın sınırları — 16 eşzamanlı agent, `parallel()`/`pipeline()` çağrısı başına 4.096 öğe,
+  çalıştırma başına 1.000 agent — kaçak bir scriptin maliyetini sınırlar.
+- Karşılaştırma için, maliyet sayfası kardeş özellik için tek bir sayı verir: **agent team'ler,
+  takım arkadaşları [plan mode](/tr/playbook/glossary/#plan-mode)'da (Claude'un değişiklik yapmadan önce yalnızca okuyup bir plan sunduğu mod) çalışırken standart oturumlardan yaklaşık 7 kat daha fazla token
+  kullanır**. Bu, workflow'lar ya da ultracode hakkında değil, agent team'ler hakkında bir rakamdır.
+
+Dokümanların verdiği pratik tavsiye akılda tutulmaya değer: **workflow'u önce küçük bir dilimde
+çalıştırın** — tüm depo yerine bir dizin, geniş bir soru yerine dar bir soru. `/workflows` görünümü
+çalıştırma ilerledikçe her agent'ın token kullanımını gösterir ve çalıştırmayı orada durdurabilirsiniz
+— genellikle tamamlanmış işi kaybetmeden. Rutin iş için genelde daha küçük bir modele geçiyorsanız
+büyük bir çalıştırmadan önce `/model`'i kontrol edin ve en güçlü modele ihtiyaç duymayan aşamalar için
+daha küçük bir model isteyin.
+
+### Workflow'ları kapatmak
+
+`/config`'te **Dynamic workflows**'u kapatın, `~/.claude/settings.json` içinde
+`"disableWorkflows": true` ayarlayın ya da `CLAUDE_CODE_DISABLE_WORKFLOWS=1` ayarlayın (başlangıçta
+okunur). Bir kurum için, yönetilen ayarlarda `"disableWorkflows": true` ya da Claude Code yönetici
+ayarlar sayfasındaki anahtar. Workflow'lar devre dışı bırakıldığında paketlenmiş workflow komutları ve
+`/workflow-authoring` [skill](/tr/playbook/glossary/#skill)'i (Claude'un izlediği paketlenmiş talimat) kullanılamaz, `ultracode` anahtar kelimesi artık bir çalıştırma
+tetiklemez ve `ultracode`, `/effort` menüsünden kaybolur.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Bu laboratuvar dokümante edilmiş bir olumsuzu ölçer: `ultracode` anahtar kelimesinin bir `-p`
+  prompt'undan bir workflow başlatmadığını. Kanıt bir workflow'un yokluğudur, dolayısıyla aşağıdaki
+  [checklist](/tr/playbook/glossary/#checklist) (bir görevin tamamlandığını doğrulamak için sırayla
+  işaretlenen madde listesi) bir şeyin olmasını izlemek yerine zarfı dikkatle okumakla ilgilidir.
 </Callout>
+
+<Lab
+  title="Laboratuvar · anahtar kelimenin headless modda tetiklenmediğini kanıtlayın"
+  lessonId="tr/l4-master/m16-orchestration/ultracode"
+  repoTag="lesson/m16-04-start"
+  steps={[
+    '`lesson/m16-04-start`\'taki lab klonunuzda, ilk kelimesi anahtar kelime olan bir headless prompt çalıştırın: `claude -p "ultracode: list the names of the functions exported from src/store.ts" --model haiku --max-turns 6 --output-format json --allowedTools Read,Grep,Glob`',
+    "Zarfı jq'den geçirip `num_turns`, `total_cost_usd` ve `modelUsage`'ı okuyun: `jq '{subtype, num_turns, total_cost_usd, models: (.modelUsage|keys), spawned: .subagent_stats.spawned}'`",
+    'Cevabın tur be tur, tek bir modelde, sentler mertebesinde geldiğini fark edin — hiçbir workflow planlanmadı ve anahtar kelime sıradan prompt metni olarak ele alındı.',
+    "Şimdi aynı dizinde etkileşimli bir oturum açın ve aynı prompt'u yazın. Claude Code anahtar kelimeyi vurgular; onu çalıştırmak yerine vurgulamayı kaldırmak için `Option+W` (macOS) ya da `Alt+W`'ye (Windows ve Linux) basın.",
+    "`/config`'i çalıştırın ve **Dynamic workflow size** satırını bulun. `/config workflowSizeGuideline=small` ile onu `small`'a ayarlayın ve bir sonraki çalıştırmanızda workflow'un `Running in background` satırının `small size (/config)` bildirdiğini doğrulayın.",
+  ]}
+  expected="Headless çalıştırma iki turda, tek bir modelde, hiçbir workflow olmadan subtype: success döndürür: anahtar kelime -p ile oturuma ulaştı, ki bu bir opt-in olmadığı dokümante edilen yollardan biridir. Etkileşimli oturum aynı anahtar kelimeyi vurgular."
+  checklist={[
+    '`num_turns` küçüktür ve ~/.claude/projects/ altında hiçbir çalıştırma dizini oluşturulmadı',
+    '`modelUsage`, --model ile geçtiğiniz modeli tam olarak listeler',
+    'Maliyet dolar değil sent cinsindendir',
+    'Etkileşimli oturum aynı anahtar kelimeyi vurgular; headless olan buna göre davranmadı',
+    'Anahtar kelimenin tetiklenmediği dört yolu söyleyebilirsiniz',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m16-orchestration/02-ultracode/01-keyword-in-headless.txt"
+    range="2-12"
+  />
+</Lab>
+
+Bu kayıtta durup düşünmeye değer iki şey var. `spawned: 0` ve `modelUsage`'daki tek bir girdi, açıkça
+hiçbir şeyin orkestre edilmediğini söylüyor — bunu `04-pipeline-lab`'daki gerçek bir workflow
+çalıştırmasının aynı zarfıyla karşılaştırın: orada `modelUsage` iki model taşır ve çalıştırma yaklaşık
+otuz kat daha fazlaya mal olur. Cevabın kendisi de Türkçe geldi: bu kaydı üreten makinenin genel
+Claude Code tercihleri Türkçe istiyor ve bir `-p` oturumu tercihlerinizi diğer her oturum gibi yükler.
+Kalıcı memory'niz [headless](/tr/playbook/glossary/#headless) (arayüzsüz, tek seferlik) çalıştırmaları da şekillendirir.
+
+## Anti-pattern'ler
+
+**Scriptlenmiş bir prompt'a `ultracode` koyup orkestrasyon beklemek.** `-p`'de, insan `origin`'i
+olmayan bir SDK mesajında, zamanlanmış bir görevde ve aktarılan bir webhook ya da PR yorumunda anahtar
+kelime düz metindir. _Çözüm:_ otomasyonda `Workflow` tool'unu açıkça isteyin ve izin verin — anahtar
+kelime bir insanın opt-in'idir, bir API değil.
+
+**Ultracode'u tüm oturum boyunca açık bırakmak.** Bu, tek bir delege edilmiş okumanın yettiği görevler
+dâhil, her önemli görev için bir workflow planlar. _Çözüm:_ rutin iş için `/effort high`; bir
+workflow'u hak eden tek görev için anahtar kelimeyi kullanın.
+
+**`CLAUDE_CODE_EFFORT_LEVEL`'ı ayarlayıp sonra ultracode'u seçmek.** Değişken `xhigh` değilse istekler
+değişkenin seviyesinde çalışır ve orkestrasyon yarısı etkin olmaz. _Çözüm:_ değişkeni kaldırın ya da
+`ultracode` settings anahtarını kullanın.
+
+**Ultracode için bir maliyet çarpanı söylemek.** Dokümanlar eşikler ve sınırlar verir, bir çarpan
+vermez; yayımlanmış tek çarpan — kabaca 7×— takım arkadaşları plan mode'da çalışan agent team'ler
+içindir. _Çözüm:_ kendi çalıştırmanızı `/workflows` görünümünden ya da JSON zarfının
+`total_cost_usd`'sinden ölçün ve onu söyleyin.
+
+**`Large workflow` uyarısını bir sınır gibi ele almak.** Danışma niteliğindedir, hiçbir şeyi
+durdurmaz ve ultracode açıkken hiç görünmez. _Çözüm:_ bir boyut kılavuzu ayarlayın ve çalıştırmaları
+`/workflows`'tan kendiniz durdurun.
+
+<Callout variant="changed">
+  `--effort ultracode`, Claude Code 2.1.203 ya da üzerini gerektirir; ondan önce bayrak `Unknown
+  --effort value 'ultracode'` yazdırırdı ve oturum varsayılan effort'ta başlardı. Ve 2.1.210'dan
+  beri anahtar kelime artık bir `-p` prompt'undan, damgalanmamış bir SDK mesajından, zamanlanmış bir
+  görevden ya da aktarılan bir webhook ya da PR yorumundan bir workflow başlatmıyor — ondan önce
+  başlatıyordu.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m16-orchestration/ultracode"
+  questionId="q1"
+  lang="tr"
+  prompt="ultracode neden bir effort seviyesi değil bir ayar olarak tanımlanır?"
+  options={[
+    {
+      text: 'Modele xhigh gönderir ve ayrıca Claude’a dinamik workflow’lar orkestre ettirir',
+      correct: true,
+      explanation:
+        'Aynı anda iki şey — effortLevel anahtarının ve CLAUDE_CODE_EFFORT_LEVEL’ın onu kabul etmemesinin nedeni de bu.',
+    },
+    {
+      text: 'max’tan daha yavaştır',
+      explanation: 'Onu ayıran hız değildir; orkestrasyondur.',
+    },
+    {
+      text: 'Yalnızca subagent’lara uygulanır',
+      explanation: 'Oturumun önemli görevlerine uygulanır.',
+    },
+    {
+      text: 'Effort’u değil, modeli değiştirir',
+      explanation: 'Bir model seçmez; xhigh’ı destekleyen bir modele ihtiyaç duyar.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m16-orchestration/ultracode"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir oturuma aktarılan pull request yorumu ultracode kelimesini içeriyor. Ne olur?"
+  options={[
+    {
+      text: 'Depo sahibinin kotasını kullanan bir workflow başlar',
+      explanation:
+        'Bu, 2.1.210’dan önce doğruydu. Şu anki davranışın ortadan kaldırdığı tam olarak bu risktir.',
+    },
+    {
+      text: 'Özel bir şey olmaz: anahtar kelime yalnızca kendi yazdığınız bir prompt’ta bir opt-in’dir',
+      correct: true,
+      explanation:
+        'Aktarılan yükler, -p prompt’ları, zamanlanmış görevler ve damgalanmamış SDK mesajları onu tetiklemez.',
+    },
+    {
+      text: 'Claude Code workflow’u onaylamanızı ister',
+      explanation: 'Hiçbir onay istemi görünmez, çünkü hiçbir workflow planlanmaz.',
+    },
+    {
+      text: 'Oturum xhigh effort’a geçer',
+      explanation: 'Effort değişmez.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m16-orchestration/ultracode"
+  questionId="q3"
+  lang="tr"
+  prompt="Boyut kılavuzunu `small`'a ayarladınız. Aslında ne yapmış oldunuz?"
+  options={[
+    {
+      text: 'Çalıştırmayı 5 agent’ta sınırladınız; runtime altıncıyı reddeder',
+      explanation: 'Kılavuz, Claude’a bir öneridir, bir sınır değil. Runtime sınırları ayrıdır.',
+    },
+    {
+      text: 'Claude’a 5’ten az agent hedeflemesini söylediniz ve büyük çalıştırma uyarı eşiğini o sayıya taşıdınız',
+      correct: true,
+      explanation: 'Farklı bir ölçek gerektiren bir prompt yine de kılavuzu geçersiz kılabilir.',
+    },
+    {
+      text: 'Large workflow uyarısını devre dışı bıraktınız',
+      explanation: 'Bunu yalnızca ultracode’u açmak yapar.',
+    },
+    {
+      text: 'Her agent’ı 5 turla sınırladınız',
+      explanation: 'Bu, turlarla değil agent sayısıyla ilgilidir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m16-orchestration/ultracode"
+  questionId="q4"
+  lang="tr"
+  prompt="Resmî dokümanlarla desteklenen maliyet ifadesi hangisidir?"
+  options={[
+    {
+      text: 'Ultracode normal bir oturumun yaklaşık 7 katına mal olur',
+      explanation:
+        '~7× rakamı, takım arkadaşları plan mode’da çalışan agent team’ler içindir, ultracode için değil.',
+    },
+    {
+      text: 'Bir workflow, 25’ten fazla agent planladığında ya da 1,5 milyondan fazla token öngördüğünde uyarır — ultracode açık değilse',
+      correct: true,
+      explanation: 'Ve uyarı danışma niteliğindedir: çalıştırmayı asla durdurmaz ya da sınırlamaz.',
+    },
+    {
+      text: 'Workflow çalıştırmaları plan kullanım sınırlarına sayılmaz',
+      explanation: 'Herhangi bir oturum gibi sayılırlar.',
+    },
+    {
+      text: 'Runtime bir çalıştırmayı 10 dolarda durdurur',
+      explanation:
+        'Runtime’da bir harcama sınırı yoktur; sınırlar agent’lar ve liste boyutları üzerindedir.',
+    },
+  ]}
+/>
+
+**Sırada:** `03-agent-teams-messaging` — birden fazla Claude'u aynı anda çalıştırmanın diğer iki yolu
+ve birbirleriyle konuştukları tool'lar.

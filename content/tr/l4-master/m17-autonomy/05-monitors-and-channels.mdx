@@ -1,15 +1,15 @@
 ---
-title: "Monitor'lar, channel'lar ve wake-up'lar"
-description: "Yoklamayı bırakın. Bir monitor arka plandaki bir script'i ya da WebSocket'i satır satır oturuma akıtır; bir channel ise dışarıdan olay iten bir MCP server'dır. İkisi de otonom işi gözlemlenebilir kılar."
+title: 'Monitor’lar, channel’lar ve uyandırmalar'
+description: 'Yoklamayı bırakın. Bir monitor, satırlar geldikçe bir arka plan betiğini ya da WebSocket’i oturuma akıtır; bir channel ise dışarıdan olayları içeri iten bir MCP server’dır. İkisi de otonom işi gözlemlenebilir kılar.'
 level: 4
 module: 'm17-autonomy'
 order: 5
 duration_min: 15
 difficulty: advanced
-tags: ['otonomi', 'monitors', 'channels', 'gözlemlenebilirlik', 'mcp']
+tags: ['otonomi', 'monitor', 'channel', 'gözlemlenebilirlik', 'mcp']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Tools available to Claude'
@@ -35,8 +35,292 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders modülü gözlemlenebilirlikle kapatır. `Monitor` tool'u arka planda bir komut çalıştırıp her çıktı satırını oturuma akıtır ya da doğrudan bir WebSocket'e bağlanır (v2.1.195+); izinleri Bash tool'unun kuralları yönetir, `--resume` sonrasında hiçbir monitor geri gelmez ve tool bazı sağlayıcılarda kullanılamaz. `ScheduleWakeup`, kendi hızını ayarlayan bir `/loop`'un bir sonraki yinelemesini planlar ve Stop hook girdisindeki `session_crons` alanında görünür. Channel'lar (araştırma önizlemesi) olayları çalışan bir oturuma iten MCP server'lardır: plugin olarak kurulur, `claude --channels plugin:<ad>@<marketplace>` ile oturuma dahil edilir, gönderen allowlist'i ile korunur ve isteğe bağlı olarak izin sorularını uzaktan yanıtlanmak üzere iletebilir. Ders, beş otonomi mekanizmasının her birinin iz bıraktığı yeri gösteren bir tabloyla biter.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.
+- Yoklama yerine bir monitor istemek ve bir `Monitor`'un hem [token](/tr/playbook/glossary/#token) (bir dil modelinin metni işlerken kullandığı en küçük birim) hem gecikme açısından bir `/loop`'u ne zaman geçtiğini söylemek.
+- Bir monitor'un neyi izleyebileceğini adlandırmak — bir arka plan komutu ya da bir WebSocket — ve her birinin sınırlarını.
+- Bir channel'ın ne olduğunu açıklamak, birini kurmak ve `--channels` ile bir oturum başlatmak.
+- Her channel'ın iki güvenlik kapısını tarif etmek ve izin aktarımının neden mesaj iletmekten daha büyük bir yetki olduğunu.
+- Bu modülün beş mekanizmasının her birinin sonradan okuyabileceğiniz bir denetim izini nerede bıraktığını söylemek.
+
+**Ön koşullar.** 1–4. dersler, artı seviye 3'ün MCP modülü — bir channel, bir ek yeteneği olan bir [MCP server](/tr/playbook/glossary/#mcp-server)'dır.
+
+<WhenNotToUse>
+  Bir monitor, bir arka plan sürecini bir oturuma bağlı tutar; bu yüzden ondan uzun yaşaması gereken
+  hiçbir şey için doğru biçim değildir: monitor'lar `--resume`'da asla geri getirilmez ve bir
+  [subagent](/tr/playbook/glossary/#subagent)'ın (ana oturumun bir alt görevi devrettiği yardımcı
+  agent) monitor'ları o subagent'la birlikte ölür. Ayrıca birçok ortamda kullanılamaz — Amazon
+  Bedrock, Google Cloud'ın Agent Platform'u ve Microsoft Foundry, ve `DISABLE_TELEMETRY` ya da
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` ayarlı her yer — bu yüzden buna bağımlı bir ders ya da
+  betik bu okuyucular için basitçe çalışmaz. Channel'lar ise Anthropic kimlik doğrulaması gerektiren
+  ve bir Team ya da Enterprise kuruluşunda açık bir yönetici onayı isteyen bir research preview'dır:
+  henüz onların etrafında bir ekip iş akışı tasarlamayın.
+</WhenNotToUse>
+
+## Kavram
+
+### Monitor'lar: izleyin, yoklamayın
+
+`Monitor` [tool](/tr/playbook/glossary/#tool)'u (Claude'un dosya okuma, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç), Claude'un konuşmayı duraklatmadan arka planda bir şeyi izlemesine ve o şey değiştiğinde tepki vermesine izin verir. Düz dille isteyin — bir log'u takip edip hatalar göründükçe işaretlemek, bir PR ya da CI görevini yoklayıp durumu değiştiğinde bildirmek, dosya değişiklikleri için bir dizini izlemek, uzun süredir çalışan bir betiğin çıktısını takip etmek ya da bir WebSocket akışına bağlanıp her mesajı bildirmek.
+
+Çoğu izlemede Claude küçük bir betik yazar, onu arka planda çalıştırır ve her çıktı satırını geldikçe alır. Aynı oturumda çalışmaya devam edersiniz ve bir olay geldiğinde Claude araya girer. Bir monitor'u Claude'dan iptal etmesini isteyerek ya da oturumu bitirerek durdurun; bir subagent tarafından başlatılan monitor'lar, örneğin `/tasks`'tan, o subagent durduğunda durur.
+
+1. dersin monitor'lardan bahsetmesinin nedeni bu: tool'un kullanılabildiği yerde, kendi hızında bir `/loop` istediğinizde Claude ona başvurabilir, çünkü satırları akıtmak, bir [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni) zamanlayıcıyla yeniden çalıştırmaktan hem token hem yanıt verebilirlik açısından daha iyidir.
+
+İzinler ayrı bir sistem değildir: Monitor bir komut çalıştırdığında **Bash ile aynı izin kurallarını** kullanır, bu yüzden Bash için `allow` ve `deny` desenleriniz uygulanır. Auto mode'da, Claude Code, bıraktığı diğer geniş allow kurallarıyla birlikte `Monitor`'un kendisini adlandıran allow kurallarını bir kenara bırakır, böylece sınıflandırıcı Monitor komutlarını Bash komutlarını incelediği gibi inceler.
+
+[Plugin](/tr/playbook/glossary/#plugin)'ler (Claude Code'a hook, skill, subagent ve MCP server gibi bileşenler ekleyen paket) de, Claude'un birini başlatmasını beklemek yerine, plugin aktifken otomatik başlayan monitor'lar tanımlayabilir.
+
+### WebSocket kaynağı
+
+Bir server zaten olayları itiyorsa, Claude bir yoklama betiği yazmak yerine doğrudan bağlanabilir. Bir WebSocket izlemesi, `command` yerine bir `ws` girdisi alır ve tek bir Monitor çağrısı ikisini birleştiremez (v2.1.195 ya da üstü).
+
+| Alan        | Zorunlu | Açıklama                                                                                       |
+| ----------- | ------- | ---------------------------------------------------------------------------------------------- |
+| `url`       | Evet    | Yalnızca ASCII, gömülü kimlik bilgisi ya da boşluk içermeyen bir `ws://` ya da `wss://` URL'si |
+| `protocols` | Hayır   | El sıkışma sırasında sunulacak alt protokol adları; her biri geçerli bir belirteç, tekrar yok  |
+
+Her tür soket etkinliği ya bir olay olur ya da izlemeyi bitirir: bir metin mesajı, birden çok satıra yayılsa bile tek bir olay olur; bir ikili mesaj geçirilmez (Claude `[binary frame, 512 bytes]` gibi bir yer tutucu görür); 1 MiB'den büyük bir mesaj izlemeyi bitirir, bu yüzden varsa filtrelenmiş bir akışa abone olun; ve bir soketin kapanması, kapanış koduyla birlikte izlemeyi bitirir. `timeout_ms` ve `persistent`, bir komut için davrandıkları gibi davranır — `persistent` ayarlanmadıkça izleme vadesinde biter ve `TaskStop` onu erken iptal eder.
+
+Bir soket açmak onay ister, "bu host için bir daha sorma" seçeneği yoktur ve auto mode'da sınıflandırıcı karar verir. Claude Code, özel, link-local ya da bulut-metadata adreslerine işaret eden URL'leri — bunlardan birine çözümlenen host adları dahil — artı `sandbox.network.deniedDomains`'teki host'ları ve, yönetilen ayarlarda `allowManagedDomainsOnly` ayarlıysa, yönetilen izin listesinin dışındaki her host'u reddeder.
+
+### Uyandırmalar
+
+`ScheduleWakeup`, kendi hızında bir `/loop`'un arkasındaki tool'dur: Claude, bir sonraki yinelemenin bir dakika ile bir saat arasında ne zaman çalışacağını seçmek için her yinelemenin sonunda onu çağırır ve loop'u bitirmek için `stop: true` ile çağırır (v2.1.202 ya da üstü). Bunu kendiniz asla çağırmazsınız ve hiçbir izin gerektirmez. Adıyla bilinmeye değer tek yer gözlemlenebilirliktir: **bekleyen uyandırma, Stop [hook](/tr/playbook/glossary/#hook) (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan komut) girdisindeki `session_crons`'ta görünür**, böylece bir Stop hook, oturumun kendini yeniden uyandırmayı amaçlayıp amaçlamadığını görebilir.
+
+### Channel'lar: dışarının itmesine izin verin
+
+Bir channel, siz terminalde değilken olan bir şeye Claude'un tepki verebilmesi için çalışan oturumunuza olay iten bir MCP server'dır. Claude Code onu bir alt süreç olarak başlatır ve onunla stdio üzerinden konuşur. Sohbet platformu channel'ları platformun API'sini yerel olarak yoklar, bu yüzden açığa çıkacak bir URL yoktur; webhook channel'ları ise [CI](/tr/playbook/glossary/#ci)'ın (her push'ta otomatik olarak testleri çalıştıran hat) ya da hata izleyicinizin POST attığı yerel bir HTTP portunu dinler.
+
+Channel'lar tek yönlü (Claude'un üzerine hareket etmesi için uyarıları ileten) ya da iki yönlü (aynı channel üzerinden Claude'un geri yanıt vermesi için bir yanıt tool'u da açığa çıkaran, bir sohbet köprüsü gibi) olabilir. Olaylar yalnızca oturum açıkken gelir, bu yüzden her zaman açık bir kurulum, Claude'u bir arka plan sürecinde ya da kalıcı bir terminalde çalıştırmak demektir.
+
+Bir channel'ı bir plugin olarak kurarsınız — Telegram, Discord, iMessage ve `fakechat` demo'su research preview'da, her biri Bun gerektirir — sonra onu bir oturuma dahil edersiniz:
+
+<CodeBlock title="fakechat demo channel'ını deneyin">
+
+```bash
+claude --channels plugin:fakechat@claude-plugins-official
+```
+
+</CodeBlock>
+
+Başlangıç ekranı, plugin'i adlandıran bir channel bildirimi gösterir ve demo arayüzü `http://localhost:8787`'de çalışır. Orada yazılan bir mesaj terminale gelen bir satır olarak gelir — `← fakechat · web: what's in my working directory?` — model ise onu bir `<channel source="plugin:fakechat:fakechat">` olayı olarak alır. Boşlukla ayrılmış birkaç plugin geçebilirsiniz.
+
+Claude bir channel üzerinden yanıt verdiğinde terminalde tool çağrısını ve bir onayı görürsünüz, yanıt metnini değil; yanıtın kendisi diğer platformda görünür.
+
+Kendinizinkini oluşturmak küçük bir MCP server'dır: Claude Code'un bir bildirim dinleyicisi kaydetmesi için `capabilities.experimental['claude/channel'] = {}` bildirin, bir `content` string'i ve isteğe bağlı bir `meta` haritasıyla `notifications/claude/channel` yayınlayın ve stdio üzerinden bağlanın. Her `meta` girdisi, yönlendirme bağlamı için `<channel>` etiketinde bir özniteliğe dönüşür — anahtarlar harf, rakam ve alt çizgi olmalıdır, tire içeren anahtarlar sessizce düşürülür. `source` özniteliği server'ınızın adından ayarlanır. Claude Code bildirimleri onaylamaz: oturum server'ınızı bir channel olarak yüklemediyse ya da politika onu engelliyorsa, olaylar server'ınıza hiçbir hata dönmeden sessizce düşürülür.
+
+### İki kapı ve üçüncü yetki
+
+Dış bir sistemle oturumunuz arasında iki kapı vardır ve ikisi de isteğe bağlı değildir:
+
+1. **Oturum başına katılım.** `.mcp.json`'da olmak yeterli değildir — bir server ayrıca `--channels`'ta da adlandırılmalıdır. Research preview sırasında o bayrak yalnızca Anthropic tarafından yönetilen bir izin listesindeki plugin'leri, ya da bir yönetici `allowedChannelPlugins`'i ayarladıysa kuruluşunuzun listesini kabul eder. Geliştirmekte olduğunuz özel bir channel, girdi başına `--dangerously-load-development-channels` gerektirir.
+2. **Gönderici izin listesi.** Onaylı her channel plugin'i bir tane tutar: yalnızca eklediğiniz kimlikler gönderebilir, başka herkes sessizce düşürülür. Telegram ve Discord bunu eşleştirmeyle başlatır (bot'a mesaj atın, bir kodla yanıtlar, kodu onaylayın, kimliğiniz eklenir); iMessage kendi adreslerinizi otomatik geçirir, başkalarını handle'a göre alır. Kendinizinkini yazarsanız, odanın değil **göndericinin** kimliğine göre kapılayın — bir grup sohbette bunlar farklıdır ve odaya göre kapılamak, izin listesindeki bir gruptaki herkesin Claude'un önüne metin sokmasına izin verir.
+
+Kuruluşlar kullanılabilirliği `channelsEnabled` (ana anahtar: claude.ai Team ve Enterprise, bir sahip onu etkinleştirene kadar engellidir; Console API key kuruluşları yönetilen ayarlar dağıtmadıkları sürece varsayılan olarak izinlidir) ve `allowedChannelPlugins` (hangi plugin'lerin kaydolabileceği, Anthropic'in listesinin yerini alır) ile denetler. Kuruluşu olmayan Pro ve Max kullanıcıları her iki kontrolü de atlar.
+
+Üçüncü yetki ilk ikisinden büyüktür ve isteğe bağlıdır: **izin aktarımı**. `capabilities.experimental['claude/channel/permission']` bildiren iki yönlü bir channel, tool onay istemlerini yerel terminal diyaloğuyla paralel olarak alır ve hangi yanıt önce gelirse o kazanır. Aktarılan istek beş harfli bir `request_id` taşır (`l` hariç `a`–`z`'den çekilir, bu yüzden bir telefonda hiç `1` ya da `I` gibi okunmaz), `tool_name`'i, çağrının ne yaptığına dair bir `description`'ı ve argümanlarının bir `input_preview`'ını taşır; Claude Code yalnızca kendi verdiği bir kimliği taşıyan bir yargıyı kabul eder. Proje güveni ve MCP server onay diyalogları asla aktarılmaz. Üzerinde düşünülmesi gereken sonuç: **gönderici izin listesindeki herkes oturumunuzda tool kullanımını onaylayabilir**, bu yüzden aktarım destekli channel'ların yalnızca sohbet destekleyenlerden daha kısa bir izin listesine ihtiyacı vardır.
+
+Claude, siz yokken bir izin istemine çarparsa ve channel aktarmıyorsa, oturum siz yanıtlayana kadar basitçe duraklar. `-p` modunda, terminal girdisi gerektiren tool'lar — çoktan seçmeli sorular, [plan mode](/tr/playbook/glossary/#plan-mode) (Claude'un değişiklik yapmadan önce yalnızca okuyup bir plan sunduğu mod) onayı — devre dışıdır, böylece oturum asla takılmaz.
+
+İşte bir yoklamanın yerini alan biçim, bu dersin örnek prompt'u:
+
+```text
+Monitor the dev server's log at .dev/server.log and interrupt me only when a line
+matches ERROR or "unhandled rejection" — otherwise stay quiet. Stop when I say so.
+```
+
+### Baştan sona gözlemlenebilirlik
+
+Bu modüldeki her mekanizma farklı bir iz bırakır ve hangisini okuyacağınızı bilmek, otonomi ile batıl inanç arasındaki farktır:
+
+| Mekanizma         | Ne olduğunu nerede okursunuz                                                                                                                    |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/loop`           | Oturum transcript'i, artı hâlâ ne zamanlandığı için `CronList`                                                                                  |
+| Routine           | claude.ai'de çalıştırmanın kendi oturumu — yeşil durum noktası yalnızca oturumun başladığı ve bir altyapı hatası olmadan çıktığı anlamına gelir |
+| `/goal`           | Transcript'teki her yargı, gerekçesi için `Ctrl+O`, durum için `/goal`                                                                          |
+| Masaüstü görevi   | Kenar çubuğundaki Scheduled oturumu, artı atlananlar ve nedenleri dahil görevin çalıştırma geçmişi                                              |
+| Monitor / channel | Geldikçe oturumun kendisine araya giren satırlar                                                                                                |
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Bu laboratuvarın monitor yarısı gerçek bir [headless](/tr/playbook/glossary/#headless)
+  (etkileşimli arayüz olmadan tek komutla çalıştırma) kayıttır. Channel yarısı değildir: bir channel
+  plugin'i kurmak Bun, üçüncü taraf bir platformda bir bot token'ı ve bir sohbet istemcisinde bir
+  eşleştirme adımı gerektirir — hiçbiri bir terminal
+  [transcript](/tr/playbook/glossary/#transcript)'i (gerçek bir Claude Code oturumunun kaydı) olarak
+  kaydedilemez ve hiçbiri bir kursun hesaplarınıza karşı çalışır bırakması gereken bir şey değildir.
+  Bu adımlar resmi dokümantasyondan gelir; ikinci transcript ise yerel olarak kontrol edebileceğiniz
+  tek channel gerçeğini kaydeder.
+</Callout>
+
+<Lab
+  title="Laboratuvar · bir monitor ve --help'te olmayan bayrak"
+  repoTag="none"
+  lessonId="tr/l4-master/m17-autonomy/monitors-and-channels"
+  steps={[
+    'Lab checkout\'unuzda, kısa ömürlü bir komut üzerinde bir monitor isteyin: `claude -p "Use the Monitor tool once to watch: bash -c \'for i in 1 2 3; do echo tick-$i; sleep 2; done; echo done\'. Report verbatim every line the monitor streams back, then stop the monitor." --allowedTools "Monitor,TaskStop" --output-format text`.',
+    'Yanıtı okuyun: satırlar bir akış olarak gelir ve komutu zaten çıkmış bir izlemeyi durdurmak, böyle bir görev olmadığını bildirir.',
+    "Channel bayraklarının CLI yardımından yok olduğunu doğrulayın — research preview sırasında listelenmedikleri belgelenmiştir. PowerShell (aşağıdaki transcript'in kaydettiği), `claude --help`'i satırlara böler ve \"channel\" ile eşleşenleri `Select-String` ile sayar; macOS ya da Linux'ta aynı kontrol `claude --help | grep -ci channel`'dır.",
+    "Demo channel'ı kurun: `/plugin install fakechat@claude-plugins-official` (kurulum eksik olduğunu bildirirse önce `/plugin marketplace add anthropics/claude-plugins-official` ile marketplace'i ekleyin), user kapsamını seçerek.",
+    "`claude --channels plugin:fakechat@claude-plugins-official` ile çıkıp yeniden başlatın, http://localhost:8787'yi açın ve bir mesaj yazın. Oturuma bir `<channel>` olayı olarak gelir; sorulduğunda ilk yanıtı onaylayın.",
+    'O oturumdan çıkın. Bir channel yalnızca oturum açıkken teslim eder, bu yüzden onu bitirmek tüm temizliktir — hiçbir şey zamanlanmış ya da dinliyor kalmaz.',
+  ]}
+  expected="Monitor çalıştırması akıtılan tick-1, tick-2, tick-3, done satırlarını bildirir ve izlemenin zaten bitmiş olduğunu not eder. `claude --help`, 'channel' içeren sıfır satırla eşleşir."
+  checklist={[
+    "Monitor her satırı, bir yoklama loop'u olmadan, göründükçe akıttı",
+    "Zaten bitmiş bir izlemeyi durdurmak bir no-op'tur, düzeltilecek bir hata değil",
+    "Ne --channels ne --dangerously-load-development-channels --help'te görünüyor",
+    "Bir channel'ın bir şey teslim etmesi hem plugin kurulumunu hem --channels katılımını gerektirdi",
+    'Bu dersten hiçbir şey oturum çıktıktan sonra hâlâ çalışmıyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/05-monitors-and-channels/01-monitor.txt"
+    range="2-10"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/05-monitors-and-channels/02-help-no-channels.txt"
+    range="2-3"
+  />
+</Lab>
+
+İkinci kayıt küçük ama önemlidir: `claude --help`, "channel" içeren sıfır satırla eşleşir. Özellik research preview'dayken ne `--channels` ne `--dangerously-load-development-channels` listelenir — bayraklar yine de çalışır, bu da tam olarak güvenmek yerine doğrulamanız gereken türden bir iddiadır.
+
+## Anti-pattern'ler
+
+**İtebilecek bir şeyi yoklamak.** Bir log dosyasına karşı `/loop 2m`, her iki dakikada bir tam bir tura mal olur ve yine de geç bildirir. _Çözüm:_ bir monitor isteyin, ya da dış bir sistem için bir channel.
+
+**Sessiz kalma koşulu olmayan bir monitor.** "Log'u izle ve ne gördüğünü söyle", her satırda sizi böler. _Çözüm:_ eşleşme koşulunu belirtin ve aksi hâlde açıkça sessiz kalmasını söyleyin.
+
+**Bir monitor'un sağ çıkmasını beklemek.** Monitor'lar ve arka plan Bash görevleri `--resume`'da asla geri getirilmez ve bir subagent'ın monitor'ları onunla birlikte ölür. _Çözüm:_ kalıcı olması gereken her şey için bir routine ya da masaüstü görevi kullanın.
+
+**`.mcp.json`'ın yeterli olduğunu varsaymak.** Orada listelenen ama `--channels`'ta adlandırılmayan bir channel server'ı bağlanır, tool'ları çalışır ve olayları hiçbir yere gitmez. _Çözüm:_ onu `--channels`'a geçirin — ve bir plugin etkin izin listesinde değilken sorunu adlandıran başlangıç bildirimini kontrol edin.
+
+**Bir channel'ı odaya göre kapılamak.** Bir grup sohbete anahtarlanan bir izin listesi, o grubun her üyesinin Claude'un önüne metin koymasına izin verir. _Çözüm:_ gönderici kimliğine göre kapılayın.
+
+**Aktarımı gelişigüzel dağıtmak.** Aktarım destekli bir channel üzerinden yanıt verebilen herkes, oturumunuzda tool kullanımını onaylayabilir. _Çözüm:_ o izin listesini terminalinizi teslim edeceğiniz insanlarla sınırlı tutun ve yalnızca tool onaylarının aktarıldığını, güven ve MCP onayı diyaloglarının yerel kaldığını unutmayın.
+
+<Callout variant="changed">
+  Bir channel artık izin aktarımına `capabilities.experimental['claude/channel/permission']`
+  bildirerek katılıyor; onu `false` yapmak katılımı iptal ediyor. v2.1.234'ten önce Claude Code
+  `false`'ı bildirilmiş sayıyordu ve izin istekleri oturum için channel olarak kayıtlı server'larla
+  sınırlı değildi. Claude Code 2.1.263 için `channels-reference.md`'ye karşı doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/monitors-and-channels"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir shell komutu çalıştıran bir Monitor'u hangi izin kuralları yönetir?"
+  options={[
+    {
+      text: "Bash tool'uyla aynı allow ve deny kuralları.",
+      correct: true,
+      explanation:
+        "ve auto mode'da, Monitor'un kendisini adlandıran allow kuralları bir kenara bırakılır, böylece sınıflandırıcı komutu inceler.",
+    },
+    {
+      text: "settings.json'da özel bir Monitor izin listesi.",
+      explanation: 'Ayrı bir kural ad alanı yoktur; Bash kuralları uygulanır.',
+    },
+    {
+      text: "Hiçbiri — monitor'lar tasarım gereği gözetimsiz çalışır.",
+      explanation: 'Herhangi bir komut gibi izin kontrolünden geçerler.',
+    },
+    {
+      text: 'MCP server izin kuralları.',
+      explanation:
+        "Bu channel'lar için geçerli. Bir monitor yerleşik bir tool'dur, bir MCP server değil.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/monitors-and-channels"
+  questionId="q2"
+  lang="tr"
+  prompt="Channel server'ınız .mcp.json'da ve çalışıyor, ama hiçbir olay Claude'a ulaşmıyor. En olası neden nedir?"
+  options={[
+    {
+      text: "Oturum o server'ı adlandıran --channels ile başlatılmadı, bu yüzden düz bir MCP server olarak bağlandı ve olayları sessizce düşürülüyor.",
+      correct: true,
+      explanation:
+        ".mcp.json'da olmak asla yeterli değildir; oturum başına katılım kasıtlı bir ikinci kapıdır ve düşürülen olaylar server'ınıza hiçbir hata döndürmez.",
+    },
+    {
+      text: "Server, itmeden önce bir yanıt tool'u açığa çıkarmalıdır.",
+      explanation:
+        "Bir yanıt tool'u yalnızca iki yönlü channel'lar için gereklidir; tek yönlü channel'lar onsuz iter.",
+    },
+    {
+      text: 'Daha fazlası kabul edilmeden önce bildirimler Claude Code tarafından onaylanmalıdır.',
+      explanation: 'Claude Code bildirimleri asla onaylamaz.',
+    },
+    {
+      text: 'Tireli meta anahtarları bildirimi çökertir.',
+      explanation: 'O anahtarlar sessizce düşürülür — olay yine de gelir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/monitors-and-channels"
+  questionId="q3"
+  lang="tr"
+  prompt="İzin aktarımı uzak bir göndericinin ne yapmasına izin verir?"
+  options={[
+    {
+      text: 'Oturumunuzda bir tool çağrısını yerel diyalogla paralel olarak onaylamak ya da reddetmek — önce gelen yanıt kazanır.',
+      correct: true,
+      explanation:
+        "Bu yüzden aktarım destekli bir channel'daki gönderici izin listesi, sohbet erişiminden çok daha büyük bir yetkidir. Güven ve MCP onayı diyalogları asla aktarılmaz.",
+    },
+    {
+      text: 'Oturuma prompt göndermek.',
+      explanation: "Bu, her channel'ın yaptığı sıradan mesaj iletimidir.",
+    },
+    {
+      text: "Oturumun permission mode'unu uzaktan değiştirmek.",
+      explanation: 'Aktarım tek tek istemleri yanıtlar; kipleri değiştirmez.',
+    },
+    {
+      text: 'Proje güveni diyaloglarını bir telefondan onaylamak.',
+      explanation: 'Proje güveni ve MCP server onayı yalnızca yerel terminalde görünür.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/monitors-and-channels"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir routine'in çalıştırma listesi yeşil bir durum gösteriyor. Ne öğrendiniz?"
+  options={[
+    {
+      text: 'Yalnızca oturumun başladığını ve bir altyapı hatası olmadan çıktığını.',
+      correct: true,
+      explanation:
+        "Engellenen ağ istekleri, eksik connector tool'ları ve görev düzeyindeki başarısızlıkların hepsi noktada değil, çalıştırmanın içinde ortaya çıkar. Çalıştırmayı açın.",
+    },
+    {
+      text: "Prompt'un görevinin başarılı olduğunu.",
+      explanation: 'Durum görev hakkında hiçbir şey söylemez.',
+    },
+    {
+      text: 'Her tool çağrısının onaylandığını.',
+      explanation: "Routine'lerin hiç onay istemi yoktur.",
+    },
+    {
+      text: "Repository'ye başarıyla push yapıldığını.",
+      explanation: "Push'lar hakkında hiçbir şey durumda kodlanmaz.",
+    },
+  ]}
+/>
+
+**Sonraki:** `m18-multi-session`, aynı disiplini yana doğru ölçeklendiriyor — şans yerine plan dosyalarıyla koordine edilen, aynı repository üzerinde aynı anda çalışan birkaç Claude Code oturumu.

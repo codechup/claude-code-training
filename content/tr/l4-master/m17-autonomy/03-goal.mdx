@@ -1,6 +1,6 @@
 ---
 title: '/goal: bir koşul sağlanana kadar çalışmak'
-description: "Bir goal, her turdan sonra küçük ve hızlı bir model tarafından denetlenen bir tamamlanma koşuludur. Denetleyicinin yargılayabileceği bir koşulu nasıl yazacağınızı, onu nasıl sınırlayacağınızı ve goal'ü temizleyen dört hatayı öğrenin."
+description: 'Bir goal, her turdan sonra küçük ve hızlı bir model tarafından kontrol edilen bir tamamlanma koşuludur. Değerlendiricinin yargılayabileceği bir koşulu nasıl yazacağınızı, nasıl sınırlayacağınızı ve onu temizleyen dört başarısızlığı öğrenin.'
 level: 4
 module: 'm17-autonomy'
 order: 3
@@ -9,7 +9,7 @@ difficulty: core
 tags: ['otonomi', 'goal', 'stop-hook', 'headless']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Keep Claude working toward a goal'
@@ -32,11 +32,340 @@ sources:
     url: 'https://code.claude.com/docs/en/scheduled-tasks.md'
     verified_at: 2026-09-07
 lab:
-  repo_tag: 'none'
+  repo_tag: 'lesson/m17-01-start'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders `/goal` komutunu anlatır: oturum kapsamlı, prompt tabanlı bir Stop hook'un üzerine kurulu bir sarmalayıcı. Her turun sonunda küçük ve hızlı model (Claude API'de varsayılan olarak Haiku) koşulun sağlanıp sağlanmadığına bakar ve üç karardan birini döner — henüz sağlanmadı, sağlandı, imkânsız. Ders koşulun nasıl yazılacağını (ölçülebilir tek bir bitiş durumu, açıkça belirtilmiş bir kontrol, değişmemesi gereken kısıtlar, 4.000 karakter sınırı ve `or stop after N turns` gibi bir sınırlama), `/goal`, `/loop` ve Stop hook karşılaştırmasını, goal'ü temizleyen dört kurtarılamaz hatayı, arka plan işinin denetimi ertelemesini ve check-in aralıklarını, ve `claude -p "/goal …"` ile headless çalıştırmayı ele alır. Laboratuvar gerçek bir headless goal çalıştırması yapar; `modelUsage` alanı hem çalışan modeli hem de denetleyici modeli gösterir.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.
+- Bir goal'i belirlemek, incelemek ve temizlemek; ve oturum başına neden yalnızca birinin aktif olabileceğini söylemek.
+- Değerlendiricinin gerçekten yargılayabileceği bir koşul yazmak — ölçülebilir tek bir bitiş durumu, belirtilmiş bir kontrol ve önemli olan kısıtlar.
+- Üç yargıyı ve bir goal'i sizden sormadan temizleyen dört başarısızlığı açıklamak.
+- Bir goal'i hem etkileşimli hem de [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma, `claude -p`) bir oturumda sınırlamak ve değerlendirmeyi ikinci bir modelin yaptığının kanıtını göstermek.
+- Belirli bir iş için `/goal`, `/loop` ve bir Stop [hook](/tr/playbook/glossary/#hook) (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan komut) arasında seçim yapmak.
+
+**Ön koşullar.** 1. ders, artı seviye 3'ün hook'lar modülü — `/goal`, oturuma bağlı, [prompt](/tr/playbook/glossary/#prompt) (Claude'a verilen istek metni) tabanlı bir Stop hook'unun sarmalayıcısıdır ve hook'ların güven kurallarını devralır.
+
+<WhenNotToUse>
+  Bir goal, ne zaman duracağına bir modelin karar verdiği bir loop'tur; bu yüzden durma koşulu
+  konuşmada görünür olmadığında yanlış araçtır: değerlendirici
+  [transcript](/tr/playbook/glossary/#transcript)'i (gerçek bir Claude Code oturumunun kaydı) okur
+  ve kendisi hiçbir şey çalıştırmaz, bu yüzden Claude bir sağlık kontrolünü ortaya çıkarmadıkça
+  "staging deploy'u sağlıklı" yargılanamaz. Bitiş durumu olmayan keşifsel işler için de yanlıştır —
+  model tur be tur "henüz değil" derken ödeme yapmaya devam edersiniz — ve gözetimsiz
+  onaylamayacağınız tur başına eylemleri olan her şey için de yanlıştır, çünkü bir goal [permission
+  mode](/tr/playbook/glossary/#permission-mode)'unuzu (bir oturumun tool çağrılarını nasıl
+  onaylayacağını belirleyen kip) değiştirmez ve `bypassPermissions`'ta bir goal, tek freni bir model
+  olan gözetimsiz bir [agent](/tr/playbook/glossary/#agent)'tır (bir hedefi kendi başına adım adım
+  yürüten yapay zekâ süreci).
+</WhenNotToUse>
+
+## Kavram
+
+### Goal nedir
+
+`/goal`, bir tamamlanma koşulu belirler ve Claude siz her adımı istemeden ona doğru çalışmaya devam eder. Her turdan sonra küçük, hızlı bir model — Claude API'de varsayılan olarak Haiku — koşulun sağlanıp sağlanmadığını kontrol eder. Sağlanmadıysa, Claude kontrolü geri vermek yerine başka bir tur başlatır.
+
+Tam olarak dört şekilde sonuçlanır: koşul karşılanır, değerlendirici imkânsız olduğuna karar verir, bir tur sizin düzeltmeniz gereken bir hatayla başarısız olur, ya da `/goal clear` çalıştırırsınız.
+
+Doğrulanabilir bir bitiş durumu olan önemli işler için kullanın: her çağrı noktası derlenip testler geçene kadar bir modülü taşımak, tüm kabul kriterleri sağlanana kadar bir tasarım belgesini uygulamak, her parça bir boyut bütçesinin altına inene kadar büyük bir dosyayı bölmek ya da kuyruk boşalana kadar etiketli bir [issue](/tr/playbook/glossary/#issue) (bir GitHub deposundaki takip edilen görev ya da hata kaydı) birikimini işlemek.
+
+### Goal mü, loop mu, Stop hook mu
+
+Üçü de bir oturumu prompt'lar arasında çalışır tutar. Fark, bir sonraki turu neyin başlattığıdır:
+
+| Yaklaşım  | Bir sonraki tur şu zaman başlar                               | Şu zaman durur                                                                                                                     |
+| --------- | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `/goal`   | Önceki tur bittiğinde, ya da vadesi gelen bir boşta kontrolde | Bir model koşulun sağlandığını ya da imkânsız olduğunu doğruladığında, kurtarılamaz bir hata çıktığında ya da siz temizlediğinizde |
+| `/loop`   | Bir zaman aralığı geçtiğinde                                  | Siz durdurduğunuzda, ya da Claude işin bittiğine karar verdiğinde                                                                  |
+| Stop hook | Önceki tur bittiğinde                                         | Kendi betiğiniz ya da prompt'unuz karar verdiğinde                                                                                 |
+
+`/goal` ve bir Stop hook'un ikisi de her turdan sonra tetiklenir. `/goal`, yazdığınız oturuma bağlı kısayoldur; bir Stop hook bir ayar dosyasında yaşar, kapsamındaki her oturuma uygulanır ve yargılanan kontroller yerine belirlenimci kontroller için bir betik çalıştırabilir.
+
+Auto mode bundan bağımsızdır: bir turun **içindeki** [tool](/tr/playbook/glossary/#tool) (Claude'un dosya okuma, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) çağrılarını onaylar ama asla yeni bir tur başlatmaz. İkisi birleşir — auto mode tool başına istemleri kaldırır, `/goal` tur başına istemleri kaldırır.
+
+### Belirleme, kontrol etme ve temizleme
+
+Oturum başına bir goal aktif olabilir ve aynı komut üç işi de yapar.
+
+```text
+/goal all tests in test/auth pass and the lint step is clean
+```
+
+Bir goal belirlemek, koşulu direktif olarak kullanarak hemen bir tur başlatır — ayrı bir prompt gerekmez. Bir `◎ /goal active` göstergesi ne kadar süredir çalıştığını gösterir, transcript her yargıyı gösterir ve `Ctrl+O` birinin arkasındaki gerekçeyi ortaya çıkarır. Yeni bir goal belirlemek aktif olanı değiştirir.
+
+Argümansız `/goal`, koşulu, ne kadar süredir çalıştığını, kaç turun değerlendirildiğini, mevcut [token](/tr/playbook/glossary/#token) (bir dil modelinin metni işlerken kullandığı en küçük birim) harcamasını ve değerlendiricinin en son gerekçesini gösterir — tur sayısı ve en son gerekçe yalnızca ilk değerlendirme çalıştıktan sonra görünür. Aktif bir goal yoksa ama oturumda daha önce biri sağlanmışsa, durum bunun yerine o sağlanmış koşulu gösterir.
+
+`/goal clear`, aktif bir goal'i kaldırır ve `Goal cleared:` ile koşulu, ya da `No goal set` yazdırır. `stop`, `off`, `reset`, `none` ve `cancel` kabul edilen takma adlardır ve `/clear` konuşmayla birlikte aktif her goal'i de kaldırır.
+
+Devam ettirmede — `--continue`, kimlik ya da isimle `--resume`, ya da oturum seçici — Claude Code hâlâ aktif olan bir goal'i geri getirir; koşulu taşır ama tur sayısını, zamanlayıcıyı ve token harcaması taban çizgisini sıfırlar. Sağlanmış ya da temizlenmiş bir goal geri getirilmez.
+
+### Değerlendiricinin yargılayabileceği bir koşul yazmak
+
+Bütün beceri budur. Değerlendirici, koşulunuzu **Claude'un konuşmada ortaya çıkardığına** karşı yargılar: komut çalıştırmaz ve dosya okumaz. "`test/auth`'taki tüm testler geçiyor" işe yarar çünkü Claude testleri çalıştırır ve sonuç transcript'e düşer.
+
+Birçok turdan sağ çıkan bir koşulun üç parçası vardır:
+
+- **Ölçülebilir tek bir bitiş durumu** — bir test sonucu, bir build çıkış kodu, bir dosya sayısı, boş bir kuyruk.
+- **Belirtilmiş bir kontrol** — Claude'un bunu nasıl kanıtlaması gerektiği: "`npm test` 0 ile çıkıyor", "`git status` temiz".
+- **Önemli olan kısıtlar** — oraya varana kadar neyin değişmemesi gerektiği: "başka hiçbir test dosyası değiştirilmiyor".
+
+Koşullar en fazla 4.000 karakter olabilir. Bir goal'in ne kadar süre çalışacağını sınırlamak için sınırı koşulun kendisine koyun — `or stop after 20 turns` — ve Claude, değerlendirici konuşmadan yargılarken her tur bu ifadeye karşı ilerlemeyi bildirir.
+
+İşte bu dersin üç parçası ve bir sınırı olan örnek prompt'u:
+
+```text
+/goal npm test exits 0 and npm run typecheck exits 0, with both commands' output shown
+in this conversation, and no file outside src/store.ts modified — or stop after 12 turns.
+```
+
+### Üç yargı
+
+- **Henüz sağlanmadı** — Claude çalışmaya devam eder ve değerlendiricinin gerekçesini bir sonraki tur için rehber olarak alır.
+- **Sağlandı** — goal temizlenir ve transcript'e sağlanmış bir kayıt eklenir.
+- **İmkânsız** — değerlendirici koşulun sağlanamaz olduğuna karar verir; goal temizlenir, gerekçesiyle birlikte başarısız bir kayıt eklenir ve siz onu kendiniz temizlemenize gerek kalmaz.
+
+Bir koruma daha var: Claude ilerleme kaydetmeden değerlendiriciye cevap vermeye devam ederse — birkaç tur boyunca hiç tool kullanımı yoksa — Claude Code loop'u durdurur, bir uyarı yazdırır ve goal hâlâ belirliyken kontrolü geri verir. Değerlendirme bir sonraki prompt'unuzdan sonra devam eder.
+
+### Bir goal'i temizleyen dört başarısızlık
+
+Bir tur, siz düzeltene kadar temizlenmeyecek bir şeyde başarısız olursa, Claude Code goal'i temizler ve `Goal cleared after an unrecoverable error` diye başlayıp `Run /goal again to continue` diye biten bir uyarı yazdırır. Dört başarısızlık bunu yapar:
+
+1. Claude Code kendi kimlik bilgilerini yönettiğinde bir kimlik doğrulama başarısızlığı (bir host onları yönettiğinde — masaüstü uygulaması, VS Code eklentisi, bir bulut oturumu — goal aktif kalır, çünkü host erişimi kendisi geri yükler).
+2. Tükenmiş bir kredi bakiyesi.
+3. Otomatik sıkıştırmanın temizleyemediği bir context taşması.
+4. Kullanılamayan bir model.
+
+Rate limit'ler ve aşırı yüklenmiş sunucular dahil başka her şey, goal'i aktif bırakır.
+
+### Arka plan işi ve check-in'ler
+
+Bir tur bittiğinde bir [subagent](/tr/playbook/glossary/#subagent) (ana oturumun bir alt görevi devrettiği yardımcı agent) ya da arka plan shell komutu hâlâ çalışıyorsa, o turun değerlendirmesi atlanır; değerlendirme, arka planda hiçbir şey çalışmıyorken biten bir sonraki turun sonunda gerçekleşir. Arka plan işi bittiğinde, sonucu Claude'a yeni bir tur olarak teslim edilir, böylece siz istemek zorunda kalmazsınız.
+
+Arka plan işi goal'i 30 dakika beklettiğinde bir check-in'in vadesi gelir: Claude Code çalışan görevleri listeler ve Claude'dan çıktılarını okumasını, ilerliyorlarsa beklemeye devam etmesini ve sıkışan bir şeyi düzeltmesini ya da durdurmasını ister. İlk check-in'den sonra aralık ilkinin dört katına kadar her seferinde ikiye katlanır — varsayılanla, ilkinden bir saat sonra, sonra her iki saatte bir. Check-in'ler ya bir sonraki turun sonunda gelir (etkileşimli olmayan bir oturumda tek yol), ya da etkileşimli bir oturumda, Claude Code'un boştayken kendi başına başlattığı bir turda. Prompt'larınız arasında bir goal başına en fazla üç boşta check-in olur ve üçüncüsü, siz başka bir prompt gönderene kadar boşta check-in'lerin duraklatıldığını söyler.
+
+`CLAUDE_CODE_GOAL_CHECKIN_MINUTES`, 30 dakikalık ilk aralığın yerini alır ve sonrakileri onunla ölçekler; `0` check-in'leri kapatır. Check-in'ler v2.1.234 ya da üstünü, boşta check-in'ler v2.1.236 ya da üstünü gerektirir.
+
+### Bir goal'i headless çalıştırmak
+
+`/goal`, etkileşimli olmayan modda, masaüstü uygulamasında ve Remote Control üzerinden çalışır. `-p` ile loop tek bir çağrıda tamamlanana kadar çalışır:
+
+```bash
+claude -p "/goal CHANGELOG.md has an entry for every PR merged this week"
+```
+
+Varsayılan metin çıktısıyla, çalıştırma bitene kadar hiçbir şey yazdırılmaz, bu yüzden uzun bir goal takılmış gibi görünebilir; loop çalışırken her mesajı yaymak için `--output-format stream-json --verbose` ekleyin. `Ctrl+C` onu keser.
+
+### Gereksinimler
+
+`/goal`, hook sisteminin bir parçasıdır, bu yüzden ayar dosyalarındaki hook'larla aynı workspace-trust kuralını izler. Ayar önceliğinden sonra `disableAllHooks` `true` olduğunda, ya da yönetilen ayarlarda `allowManagedHooksOnly` belirlendiğinde kullanılamaz. Her iki durumda da komut sessizce hiçbir şey yapmak yerine nedenini söyler.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Bu laboratuvar kendi etiketini eklemek yerine 1. dersinkini yeniden kullanır: orada yazdığınız
+  `scripts/loop-check.sh` ile `lesson/m17-01-start`'a karşı çalışır, böylece goal'in kendini
+  kanıtlayacağı gerçek bir kontrol olur.
+</Callout>
+
+<Lab
+  title="Laboratuvar · headless, değerlendiricinin parmak iziyle sınırlı bir goal"
+  repoTag="lesson/m17-01-start"
+  lessonId="tr/l4-master/m17-autonomy/goal"
+  steps={[
+    '`scripts/loop-check.sh` bulunan lab checkout\'unuzda, sınırlı bir goal\'i headless çalıştırın: `claude -p "/goal scripts/loop-check.sh has been run once with bash and its exit code stated in this conversation, or stop after 3 turns" --model sonnet --max-turns 8 --allowedTools Bash --output-format json`.',
+    "Zarfı `jq '{subtype, is_error, num_turns, total_cost_usd, modelUsage: (.modelUsage|keys), result}'` üzerinden geçirin ve `modelUsage`'ı okuyun: bir değil iki model görünür.",
+    'Çalıştırmayı, kontrolün çalışmasına izin vermeyecek kadar dar bir izin listesiyle tekrarlayın — `--allowedTools "Bash(bash scripts/loop-check.sh)"` — ve `--max-turns 6`. Birkaç kez çalıştırın: bazı çalıştırmalar sonuçlanır, bazıları her turu tüketip `Error: Reached max turns (6)` ile 1 çıkışıyla biter.',
+    "Yalnızca Windows'ta Git Bash'te, aynı komutu bir kez `MSYS_NO_PATHCONV=1` olmadan çalıştırın ve Claude Code onu görmeden önce shell'inizin baştaki `/goal`'a ne yaptığını görün.",
+    "Goal'i önekle tekrar belirleyin ve sonuçlandığını doğrulayın.",
+  ]}
+  expected="İlk çalıştırma subtype=success, num_turns 2 ile ve hem ana modeli hem claude-haiku-4-5'i — değerlendiriciyi — içeren bir modelUsage listesiyle biter. Dar izin listeli çalıştırma `Error: Reached max turns (6)` ile ve 1 çıkışıyla bitebilir; transcript'in kaydettiği sonuç budur."
+  checklist={[
+    'Goal kendi kendine sonuçlandı — ikinci bir prompt gönderilmedi',
+    'modelUsage iki model adlandırıyor: işçi ve değerlendirici',
+    'Oturumun sağlamakta zorlandığı bir koşul, erken durmak yerine her turu tüketebilir',
+    'Her headless goal çalıştırması bir --max-turns tavanı taşıdı',
+    "Git Bash'te /goal'ın bir yola dönüştürülmesini durduran şey MSYS_NO_PATHCONV=1",
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/03-goal/01-goal-json.txt"
+    range="2-13"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/03-goal/02-goal-max-turns.txt"
+    range="2-3"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/03-goal/03-git-bash-path-conversion.txt"
+    range="2-10"
+  />
+</Lab>
+
+İlk transcript tek bir alanda özetlenen derstir. `modelUsage`, işi yapan model olan `claude-sonnet-5`'i **ve** her turdan sonra koşulu yargılayan küçük hızlı modeli, `claude-haiku-4-5-20251001`'i listeler. İki modele ödeme yapıyorsunuz ve yalnızca biri kodunuzu okuyor.
+
+İkincisi içselleştirmeye değer başarısızlık biçimidir. O çalıştırmada dar izin listesi hiçbir turun değerlendiricinin istediği kanıtı üretmemesi anlamına geldi, bu yüzden goal loop'u `--max-turns` süreci bitirene kadar tur başlatmaya devam etti. Her seferinde bu şekilde başarısız olmaz — yeniden çalıştırıldığında oturum bazen izin verilen bir yol bulup sonuçlanır — asıl mesele bu: sınırsız bir goal'in maliyeti turların nasıl gittiğine bağlıdır, bu yüzden sizi koruyan şey tavandır.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+claude -p "/goal npm test exits 0, or stop after 8 turns" --max-turns 12 --output-format json
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+claude -p "/goal npm test exits 0, or stop after 8 turns" --max-turns 12 --output-format json
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+claude -p "/goal npm test exits 0, or stop after 8 turns" --max-turns 12 --output-format json
+```
+
+  </Fragment>
+</OSTabs>
+
+Bu dersin transcript'lerini kaydederken görülen, dokümantasyondan alınmamış bir Windows uyarısı: **Git Bash**'te, MSYS yol dönüştürmesi Claude Code onu görmeden önce baştaki `/goal …`'ı `C:/Program Files/Git/goal …`'a çevirdi. Yukarıdaki üçüncü transcript içeriden nasıl göründüğünü gösteriyor — oturum hiç komut almadı, yalnızca sözlerinize yapıştırılmış bozulmuş bir yol aldı ve tüm bunu muhtemel bir prompt injection olarak haklı biçimde reddetti. `MSYS_NO_PATHCONV=1` öneki aynı oturumda bunu düzeltti; o dosyadaki ikinci çalıştırma bunu gösteriyor (aynı prompt'un iki kez değil, önemsiz tek kelimelik bir goal'in çalıştırılması). PowerShell ve WSL böyle bir yeniden yazma göstermedi. Bunu tanınması gereken bir shell tuhaflığı olarak — ve bozulmuş bir prompt'un modele nasıl göründüğüne dair küçük bir ders olarak — ele alın, belgelenmiş bir Claude Code davranışı olarak değil.
+
+## Anti-pattern'ler
+
+**Değerlendiricinin göremediği bir koşul.** Transcript'te hiçbir şey bir sağlık kontrolü göstermiyorsa "servis sağlıklı" yargılanamaz. _Çözüm:_ kontrolü adlandırın — "bu konuşmada `curl -s localhost:3000/health` `ok` döndürdü".
+
+**Sınırsız bir goal.** Tur ya da zaman ifadesi olmadan bir goal, bir model dur diyene kadar tur başlatmaya devam eder. _Çözüm:_ her koşulu `or stop after N turns` ile bitirin ve headless çalıştırırken `--max-turns` ekleyin.
+
+**Siz uyurken `bypassPermissions`'ta bir goal.** `/goal` permission mode'unuzu değiştirmez; sınırsız bir goal'i her şeyi onaylayan bir modla birleştirmek, döngüde insan olmayan gözetimsiz bir agent'tır. _Çözüm:_ goal'i sınırlayın, bypass yerine auto mode kullanın ve etki alanını bir [worktree](/tr/playbook/glossary/#worktree)'nin (aynı deponun farklı bir branch'ini ayrı bir dizinde çalışır tutan git çalışma ağacı) içinde tutun.
+
+**Bir "imkânsız" yargısının peşinden gitmek.** Değerlendirici sağlanamaz olduğuna karar verdikten sonra aynı koşulu yeniden belirlemek, yalnızca aynı sonuca yeniden ödeme yapmaktır. _Çözüm:_ kaydedilen gerekçeyi okuyun ve koşulu ya da tarif ettiği dünyayı düzeltin.
+
+**Temizlenmiş bir goal'i hata sanmak.** `Goal cleared after an unrecoverable error`, nedenini adlandırır — kimlik doğrulama, kredi, context taşması ya da kullanılamayan bir model. _Çözüm:_ adlandırılan nedeni düzeltin ve `/goal`'ı yeniden çalıştırın.
+
+**Faturadaki ikinci modeli görmezden gelmek.** Değerlendirme her tek turda küçük hızlı modelde çalışır. Genellikle önemsiz, ama bedava değil, ve `ANTHROPIC_DEFAULT_HAIKU_MODEL`, Claude Code'un küçük hızlı modeli kullandığı **her yerde** onu değiştirir — `haiku` takma adı ve konuşma özetlemesi gibi arka plan işleri dahil. _Çözüm:_ onu yalnızca `/goal`'ı ayarlamak için değil, bilinçli olarak değiştirin.
+
+<Callout variant="changed">
+  Claude Code artık her devam ettirme yolunda — `claude --resume` seçicisi dahil — aktif bir goal'i
+  geri getiriyor; v2.1.239'dan önce seçici onu düşüren tek yoldu. Boşta check-in'ler de artık
+  prompt'larınız arasında goal başına üçle sınırlı — v2.1.246'dan önce sınırsızdılar. Claude Code
+  2.1.263 için `goal.md`'ye karşı doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/goal"
+  questionId="q1"
+  lang="tr"
+  prompt="Hangi koşul, değerlendiricinin yargılayabileceği şekilde yazılmış?"
+  options={[
+    {
+      text: '"`npm test` 0 ile çıkıyor, çıktısı bu konuşmada gösteriliyor ve src/ dışında hiçbir dosya değiştirilmiyor — ya da 10 turdan sonra dur."',
+      correct: true,
+      explanation:
+        "Ölçülebilir tek bir bitiş durumu, transcript'e düşen belirtilmiş bir kontrol, bir kısıt ve bir sınır.",
+    },
+    {
+      text: '"Kod üretime hazır."',
+      explanation:
+        'Ölçülebilir bir bitiş durumu yok ve değerlendiricinin bir yargı okuyabileceği hiçbir şey yok.',
+    },
+    {
+      text: '"Staging deploy\'u sağlıklı."',
+      explanation:
+        'Değerlendirici kendisi hiçbir şey çalıştırmaz — Claude konuşmada bir sağlık kontrolü ortaya çıkarmadıkça bu yargılanamaz.',
+    },
+    {
+      text: '"Temiz hissettirene kadar refactor etmeye devam et."',
+      explanation: 'Sınırsız ve öznel: tam olarak turları tüketen biçim.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/goal"
+  questionId="q2"
+  lang="tr"
+  prompt="Hangi başarısızlık aktif bir goal'i TEMİZLEMEZ?"
+  options={[
+    {
+      text: 'Bir rate limit ya da aşırı yüklenmiş sunucu hatası.',
+      correct: true,
+      explanation:
+        "Geçici hatalar goal'i aktif bırakır. Yalnızca kimlik doğrulama başarısızlıkları, tükenmiş kredi, temizlenememiş bir context taşması ya da kullanılamayan bir model onu temizler.",
+    },
+    {
+      text: 'Otomatik sıkıştırmanın temizleyemediği bir context taşması.',
+      explanation: 'Bu, dört kurtarılamaz hatadan biridir.',
+    },
+    {
+      text: 'Tükenmiş bir kredi bakiyesi.',
+      explanation: 'Bu, dörtten biridir.',
+    },
+    {
+      text: 'Yapılandırılmış modelin kullanılamaz olması.',
+      explanation: 'Bu, dörtten biridir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/goal"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir goal turu bittiğinde bir subagent hâlâ çalışıyor. Claude Code ne yapar?"
+  options={[
+    {
+      text: 'O turun değerlendirmesini atlar ve arka planda hiçbir şey çalışmadan biten bir sonraki turun sonunda değerlendirir.',
+      correct: true,
+      explanation:
+        "ve arka plan işi goal'i 30 dakika beklettiğinde, bir check-in Claude'dan çalışan görevlerin çıktısını okumasını ister.",
+    },
+    {
+      text: "Subagent'in şu ana kadar yazdırdığını kullanarak hemen değerlendirir.",
+      explanation: 'Değerlendirme ertelenir, kısmi arka plan çıktısı üzerinde çalıştırılmaz.',
+    },
+    {
+      text: "Değerlendirmenin çalışabilmesi için subagent'i iptal eder.",
+      explanation: 'Arka plan işi bitmeye bırakılır; sonucu yeni bir tur olarak teslim edilir.',
+    },
+    {
+      text: "Arka plan işi kurtarılamaz bir durum olduğu için goal'i temizler.",
+      explanation:
+        "Yalnızca dört belirli başarısızlık bir goal'i temizler ve bu onlardan biri değil.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/goal"
+  questionId="q4"
+  lang="tr"
+  prompt="`/goal` ne olarak uygulanmış?"
+  options={[
+    {
+      text: 'Değerlendiricisi yapılandırılmış küçük hızlı modelde çalışan, oturuma bağlı, prompt tabanlı bir Stop hook.',
+      correct: true,
+      explanation:
+        "Bu yüzden hook'larla aynı workspace-trust kuralını izler ve disableAllHooks ya da allowManagedHooksOnly onu kullanılamaz kılar.",
+    },
+    {
+      text: 'Koşulunuzu bir aralıkla yeniden gönderen bir cron görevi.',
+      explanation: 'Bu /loop. Bir goal her turdan sonra tetiklenir, saate göre değil.',
+    },
+    {
+      text: 'Tool çağrılarını otomatik onaylayan bir permission mode.',
+      explanation: "Bu auto mode; bir goal permission mode'unuzu hiç değiştirmez.",
+    },
+    {
+      text: 'Ana oturumu denetleyen bir subagent.',
+      explanation:
+        "Hiçbir subagent oluşturulmaz; küçük hızlı bir model transcript'i okur ve bir yargı döndürür.",
+    },
+  ]}
+/>
+
+**Sonraki:** `04-desktop-scheduled-tasks`, bir zamanlamayı çalıştırmanın gerçek dosyalarınıza dokunabildiği kendi makinenize koyar.

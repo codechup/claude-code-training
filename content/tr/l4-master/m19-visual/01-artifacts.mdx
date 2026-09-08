@@ -9,7 +9,7 @@ difficulty: core
 tags: ['artifact', 'paylaşım', 'yorumlar', 'görsel']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Share session output as artifacts'
@@ -27,11 +27,299 @@ lab:
   repo_tag: 'lesson/m19-01-start'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bir artifact, Claude Code'un oturumunuzdan claude.ai üzerindeki özel bir URL'e yayınladığı canlı ve etkileşimli bir web sayfasıdır. Ders yayınlama iznini (permission mode'a göre otomatik sınıflandırma ya da açık onay), ilk onaydan sonra hangi üç durumda yeniden sorulduğunu, aynı URL'e yeniden yayınlamayı ve sürümleri, `/artifacts` ile başka bir oturumdan bulup ekleme akışını, plan bazlı paylaşım seçeneklerini (özel, kurum içi, herkese açık bağlantı) ve yalnızca kurum içi paylaşılan artifact'lerde çalışan yorumları anlatır. Yorumlarda tek kural nettir: Claude sadece **Send to Claude** ya da `@claude` ile etkinleştirilmiş bir thread'e yanıt verebilir veya onu çözebilir. MCP connector çağrılarının görüntüleyenin kendi hesabıyla çalıştığı, bu yüzden connector kullanan bir sayfanın hiçbir planda herkese açık bağlantı olarak paylaşılamadığı ayrıca ele alınır. Laboratuvar, yayınlamanın bir adım öncesinde durur: sayfa dosyası gerçekten üretilir, yayınlama kararı okuyucuya bırakılır.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur.
+- Bir artifact'in (Claude'un bir oturumdan yayınladığı, kendi URL'i olan canlı bir web sayfası) ne olduğunu — ve ne olmadığını — söylemek ve yayınlanmaya değer çıktıları seçmek.
+- Bir oturumdan bir sayfa yayınlamak, onu aynı URL'e yeniden yayınlamak ve daha sonra `/artifacts` ya da `Ctrl+]` ile tekrar açmak.
+- Bir artifact'i, URL'sini Claude'a vererek başka bir oturumdan güncellemek.
+- Bir paylaşım kitlesi seçmek ve MCP connector çağıran bir artifact'in neden asla herkese açık bir bağlantı olamayacağını açıklamak.
+- Kurum içinde paylaşılan bir artifact'teki yorum thread'lerini Claude'a okutmak ve tam olarak hangi thread'lere yanıt verebileceğini bilmek.
+- Sayfa kısıtları içinde çalışmak: tek, kendi kendine yeterli bir sayfa, sıkı bir CSP, izin verilen dört script CDN'i, 16 MiB.
+
+**Ön koşullar.** Pro, Max, Team ya da Enterprise planında `/login` ile giriş yapılmış bir oturum, Claude Code 2.1.183 ya da üzeri ve model sağlayıcısı olarak Anthropic API. Bir API anahtarı, bir gateway [token](/tr/playbook/glossary/#token)'ı (bir dil modelinin metni işlerken kullandığı en küçük birim) ya da bir bulut sağlayıcısının kimlik bilgileriyle kimliği doğrulanmış bir oturum yayınlayamaz. Yorumlar 2.1.221 ya da üzerini ve bir Team ya da Enterprise planını gerektirir, çünkü yorumları yalnızca bir kurum içinde paylaşılan bir artifact alır.
+
+<WhenNotToUse>
+  Bir artifact, yapılan işin bir yakalamasıdır, bir dağıtım (deployment) değil. Arka ucu olmayan tek
+  bir kendi kendine yeterli sayfadır: birinin bir forma yazdığını saklayamaz, ikinci bir rota
+  sunamaz, göreli bir bağlantıyı çözemez ve biri onu görüntülerken dışarıdaki veriye tek yolu bir
+  MCP connector çağrısıdır. Barındırılan bir iç araca, gerçek kalıcılığa, kendi kimlik doğrulamanıza
+  ya da kurumunuzun artifact saklama politikasından daha uzun yaşaması gereken bir sayfaya
+  ihtiyacınız olduğunda kendi altyapınıza yönelin. Ve terminal metninin zaten doğru ortam olduğu
+  durumlarda onu tamamen atlayın — biçimlendirilmiş bir sayfa, aynı cevabın metin hâline göre
+  belirgin biçimde daha fazla çıktı token'ı tüketir ve data URI olarak gömülü satır içi görseller
+  bunun en kötü örneğidir.
+</WhenNotToUse>
+
+## Kavram
+
+### Neyin yayınlandığı
+
+Bir artifact, Claude Code'un oturumunuzdan `claude.ai` üzerindeki özel bir URL'e yayınladığı canlı ve etkileşimli bir web sayfasıdır. Onu bir tarayıcıda açarsınız; oturum devam ettikçe yerinde güncellenir. Çıktı bir sayfaya uygun olduğunda Claude kendiliğinden birini yayınlayabilir, ya da gündelik dille bir tane isteyebilirsiniz.
+
+Bu dersin örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni) en iyi işleyen biçimdir — çıktıyı adlandırın, biçimlendirmeyi değil:
+
+```text
+Make an artifact that walks through this PR with the diff annotated inline.
+```
+
+Bir konum belirtmediğiniz sürece Claude, sayfayı projenizin dışındaki geçici bir dizinde bir HTML ya da Markdown dosyasına yazar, sonra o dosyayı yayınlar. Yayınlanan dosya `.html`, `.htm` ya da `.md` olmalıdır; Markdown biçimlendirilmiş HTML olarak render edilir.
+
+İyi adaylar hep aynı biçimdedir: satır satır okumaktansa bakmanın daha kolay olduğu çıktı. Satır içi açıklamalı bir [diff](/tr/playbook/glossary/#diff) (bir dosyadaki değişikliklerin satır satır gösterimi). Oturumun zaten çektiği verilerden kurulmuş bir dashboard. Her birinin altında tek satırlık bir ödünleşimle yan yana dört düzen seçeneği. Uzun bir görev çalışırken dolan bir inceleme zaman çizelgesi. Claude'un çalışırken işaretlediği bir kontrol listesi.
+
+### Yayınlamak ve gerektirdiği izin
+
+Yeni bir artifact yayınlamak oturumunuzun [permission mode](/tr/playbook/glossary/#permission-mode)'undan (Claude'un bir eylemi çalıştırmadan önce sizden onay isteyip istemediğini belirleyen ayar) geçer. **auto** modda sizi bir onay istemiyle karşılamak yerine sınıflandırıcı yayını inceler, bu yüzden bir sayfa siz hiçbir istem görmeden ortaya çıkabilir. **manual** ve **accept edits** modlarında Claude Code; dosyanın adını, sayfa başlığını ve dosyanın barındırılmak üzere claude.ai'a yüklendiği gerçeğini belirterek sorar — siz paylaşana kadar size özeldir.
+
+Bir kez onayladıktan sonra Claude sormadan yeniden yayınlar. Üç durumda tekrar sorar:
+
+1. Claude, sayfa için connector çağrıları gibi bir çalışma zamanı yeteneği (runtime capability) tanımladığında.
+2. O zamandan beri artifact'i herkese açık paylaştıysanız.
+3. O zamandan beri onu belirli kişilerle ya da kurumunuzla paylaştıysanız — görüntüleyenlerin göreceği sürüm olarak en yenisi seçili şekilde.
+
+İlk yayından sonra Claude URL'i yazdırır ve tarayıcınız sayfayı açar. `Ctrl+]` terminalden en son artifact'i her zaman yeniden açar. Tarayıcının kendiliğinden açılmasını durdurmak için `CLAUDE_CODE_ARTIFACT_AUTO_OPEN=0` ayarlayın.
+
+Claude, sayfanın başlığını ve tarayıcı sekmesi simgesi olarak kullanılan emojiyi seçer. İkisi de `claude.ai/code/artifacts` galerinizde ve paylaşılan bağlantılarda görünür; bu yüzden belirli bir başlık ya da simge önemsiyorsanız açıkça isteyin.
+
+### Güncellemek, sürümler ve diğer oturumlar
+
+Claude'dan sayfayı gözden geçirmesini isteyin, altındaki dosyayı düzenler ve aynı URL'e yeniden yayınlar. Sayfayı açık tutan herkes değişikliği yerinde görür. Her yayın bir sürüm hâline gelir ve sayfa başlığındaki **Share** kontrolü hangi sürümü görüntüleyenlerin göreceğini seçer.
+
+Yeni bir oturum sizin artifact'inizden haberdar değildir. Onu başka bir yerden güncellemek için ya URL'i prompt'unuzda verin ya da `/artifacts` ile ekleyin; bunlardan biri olmadan oturum bunun yerine _yeni_ bir artifact oluşturur:
+
+```text
+Update https://claude.ai/code/artifact/5fbea6f3-... with today's numbers.
+```
+
+`/artifacts`, claude.ai hesabınızdan okunarak sahip olduğunuz ve sizinle paylaşılan her artifact'i listeler — bu yüzden bağlantı terminalden kaybolduğunda bile taze bir oturumda ve `/clear` sonrasında hâlâ çalışır. Birini seçip açmak için `o`'ya, bağlantısını kopyalamak için `c`'ye ya da oturuma eklemek için `Enter`'a basın. Komut 2.1.208 ya da üzerini gerektirir; `Enter` ile eklemek 2.1.216 gerektirir (öncesinde `Enter` onu tarayıcıda açardı).
+
+### Paylaşım
+
+Yeni bir artifact yalnızca size görünür. Onu sayfa başlığındaki **Share** kontrolünden paylaşırsınız ve neyi seçebileceğiniz plana bağlıdır:
+
+| Kitle                                                                   | Hangi planlarda                                                                                                            |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Yalnızca size özel                                                      | Her plan — yeni bir artifact için varsayılan                                                                               |
+| Kurumunuzdaki belirli kişiler ya da herkes                              | Team ve Enterprise                                                                                                         |
+| İnternetteki herkesin, giriş yapmadan açabileceği herkese açık bağlantı | Pro ve Max (oradaki tek paylaşım seçeneği); Team ve Enterprise'da yalnızca bir Owner **External sharing**'i açtıktan sonra |
+
+Team ve Enterprise'da ayrıca birini **viewer**'dan **editor**'e yükseltebilirsiniz. Bir editor, tam olarak sizin başka bir oturumdan güncellediğiniz şekilde yeniden yayınlar: Claude'a URL'i verir ya da `/artifacts`'ten ekler, Claude da mevcut içeriği çeker ve onların değişiklikleriyle yeniden yayınlar.
+
+Kurumunuzun içindeki görüntüleyenler sayfayı kimin yayınladığını görür. Giriş yapmadan herkese açık bir bağlantı açan ya da kurumunuzun dışından bakan bir görüntüleyen, adınız yerine `Content is user-generated and unverified.` görür.
+
+### Yorumlar ve Claude'un yanıtlayabileceği thread'ler
+
+Bir artifact'i **kurumunuz içinde** paylaştığınız kişiler sayfada yorum thread'leri bırakabilir. Claude onları iki durumda okur: siz URL'i verip istediğinizde, ya da artifact'i düzenleyebilen biri thread'de **Send to Claude**'u kullanarak ya da içinde `@claude`'dan bahsederek bir yorumu Claude'a gönderdiğinde. Bu ikisinden biri thread'i _etkinleştirir_ (activate eder).
+
+Bu ayrım kuralın kendisidir: **Claude yalnızca etkinleştirilmiş bir thread'e yanıt verebilir ya da onu çözebilir (resolve).** Diğer her thread, biri sayfada onu çözene kadar açık kalır. Yanıtlar, siz aracılığıyla Claude'a atfedilmiş olarak görünür.
+
+Oturumunuz bir artifact yayınladıktan sonra, oturum çalıştığı sürece o artifact'i yorumlar için izler (2.1.228 ya da üzeri). Gönderilen bir yorum geldiğinde ne olacağı permission mode'unuza bağlıdır: Claude ya kendiliğinden yanıtlar — `Auto-replied to comment thread on Artifact: <ad>` görürsünüz — ya da size `Comments are waiting on Artifact: <ad>` diyerek onay ister, ya da [plan mode](/tr/playbook/glossary/#plan-mode)'daysa (Claude'un değişiklik yapmadan önce yalnızca okuyup bir plan sunduğu mod) siz plan mode'dan çıkana kadar bekler. Claude ayrıca bir artifact üzerinde bir saat içinde 60 gönderilmiş yorumu ya da etkinleştirmeyi işledikten sonra o artifact'te otomatik yanıtlamayı durdurur ve o saatin yorumları eskidikçe yeniden başlar.
+
+`/tasks`, oturumun izlediği her artifact'i bir canlı güncelleme görevi olarak listeler. Yanıtları durdurmanın üç yolu vardır: boşta bir istemde bir kez `Ctrl+C`'ye basmak (bir sonraki mesajınıza kadar izlenen her artifact'te duraklatır); görevi `/tasks`'te durdurmak (yeniden başlamasını isteyene kadar o artifact'te durur ve yeniden yayınlamayı ve oturumu sürdürmeyi atlatır); ya da üç saniye içinde iki kez `Ctrl+X Ctrl+K`'ye basmak, her arka plan [subagent](/tr/playbook/glossary/#subagent)'ını (ana oturumdan ayrı, kendi bağlamında çalışan yardımcı agent) durduran tuş kombinasyonu — bu, Claude'dan devam etmesini isteyerek geri alınamaz.
+
+Herkese açık artifact'ler hiç yorum almaz. Sayfa `Comments aren't available while this Artifact is shared publicly.` yazar ve zaten thread'leri olan bir artifact'i herkese açık bir bağlantıya çevirmek için önce thread'leri silersiniz.
+
+### Canlı veri: yayınlanan bir sayfa neyi çağırabilir
+
+Artifact dokümantasyonunun tarif ettiği tek çalışma zamanı yeteneği, claude.ai hesabınızdaki **MCP connector**'ları çağırmaktır; böylece sayfa, onu kuran oturumdan kalma bir anlık görüntü yerine her açıldığında güncel veriyi render eder (2.1.209 ya da üzeri). Claude, sayfanın hangi connector'ları çağırabileceğini yayınlamanın bir parçası olarak tanımlar ve sayfa bu tanımın dışında hiçbir şeyi çağıramaz. Claude Code'da yapılandırılmış yerel [MCP server](/tr/playbook/glossary/#mcp-server)'lar — mesela `.mcp.json`'daki sunucular — Claude sayfayı _kurarken_ veri besleyebilir, ama yayınlanan sayfa onları çağıramaz.
+
+İçselleştirmeye değer kısım, çağrının kimin hesabında çalıştığıdır: **sizin değil, görüntüleyenin.** Aynı dashboard'u açan iki kişi farklı satırlar görebilir. Her görüntüleyene sayfanın ilk connector çağrısından önce izin sorulur ve reddeden ya da o connector'a hiç bağlanmamış bir görüntüleyen sayfayı yine de görür — yalnızca canlı bölümleri olmadan. Claude'dan her canlı bölüme gereken connector'ı adlandıran bir yedek mesaj koymasını isteyin, böylece o görüntüleyenler boş bir kutu yerine neye bağlanacaklarını görsün.
+
+Bir connector'a bağlı bir sayfa görüntüleyenin kendi hesabına bağlı olduğu için, hiçbir planda herkese açık bir bağlantıya paylaşılamaz.
+
+### Sayfa kısıtları
+
+Claude Code, dosyanızı bir HTML kabuğuna sarar ve onu [sandbox](/tr/playbook/glossary/#sandbox)'lanmış (bir sürecin dosya sistemi ve ağ erişimini işletim sistemi düzeyinde kısıtlayan izole çalışma ortamı) bir `*.claudeusercontent.com` kaynağından, sıkı bir İçerik Güvenlik Politikası (Content Security Policy, CSP) altında sunar. Bu, sayfanın ne yapabileceğini şekillendirir:
+
+| Kısıt                | Etki                                                                                                                                                                                                                                                                                                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Dış istekler         | Google Fonts'tan yazı tipleri ve yalnızca dört genel CDN sunucusundan script'ler: `cdnjs.cloudflare.com`, `cdn.jsdelivr.net` (`/npm/` gibi belirli yollar), `cdn.tailwindcss.com`, `code.jquery.com`. Her dış görsel ve diğer tüm dış script, stylesheet ve yazı tipleri engellenir; `fetch`, XHR ve WebSocket yalnızca sayfanın kendi kaynağına ve Google Fonts sunucularına ulaşır |
+| Arka uç yok          | Statik sayfa: form girdisini saklayamaz ya da görüntüleyenleri kimlik doğrulayamaz. Görüntüleme anında veri çekmenin tek yolu connector çağrılarıdır                                                                                                                                                                                                                                 |
+| Tek sayfa            | Göreli bağlantılar çözülmez — çok bölümlü içerik sayfa içi anchor'lar kullanır                                                                                                                                                                                                                                                                                                       |
+| Kaynak dosya türleri | `.html`, `.htm` ya da `.md`                                                                                                                                                                                                                                                                                                                                                          |
+| Render edilen boyut  | 16 MiB ya da altı; büyük gömülü görseller boyut hatasının olağan nedenidir                                                                                                                                                                                                                                                                                                           |
+
+Claude, bir artifact kurarken yerleşik bir tasarım [skill](/tr/playbook/glossary/#skill)'i (belirli bir görev için Claude'a verilen paketlenmiş talimat kümesi) de uygular (2.1.182 ya da üzeri) ve bu skill önce projenizde var olan bir tasarım sistemi arar. Renklerinizi, yazı tiplerinizi ve boşluk kurallarınızı skill'in bulacağı bir yere kaydedin — proje `CLAUDE.md`'si ya da bir tema dosyası — ve artifact'ler ürününüzün markalamasıyla çıkar. Tasarım sisteminiz Claude'un kendi seçimlerinin önüne geçer, prompt'unuz da ikisinin önüne geçer.
+
+## Uygulamalı laboratuvar
+
+Bu laboratuvar bilinçli olarak yayınlamanın bir adım öncesinde durur. Yayınlamak bir sayfayı hesabınız altında claude.ai'a yüklemektir ve bu sizin vereceğiniz bir karardır, bir dersin sizin yerinize atacağı bir adım değil — bu yüzden bir artifact'in yapıldığı tam dosyayı siz kurar, yerelde bakarsınız ve isterseniz sonra kendiniz yayınlarsınız.
+
+<Lab
+  title="Laboratuvar · sayfayı kurun, sonra kendiniz yayınlayın"
+  lessonId="tr/l4-master/m19-visual/artifacts"
+  repoTag="lesson/m19-01-start"
+  steps={[
+    'Henüz yapmadıysanız laboratuvar deposunu klonlayın, sonra `git checkout lesson/m19-01-start`.',
+    'Örnek veriyi getirin; şu anda solution tag’inde duruyor: `git checkout lesson/m19-01-solution -- artifacts/`, sonra `artifacts/task-activity.csv` dosyasına bakın — 30 günlük günlük görev sayıları.',
+    'Sayfayı yayınlamadan kurun, böylece hiçbir şey yüklenmeden önce onu okuyabilirsiniz: aşağıdaki transcript’teki [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) komutu çalıştırın; bu komut `Artifact` tool’unu açıkça reddeder.',
+    '`out/task-activity.html` dosyasını bir tarayıcıda açın. Hiçbir ağ erişimi olmadan render edildiğini doğrulayın — pratikte “kendi kendine yeterli sayfa” bunu anlamına gelir.',
+    'Şimdi bunu etkileşimli bir oturumda gerçekten yapın: `claude`, sonra “Publish artifacts/task-activity.csv as an artifact: created vs completed over the 30 days, plus the overdue trend.” diye isteyin. Yayınlama istemini onaylayın ve dosya, başlık ve yükleme hakkında ne söylediğini okuyun.',
+    'Bir değişiklik isteyin — “add the overdue count as a second panel and republish” — ve URL’in değişmediğini, sayfanın yerinde güncellendiğini doğrulayın.',
+    '`/clear` çalıştırın, sonra `/artifacts`. Sayfanızı listede bulun, eklemek için `Enter`’a basın ve Claude’dan üzerinde ne olduğunun tek satırlık bir özetini isteyin.',
+  ]}
+  expected="out/task-activity.html vardır ve çevrimdışı render edilir. Etkileşimli yayınlama bir claude.ai/code/artifact/... URL’i yazdırır ve onu açar. Yeniden yayınlama aynı URL’i yeniden kullanır. /clear sonrasında /artifacts sayfayı listeler ve eklemek, taze bir oturumun onun hakkında konuşmasını sağlar."
+  checklist={[
+    'Headless çalıştırma kendi kendine yeterli bir HTML dosyası yazdı ve hiçbir şey yayınlamadı',
+    'Etkileşimli yayınlama istemi dosyayı, başlığı ve claude.ai’a yüklemeyi adlandırdı',
+    'Yeniden yayınlama aynı URL’e indi ve ikinci bir sürüm üretti',
+    '/clear sonrasında /artifacts sayfayı listeler ve Enter onu ekler',
+    'Sayfa hâlâ size özel — henüz paylaşmadınız',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m19-visual/01-artifacts/01-lab-setup.txt"
+    range="2-14"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m19-visual/01-artifacts/02-build-page-headless.txt"
+    range="5-11"
+  />
+</Lab>
+
+Bu kayıtla ilgili iki şey düşünmeye değer. Bu, `--disallowedTools "Artifact"` ile çalıştırılan bir `claude -p` çalıştırmasıdır, yani yayınlama yolu oturum başlamadan önce kapatılmıştı — modelin yerel bir dosya yazmaktan başka seçeneği yoktu. Ve yazdığı dosya, tam olarak bir artifact'in yapıldığı malzemedir: tek bir HTML sayfası, satır içi bir SVG grafik, hiçbir dış istek yok. Onu yayınlamak, önce okuduğunuz bir istemle, etkileşimli olarak atılan bir adım daha.
+
+5'ten 7'ye kadar olan adımlar doğaları gereği etkileşimlidir — bir izin diyaloğu, açılan bir tarayıcı, `o`/`c`/`Enter` içeren bir TUI listesi. Bir diyaloğun dürüst bir [transcript](/tr/playbook/glossary/#transcript)'i (kaydedilmiş gerçek bir oturum dökümü) olamayacağından, bunlar karşılaştırılacak bir çıktı yerine çalıştırılacak komutlar olarak yazılmıştır.
+
+## Anti-pattern'ler
+
+**Yeni bir oturumdan bir artifact yayınlamak ve bağlantının neden değiştiğini merak etmek.** Taze bir oturumun artifact'inizin var olduğundan haberi yoktur; URL ya da bir `/artifacts` eklemesi olmadan ikinci bir sayfa oluşturur. _Düzeltme:_ URL'i prompt'a yapıştırın ya da önce artifact'i `/artifacts` ile ekleyin.
+
+**Sayfadaki bir formun bir şeyi kaydetmesini beklemek.** Arka uç yoktur. Bir artifact üzerindeki bir gönder düğmesi hiçbir şey saklamaz ve bir sonraki görüntüleyen boş bir form görür. _Düzeltme:_ durumun hayatta kalması gerekiyorsa onu gerçek bir yere koyun; yalnızca sonucu oturumunuza geri istiyorsanız terminale yapıştırabileceğiniz bir "prompt olarak kopyala" kontrolü isteyin.
+
+**Her zaman kullandığınız CDN'den bir kütüphane yüklemek.** `cdnjs.cloudflare.com`, `cdn.jsdelivr.net`, `cdn.tailwindcss.com` ve `code.jquery.com` dışındaki her şey CSP tarafından sessizce engellenir ve engellenen bir kütüphanenin yedeği yoktur — sayfanın etkileşimli yarısı basitçe çalışmaz. _Düzeltme:_ dört sunucudan birini adlandırın, tam bir sürüm sabitleyin ve gerisini satır içi yapın.
+
+**Bir connector'a bağlı bir dashboard kurup sonra onu herkese açık paylaşmaya çalışmak.** Connector çağıran bir sayfa asla herkese açık bir bağlantı olamaz, çünkü her çağrı görüntüleyenin kendi hesabında çalışır. _Düzeltme:_ onu kurumunuz içinde paylaşın ya da herkese açık sürüm için statik bir anlık görüntü yayınlayın.
+
+**Claude'un her yorumu yanıtlayacağını varsaymak.** Claude yalnızca birinin **Send to Claude** ya da bir `@claude` bahsiyle etkinleştirdiği thread'lere yanıt verebilir ya da onları çözebilir. Kimsenin etkinleştirmediği thread'ler görmezden gelinmiş gibi orada durur. _Düzeltme:_ inceleyenlerinize bir thread'i nasıl etkinleştireceklerini söyleyin ve etkinleştirilmemiş olanları kendiniz okuyun.
+
+**Paylaşılan bir artifact'i denetime dayanıklı bir kayıt gibi görmek.** Artifact'lerin bir kurum saklama politikası vardır ve Owner'lar onları Compliance API üzerinden silebilir. _Düzeltme:_ kalıcı kopyayı repository'de tutun; artifact onun görünümüdür.
+
+<Callout variant="changed">
+  Artifact'leri kapatan ayar `"enableArtifact": false`'tur; eski `"disableArtifact": true` hâlâ
+  çalışır ama kullanımdan kaldırılmıştır (deprecated). 2.1.242'de iki ayrı şey değişti: daha yüksek
+  önceliğe sahip bir ayar dosyası, daha düşük öncelikli bir dosya `"enableArtifact": false`
+  ayarladıktan sonra artifact'leri artık geri açamaz; ayrıca project ve local ayarlar bu anahtara
+  ancak bu sürümden itibaren itibar eder.
 </Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m19-visual/artifacts"
+  questionId="q1"
+  lang="tr"
+  prompt="Dün bir artifact yayınladınız. Bugün, yepyeni bir oturumda, Claude'dan ona bir grafik eklemesini istiyorsunuz. Ne olur?"
+  options={[
+    {
+      text: 'Claude aynı URL’e yeniden yayınlar — artifact’ler oturuma değil hesabınıza bağlıdır.',
+      explanation: 'Yeni bir oturumun, siz vermeden artifact’e dair hiçbir referansı yoktur.',
+    },
+    {
+      text: 'Ona eski URL’i vermediğiniz ya da /artifacts ile eklemediğiniz sürece Claude yeni bir URL’de yeni bir artifact oluşturur.',
+      correct: true,
+      explanation:
+        'Tam olarak böyle. URL’i prompt’ta verin ya da önce artifact’i /artifacts listesinden ekleyin.',
+    },
+    {
+      text: 'Claude reddeder, çünkü bir artifact’i yalnızca onu yayınlayan oturum güncelleyebilir.',
+      explanation:
+        'URL verildiğinde herhangi bir oturum — Team ya da Enterprise’da herhangi bir editor — onu güncelleyebilir.',
+    },
+    {
+      text: 'Claude sizden orijinal yayınlama istemini yeniden onaylamanızı ister.',
+      explanation:
+        'Yeniden onay yetenek, herkese açık paylaşım ya da kitle değişikliğiyle tetiklenir, yeni bir oturumla değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m19-visual/artifacts"
+  questionId="q2"
+  lang="tr"
+  prompt="Dashboard artifact’iniz açık [pull request](/tr/playbook/glossary/#pull-request)’leri (bir branch'teki değişikliklerin gözden geçirilip ana koda alınması için açılan istekler) bir GitHub connector’ı üzerinden çekiyor. Bir meslektaşınız onu açıyor ve canlı bölüm boş. En olası neden nedir?"
+  options={[
+    {
+      text: 'Connector token’ınız süresi doldu, bu yüzden kimse veriyi göremiyor.',
+      explanation:
+        'Sayfa asla sizin bağlantınızı kullanmaz — çağrılar görüntüleyen hesap üzerinden çalışır.',
+    },
+    {
+      text: 'Kendi hesaplarında o connector’ı bağlamamışlar ya da izin isteğini reddetmişler.',
+      correct: true,
+      explanation:
+        'Connector çağrıları görüntüleyenin hesabında çalışır. Claude’dan connector’ı adlandıran bir yedek eklemesini isteyin, böylece neyi bağlayacaklarını bilsinler.',
+    },
+    {
+      text: 'CSP connector çağrısını engelledi.',
+      explanation: 'Connector çağrıları claude.ai üzerinden geçer, ağ çağrısını o kendisi yapar.',
+    },
+    {
+      text: 'Connector’a bağlı artifact’ler yalnızca yazar için çalışır.',
+      explanation:
+        'Connector’ı bağlı olan ve izin isteğini onaylayan her görüntüleyen için çalışırlar.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m19-visual/artifacts"
+  questionId="q3"
+  lang="tr"
+  prompt="Claude hangi yorum thread’ine yanıt verebilir?"
+  options={[
+    {
+      text: 'Kurumunuzla paylaştığınız bir artifact üzerindeki herhangi bir thread.',
+      explanation:
+        'Paylaşım yorumları mümkün kılar; bir thread’i Claude tarafından yanıtlanabilir yapmaz.',
+    },
+    {
+      text: 'Artifact’i düzenleyebilen birinin Send to Claude ile Claude’a gönderdiği ya da içinde @claude’dan bahsettiği bir thread.',
+      correct: true,
+      explanation:
+        'Etkinleştirme hem yanıtlama hem de çözme için kapıdır. Geri kalan her şey bir kişiyi bekler.',
+    },
+    {
+      text: 'auto permission mode’dayken herhangi bir thread.',
+      explanation:
+        'Permission mode, Claude’un size sormadan gönderi atıp atmayacağına karar verir — hangi thread’lere dokunabileceğine değil.',
+    },
+    {
+      text: 'Herkese açık paylaşılan bir artifact’teki herhangi bir thread.',
+      explanation: 'Herkese açık paylaşılan bir artifact hiç yorum almaz.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m19-visual/artifacts"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir API anahtarıyla kimliği doğrulanmış bir oturum, Claude’dan bir artifact yayınlamasını istiyor. Ne olur?"
+  options={[
+    {
+      text: 'Normal şekilde yayınlar; API anahtarı geçerli bir kimlik bilgisidir.',
+      explanation:
+        'Artifact’ler, /login ile giriş yapılmış bir claude.ai hesabına bağlı bir oturum gerektirir.',
+    },
+    {
+      text: 'Claude yerel bir HTML dosyası yazar ya da yayınlayamayacağını söyler.',
+      correct: true,
+      explanation:
+        'Bu, bir kullanılabilirlik gereksinimi karşılanmadığında belgelenmiş davranıştır — API anahtarları, gateway token’ları ve bulut sağlayıcı kimlik bilgilerinin hepsi bu koşulu karşılamaz.',
+    },
+    {
+      text: 'Yayınlar, ama sayfa herkese açıktır.',
+      explanation: 'Yeni bir artifact asla herkese açık değildir; yazarına özel başlar.',
+    },
+    {
+      text: 'Sizi giriş yapmaya yönlendirir, sonra yayınlar.',
+      explanation:
+        'Artifact tool’u için satır içi bir giriş adımı yoktur; önce /login ile giriş yapın.',
+    },
+  ]}
+/>
+
+**Sırada:** `02-design-canvas`, aynı yayınlama makinesini farklı bir iş için kullanır — `/design`, bitmiş bir sayfa yerine düzenlenebilir artboard'lardan oluşan bir tuval taslağı çıkarır ve bu sitenin kendi görsel tasarımı örnek çalışma olur.

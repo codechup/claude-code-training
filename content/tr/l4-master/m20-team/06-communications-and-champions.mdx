@@ -1,15 +1,15 @@
 ---
-title: 'Ekibe yaymak: başlangıç kitleri, champion’lar ve onboarding'
-description: 'Hiçbir ayarın yapamayacağı yayılım işi: yeni katılanın clone’layarak aldığı bir başlangıç kiti, kitin yerine ulaştığını kanıtlayan bir doğrulama adımı, bir champion’ın hazır tutması gereken destek cevapları ve bunların dürüst sınırları.'
+title: 'Bir takıma yaygınlaştırmak: kitler, savunucular ve onboarding'
+description: 'Hiçbir settings’in yapmadığı yaygınlaştırma işi: yeni katılan birinin klonlayabileceği bir başlangıç kiti, ulaştığını kanıtlayan bir doğrulama adımı, bir savunucunun hazır bulundurması gereken destek yanıtları ve hepsinin vaat edebileceğinin dürüst sınırları.'
 level: 4
 module: 'm20-team'
 order: 6
 duration_min: 10
 difficulty: advanced
-tags: ['team', 'rollout', 'onboarding', 'adoption']
+tags: ['takım', 'yaygınlaştırma', 'onboarding', 'benimseme']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Set up Claude Code for your organization'
@@ -35,8 +35,232 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders bir Claude Code yayılımının ayarlarla halledilemeyen kısmını anlatır. Resmî yönetici yolu sırasıyla beş karardır: API sağlayıcısı, ayarların cihazlara ulaşma biçimi, neyin dayatılacağı, kullanım görünürlüğü ve veri işleme. Geriye kalan iş, geliştiriciyi çalışan bir kurulumdan verimli bir ilk haftaya taşımaktır. Bunun aracı, repository'ye commit edilen üç dosyalık bir başlangıç kitidir: kısa bir `CLAUDE.md`, `.claude/settings.json` ve bir iki proje skill'i. Kitin kısıtlamaları (deny kuralları) hemen geçerlidir, kolaylıkları (allow kuralları ve `extraKnownMarketplaces`) ise klasöre güvenilene kadar beklediği için onboarding metninde açık bir "bir kez etkileşimli oturum açıp trust diyaloğunu kabul edin" adımı gerekir. Ders ayrıca gerçekte gelen dört destek sorusunun cevaplarını ve adoption ölçümünün — özellikle contribution metrics ve leaderboard'ların — dürüst sınırlarını verir. Laboratuvarda gerçek bir başlangıç kiti kurulup headless olarak yüklendiği kanıtlanır.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.
+- Yeni katılan birinin klonlayarak aldığı bir depo başlangıç kiti — `CLAUDE.md`, `.claude/settings.json`, bir ya da iki proje [skill](/tr/playbook/glossary/#skill)'i (`SKILL.md` ile tanımlanan yeniden kullanılabilir talimat paketi) — bir araya getirmek ve yüklendiğini [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) olarak kanıtlamak.
+- Bir yaygınlaştırma için belgelenen doğrulama adımını çalıştırmak ve yanıtı okumak.
+- Gerçekte gelen dört destek sorusunu yanıtlamak: bir giriş hatası, eksik bir kurumsal seçenek, bir "henüz organizasyonunuza eklenmediniz" mesajı ve dört farklı sınır mesajının her biri.
+- Ölçtüğü davranışı bozmayan benimseme ölçütleri seçmek.
+- Analiz panolarının yaygınlaştırmanın işe yarayıp yaramadığı hakkında size neyi söyleyip neyi söyleyemeyeceğini belirtmek.
+
+**Ön koşullar.** Bundan önceki beş ders: zaten settings'i, bir ilkesi, bir [plugin](/tr/playbook/glossary/#plugin) (Claude Code'a hook, skill, subagent ve MCP server gibi bileşenler ekleyen paket) kaynağı, bir inceleme kapısı ve bir bütçesi olan bir şeyi yaygınlaştırıyorsunuz.
+
+<WhenNotToUse>
+  Bu ders bir benimsemenin yumuşak yarısıdır ve taklit edilmesi en kolay olan yarıdır. Araçlar hazır
+  değilse — paylaşılan settings yok, bir ilke kararı yok, bir bütçe yok — bir lansman iletişimi
+  hazırlık yaratmaz, bir destek kuyruğu yaratır. Beş kişilik bir takım için savunucu yapısını
+  tamamen atlayın, orada yanıt bir öğleden sonra bir araya oturmaktır. Ve buradaki her benimseme
+  sayısına kuşkuyla yaklaşın: bir lider tablosu bir hedef hâline geldiği an, benimsemeyi ölçmeyi
+  bırakır ve insanların üzerinde görünme isteğini ölçmeye başlar. Bir lider tablosunun sonuçları
+  iyileştirdiğini söyleyen resmi bir rehberlik yoktur ve bu sayfa böyle bir şey iddia etmiyor.
+</WhenNotToUse>
+
+## Kavram
+
+### Yaygınlaştırma bir duyuru değil, bir karar listesidir
+
+Resmi yönetici yolu sırayla beş karardır: **API sağlayıcınızı seçin**; **settings'in cihazlara nasıl ulaştığına karar verin**; **neyi zorlayacağınıza karar verin**; **kullanım görünürlüğünü kurun**; **veri işlemeyi gözden geçirin**. Ardından, ve yalnızca ardından, doğrulayın ve onboard edin. Bu modüldeki her önceki ders bu satırlardan biriydi. Geriye kalan, dokümantasyonun kendisinin bir settings'e değil bir kişiye devrettiği kısımdır: bir geliştiriciyi çalışan bir kurulumdan üretken bir ilk haftaya götürmek.
+
+### Başlangıç kiti
+
+Commit'lenmiş üç dosya, bir wiki sayfasının yapıyormuş gibi davrandığı onboarding'in çoğunu yapar:
+
+- **`CLAUDE.md`** — bu projenin nasıl çalıştığı: test ve lint komutları, kurallar, bir gözden geçirenin zaten soracağı şeyler. Her çalıştırmada okunur, bu yüzden kısa tutun; uzun talimatlar skill'lere aittir.
+- **`.claude/settings.json`** — 01. dersteki allow / ask / deny listeleri, artı takımın varsa [hook](/tr/playbook/glossary/#hook)'ları (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan komut) ve `extraKnownMarketplaces`'i.
+- **Bir ya da iki proje skill'i** — bu deponun tekrarlayan görevleri, bir kez yazılmış: bir [pull request](/tr/playbook/glossary/#pull-request) (bir branch'teki değişikliklerin gözden geçirilip ana koda alınması için açılan istek) [checklist](/tr/playbook/glossary/#checklist)'i (bir görevin tamamlandığını doğrulamak için sırayla işaretlenen madde listesi), bir yayın adımı, bir geçiş tarifi.
+
+Yeni katılan biri depoyu klonlar ve üçüne de sahip olur. "İşte Claude Code rehberimizin bir bağlantısı" ile "checkout'unuz zaten yapılandırılmış" arasındaki fark budur.
+
+Açıkça belirtilecek iki sınır var. O dosyadaki `allow` kuralları ve `extraKnownMarketplaces`, katılanın klasöre güvenmesini bekler — bu yüzden "burada Claude Code'u bir kez açın ve trust diyaloğunu kabul edin" diyen bir onboarding adımı angarya değildir, kiti açan adımdır. Ve kitteki hiçbir şey, kitin çeliştiği managed bir ilkenin altındaki bir makineye ulaşmaz: managed settings kazanır.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni) — bir başlangıç kitinin ilk günden doğru kılmak için inşa edildiği cümle:
+
+```text
+Read CLAUDE.md, then run our PR checklist against my branch and tell me what is missing.
+```
+
+### Doğrulayın, sonra onboard edin
+
+Belgelenen doğrulama tek bir komuttur. Managed settings'i yapılandırdıktan sonra, bir geliştiricinin Claude Code içinde `/status`'u çalıştırmasını sağlayın: Status sekmesinde, `Setting sources` satırı `Enterprise managed settings`'i, parantez içinde kazanan kaynakla birlikte gösterir. Organizasyonunuz hiç ilke dağıtmıyorsa, aynı satır yine de kendi dosyalarınızdan hangisinin yüklendiğini söyler — bu, bir başlangıç kiti için de kontroldür.
+
+Onboarding materyali için, dokümanlar üç şeye işaret eder: ilk bir oturum için **Quickstart**, günlük kalıplar için **Common workflows** ve Anthropic Academy'nin kendi hızınızda ilerleyen kursları — _Claude 101_ ve _Claude Code in Action_, sonuncusu dokuz ders ve bir sınavdan oluşan, yaklaşık bir saatlik ücretsiz bir kurs.
+
+### Dört destek sorusu
+
+Yanıtları, ihtiyacınız olmadan önce yazılı olsun.
+
+**"Giriş yapamıyorum."** Belgelenen ilk düzeltmeler, hesap değiştirmek için `/logout` ardından `/login`, kurumsal giriş seçeneği eksik olduğunda `claude update` ve bir güncellemeden sonra terminali yeniden başlatmaktır.
+
+**"Henüz organizasyonunuza eklenmediniz."** O koltuk Claude Code erişimini kapsamıyor; geliştiricinin makinesinde değil admin konsolunda düzeltilir.
+
+**"Bir sınıra ulaştım."** Dört farklı mesaj, dört farklı yanıt — koltuk-tabanlı bir oturum ya da haftalık sınır (modeller arasında paylaşılır, bu yüzden `/model` yardımcı olmaz, ama mesaj ne zaman sıfırlandığını söyler), modele özgü bir sınır (aile değiştirmek _yardımcı olur_), bir gateway harcama-sınırı mesajı, ya da hiçbir sınır olmayan bir otomatik-sıkıştırma uyarısı. Ayrıntı için 05. ders.
+
+**"Girdiğim bir ayar uygulanmıyor."** Hangi dosyaların yüklendiği için `/status`, hangi kuralın nereden geldiği için `/permissions`, reddedilen girdiler için `claude doctor`.
+
+### Savunucular, dürüstçe
+
+Çoğu organizasyonun ulaştığı kalıp, paylaşılan bir kanalda soruları yanıtlayan ve iyileştirmeleri başlangıç kitine geri taşıyan küçük bir erken benimseyen grubudur. Bu yapıyı öngören resmi bir Anthropic rehberliği yok ve bu sayfa bir tane icat etmiyor. Dokümantasyonun desteklediği şey daha dar ve daha yararlı: soruları karşılayan kişinin yukarıdaki dört yanıta, bir ilkenin gerçekten bir makineye ulaşıp ulaşmadığını görmenin bir yoluna ve herkesin devraldığı depo dosyalarına yazma erişimine ihtiyacı vardır — çünkü bir savunucunun ürettiği en yüksek değerli şey bir kanaldaki bir yanıt değil, sorunun tekrar sorulmasını durduran [commit](/tr/playbook/glossary/#commit)'tir (bir git deposundaki değişiklik kümesinin kalıcı kaydı).
+
+Yöneticiler için karşılığı tüketim planlama referansıdır: bir kodlama koltuğu için bir sohbet koltuğundan daha fazla bütçe ayırın, çünkü bir hata ayıklama oturumu dosya içeriği, [tool](/tr/playbook/glossary/#tool) (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) çağrıları ve çok adımlı akıl yürütme taşır.
+
+### Yaygınlaştırmayı bozmadan ölçmek
+
+Teams ve Enterprise analiz panosu günlük aktif kullanıcıları, oturumları ve katkı metriklerini — Claude Code yardımıyla gönderilen PR'lar ve kod satırları — bir lider tablosu ve CSV export'uyla birlikte gösterir. Tek bir soru için gerçekten yararlıdır: bunu kullanan var mı, ve nerede. Dört şerh aynı slaytta olmalı:
+
+- Katkı metrikleri, [GitHub App](/tr/playbook/glossary/#github-app)'i (Claude Code'u bir GitHub deposuna bağlayan entegrasyon) ve bir Claude Owner'ın anahtarlarını gerektiren kamuya açık bir beta'dır.
+- Yalnızca claude.ai organizasyonunuzun içindeki kullanıcıları kapsarlar, Console API'yi ya da üçüncü taraf kullanımını değil.
+- Zero Data Retention ile kullanılamazlar, ki bu yalnızca kullanım metriklerini bırakır.
+- Kod satırı bir çıktı ölçüsüdür. Daha az kod ve daha az kusur gönderen bir takım iyileşmiştir ve pano bunun yanlış yöne gittiğini gösterecektir.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Bu laboratuvar kullan-at bir klasörde bir başlangıç kiti inşa eder ve onun yüklendiğini kanıtlar.
+  Bu sitede organizasyon-geneli bir yaygınlaştırmanın bir
+  [transcript](/tr/playbook/glossary/#transcript)'i (gerçek bir Claude Code oturumunun kaydı) yok,
+  çünkü bir yaygınlaştırma bir komut değildir.
+</Callout>
+
+<Lab
+  title="Laboratuvar · bir başlangıç kiti inşa edin ve bir oturuma ulaştığını kanıtlayın"
+  lessonId="tr/l4-master/m20-team/communications-and-champions"
+  repoTag="none"
+  steps={[
+    "Üç dosyayla ve başka hiçbir şeyle kullan-at bir proje oluşturun: test ve lint komutlarını ve iki üç kuralı adlandıran kısa bir `CLAUDE.md`; küçük bir allow listesi, bir `ask` kuralı ve bir `deny` kuralı olan bir `.claude/settings.json`; ve gövdesi deponuzun pull-request checklist'i olan `.claude/skills/pr-checklist/SKILL.md`'de bir proje skill'i.",
+    "Skill'in keşfedilebilir olduğunu ve çalıştığını kanıtlayın: `claude -p '/pr-checklist' --model sonnet --max-turns 3 --output-format text < /dev/null`.",
+    "`CLAUDE.md`'nin, yalnızca o dosyanın yanıtlayabileceği bir soruyla oturuma ulaştığını kanıtlayın: `claude -p 'According to this project, what must a new API route have? Answer in one short sentence.' --model sonnet --max-turns 3 --output-format text < /dev/null`.",
+    'Güvenilmeyen allow kuralları hakkındaki stderr satırını okuyun ve onu ortadan kaldıran onboarding adımını yazın — yeni-katılan talimatlarınızın içermesi gereken tek satır.',
+    "Klasörde etkileşimli bir oturum açın, `/status`'u çalıştırın ve `Setting sources` satırının proje dosyasını listelediğini doğrulayın.",
+    'Lansman notunu taslak hâline getirin: hangi depoların yapılandırıldığı, deny listesinin neyi yasakladığı ve neden, hangi kanalın soruları aldığı ve kavram bölümündeki dört destek yanıtı.',
+  ]}
+  expected="Skill çalışır ve checklist'inizi yazdırır; ikinci çalıştırma yalnızca `CLAUDE.md`'den yanıt verir; her iki çalıştırma da güvenilmeyen-allow-kuralları uyarısını yazdırır, çünkü headless bir oturum trust diyaloğunu hiç görmez."
+  checklist={[
+    "Skill kurulmadan bulundu — bir proje skill'i klonla birlikte seyahat eder",
+    '`CLAUDE.md` yanıtı başka hiçbir yerden gelemezdi',
+    'Tam stderr uyarısını alıntılayabiliyorsunuz ve bir onboarding adımının bir katılana bunun hakkında ne yapmasını söylemesi gerektiğini biliyorsunuz',
+    '`/status`, kaynakları arasında proje settings dosyasını listeliyor',
+    'Lansman notunuz yalnızca neye izin verildiğini değil, neyin yasak olduğunu ve nedenini de söylüyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m20-team/06-communications-and-champions/01-starter-kit-loads.txt"
+    range="3-10"
+  />
+</Lab>
+
+Kayıt aynı anda iki nokta ortaya koyuyor.
+
+Checklist, kimsenin kurmadığı bir skill'den numaralandırılmış bir liste olarak geri geldi — klonun içindeydi. Bu, bir depo başlangıç kitinin bir wiki sayfasına karşı bütün argümanıdır: talimatlar kodla birlikte gelir, aynı pull request'te gözden geçirilir ve kimse fark etmeden güncel dışına kayamaz.
+
+Ve 01. dersteki aynı trust uyarısı iki kez görünür, çünkü headless bir oturum diyaloğu hiç görmez. Kitin _kısıtlamaları_ hemen canlıydı; _kolaylıkları_ değildi. Bunu onboarding adımına yazın — "depoda Claude Code'u bir kez açın ve trust diyaloğunu kabul edin" — her katılanın bunu bir gizem olarak keşfetmesine izin vermek yerine.
+
+Checklist ayrıca çevrilmiş olarak geri geldi, çünkü kaydeden makinenin global tercihleri Türkçe istiyor. Kimse bunu projede yapılandırmadı; bu, proje-kapsamlı bir skill'e ulaşan bir user-kapsamlı bir tercih. Bir katılan garip bir davranış bildirdiğinde, deponunkinden şüphelenmeden önce _kendi_ user settings'inde ne olduğunu sorun.
+
+## Anti-pattern'ler
+
+**Kit var olmadan önce lansman yapmak.** Commit'lenmiş settings olmayan bir duyuru, "npm test hakkında bana sormasını nasıl durdururum?" kuyruğuna dönüşür. _Düzeltme:_ önce iki üç gerçek depoyu yapılandırın ve bunları örnek olarak kullanarak lansmanı yapın.
+
+**Depo yerine bir wiki sayfası.** Koddan uzakta yaşayan dokümantasyon bir ay içinde kayar ve kullanım anında görünmezdir. _Düzeltme:_ `CLAUDE.md`, `.claude/settings.json` ve bir skill — kod gibi gözden geçirilir.
+
+**Trust adımını atlayan onboarding.** Katılan, allow kurallarını değil deny kurallarını alır ve kurulumun bozuk olduğu sonucuna varır. _Düzeltme:_ talimatlarda açık bir satır.
+
+**Lider tablosunu hedef yapmak.** Katkı metrikleri, kod silmenin genellikle kazanç olduğu bir disiplinde bir çıktı ölçüsüdür. _Düzeltme:_ benimsemeyi genişlik olarak bildirin — kaç takımın yapılandırılmış bir deposu var — ve sonuçların önceden ölçtüğünüz şekilde ölçülmesine izin verin.
+
+**Commit hakkı olmayan bir savunucu.** Aynı soruyu bir kanalda sonsuza kadar yanıtlamak hata modudur; düzeltme bir commit'tir. _Düzeltme:_ soruları karşılayan insanlara başlangıç-kiti dosyalarının sahipliğini verin.
+
+**Planın kapsamadığı bir şeyi vaat etmek.** Code Review bir Team ve Enterprise araştırma önizlemesidir; server-managed settings bir Owner rolü gerektirir; katkı metrikleri Zero Data Retention altında kullanılamaz. _Düzeltme:_ bir slayta ulaşmadan önce kullanılabilirliği kontrol edin.
+
+<Callout variant="changed">
+  Anthropic'in kendi hızında ilerlenen kursu taşındı: *Claude Code in Action*, bazı materyallerin
+  hâlâ bağlantı verdiği eski `anthropic.skilljar.com` adresinde değil,
+  `academy.claude.com/courses/claude-code-in-action`'da yaşıyor.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/communications-and-champions"
+  questionId="q1"
+  lang="tr"
+  prompt="Yeni katılan biri hem allow hem deny kurallarına sahip `.claude/settings.json`'ı olan bir depoyu klonluyor ve çalışmaya başlıyor. Trust diyaloğunu kabul etmeden önce ne doğrudur?"
+  options={[
+    {
+      text: 'Her iki liste de uygulanır — dosya klonun bir parçasıdır.',
+      explanation: "Allow kuralları yetenek verir ve trust'ı bekler.",
+    },
+    {
+      text: 'Deny kuralları uygulanır; allow kuralları uygulanmaz, bu yüzden daha az değil daha çok prompt görürler.',
+      correct: true,
+      explanation:
+        'Bir onboarding adımının onlara klasörde bir kez bir oturum açmalarını söylemesi gerekmesinin nedeni tam olarak bu.',
+    },
+    {
+      text: 'Bir yönetici depoyu onaylayana kadar hiçbiri uygulanmaz.',
+      explanation: 'Bir proje settings dosyası için bir yönetici onay adımı yoktur.',
+    },
+    {
+      text: 'İkisi de yok sayılır, çünkü settings yalnızca onları yazan makinede uygulanır.',
+      explanation: "Commit'lenmiş bir proje dosyası, klasörde çalışan herkese uygulanır.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/communications-and-champions"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir geliştirici “Henüz organizasyonunuza eklenmediniz” diye bildiriyor. Düzeltme nedir?"
+  options={[
+    {
+      text: 'Koltukları Claude Code erişimini kapsamıyor; admin konsolunda güncelleyin.',
+      correct: true,
+      explanation: 'Bu bir makine sorunu değil, hesap düzeyinde bir koltuk sorunudur.',
+    },
+    {
+      text: "`claude update`'i çalıştırın ve terminali yeniden başlatın.",
+      explanation: 'Bu, eksik bir kurumsal giriş seçeneği için düzeltmedir.',
+    },
+    {
+      text: '`forceLoginOrgUUID` ile managed settings dağıtın.',
+      explanation: 'Bu, hangi organizasyonun giriş yapabileceğini kısıtlar; bir koltuk vermez.',
+    },
+    {
+      text: 'Onlardan `/logout` ardından `/login` çalıştırmalarını isteyin.',
+      explanation:
+        'Bu, genel bir kimlik doğrulama sorunu için ilk düzeltmedir, erişimi olmayan bir koltuk için değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/communications-and-champions"
+  questionId="q3"
+  lang="tr"
+  prompt="Benimsemeyi sunarken katkı metriklerinin hangi sınırlaması slaytta olmalı?"
+  options={[
+    {
+      text: 'Yalnızca claude.ai organizasyonunuzun içindeki kullanıcıları kapsarlar ve Zero Data Retention ile kullanılamazlar.',
+      correct: true,
+      explanation:
+        'İkisi de belgelenmiştir; Console API ya da üçüncü taraf entegrasyonları üzerinden kullanım da dâhil değildir.',
+    },
+    {
+      text: 'Her geliştiricinin yerel oturum geçmişinden hesaplanırlar.',
+      explanation: 'Bu, `/usage` dökümünü tarif eder, panoyu değil.',
+    },
+    {
+      text: "Önce OpenTelemetry export'unun yapılandırılmasını gerektirirler.",
+      explanation:
+        'OpenTelemetry, kullanıcı başına [token](/tr/playbook/glossary/#token) (bir dil modelinin metni işlerken kullandığı en küçük birim) ve maliyet verisi için alternatiftir, pano için bir ön koşul değil.',
+    },
+    {
+      text: "Yalnızca Primary Owner'lara açıktır.",
+      explanation:
+        "Admin'ler ve Owner'lar panoyu görüntüleyebilir; onu yapılandırmak için Owner rolü gerekir.",
+    },
+  ]}
+/>
+
+**Sonraki:** Team'i bitirdiniz. Playbook'un checklist sayfası, bu modüldeki yaygınlaştırma adımlarını üzerinde çalışabileceğiniz bir biçimde toplar.

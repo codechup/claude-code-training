@@ -1,15 +1,15 @@
 ---
-title: 'Plan dosyaları: frontmatter, on bölüm ve milestone kavramı'
-description: 'Bir plan dosyası, yeni bir oturumun yalnızca depo durumundan yürütebileceği, kendi kendine yeten bir iş emridir. YAML frontmatter alanlarını, on sabit gövde bölümünü ve milestone (aşama) yapısını bu sitenin kendi plans/ klasörü üzerinden öğrenin.'
+title: 'Plan dosyaları: frontmatter, on bölüm, milestone’lar'
+description: "Bir plan dosyası, sıfırdan başlayan bir oturumun yalnızca depo durumundan yürütebileceği, kendi kendine yeten bir iş emridir. YAML frontmatter'ını, sabit on bölümünü ve milestone'ların işi nasıl sıraladığını — bu sitenin kendi plans/ dizinini örnek alarak — öğrenin."
 level: 4
 module: 'm18-multi-session'
 order: 1
 duration_min: 20
 difficulty: core
-tags: ['multi-session', 'plans', 'coordination', 'this-repo']
+tags: ['çoklu-oturum', 'planlar', 'koordinasyon', 'bu-depo']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Best practices for Claude Code'
@@ -27,4 +27,286 @@ lab:
   repo_tag: 'none'
 ---
 
-Bu dersin Türkçe çevirisi henüz yapılmadı. `draft: true` kaldığı sürece bu sayfa gezinmede görünmez; İngilizce kaynak `content/en/l4-master/m18-multi-session/01-plan-files.mdx` dosyasındadır.
+## Hedefler ve ön koşullar
+
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Bir konuşma yerine yazılı bir plan dosyasının, birkaç bağımsız oturumun aynı projede çalışmasına neden izin verdiğini açıklamak.
+- Bir plan dosyasının YAML frontmatter'ındaki her zorunlu anahtarı sayıp her birinin ne işe yaradığını söylemek.
+- Sabit on gövde bölümünü sırayla listelemek ve projeyi hiç görmemiş bir oturum için her birinin hangi soruyu yanıtladığını söylemek.
+- Kimseyi elle programlamadan, işin hangi sırayla yapılması gerektiğini ifade etmek için milestone'ları (milestone) ve `depends_on`'u kullanmak.
+- `node tools/plan/cli.ts show PNN` ile gerçek bir plan dosyasını okuyup, yalnızca frontmatter'ından o planı üstlenmeye izniniz olup olmadığını söylemek.
+
+**Ön koşullar.** Seviye 3 ve git ile YAML'e aşinalık. Bu modül, bu web sitesinin inşa edildiği deponun kendisi üzerinde öğretilir — aşağıdaki her komut, herkese açık olan `codechup/claude-code-training`'in bir kullan-at kopyasına karşı çalıştırıldı; isterseniz siz de klonlayıp takip edebilirsiniz.
+
+<WhenNotToUse>
+  Bir plan sistemi ek yüktür ve bu yük yalnızca, kimsenin adım adım izlemediği işi birkaç oturum
+  yürüttüğünde karşılığını verir. Bir kişi tek seferde tek bir oturumu sürüyorsa atlayın: bir
+  konuşma, [plan mode](/tr/playbook/glossary/#plan-mode) (Claude'un değişiklik yapmadan önce
+  yalnızca okuyup bir plan sunduğu mod) ve bir [checklist](/tr/playbook/glossary/#checklist) (bir
+  görevin tamamlandığını doğrulamak için sırayla işaretlenen madde listesi) daha hafiftir ve hiçbir
+  şey kaybettirmez. Şeklini henüz bilmediğiniz iş için de atlayın — keşif bir iş emri olarak
+  yazılamaz, önce keşfedip planı sonra yazın. Ve iş tek cümleyle anlatılacak kadar küçükse yine
+  atlayın: yazılması emrettiği değişiklikten daha uzun süren bir plan dosyası bir araç değil, bir
+  vergidir. İzlenmesi gereken eşik proje büyüklüğü değil, bağlam sayısıdır: ikinci bir oturum
+  ilkinin başlattığı işi devraldığı an, ilk oturumun bildiği ve yazmadığı her şey kaybolur.
+</WhenNotToUse>
+
+## Kavram
+
+### Plan neden bir dosya
+
+Claude Code'un kendi rehberliği, planlamayı uygulamadan ayırmak ve ortaya çıkan ürünü yazılı bir belge yapmaktır: "önce Claude'un sizinle görüşmesine izin verin … ardından eksiksiz bir spesifikasyonu `SPEC.md`'ye yazın", ardından "onu yürütmek için yeni bir oturum başlatın. Yeni oturum tamamen uygulamaya odaklanmış temiz bir bağlama sahiptir ve başvurabileceğiniz yazılı bir spesifikasyonunuz vardır." Dokümanlar en kullanışlı spesifikasyonları **kendi kendine yeten** olarak tanımlar: "hangi dosyaları ve arayüzleri kapsadığını adlandırır, neyin kapsam dışı olduğunu belirtir ve özelliğin çalıştığını kanıtlayan uçtan uca bir doğrulama adımıyla biter."
+
+Bu fikri tek bir spesifikasyondan bütün bir projeye ölçeklendirirseniz bir plan sistemi elde edersiniz. Bu depoda `plans/` altında, her biri bir iş biriminin karşılığı olan 48 böyle spesifikasyon var ve onları çalıştıran kural, dokümanların zaten ima ettiği kural: bir oturum **yalnızca depo durumundan** devam eder. Önemli olan hiçbir şey bir sohbet kaydında, birinin hafızasında veya iki kişi arasındaki bir mesajda yaşamaz.
+
+Planları paralel-güvenli yapan da bu kuraldır. Paralel yaklaşımların resmi karşılaştırması bunu açıkça koyar — [worktree](/tr/playbook/glossary/#worktree)'ler (aynı git geçmişini paylaşan ama kendi dosyalarına ve branch'ine sahip ayrı bir çalışma dizini) her oturuma ayrı bir checkout verir, oturumlar arası mesajlaşma oturumların bulgu paylaşmasını sağlar ve agent team'ler "işi her takım arkadaşının farklı bir dosya kümesine sahip olacağı şekilde bölmenizi" gerektirir. Bir plan dosyası, o bölümlemenin yazıya döküldüğü yerdir.
+
+Bu dersin etrafında kurulu olduğu [prompt](/tr/playbook/glossary/#prompt) (Claude'a verdiğiniz istek metni) işte bu. Projeyi hiç açıklamadığına dikkat edin: oturumun ihtiyaç duyduğu her şey zaten diskte.
+
+```text
+Read STATE.md and plans/P33-l4-m16-orchestration.md. If you were the session
+claiming P33, what would you do first, and which files may you not touch?
+```
+
+### Frontmatter
+
+Her plan dosyası `plans/PNN-slug.md` biçimindedir ve YAML frontmatter ile açılır. Şu anahtarlar zorunludur:
+
+| Anahtar          | Ne taşır                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------ |
+| `id`             | `PNN` — dosyanın önekiyle aynı olmalı                                                |
+| `title`          | Tek satır, PR başlığı olarak `[PNN] <title>` şeklinde tekrar kullanılır              |
+| `milestone`      | `M0`–`M4` — bunun projenin hangi dalgasına ait olduğu                                |
+| `status`         | `todo`, `in_progress`, `blocked`, `review` ya da `done`                              |
+| `owner`          | `null`, ya da claim'i elinde tutan oturumun serbest biçimli adı                      |
+| `branch`         | `plan/NN-slug` — bu planın işinin gerçekleştiği branch                               |
+| `model_hint`     | `haiku`, `sonnet`, `opus` ya da `fable` — tavsiye, kapı değil                        |
+| `effort_hint`    | `low`, `medium`, `high`, `xhigh` ya da `max`                                         |
+| `depends_on`     | Bu plan claim edilmeden önce `done` olması gereken plan id'leri                      |
+| `owned_paths`    | Bu planın oluşturabileceği ya da değiştirebileceği glob'lar — başka hiçbir şey değil |
+| `shared_paths`   | Yalnızca ekleme yaparak, dikkatle dokunabileceği dosyalar                            |
+| `estimate`       | `S` (≤ yarım gün), `M` (≤ bir gün), `L` (≤ iki gün)                                  |
+| `updated_at`     | RFC3339 UTC, her durum değişikliğinde güncellenir                                    |
+| `open_questions` | Sahibi için doküman çelişkileri ve ürün soruları                                     |
+
+Bu anahtarlardan ikisi asıl koordinasyon işini yapar. `depends_on` yönlü döngüsüz bir çizge (DAG) oluşturmak zorundadır, böylece "şu an ne başlatılabilir" pazarlık konusu değil, hesaplanabilir bir şey olur. `owned_paths` hiçbir zaman boş değildir ve araç, iki aktif planın çakışan yolları sahiplenmesine izin vermez — bu, 03. dersin konusudur.
+
+`updated_at` elle değil, araç tarafından ayarlanır. `status` da öyle. Bu alanları elle düzenlediğiniz bir plan dosyası, üretecine yalan söyleyen bir plan dosyasıdır.
+
+### On bölüm
+
+Gövde sabittir, şu sırayla gelir ve hiçbir bölüm atlanmaz:
+
+1. **Goal (Hedef)** — tek paragraf: bu bittiğinde ne var olacak ve bu neden önemli.
+2. **Context (Bağlam)** — çalışmaya başlamadan _önce_ ne okunmalı: doküman yolları, bölüm adları, bu planın dayandığı kararlar ve depoda zaten ne var.
+3. **Scope (Kapsam)** — bir `In:` listesi ve bir `Out:` listesi. Kapsam kaymasını önleyen `Out:` listesidir.
+4. **Deliverables (Teslimatlar)** — oluşturulacak ya da değiştirilecek tam dosyalar ve dizinler.
+5. **Acceptance criteria (Kabul kriterleri)** — test edilebilir maddeler, her biri çalıştırılacak komutu ve beklenen sonucu adlandırır.
+6. **Steps (Adımlar)** — sıralı ve somut.
+7. **Tests required (Gerekli testler)** — var olması ve geçmesi gereken adlandırılmış test paketleri.
+8. **Non-goals / pitfalls (Hedef olmayanlar / tuzaklar)** — düşük [effort](/tr/playbook/glossary/#effort)'lu (modelin bir yanıt için harcadığı düşünme çabası seviyesi) bir oturumun yapmaması gerekenler.
+9. **Verification (Doğrulama)** — bir gözden geçirenin sonucu on dakikadan kısa sürede nasıl kontrol edeceği.
+10. **Handoff notes (Devir notları)** — yürüten oturum tarafından sonunda doldurulur. 05. ders tamamen bunun hakkında.
+
+Bu listeyi, aksi hâlde bir yabancının size sormak zorunda kalacağı sorular kümesi olarak okuyun: _Ne inşa ediyorum? Önce neyi okumalıyım? Kapsam dışında ne var? İşin yürüdüğünü nereden bileceğim? Neye dokunmamalıyım? Bir önceki oturum ne öğrendi?_ Yanıtsız bıraktığınız her soru bir mesaj hâline gelir ve her mesajın yanıtlaması için ayakta biri gerekir.
+
+Bölümler aynı zamanda mekanik olarak denetlenebilir, CLI'ın onları yazdırabilmesinin nedeni de bu:
+
+<CodeBlock title="Bir planın frontmatter'ını ve bölüm başlıklarını okuyun">
+
+```bash
+node tools/plan/cli.ts show P13
+```
+
+</CodeBlock>
+
+### Milestone'lar ve bağımlılıklar
+
+`milestone`, planları dalgalar hâlinde gruplar — bu depoda `M0` altyapı ve tasarım, `M1` ilk İngilizce seviyeler, `M2` paralel Türkçe ve İleri/Master dalgası, `M3` geri kalanı, `M4` lansman sıkılaştırması. Milestone'lar ilerlemeyi okuyan insanlar içindir; `depends_on` ise aracın neyin claim edilebilir olduğuna karar vermesi içindir.
+
+Bunları doğru tutarsanız iki farklı soruyu yanıtlarlar. Milestone tablosu projenin ne kadar ilerlediğini söyler. Bağımlılık çizgesi bir oturumun şu anda neye başlayabileceğini söyler. Hiçbiri bir takvim değildir ve hiçbiri bir kişinin adını taşımaz.
+
+<Callout>
+  Bir plan dosyası bir bilet değildir. Bir bilet birinin ne istediğini söyler; bir plan dosyası bir
+  oturumun neyi okuması, inşa etmesi, kanıtlaması ve kaçınması gerektiğini, kimsenin bir takip
+  sorusunu yanıtlamak için çevrimiçi olmasına gerek kalmayacak kadar ayrıntılı söyler. Plan dosyanız
+  yetkin bir yabancıyı bir soruyla baş başa bırakacaksa, o soru eksik bölümdür.
+</Callout>
+
+## Uygulamalı laboratuvar
+
+Bu modülün laboratuvarları, bu sitenin inşa edildiği ve herkese açık olan depoya karşı çalışır. Onu kullan-at bir yere klonlayın — asla önemsediğiniz bir checkout'un içinde çalışmayın — ve plan setini onu sahiplenen araçla okuyun.
+
+<Lab
+  title="Laboratuvar · gerçek bir plan dosyasını baştan sona okuyun"
+  lessonId="tr/l4-master/m18-multi-session/plan-files"
+  repoTag="none"
+  steps={[
+    'Bu sitenin deposunu kullan-at bir dizine klonlayın: `git clone https://github.com/codechup/claude-code-training cct-plan-lab && cd cct-plan-lab && npm ci`.',
+    "Önce sözleşmeyi okuyun: `plans/README.md` dosyasını açın ve §2 (dosya biçimi) ile §3'ü (yaşam döngüsü) gözden geçirin.",
+    "Bir planın frontmatter'ını ve bölüm başlıklarını yazdırın: `node tools/plan/cli.ts show P13`. On bölümün de sırayla orada olduğunu kontrol edin.",
+    '`plans/P13-l1-m01-start.md` dosyasını bir editörde açın ve `Scope` bölümünün `Out:` listesini ile `Non-goals / pitfalls` bölümünü okuyun. Bunlar olmasaydı neyi yanlış yapacağınızı kendinize sorun.',
+    "Bütün seti doğrulayın: `node tools/plan/cli.ts check`. Frontmatter'ı, bağımlılık DAG'ını, `owned_paths` çakışmasını ve `STATE.md`'nin bayat olup olmadığını kontrol eder.",
+    'Claude\'dan depoyu sıfırdan başlayan bir oturum gibi okumasını isteyin: `claude -p "Read STATE.md and plans/P33-l4-m16-orchestration.md. If you were the session claiming P33, what would you do first, and which files may you not touch? At most five lines. Do not edit anything." --model sonnet --max-turns 6 --output-format text --allowedTools Read,Glob,Grep`',
+  ]}
+  expected="`show P13`, frontmatter bloğunu ve tam olarak on tane `##` başlığını yazdırır; `check`, plan sayısını, geçerli frontmatter'ı, döngüsüz bir DAG'ı, owned_paths çakışması olmadığını ve taze bir STATE.md'yi bildiren bir `ok:` satırıyla 0 kodla çıkar; headless (etkileşimli arayüz olmadan tek komutla çalıştırma) oturum, siz hiçbir şey açıklamadan claim komutunu, branch'i, worktree'yi ve planın owned_paths'ini adlandırır."
+  checklist={[
+    'Klon, önemsediğiniz herhangi bir deponun dışında',
+    '`show PNN`, on bölüm başlığının hepsini belgelenen sırayla yazdırdı',
+    '`check` 0 kodla çıktı',
+    "Yalnızca frontmatter'dan, P13'ün hangi dosyaları değiştirebileceğini adlandırabiliyorsunuz",
+    'headless oturum, sizden hiçbir bağlam almadan depo durumundan yanıt verdi',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/01-plan-files/01-show-p13.txt"
+    range="2-32"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/01-plan-files/02-check.txt"
+    range="2-3"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/01-plan-files/03-resume-from-repo-state.txt"
+    range="2-6"
+  />
+</Lab>
+
+Üçüncü kayıt dersin bütün amacı. Kimse o oturuma projenin ne olduğunu, hangi [branch](/tr/playbook/glossary/#branch)'in (bir git deposunun bağımsız bir geliştirme hattı) kullanılacağını, worktree'sinin nereye gideceğini ya da hangi dosyaların yasak olduğunu söylemedi. İki dosya okudu ve doğru yanıt verdi — `content/_shared/sources.json`'ın sahiplenilen değil, yalnızca ekleme yapılabilen kurallara sahip _paylaşılan_ bir yol olduğu inceliği dâhil. "Kendi kendine yeten" olmanın size kazandırdığı şey bu.
+
+Bu kayıtların ilk satırı aracın gerçek bir uyarısı: kullan-at klon güvenilir değildi, bu yüzden Claude Code projenin `permissions.allow` girdilerini yok saydı. Bunu içeride bırakmakta fayda var — taze bir klon her zaman güvenilmez başlar ve önceden onaylanmış izinler bir depoyu takip etmez.
+
+## Anti-pattern'ler
+
+**Sonucu anlatan ama okuma listesini anlatmayan bir plan.** `Context` olmadan, her oturum aynı beş dokümanı, her seferinde farklı bir şekilde yeniden keşfeder. _Düzeltme:_ tam dosyaları ve bölüm başlıklarını adlandırın ve her birinin neden önemli olduğunu söyleyin.
+
+**`Out:` listesi yok.** Kapsamın yalnızca `In:` olarak belirtilmesi, bir oturumu "bu arada şunu da" düzeltmeye davet eder, bu da onu başka bir planın dosyalarına sokar. _Düzeltme:_ önce `Out:` listesini yazın; genellikle bu daha kolaydır ve bir gözden geçirenin kontrol ettiği de budur.
+
+**Başarısız olamayan kabul kriterleri.** "Ders iyi" test edilebilir değildir. _Düzeltme:_ komutu ve beklenen çıktıyı adlandırın — dokümanların kendi kuralı, [agent](/tr/playbook/glossary/#agent)'a (bir hedefi kendi başına adım adım yürüten yapay zekâ süreci) çalıştırabileceği bir kontrol vermektir, çünkü "çalıştırabileceği bir kontrol olmadan, 'bitmiş görünüyor' elde edilebilecek tek sinyaldir."
+
+**`status`, `owner` ya da `updated_at`'i elle düzenlemek.** Üretim aracı proje durumunu bu alanlardan türetir; onları elle düzenlerseniz türetilen görünüm herkes için yanlış olur. _Düzeltme:_ `node tools/plan/cli.ts claim` / `status` üzerinden gidin.
+
+**Plan belirsiz olduğu için bir ürün kararını tahmin etmek.** Tahmin etmeye zorlayan bir plan bozuk bir plandır ve tahmin, bir sonraki oturumun göremeyeceği kayıt altına alınmamış bir karara dönüşür. _Düzeltme:_ soruyu `open_questions`'a yazın ve en muhafazakâr okumayı benimseyin.
+
+**Boş `owned_paths`.** Hiçbir şeyi sahiplenmeyen bir plan her şeyi sahiplenir, iki oturumun aynı dosyayı düzenlemesiyle sonuçlanan da budur. _Düzeltme:_ araç bunu reddeder — böyle kalsın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/plan-files"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir plan dosyasını bir biletten ya da bir sohbet mesajından ayıran tanımlayıcı özellik nedir?"
+  options={[
+    {
+      text: 'Kendi kendine yeterlidir: projeyi hiç görmemiş bir oturum onu yalnızca depo durumundan yürütebilir.',
+      correct: true,
+      explanation:
+        'Bütün kural bu. Bir oturumun ihtiyaç duyduğu ve depoda olmayan her şey, sonradan ödediğiniz bir koordinasyon maliyetidir.',
+    },
+    {
+      text: 'Adı belirtilmiş bir kişiye atanmıştır.',
+      explanation:
+        'Planlar müsait olan hangi oturum ise onun tarafından claim edilir; `owner` bir kişi değil bir oturum adıdır ve araç tarafından ayarlanır.',
+    },
+    {
+      text: 'Bir biletten daha kısadır.',
+      explanation: 'Genellikle çok daha uzundur. Mesele uzunluk değil, eksiksizliktir.',
+    },
+    {
+      text: 'Serbestçe değişebilsin diye sürüm kontrolünün dışında yaşar.',
+      explanation:
+        "Tam tersi: [commit](/tr/playbook/glossary/#commit)'lenir (bir git deposundaki değişiklik kümesinin kalıcı kaydı olarak saklanır), çünkü depo durumu her oturumun paylaştığı tek şeydir.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/plan-files"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir planın şu anda başlatılıp başlatılamayacağına hangi frontmatter anahtarı karar verir?"
+  options={[
+    {
+      text: '`milestone`',
+      explanation:
+        "Milestone'lar işi raporlama için dalgalara gruplar. Bir claim'i kapı gibi engellemez.",
+    },
+    {
+      text: '`depends_on` — listelenen her id önce `done` olmalı',
+      correct: true,
+      explanation:
+        "`status` ve `owned_paths` çakışmasıyla birlikte, claim edilebilirliği pazarlık konusu değil hesaplanabilir yapan `depends_on`'dur.",
+    },
+    {
+      text: '`estimate`',
+      explanation: 'Planlama için bir büyüklük ipucu; sıralama üzerinde etkisi yok.',
+    },
+    {
+      text: '`model_hint`',
+      explanation:
+        'İşe hangi modelin uygun olduğu konusunda üstlenen oturuma tavsiye — açıkça bir kapı değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/plan-files"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir planın `Steps` bölümü açık ama kapsam dışında neyin olduğunu hiç söylemiyor. Somut risk nedir?"
+  options={[
+    {
+      text: 'Oturum daha az okuyacağı için daha yavaş çalışır.',
+      explanation: 'Eksik kapsam oturumu yavaşlatmaz; başıboş dolaşmasına izin verir.',
+    },
+    {
+      text: 'Oturum, başka bir planın sahiplendiği bir dosyada komşu bir sorunu düzeltir ve iki branch çakışır.',
+      correct: true,
+      explanation:
+        'Bu en yaygın hata. `Out:` listesi ve `owned_paths`, sınırı düzenlemeden sonra değil önce açıkça belirtmek için vardır.',
+    },
+    {
+      text: 'Bağımlılık çizgesi döngüsel hâle gelir.',
+      explanation: "Döngüler `depends_on`'dan gelir, düzyazıdan değil.",
+    },
+    {
+      text: 'Plan claim edilemez.',
+      explanation:
+        'Üstlenilebilirlik `status`, `depends_on` ve yol çakışmasından hesaplanır — düzyazının ne kadar eksiksiz olduğundan değil. Düzyazının kural gereği disiplinli olması gerekmesinin sebebi tam da bu.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/plan-files"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir planı yürütürken bir ürün kararının hiç verilmediği ortaya çıkıyor. Ne yaparsınız?"
+  options={[
+    {
+      text: 'En iyi görünen seçeneği seçin ve commit mesajında not edin.',
+      explanation:
+        'Yalnızca bir commit mesajında kaydedilen bir karar, planı okuyan bir sonraki oturum için görünmezdir.',
+    },
+    {
+      text: 'Durup birinin yanıtlamasını bekleyin.',
+      explanation:
+        'Bir insanı bekletmek, oturumların depo durumundan devam etmesi için tasarlanmış bir sistemin bütün amacını boşa çıkarır.',
+    },
+    {
+      text: "Soruyu `open_questions`'a ve Handoff notlarına yazın, en muhafazakâr okumayı benimseyin ve devam edin.",
+      correct: true,
+      explanation:
+        'Soru, üretilen durum dosyasında herkes için görünür hâle gelir ve iş, geri alınması en ucuz olan şekilde devam eder.',
+    },
+    {
+      text: 'Plan artık belirsiz olmasın diye kararlar kaydını kendiniz düzenleyin.',
+      explanation:
+        'Kararlar sahibine aittir. Bir plan bir değişiklik önerebilir; asla bir tane yapmaz.',
+    },
+  ]}
+/>
+
+**Sonraki:** `02-state-md-and-claims`, bu dosya kümesini projenin canlı bir görünümüne dönüştürür — üretilmiş bir `STATE.md`, iki oturumun aynı planı almasını engelleyen claim protokolü ve bayatlayan bir claim'e ne olduğu.

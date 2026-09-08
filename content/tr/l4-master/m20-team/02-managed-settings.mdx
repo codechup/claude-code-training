@@ -1,15 +1,15 @@
 ---
-title: 'Managed ve server-managed ayarlar'
-description: 'Policy katmanı: bir organizasyonun geliştiricinin geçersiz kılamayacağı biçimde neleri dayatabildiği, bunun makineye ulaşmasının dört yolu, Claude Code’un kaynaklar arasında nasıl seçim yaptığı ve bir policy’nin gerçekten yürürlükte olduğunun nasıl doğrulanacağı.'
+title: 'Managed ve server-managed settings'
+description: 'İlke katmanı: bir organizasyonun bir geliştiricinin geçersiz kılamayacağı şekilde uygulayabildikleri, bunun bir makineye ulaştığı dört yol, Claude Code’un aralarında nasıl seçim yaptığı ve bir ilkenin gerçekten yürürlükte olup olmadığının nasıl doğrulanacağı.'
 level: 4
 module: 'm20-team'
 order: 2
 duration_min: 15
 difficulty: core
-tags: ['team', 'managed-settings', 'policy', 'enterprise']
+tags: ['takım', 'managed-settings', 'ilke', 'kurumsal']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Deploy managed settings'
@@ -35,8 +35,360 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders managed (yönetilen) ayarları anlatır: precedence yığınının en üstünde duran, geliştiricinin kendi dosyalarıyla geçersiz kılamadığı katman. Dört teslim mekanizması vardır — claude.ai konsolundan gelen server-managed ayarlar, MDM/OS policy'leri (macOS plist veya `HKLM\SOFTWARE\Policies\ClaudeCode`), sistem dizinindeki `managed-settings.json` dosyası ve kullanıcının yazabildiği `HKCU` registry anahtarı. Varsayılan `first-wins` davranışında Claude Code, policy anahtarı taşıyan en yüksek öncelikli kaynağı kullanır ve diğerlerini sessizce atlar; `managedSourcesBehavior: "merge"` bunu değiştirir. Yalnızca managed kaynaklardan okunan anahtarlar (`allowManagedPermissionRulesOnly`, `availableModels`, `strictKnownMarketplaces`, `forceLoginMethod` ve diğerleri) ile geçersiz olduğunda "fail closed" davranan anahtarlar ayrı ayrı ele alınır. Laboratuvar hiçbir policy kurmaz: `claude doctor` ve `/status` ile bir makinede policy'nin yürürlükte olup olmadığını okumayı öğretir.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.
+- Managed settings’in ne olduğunu, öncelik yığınında nerede oturduğunu ve daha katı bir yerel değerin yine de kazandığı kısa anahtar listesini söylemek.
+- Dört teslim mekanizmasını — server-managed, MDM/OS ilkesi, `managed-settings.json`, HKCU kayıt defteri — ve her işletim sistemi için tam dosya yolunu ya da kayıt defteri anahtarını adlandırmak.
+- Bir makine birden fazlasını aldığında Claude Code’un hangi kaynağı kullanacağını tahmin etmek ve `managedSourcesBehavior: "merge"`’ün neyi değiştirdiğini söylemek.
+- Yalnızca bir managed kaynağın ayarlayabileceği anahtarları göstermek ve `allowManagedPermissionRulesOnly`’un bir allowlist’i neden bir ilkeye dönüştüren anahtar olduğunu açıklamak.
+- Bir geliştiricinin makinesinden, `/status` ve `claude doctor` kullanarak bir ilkenin yürürlükte olup olmadığını doğrulamak.
+
+**Ön koşullar.** Bir önceki dersin dört kapsamı ve öncelik yığını. Gerçek bir ilke dağıtmak, makinelerde yönetici hakları ve server-managed yol için bir Claude for Teams ya da Enterprise organizasyonunda Owner ya da Primary Owner rolü gerektirir.
+
+<WhenNotToUse>
+  Managed settings idari bir kontroldür, bir kolaylık değil. Takımın basitçe
+  `.claude/settings.json`’a commit’leyebileceği bir tercihi ifade etmek için onları dağıtmayın —
+  geliştiricilerin sürekli etrafından dolaşmak istediği bir ilke, etrafından dolaşılacak bir
+  ilkedir. Yönetmediğiniz bir makineye dağıtmayın; ve onları işletim sisteminin kendi kontrollerinin
+  yerine geçen bir şey olarak ele almayın. Managed settings yalnızca Claude Code’u bağlar: Claude
+  API’sini başka bir araçtan çağıran bir geliştirici bunların altında değildir ve yerel yönetici
+  haklarına sahip bir geliştirici, ilke kaynağının kendisini düzenleyebilir — MDM araçlarının
+  belirli bir programda yeniden dağıtmasının nedeni de budur. Bu sayfadaki hiçbir şey "denemek için"
+  kişisel bir makineye kurulmamalıdır.
+</WhenNotToUse>
+
+## Kavram
+
+### Her şeyin üstündeki katman
+
+Managed settings, organizasyonunuzun her geliştiricinin makinesine dağıttığı ayarlardır. Claude Code onları her seviyenin üstünde uygular: hiçbir user, project, local ya da `--settings` değeri onları geçersiz kılmaz ve `--model` gibi bir bayrak yalnızca organizasyonun izin verdiği modeller arasından seçer.
+
+Bunu mutlak olmaktan alıkoyan iki nitelendirme var.
+
+**Managed bir `model` bir kilit değil, bir varsayılandır.** `--model` ve `ANTHROPIC_MODEL` bir oturum için modeli hâlâ seçer. Kilit `availableModels`’dir, bu da `/model`’i, `--model`’i ve her başka dosyadaki `model` anahtarını kısıtlar; otomatik seçilen varsayılanı da kısıtlamak için `enforceAvailableModels`’i ekleyin.
+
+**Birkaç güvenlik açısından hassas anahtar, alttan gelen daha katı değere saygı gösterir.** Settings sayfası bunları listeler; kalıp şu ki her biri yalnızca _reddedebilir_. `disableClaudeAiConnectors: true` ve `isolatePeerMachines: true` herhangi bir kapsamdan sayılır; `enableArtifact: false` (ve `disableArtifact: true`) herhangi bir kapsamdan sayılır ve hiçbir şey Artifact tool’unu geri açmaz; `remoteControlAtStartup: false`, bir proje ya da local dosyadan sayılır; `crossSessionInbound`, bir proje ya da local dosyadan `accept < hold < refuse`’un daha katı basamağını alır; `useAutoModeDuringPlan` ve `syncClaudeAiSkills`, herhangi bir managed kaynaktan, `--settings`’ten, user settings’ten ya da local dosyadan gelen bir `false`’u alır.
+
+### Dört giriş yolu
+
+Her mekanizma bir `settings.json` dosyasıyla aynı anahtarları taşır. Değişen şey, ilkenin nerede depolandığı ve Claude Code’un onu ne zaman yeniden okuduğudur.
+
+| Mekanizma                        | Nerede yaşar                                                                                      | Claude Code onu ne zaman okur                     |
+| -------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
+| Server-managed                   | claude.ai admin konsolu ya da self-hosted bir Claude apps gateway’i                               | Başlangıçta getirilir, saatlik yoklanır           |
+| MDM / OS ilkesi                  | macOS `com.anthropic.claudecode` managed preferences; Windows `HKLM\SOFTWARE\Policies\ClaudeCode` | Başlangıç, sonra her 30 dakikada bir kontrol      |
+| Dosya tabanlı                    | Sistem dizinindeki `managed-settings.json`                                                        | Başlangıç, ve dosya değiştiğinde yeniden yüklenir |
+| HKCU kayıt defteri (Windows/WSL) | `HKCU\SOFTWARE\Policies\ClaudeCode`                                                               | Başlangıç, sonra her 30 dakikada bir              |
+
+MDM ve dosya satırları birlikte **endpoint-managed** settings olarak adlandırılır, çünkü ilke cihazda depolanır. Dosya tabanlı yol için sistem dizini macOS’ta `/Library/Application Support/ClaudeCode/`, Linux ve WSL’de `/etc/claude-code/` ve Windows’ta `C:\Program Files\ClaudeCode\`’dur. Eski Windows yolu `C:\ProgramData\ClaudeCode\managed-settings.json` okunmaz.
+
+Hangisini seçeceğiniz, makineleri zaten nasıl yönettiğinizden çıkar. Server-managed settings hiçbir cihaz-yönetimi altyapısı gerektirmez ve Anthropic barındırmalı bir bulut oturum’ına ulaşan tek mekanizmadır; endpoint-managed settings, işletim sistemi dosyayı kullanıcıdan koruyabildiği için daha güçlü garantiler verir, ama buluta ulaşmazlar. Claude Code’u web’de kullanan organizasyonlar ikisini de yapılandırır.
+
+Birkaç takım dosya tabanlı bir ilkenin parçalarına sahipse, onu bölün: her parçayı aynı sistem dizininde `managed-settings.json`’ın yanında, `managed-settings.d/` içinde kendi `*.json` dosyasına koyun. Claude Code önce `managed-settings.json`’ı, ardından dizindeki her dosyayı alfabetik sırayla birleştirir, bu yüzden sayısal önekler (`10-telemetry.json`, `20-security.json`) sırayı kontrol eder. Tek değerler sonraki dosyayla değiştirilir; listeler yinelenenler kaldırılarak birleşir.
+
+### Birden fazla kaynak geldiğinde
+
+Varsayılan olarak — `managedSourcesBehavior: "first-wins"` — Claude Code **en az bir ilke anahtarı teslim eden en yüksek sıralı kaynağı** kullanır ve geri kalanını yok sayar. Onları birleştirmez ve atladıkları için hiçbir uyarı göstermez. Sıralama şudur:
+
+1. Uzak settings (server-managed, ya da bir Claude apps gateway’inden)
+2. MDM ya da OS düzeyinde ilke — macOS plist’i ya da HKLM kayıt defteri anahtarı
+3. Managed settings dosyaları — `managed-settings.json` ve `managed-settings.d/*.json` birlikte birleştirilmiş
+4. HKCU kayıt defteri, kullanıcı tarafından yazılabilir ve yalnızca yukarıdaki hiçbir kaynak bir ilke anahtarı teslim etmediğinde kullanılır
+
+`managedSourcesBehavior`’ı dağıttığınız en yüksek sıralı kaynakta `"merge"`’e ayarlayın (Claude Code 2.1.242 ya da üstü) ve her admin kaynağı katkıda bulunur: çoğu anahtarda daha yüksek sıralı değerler kazanır, listeler birleşir ve kilitler en katı değeri alır. Daha düşük bir kaynak kendini üstündeki kaynakla birleşmeye dahil edemez.
+
+Bir avuç anahtar `first-wins` altında bile **her** admin kaynağından okunur, bu yüzden daha düşük sıralı bir dosya yine de onları ayarlayabilir: [sandbox](/tr/playbook/glossary/#sandbox) (Claude'un çalıştığı, ağ ve dosya sistemi erişimini işletim sistemi düzeyinde kısıtlayan izole çalışma ortamı) allowlist kilitleri, `allowAllClaudeAiMcps`, sandbox ikili dosya yolları, `useAutoModeDuringPlan` ve `syncClaudeAiSkills` (herhangi bir kaynaktan gelen bir `false` kazanır), `enableArtifact`, `attribution`’daki commit-trailer devre dışı bırakma seçeneği, `forceRemoteSettingsRefresh` ve değişken başına birleşen `env`, böylece daha düşük kaynaklar daha yüksek olanların ayarlamadığı değişkenleri doldurur.
+
+### Yalnızca managed bir kaynağın ayarlayabileceği anahtarlar
+
+Bazı anahtarların managed bir kaynak dışında hiçbir yerde etkisi yoktur. Bunlar çoğunlukla kilitlerdir — kilitlenen değer (izin kuralları, `sandbox.network.allowedDomains`) herhangi bir seviyenin ayarlayabileceği sıradan bir anahtardır ve kilit, Claude Code’a yalnızca managed değere saygı göstermesini söyler:
+
+- `allowManagedPermissionRulesOnly` — managed settings’i izin kurallarının tek kaynağı yapar. Bu olmadan, organizasyonunuzun `allow` kuralları basitçe herkesinkiyle birlikte birleşir, ki bu genellikle istediğiniz şeydir, bazen değildir.
+- `allowManagedMcpServersOnly` — managed `allowedMcpServers` allowlist’ini geçerli olan tek liste yapar.
+- `strictKnownMarketplaces`, `blockedMarketplaces`, `disableSideloadFlags`, `disableCommandPluginSources`, `pluginSuggestionMarketplaces` — plugin-kaynağı kontrolü (bir sonraki ders).
+- `allowManagedHooksOnly` — hangi [hook](/tr/playbook/glossary/#hook)'ların (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan komut) çalışacağını kısıtlar.
+- `strictPluginOnlyCustomization` — [skill](/tr/playbook/glossary/#skill)'ler (`SKILL.md` ile tanımlanan yeniden kullanılabilir talimat paketi), [agent](/tr/playbook/glossary/#agent)'lar (bir hedefi kendi başına adım adım yürüten yapay zekâ süreçleri), hook'lar ve [MCP server](/tr/playbook/glossary/#mcp-server)'lar (Model Context Protocol ile Claude'a dış araç ve veri sağlayan sunucu) yalnızca [plugin](/tr/playbook/glossary/#plugin)'lerden (hook, skill, subagent ve MCP server gibi bileşenleri paket hâlinde ekleyen eklenti) ya da managed settings'ten gelebilir.
+- `requiredMinimumVersion` / `requiredMaximumVersion` — onaylı bir aralığın dışında başlamayı reddeder, ki bu `minimumVersion`’ın düşürmelere karşı engellemesinden daha güçlüdür.
+- `sandbox.network.allowManagedDomainsOnly` ve `sandbox.filesystem.allowManagedReadPathsOnly` — izin kilidinin sandbox eşdeğerleri.
+- Server-managed settings’in teslim edemeyeceği teslim kontrolleri `policyHelper`, `wslInheritsWindowsSettings` ve `managedSourcesBehavior`: bunları MDM ya da bir sistem dosyasıyla dağıtın.
+
+Kalıbı dikkatle okuyun, çünkü tersine anlamak kolay: **kilit** yalnızca managed’dir, **kilitlediği liste** değildir. `allowedMcpServers`, `deniedMcpServers` ve `allowedHttpHookUrls`’ün hepsi `Any file` kapsamındadır ve her settings dosyası arasında birleşir — onları managed settings’te dağıtmak onları zorunlu kılmanın yoludur, ama bir geliştiricinin kendi dosyasının allowlist’e eklemesini durduran şey eşleşen `allowManaged*Only` anahtarıdır. Managed-only tabloda olmayan herhangi bir anahtar için settings referansının Scope sütunu otoritedir.
+
+Bu kuralın hemen dışında iki ilişkili anahtar var. `permissions.disableBypassPermissionsMode` herhangi bir kapsamdan çalışır — bir geliştirici bunu kendisi için bile ayarlayabilir — ama normalde kaldırılamaması için managed settings’e konur. Ve giriş-zorlaması çifti `forceLoginMethod` / `forceLoginOrgUUID` de `Any file`’dır, her birinde bir managed-kaynak şerhiyle: `forceLoginMethod`’un `"gateway"` değeri yalnızca makine üzerindeki bir managed kaynaktan sayılır ve `forceLoginOrgUUID` yalnızca managed bir kaynaktan _zorlar_ — başka bir yerde ayarlandığında yalnızca girişte organizasyonu önceden seçer.
+
+Aynı fikrin daha küçük ölçekli bir örneği, hiç kurumsal bir dağıtım olmayan bu kursun kendi deposudur: [commit](/tr/playbook/glossary/#commit)'lenmiş (bir git deposundaki değişiklik kümesinin kalıcı, mesajlı kaydı) `.claude/settings.json`’ı kısa bir `permissions.allow` listesi ve dört hook taşır ve gerçekten pazarlık edilemez olan her şey [CI](/tr/playbook/glossary/#ci) (her push'ta ya da pull request'te testleri ve kontrolleri otomatik çalıştıran hat) tarafından ikinci kez zorlanır. Makinelere ilke dağıtamadığınızda doğru şekil budur — settings dosyasında kemer, pipeline’da pantolon askısı.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni), bir geliştiricinin bir ilkeyle ilk kez karşılaştığında sorduğu türden bir soru:
+
+```text
+I can't switch to Opus and /permissions shows a deny rule I didn't write.
+Work out where both are coming from and tell me which file or console to ask my admin about.
+```
+
+Yanıt bir tahmin değil, bir `/status` satırı ve bir `claude doctor` raporudur — laboratuvarın yaptığı da bu.
+
+### Kapalı hâlde başarısız olmak, ve gürültülü başarısız olmak
+
+Managed settings, kendi dosyalarınızdan daha hoşgörülü, ve önemli olduğu yerde daha katı bir şekilde doğrulanır. Claude Code yapabildiğini onarır — geçersiz bir izin kuralını bir uyarıyla düşürür — ardından hâlâ başarısız olan herhangi bir üst düzey anahtarı düşürür ve geçerli olan her şeyi zorlamaya devam eder. Kendi user, project ve local dosyalarınız daha katıdır: JSON’u ya da üst düzey şekli başarısız olan bir dosya bütünüyle reddedilir.
+
+Birkaç zorlama anahtarı geçersiz olduğunda asla basitçe düşmez; düzeltilene kadar **kapalı hâlde başarısız olurlar**. `allowedMcpServers` boş bir allowlist olarak zorlanır, `allowManagedHooksOnly` ve `allowManagedMcpServersOnly` ve `disableCommandPluginSources` ve `enforceAvailableModels` `true` olarak ele alınır, `availableModels` boş olarak zorlanır, böylece yalnızca Default model kalır, `forceLoginOrgUUID` hiçbir organizasyonun giriş yapmasına izin vermez ve `crossSessionInbound` `refuse` olur. `requiredMinimumVersion` ve `requiredMaximumVersion` tasarım gereği açık hâlde başarısız olur.
+
+Ve mevcut ama bir JSON nesnesi olarak ayrıştırılamayan managed bir kaynak, kaynağı adlandırarak Claude Code’un **başlamayı reddetmesine** neden olur — başka bir admin kaynağı geçerli bir ilke teslim etse bile. Mevcut olmayan bir kaynak bir başarısızlık değildir ve boş bir managed settings dosyası `{}` olarak sayılır.
+
+### Özellikle server-managed settings
+
+Server-managed settings, claude.ai konsolunda **Admin Settings → Claude Code → Managed settings**’te bir Owner ya da Primary Owner tarafından yapılandırılır ve `settings.json`’da çalışan her anahtar, OS düzeyinde teslime kısıtlanmış olanlar dışında desteklenir. İstemciler, oturum bir Team ya da Enterprise OAuth girişiyle, `CLAUDE_CODE_OAUTH_TOKEN`’daki bir OAuth token’ıyla ya da doğrudan yapılandırılmış bir API anahtarıyla kimlik doğruladığında bunları getirir.
+
+İki operasyonel ayrıntı önemlidir. Settings, tüm organizasyona tekdüze uygulanır — grup başına yapılandırma henüz desteklenmiyor, ama self-hosted bir Claude apps gateway’i IdP grubu başına teslim eder. Ve hook’lar ve `env` değişkenleri shell komutlarını çalıştırdığı ya da etkilediği için, birindeki bir değişiklik, etkileşimli bir oturum’da geliştiricinin bir güvenlik onayı diyaloğunu kabul etmesini bekler; diğer değişiklikler bir sonraki saatlik yoklamada uygulanır.
+
+Herkes için telemetriyi kapatmak, mekanizmanın tamamının tek anahtarlık bir örneğidir:
+
+<CodeBlock title="managed-settings.json">
+
+```json
+{
+  "env": {
+    "DISABLE_TELEMETRY": "1"
+  }
+}
+```
+
+</CodeBlock>
+
+`1` değeri onay diyaloğu olmadan uygulanır. Aynı zamanda organizasyonunuzun analiz panosunu besleyen kullanım verisini de durdurur ve feature-flag getirmeyi kapatır — bu yüzden Remote Control, varsayılan otomatik mod ve diğer flag ile kapılanmış özellikler o geliştiriciler için kullanılamaz hâle gelir. Bu takası bilerek verin.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Managed settings, yönettiğiniz makinelere OS düzeyinde bir dağıtımdır. Bu yüzden bu laboratuvar
+  bir tane **kurmaz** — çalıştığını görmek için kendi dizüstü bilgisayarınıza bir ilke kurmak, tam
+  olarak asla gelişigüzel yapmamanız gereken değişikliktir. Bu sitede zorlanmış bir ilkenin
+  transcript’i yok, çünkü buradaki hiçbir oturum hiçbirine sahip olmadı. Bunun yerine laboratuvar,
+  bir geliştiricinin makinesine karşı gerçekten çalıştıracağınız iki komutu öğretir ve hiçbir ilke
+  yokken ne söylediklerini gösterir.
+</Callout>
+
+<Lab
+  title="Laboratuvar · bir makinenin ilke durumunu okuyun"
+  lessonId="tr/l4-master/m20-team/managed-settings"
+  repoTag="none"
+  steps={[
+    "`claude doctor`'ı çalıştırın ve `Managed settings (remote)` satırını okuyun. Dört sonuçtan birini bildirir: settings yüklendi, organizasyonunuzun hiç yapılandırılmışı yok, getirme başarısız oldu ya da getirme bir nedenle atlandı. Satır Claude Code 2.1.248 ya da üstünü gerektirir.",
+    "Aşağıdaki sekmelerden kendi işletim sisteminize ait yolu kullanarak bir endpoint ilkesinin dağıtılıp dağıtılmadığını kontrol edin. Windows'ta ayrıca her iki kayıt defteri anahtarını da kontrol edin — `HKLM\\SOFTWARE\\Policies\\ClaudeCode` ve kullanıcı tarafından yazılabilir `HKCU\\SOFTWARE\\Policies\\ClaudeCode`.",
+    "Etkileşimli bir oturum başlatın ve `/status`'u çalıştırın. `Setting sources` satırını okuyun: yürürlükte bir ilkeyle, `Enterprise managed settings` ardından parantez içinde seçilen kaynağı okur — `(remote)`, `(plist)`, `(HKLM)`, `(file)`, `(drop-ins)`, `(file + drop-ins)`, `(HKCU)`, `(parent process)`, `(helper)`, ya da `, merged` ile biten bir liste.",
+    'Satır dağıttığınızdan başka bir kaynağı adlandırıyorsa, altındaki `Skipped sources` satırını okuyun (Claude Code 2.1.242 ya da üstü): bu, makineye hiç ulaşmamış bir ilkeyi, daha yüksek öncelikli bir kaynağın geçersiz kıldığı bir ilkeden ayırır.',
+    "Transcript'lerin altındaki örneği başlangıç noktası olarak kullanarak filonuza vereceğiniz `managed-settings.json`'ı yazın — ama dağıtmayın — ve onu bir JSON doğrulayıcıyla kontrol edin.",
+  ]}
+  expected="Yönetilmeyen bir makinede, `claude doctor` uzak getirmenin gerçekleşmediğini ve nedenini bildirir, belgelenen ilke yolları yoktur ve `/status` hiç `Enterprise managed settings` satırı göstermez."
+  checklist={[
+    '`claude doctor`, bir `Managed settings (remote)` satırı yazdırdı ve dört sonuçtan hangisini bildirdiğini söyleyebiliyorsunuz',
+    'Örnekteki değil, kendi işletim sisteminize ait dosya yolunu kontrol ettiniz',
+    'Eksik bir `Setting sources` managed satırının ne anlama geldiğini biliyorsunuz: hiçbir kaynak bir ilke anahtarı teslim etmedi',
+    'Taslak ilkeniz üst düzeyi bir nesne olan geçerli JSON',
+    'Makinenize hiçbir şey kurulmadı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m20-team/02-managed-settings/01-no-managed-policy.txt"
+    range="2-15"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m20-team/02-managed-settings/02-policy-paths-absent.txt"
+    range="2-7"
+  />
+</Lab>
+
+`claude doctor` kaydı kişisel bir Max hesabından, bu yüzden uzak getirme `not fetched — requires an Enterprise or Team subscription` bildiriyor — dört belgelenen sonuçtan dördüncüsü, server-managed settings’i hiç kullanamayan bir plandan görülen, nedeniyle birlikte atlanmış bir getirme. PowerShell kaydı diğer yarısını doğruluyor: belgelenen dosya yolu ve her iki kayıt defteri anahtarı da yok, bu yüzden hiçbir endpoint ilkesi de dağıtılmamış. İkisi birlikte, bir geliştirici bir ilkenin "uygulanmadığını" söylediğinde çalıştıracağınız kontroldür: önce herhangi bir kaynağın makineye hiç ulaşıp ulaşmadığını belirleyin.
+
+### Bir ilke dosyası işletim sistemine göre nereye gider
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+ls -l "/Library/Application Support/ClaudeCode/managed-settings.json"
+ls -l "/Library/Application Support/ClaudeCode/managed-settings.d/"
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+ls -l /etc/claude-code/managed-settings.json
+ls -l /etc/claude-code/managed-settings.d/
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+Test-Path 'C:\Program Files\ClaudeCode\managed-settings.json'
+Test-Path 'HKLM:\SOFTWARE\Policies\ClaudeCode'
+Test-Path 'HKCU:\SOFTWARE\Policies\ClaudeCode'
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows’ta ilke, bu anahtarların altında `Settings` adlı bir `REG_SZ` ya da `REG_EXPAND_SZ` değeri olarak JSON şeklinde depolanır. macOS’ta aynı anahtarlar `com.anthropic.claudecode` managed preferences alanına girer, iç içe settings sözlükler olarak ve listeler plist dizileri olarak.
+
+### Başlangıç ilkesi
+
+<CodeBlock title="managed-settings.json">
+
+```json
+{
+  "permissions": {
+    "deny": ["Read(./.env)", "Read(./secrets/**)"],
+    "disableBypassPermissionsMode": "disable"
+  },
+  "allowManagedPermissionRulesOnly": true
+}
+```
+
+</CodeBlock>
+
+Üç anahtar, üç farklı iş. `deny` listesi, kimsenin kaldıramayacağı kuraldır. `disableBypassPermissionsMode` kaçış kapağını kaldırır. `allowManagedPermissionRulesOnly`, bütün dosyanın karakterini değiştiren anahtardır: onunla, user, project ve local dosyalardan — ve `--allowedTools`’tan — gelen izin kuralları yok sayılır ve ilkeniz orada olan tek allowlist olur. Bir takımın sahip olduğu her kolaylık kuralının artık sizin bakımınıza kaldığını bilerek dağıtın.
+
+## Anti-pattern'ler
+
+**Bir doğrulama adımı olmadan bir ilke dağıtmak.** Daha yüksek öncelikli bir kaynağa sessizce kaybeden bir ilke, tam olarak çalışan bir ilke gibi görünür. _Düzeltme:_ bir makineye dağıtın, `/status`’ta `Setting sources` ve `Skipped sources`’ı okuyun ve ancak o zaman filoya iletin.
+
+**Bir endpoint ilkesinin bulut oturum’larını kapsadığını varsaymak.** Bir dizüstü bilgisayardaki `managed-settings.json` ya da MDM profili, Anthropic barındırmalı bir bulut oturum’ına ulaşmaz; yalnızca server-managed settings ulaşır. _Düzeltme:_ geliştiricileriniz Claude Code’u web’de kullanıyorsa, server-managed settings’i de yapılandırın.
+
+**Birkaç dağıtılmış kaynağın toplanacağını beklemek.** Varsayılan olarak toplanmazlar: bir ilke anahtarına sahip en yüksek sıralı kaynak tamamen kazanır ve diğerleri uyarı olmadan atlanır. _Düzeltme:_ tek bir kaynakta birleştirin ya da en yüksek sıralı olanda `managedSourcesBehavior: "merge"`’ü ayarlayın.
+
+**`model`’i kilitleyip modelleri kısıtladığınızı düşünmek.** Managed bir `model`, her oturum’ın neyle başlayacağını ayarlar; `--model` hâlâ hareket eder. _Düzeltme:_ `availableModels`’i dağıtın, varsayılan da önemliyse `enforceAvailableModels`’i.
+
+**Neyin birlikte gittiğini fark etmeden telemetriyi kapatmak.** `DISABLE_TELEMETRY` aynı zamanda kendi analiz panonuzun arkasındaki kullanım verisini de bitirir ve o geliştiriciler için feature-flag getirmeyi kapatır. _Düzeltme:_ bunu bir takas olarak karar verin ve kullanıcı başına sayılara ihtiyacınız varsa onu kendi OpenTelemetry export’unuzla değiştirin (05. ders).
+
+**Bir filo ilkesini takımlar arasında tek bir paylaşılan dosyada düzenlemek.** Bir güvenlik ilkesinde merge çakışmaları bir Cuma gününü geçirmenin kötü bir yolu. _Düzeltme:_ onu `managed-settings.d/10-…json`, `20-…json`’a bölün ve Claude Code’un onları tanımlı bir sırada birleştirmesine izin verin.
+
+<Callout variant="changed">
+  Birkaç managed kaynağı `managedSourcesBehavior: "merge"` ile birleştirmek ve size hangi
+  kaynakların yok sayıldığını söyleyen `/status`'taki `Skipped sources` satırı, ikisi de Claude Code
+  2.1.242 ya da üstünü gerektirir; `claude doctor`'daki `Managed settings (remote)` satırı 2.1.248
+  ya da üstünü gerektirir. Daha eski istemcilerde varsayılan `first-wins` davranışı, neyin
+  atlandığını görmenin bir yolu olmadan uygulanır.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/managed-settings"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir makinede hem server-managed bir ilke hem de farklı anahtarlar ayarlayan bir `managed-settings.json` dosyası var ve `managedSourcesBehavior` varsayılanında bırakılmış. Ne uygulanır?"
+  options={[
+    {
+      text: 'İkisi de, birleştirilmiş, çakışmalarda server-managed değerler kazanarak.',
+      explanation: 'Bunu `"merge"` yapar — varsayılan değil.',
+    },
+    {
+      text: 'Yalnızca server-managed ilke; birkaç kaynaklar-arası anahtar dışında dosya tamamen atlanır.',
+      correct: true,
+      explanation:
+        '`first-wins` altında, bir ilke anahtarına sahip en yüksek sıralı kaynak ilkeyi sağlar ve geri kalanı sessizce yok sayılır.',
+    },
+    {
+      text: 'Yalnızca dosya, çünkü yerel bir dosya getirilmiş bir dosyadan daha güvenilirdir.',
+      explanation: 'Uzak settings, MDM ve dosya kaynaklarının üstünde sıralanır.',
+    },
+    {
+      text: 'Çakışma çözülene kadar Claude Code başlamayı reddeder.',
+      explanation: 'Yalnızca bir kaynak mevcut ama ayrıştırılamıyorsa başlamayı reddeder.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/managed-settings"
+  questionId="q2"
+  lang="tr"
+  prompt="Managed settings'iniz `enableArtifact: true`'yu ayarlıyor. Bir geliştirici user settings'inde `enableArtifact: false`'ı ayarlıyor. Ne olur?"
+  options={[
+    {
+      text: 'Managed değer kazanır; Artifact tool açık kalır.',
+      explanation:
+        'Bu, alttan gelen daha katı değere saygı gösterilen güvenlik açısından hassas istisnalardan biri.',
+    },
+    {
+      text: "Geliştiricinin `false`'u kazanır ve hiçbir şey Artifact tool'unu geri açmaz.",
+      correct: true,
+      explanation:
+        'Doğru — `enableArtifact: false` (ve `disableArtifact: true`) herhangi bir kapsamdan sayılır. Claude Code 2.1.242 ya da üstünü gerektirir.',
+    },
+    {
+      text: 'Claude Code yöneticiye bir ilke ihlali bildirir.',
+      explanation: 'Böyle bir rapor yok; anahtar basitçe daha katı değere çözülür.',
+    },
+    {
+      text: 'Geliştiricinin yerel yönetici haklarına sahip olup olmamasına bağlıdır.',
+      explanation:
+        'Yerel yönetici hakları birinin ilke kaynağını düzenlemesine izin verir, bu anahtarın çözüm kuralından farklı bir konudur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/managed-settings"
+  questionId="q3"
+  lang="tr"
+  prompt="Hangi anahtar managed settings'i izin kurallarının tek kaynağı yapar?"
+  options={[
+    {
+      text: 'permissions.disableBypassPermissionsMode',
+      explanation:
+        'Bu bypass modunu kaldırır ve herhangi bir kapsamdan çalışır — kuralların nereden gelebileceğine dokunmaz.',
+    },
+    {
+      text: 'allowManagedPermissionRulesOnly',
+      correct: true,
+      explanation:
+        "Yalnızca managed'dır ve Claude Code'un user, project ve local dosyalardan ve `--allowedTools`'tan gelen izin kurallarını yok saymasını sağlar.",
+    },
+    {
+      text: 'strictPluginOnlyCustomization',
+      explanation:
+        "Bu, skill'lerin, agent'ların, hook'ların ve MCP server'ların nereden gelebileceğini kısıtlar, izin kurallarını değil.",
+    },
+    {
+      text: 'allowManagedHooksOnly',
+      explanation: "Bu, hangi hook'ların çalışacağını kısıtlar.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/managed-settings"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir yönetici, `availableModels` değeri geçersiz olan bir ilke dağıtıyor. Claude Code, düzeltilene kadar neyi zorlar?"
+  options={[
+    {
+      text: 'Hiçbir şey — geçersiz anahtar düşürülür ve her model kullanılabilir kalır.',
+      explanation:
+        'Çoğu geçersiz managed anahtarı böyle davranır, ama `availableModels` kapalı-hâlde-başarısız-olma listesinde.',
+    },
+    {
+      text: 'Boş bir allowlist, böylece yalnızca Default model kullanılabilir olur.',
+      correct: true,
+      explanation:
+        'Kapalı hâlde başarısız olur. String olmayan bir girdi ayıklanır ve geçerli alt küme zorlanır; tamamen geçersiz bir değer boş bir allowlist bırakır.',
+    },
+    {
+      text: 'Son başarılı getirmeden önbelleğe alınmış önceki geçerli değer.',
+      explanation:
+        'Server-managed settings için bir önbellek var, ama bu geçersiz bir anahtar için geri dönüş değil.',
+    },
+    {
+      text: 'Claude Code başlamayı reddeder.',
+      explanation:
+        'Bu, bir JSON nesnesi olarak hiç ayrıştırılamayan bir kaynak ya da başarısız bir `policyHelper` için ayrılmıştır.',
+    },
+  ]}
+/>
+
+**Sonraki:** `03-team-marketplace`, aynı ilke makinesini farklı bir kullanıma sokuyor — bir takımın hangi plugin'leri ve skill'leri kurabileceğine karar vermek ve kendi plugin'inizi göndermek.

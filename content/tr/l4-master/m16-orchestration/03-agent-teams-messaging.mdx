@@ -1,6 +1,6 @@
 ---
 title: 'Agent team’ler ve oturumlar arası mesajlaşma'
-description: 'Agent team’ler, paylaşılan bir görev listesi ve bir mailbox ile eş oturumları yöneten bir lead oturum kurar. Oturumlar arası mesajlaşma ise hâlihazırda çalıştırdığınız oturumların ListAgents ve SendMessage ile birbirine bulgu aktarmasını sağlar.'
+description: 'Agent team’ler, paylaşılan bir görev listesi ve bir posta kutusuyla eş oturumların başına bir lead oturum koyar. Oturumlar arası mesajlaşma, zaten çalıştırdığınız oturumların ListAgents ve SendMessage ile birbirine bulgu geçirmesini sağlar.'
 level: 4
 module: 'm16-orchestration'
 order: 3
@@ -9,7 +9,7 @@ difficulty: core
 tags: ['agent-team', 'oturumlar-arası-mesajlaşma', 'sendmessage', 'listagents']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Orchestrate teams of Claude Code sessions'
@@ -31,11 +31,398 @@ lab:
   repo_tag: 'lesson/m16-04-start'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders aynı tool'u (`SendMessage`) paylaşan iki ayrı özelliği ayırır. Agent team'ler deneyseldir ve varsayılan olarak kapalıdır (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`): bir lead oturum, her biri kendi context window'una sahip tam bağımsız teammate'ler açar, iş paylaşılan bir görev listesi ve mailbox üzerinden yürür, teammate'ler lead'in permission ayarlarını devralır ama konuşma geçmişini devralmaz — ve teams açıkken Claude'un kendi adlandırdığı bir subagent da teammate olarak başlar. Oturumlar arası mesajlaşma ise kurulum istemez: Claude hedefi `ListAgents` ile bulur, `SendMessage` ile iletir; `/list-agents` (veya `/peers`) neye ulaşılabildiğini gösterir, `--name`/`/rename` isim verir, `@` ile hedef gösterilir. Dersin güvenlik kuralı atlanmamalıdır: başka bir oturumdan gelen mesaj asla sizin onayınız sayılmaz, konfigürasyonu değiştiremez ve içindeki komutlar çalışmaz; gelen mesajları `crossSessionInbound` (`accept`/`hold`/`refuse`) ile, makine dışına çıkanları `isolatePeerMachines` ile yönetirsiniz. Laboratuvarda headless bir oturumun kendi peer'lerini gerçekten listelediği kayıt vardır; teammate açmak yalnızca interaktif oturumda mümkün olduğu için o kısım uydurma bir kayıt yerine tam komutlarla anlatılır.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur.
+- Agent team'leri etkinleştirmek ve bir lead'in, bir takım arkadaşının (teammate), paylaşılan görev listesinin ve bir posta kutusunun (mailbox) ne olduğunu söylemek.
+- Bir takım arkadaşının lead'den neyi devraldığını — ve devralmadığı üç şeyi — açıklamak.
+- Kendi çalıştırdığınız oturumlar arasında oturumlar arası mesajlaşmayı kullanmak: `ListAgents`, `SendMessage`, `/list-agents`, `@` ile anma ve `/rename`.
+- Gelen mesajlar için `accept`, `hold` ya da `refuse` seçmek ve hiçbir şey ayarlamadığınızda varsayılanın ne yaptığını söylemek.
+- [Agent](/tr/playbook/glossary/#agent)'lar (bir hedefi kendi başına adım adım yürüten yapay zekâ süreçleri) arasındaki her mesajı yöneten güvenlik kuralını belirtmek: bu asla sizin onayınız değildir.
+
+**Ön koşullar.** [Subagent](/tr/playbook/glossary/#subagent)'lar (L3 `m10-subagents`) ve karşılaştırma için `01-workflows` dersi. Agent team'ler **deneysel ve varsayılan olarak kapalıdır**. Oturumlar arası mesajlaşma, macOS ve Linux'ta (WSL 2 dâhil) Claude Code 2.1.224 ya da üzerini, yerel Windows'ta ise 2.1.234 ya da üzerini gerektirir; koşullar sağlandığında hiçbir şey etkinleştirmeden açıktır.
+
+<WhenNotToUse>
+  Agent team'ler koordinasyon ek yükü getirir ve tek bir oturuma göre önemli ölçüde daha fazla
+  [token](/tr/playbook/glossary/#token) (bir dil modelinin metni işlerken kullandığı en küçük birim)
+  kullanır — maliyet sayfası, [plan mode](/tr/playbook/glossary/#plan-mode)'da (Claude'un değişiklik
+  yapmadan önce yalnızca okuyup bir plan sunduğu mod) çalışan takım arkadaşlarını kabaca **standart
+  bir oturumun 7 katına** koyuyor — dolayısıyla sıralı işler, aynı dosyadaki düzenlemeler ya da çok
+  bağımlılığı olan görevler için yanlış araçtırlar; bunlarda tek bir oturum ya da birkaç subagent
+  daha iyi sonuç verir. Ayrıca sürdürülemezler: `/resume` ve `/rewind`, süreç içindeki (in-process)
+  takım arkadaşlarını geri getirmez. Ve mesajlaşma context'i taşımanın bir yolu değildir: bir mesaj
+  düz metin taşır, göndericinin geçmişini ya da dosyalarını asla taşımaz — dolayısıyla istediğiniz
+  şey diğer oturumun konuşmasıysa, onun yerine onu resume edin.
+</WhenNotToUse>
+
+## Kavram
+
+### İki özellik, tek tool
+
+Her iki özellik de birden fazla Claude'u aynı anda çalıştırmanın yollarıdır ve ikisi de aynı
+[tool](/tr/playbook/glossary/#tool)'la (Claude'a işlem yaptıran araç)
+gönderir:
+
+- **Agent team'ler**: bir oturum **lead**'dir; her biri kendi [context window](/tr/playbook/glossary/#context-window)'una (Claude'un o oturumda tuttuğu bağlam alanı) sahip tam bağımsız
+  bir Claude Code oturumu olan **takım arkadaşları** (teammates) spawn eder, bunlar paylaşılan bir
+  **görev listesi** (shared task list) ve bir **posta kutusu** (mailbox) üzerinden koordine edilir.
+  Lead işi atar ve sonuçları sentezler; herhangi bir takım arkadaşıyla doğrudan konuşabilirsiniz.
+- **Oturumlar arası mesajlaşma**: hiç takım yoktur. Farklı terminallerde ya da farklı makinelerde
+  kendinizin başlattığı oturumlar birbirine mesaj geçirebilir. Claude, hedefleri `ListAgents` ile
+  keşfeder ve `SendMessage` ile teslim eder — bu tool'ların ikisini de siz kendiniz asla çağırmazsınız.
+
+Subagent'larla karşılaştırma, akılda tutulmaya değer olandır:
+
+|                   | Subagent'lar                                                                        | Agent team'ler                                                                  |
+| ----------------- | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Context           | Kendi context window'u; sonuçlar çağırana döner                                     | Kendi context window'u; tamamen bağımsız                                        |
+| İletişim          | Çağırana bir sonuç döndürür; adlandırılmış subagent'lara ayrıca mesaj da atılabilir | Takım arkadaşları birbirine doğrudan mesaj atar                                 |
+| Koordinasyon      | Ana agent tüm işi yönetir                                                           | Mesajlar artı paylaşılan bir görev listesi üzerinden kendi kendine koordinasyon |
+| En iyi olduğu yer | Yalnızca sonucun önemli olduğu odaklı görevler                                      | Tartışma ve iş birliği gerektiren karmaşık iş                                   |
+| Token maliyeti    | Daha düşük: sonuçlar ana context'e özetlenerek döner                                | Daha yüksek: her takım arkadaşı ayrı bir Claude örneğidir                       |
+
+### Bir takımı etkinleştirmek ve başlatmak
+
+Agent team'ler, ortamınızda ya da `settings.json`'da `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` `1`
+olmadığı sürece kapalıdır:
+
+<CodeBlock title="settings.json">
+
+```json
+{
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  }
+}
+```
+
+</CodeBlock>
+
+Sonra sadece gündelik dille istersiniz. Bu dersin örneği dokümanların kullandığı örnektir ve işe
+yarar çünkü üç rol birbirinden bağımsızdır:
+
+```text
+I'm designing a CLI tool that helps developers track TODO comments across
+their codebase. Spawn three teammates to explore this from different angles:
+one on UX, one on technical architecture, one playing devil's advocate.
+```
+
+Ayrı bir kurulum adımı ve bir onay istemi yoktur: team'ler etkinken Claude, `Agent` tool'unu bir
+`name` ile her çağırdığında bir takım arkadaşı başlatır. Bunun altını çizmeye değer bir sonucu var —
+**Claude subagent'ları kendiliğinden adlandırır**, dolayısıyla team'ler etkinken siz hiç takım işi
+olarak çerçevelemediğiniz bir delegasyon sırasında bir takım oluşabilir. Adlandırılmış subagent'ları
+geri almak için değişkeni `0`'a ayarlayın.
+
+Takım arkadaşı spawn etmek etkileşimli bir oturum da gerektirir. `claude -p`'de ve Agent SDK
+oturumlarında Claude takım arkadaşı spawn etmez ve adlandırılmış bir subagent, team'ler etkin olsa
+bile sıradan bir subagent olarak çalışır.
+
+Takım arkadaşları, [prompt](/tr/playbook/glossary/#prompt) (Claude'a verilen istek metni) girdisinin altındaki agent panelinde görünür (`in-process` modu, varsayılan,
+her terminalde çalışır). Ok tuşları seçer, Enter bir takım arkadaşının [transcript](/tr/playbook/glossary/#transcript)'ini (kaydedilmiş gerçek bir oturum dökümü) açar, böylece
+ona doğrudan mesaj atabilirsiniz, `x` durdurur, Ctrl+T görev listesini açıp kapatır. `teammateMode`
+(ya da `claude --teammate-mode auto`) bölünmüş panellere geçer, bu da tmux ya da `it2` CLI'lı
+iTerm2 gerektirir.
+
+### Bir takım arkadaşının devraldığı ve devralmadığı
+
+Bir takım arkadaşı, herhangi bir oturum gibi aynı proje context'ini — `CLAUDE.md`, [MCP server](/tr/playbook/glossary/#mcp-server)'lar (Model Context Protocol ile Claude'a dış araç ve veri sağlayan sunucular),
+[skill](/tr/playbook/glossary/#skill)'ler (Claude'un izlediği paketlenmiş talimatlar) — artı spawn prompt'unu yükler. Lead'in konuşma geçmişini **devralmaz**, dolayısıyla göreve
+özgü ayrıntıyı spawn prompt'una koyun. Lead'in izin ayarlarıyla başlar ve izin istemleri, sizin
+cevaplamanız için lead'in oturumunda görünür. Modeli şu sıradaki ilkinden gelir: spawn prompt'unuzun
+adlandırdığı model, referans verilen bir subagent tanımının `model`'i, `CLAUDE_CODE_SUBAGENT_MODEL`,
+sonra lead'in modeli. Effort seviyesi lead'inkini izler.
+
+Bir subagent tanımını bir rol olarak yeniden kullanabilirsiniz: "security-reviewer agent tipini
+kullanan bir takım arkadaşı spawn et, auth modülünü denetlesin." Claude Code, tanımın `tools`'unu
+(`SendMessage`'ı ve oturumda varsa `Task*` tool'larını ekleyerek), `model`'ini ve gövdesini uygular —
+in-process modda varsayılan sistem prompt'una eklenir, bölünmüş bir panelde ise onun yerine geçer.
+Tanımın `skills`'ini **uygulamaz**.
+
+Üç [hook](/tr/playbook/glossary/#hook) (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan komut), bir takımı kalite kapıları olan bir şeye dönüştürür: `TeammateIdle` (geri bildirim
+göndermek ve takım arkadaşını çalışmaya devam ettirmek için çıkış kodu 2), `TaskCreated` ve
+`TaskCompleted` (oluşturmayı ya da tamamlamayı engelleyip geri bildirim göndermek için çıkış kodu 2).
+
+Takımlar ve görevler, oturumdan türetilmiş bir adın altında yaşar — `session-` artı oturum kimliğinin
+ilk sekiz karakteri — takım yapılandırması `~/.claude/teams/{team-name}/config.json`'da ve her
+agent'ın posta kutusu `~/.claude/teams/{team-name}/inboxes/{agent-name}.json`'da bir JSON dosyasıdır.
+Yapılandırma runtime durumu taşır: elle düzenlemeyin ya da önceden yazmayın.
+
+### Kendi oturumlarınıza mesaj atmak
+
+Kendinizin başlattığı ve yönlendirdiği oturumlar için mesajlaşma daha hafif seçenektir ve kurulum
+gerektirmez. Sıradan dilde isteyin:
+
+```text
+Let @api-worker know the schema migration finished
+```
+
+`@` artı bir oturumun adının ilk harfleri, diğer canlı yerel oturumlarınızın bir typeahead'ini açar
+(2.1.232 ya da üzeri). Bir oturum, `--name` ya da `/rename` ile verdiğiniz ada cevap verir; hiçbiri
+verilmezse Claude Code onu kendisi adlandırır. Bu oturumun neye ulaşabildiğini görmek için
+`/list-agents`'ı (ayrıca `/peers`) çalıştırın: subagent'lar, bu oturumun takım arkadaşları, diğer
+yerel oturumlarınız ve — Remote Control'e bağlıyken — cloud oturumlarınız ve diğer makinelerinizdeki
+oturumlarınız. Varsa ilk satır, bu oturumun kendi adıdır.
+
+Teslimat basit ve sınırlıdır. Alıcı Claude, mesajı etkin bir tur sırasında tool çağrıları arasında
+okur, dolayısıyla çalışan bir tool asla kesintiye uğramaz; oturum boştaysa mesaj yeni bir tur başlatır.
+Aynı makinedeki bir mesaj, oturum başına bir soket üzerinden (yerel Windows'ta adlandırılmış bir boru)
+yolculuk eder ve asla Anthropic sunucularından geçmez; başka bir makinenize ya da bir claude.ai/code
+oturumuna giden bir mesaj Anthropic sunucularından geçer. Claude Code, yaklaşık bir milyon karakteri
+aşan bir mesajı reddeder, hedefin gelen kutusu yeterince aldıktan sonra hızlı bir patlamayı reddeder,
+tekrarları rate-limit'ler, kısa bir pencerede aynı tekrarları düşürür ve en fazla 50 kabul edilmiş
+mesajı kuyruğa alır — iki oturum arasındaki bir mesaj döngüsünün kendiliğinden durmasının nedeni de
+budur.
+
+Ayrıca tek seferlik bir bildirim isteyebilirsiniz: "Migration oturumu üzerinde çalıştığı şeyi
+bitirdiğinde bana söyle" ifadesi, yalnızca bu makinedeki oturumlar için `SendMessage`'ın
+`notify_when_idle` girdisiyle abone olur ve 12 saat sonra sona erer (2.1.236 ya da üzeri).
+
+### Güvenlik kuralı
+
+Üzerinden atlanmaması gereken kısım burası. Bir agent diğerine mesaj attığında, **Claude Code alıcı
+agent'a mesajın sizden değil başka bir Claude oturumundan geldiğini söyler**:
+
+- Hiçbir şeyi onaylayamaz: bir mesaj asla sizin onayınız sayılmaz ve bekleyen bir izin istemini
+  cevaplayamaz.
+- Yapılandırmayı değiştiremez: alıcı Claude'a, başka bir oturum istediği için izin ayarlarını,
+  `CLAUDE.md`'yi ya da diğer yapılandırmayı asla değiştirmemesi talimatı verilir.
+- Komutlar çalışmaz: metindeki bir `/compact`, düz metin olarak varır.
+- İzin istemleri, mesajın istediği her şey için alıcı tarafta yine tetiklenir.
+
+Bir eylemi reddedilen bir takım arkadaşı, onu yaptırmak için başka bir takım arkadaşına aktaramaz.
+Auto mode'da sınıflandırıcı, aktarılan bir onay iddiasını güvenilmeyen girdi olarak ele alır ve
+teslimattan önce her mesajı inceler.
+
+Gelen tarafı `crossSessionInbound` ile kontrol edersiniz: `accept` teslim eder, `hold` bir bildirim
+gösterir ve onayınızı bekler, `refuse` düşürür. Hiçbir şey ayarlanmadığında Claude Code, iki oturumun
+izin mode'larına bakarak mesaj başına karar verir — izin isteyen bir oturum normal şekilde alır, ama
+kendini istemleri atladığını belirten bir oturumdan gelen bir mesajı bekletir; istemleri atlayan bir
+oturum, yine istemleri atlayan başka bir oturumdan gelenler dışında her şeyi bekletir.
+`isolatePeerMachines: true`, `bypassPermissions` mode'unda bile makineden çıkan her mesaj için
+onayınızı gerektirir. Özelliği tamamen kapatmak için `crossSessionInbound: "refuse"`'u `SendMessage`
+ve `ListAgents`'ı adlandıran deny kurallarıyla birleştirin — `SendMessage`'ı reddetmenin, aynı tool
+olduğu için subagent'lara ve takım arkadaşlarına mesajlaşmayı da kaldırdığına dikkat edin.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Takım arkadaşı spawn etmek etkileşimli bir oturum gerektirir: `claude -p` asla birini spawn etmez,
+  dolayısıyla bir takımın oluşumunun dürüst bir [headless](/tr/playbook/glossary/#headless)
+  (etkileşimli arayüz olmadan tek komutla çalıştırma, `claude -p`) kaydı yoktur ve bu ders böyle bir
+  şey uydurmaz. Bir headless oturumun _yapabildiği_ şey eşlerini keşfetmektir — bir `-p` oturumu da
+  etkileşimli bir oturum gibi bir gelen kutusu soketi bağlar — dolayısıyla aşağıdaki kayıt gerçektir
+  ve laboratuvarın takım yarısı, tam komutlarla, etkileşimli prompt'ta ve transcript olmadan
+  yapılır.
 </Callout>
+
+<Lab
+  title="Laboratuvar · bu makinenin kime ulaşabildiğini görün, sonra iki kişilik bir takım kurun"
+  lessonId="tr/l4-master/m16-orchestration/agent-teams-messaging"
+  repoTag="lesson/m16-04-start"
+  steps={[
+    'En az bir başka Claude Code oturumu açıkken, lab klonunuzdan eş probe\'unu headless olarak çalıştırın: `claude -p "Use the ListAgents tool once and tell me only how many agents it returned and what kinds they are. Do not send any message." --model haiku --max-turns 4 --output-format json --allowedTools ListAgents`',
+    "Aynı depoda iki etkileşimli oturum açın. Birincide `/rename api-worker` çalıştırın; ikincide `/list-agents` çalıştırıp `api-worker`'ın listelendiğini doğrulayın, sonra `/status` çalıştırıp `Peer address` satırını bulun.",
+    "İkinci oturumdan, kendiniz göndermek yerine bir mesaj isteyin: `Let @api-worker know that src/store.ts is being edited right now`. Tek satırlık önizlemenin birinci oturumda geldiğini izleyin ve tam metni okumak için `Ctrl+O`'ya basın.",
+    "Aşağıdaki laboratuvarın altındaki sekmelerden işletim sisteminize uygun başlatma komutuyla, team'leri yalnızca bir oturum için etkinleştirin.",
+    "O oturumdan bir takım isteyin: `Spawn two teammates to review src/store.ts: one on correctness, one on test coverage. Have them report findings to you.` Agent panelinde ok tuşlarını kullanın, transcript'ini okumak için bir takım arkadaşında Enter'a basın ve paylaşılan görev listesini görmek için Ctrl+T'ye basın.",
+    "Lead'den bir takım arkadaşını isimle kapatmasını isteyerek bitirin ve `~/.claude/teams/`'i kontrol edin — takım yapılandırma dizini, oturum bittiğinde kaldırılır.",
+  ]}
+  expected="Headless probe, hiçbir şey göndermeden eş oturumların sayısını ve türlerini döndürür. Etkileşimli çiftte, yeniden adlandırılan oturum @api-worker olarak adreslenebilir ve mesaj soluk, tek satırlık bir önizleme olarak varır. Takım oturumu, agent panelinde her biri kendi transcript'ine sahip iki takım arkadaşı gösterir."
+  checklist={[
+    '`/list-agents`, diğer oturumu `/rename` ile ayarladığınız adla listeler',
+    'Gelen mesaj bir önizleme olarak gösterilir ve `Ctrl+O` tam metni açığa çıkarır',
+    'Takım arkadaşları yalnızca ortam değişkeni ayarlanarak başlatılan oturumda görünür',
+    'Bir takım arkadaşının izin istemi, takım arkadaşının değil lead’in oturumunda görünür',
+    'Laboratuvar deposunda hiçbir şey değiştirilmedi',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m16-orchestration/03-agent-teams-messaging/01-list-agents.txt"
+    range="2-8"
+  />
+</Lab>
+
+### Bir oturum için team'leri işletim sistemine göre etkinleştirmek
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$env:CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1"
+claude
+```
+
+  </Fragment>
+</OSTabs>
+
+PowerShell'in satır içi bir ortam değişkeni ön eki yoktur, dolayısıyla değişken önce ayarlanır ve o
+kabuğun geri kalanı için ayarlı kalır — deneylemeyi bitirdiğinizde pencereyi kapatın ya da onu
+`"0"`'a geri ayarlayın.
+
+O kayıt iki kez okunmaya değer. Bu bir `claude -p` oturumudur ve yine de beş eş oturum buldu — dördü
+etkileşimli, biri arka plan — çünkü headless bir oturum da diğerleri gibi bir gelen kutusu soketi
+bağlar (bir `--bare` oturumu bağlamaz ve listelemelerde görünmez). Ayrıca bir sentin altında maliyeti
+oldu: keşif ucuzdur ve mesajlaşmanın otomatikleştirebileceğiniz yarısı budur.
+
+## Anti-pattern'ler
+
+**Subagent'ların yeteceği yerde bir takıma başvurmak.** Takımlar kabaca bir büyüklük mertebesi daha
+fazlaya mal olur ve koordinasyon ek yükü getirir; dokümanların kendi tavsiyesi araştırma ve inceleme
+görevleriyle, 3-5 takım arkadaşıyla başlamak ve yalnızca takım arkadaşları gerçekten paralel
+çalıştığında ölçeklenmektir. _Çözüm:_ işçiler arasındaki tartışmanın size ne kazandırdığını sorun.
+Cevap hiçbir şeyse, subagent'lara delege edin.
+
+**Aynı dosyayı düzenleyen iki takım arkadaşı.** Bu üzerine yazmalarla sonuçlanır; hiçbir şey
+hakemlik etmez. _Çözüm:_ işi her takım arkadaşının farklı bir dosya kümesine sahip olacağı şekilde
+bölün — paralel insan işini yaşanabilir kılan aynı ayrık sahiplik kuralı.
+
+**Bir mesajı onay gibi ele almak.** "Diğer oturum sorun olmadığını söyledi" bir onay değildir ve
+Claude Code, bunun asla sizinki sayılmadığını açıkça belirtir. _Çözüm:_ bir oturum alamayacağı bir
+eyleme ihtiyaç duyduğunda, onu daha gevşek izinleri olan bir oturuma değil, kendinize geri
+yönlendirin.
+
+**`/resume`'un takım arkadaşlarını geri getirmesini beklemek.** Getirmez; lead o zaman artık var
+olmayan takım arkadaşlarına mesaj atabilir. _Çözüm:_ resume ettikten sonra lead'e yeni takım
+arkadaşları spawn etmesini söyleyin.
+
+**Bir takım arkadaşının satırı kaybolunca paniklemek.** Boş bir satır, tüm panel boşa düştükten 30
+saniye sonra gizlenir ve üçten fazla boş takım arkadaşı bir `N idle agents` satırında toplanır. Takım
+arkadaşı hâlâ çalışıyor ve hâlâ adreslenebilir. _Çözüm:_ satırı geri getirmek için ona adıyla mesaj
+atın.
+
+<Callout variant="changed">
+  `TeamCreate` ve `TeamDelete` tool'ları artık yok: 2.1.178'den beri bir takım arkadaşı spawn etmek
+  hiçbir kurulum adımı gerektirmiyor ve temizlik oturum çıktığında oluyor. `Agent` tool'undaki
+  `team_name` girdisi kabul edilir ama görmezden gelinir ve `teammateDefaultModel`, 2.1.234'te
+  kaldırıldı — modeli bunun yerine prompt'unuzda adlandırın.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m16-orchestration/agent-teams-messaging"
+  questionId="q1"
+  lang="tr"
+  prompt="Agent team'leri etkinleştirip sonra Claude'dan, sıradan bir oturumda, 'aramayı bir yardımcıya devret' diye istiyorsunuz. Ne olabilir?"
+  options={[
+    {
+      text: 'Hiçbir şey değişmez: takım arkadaşları yalnızca bir takım istediğinizde görünür',
+      explanation:
+        'Claude subagent’ları kendiliğinden adlandırır ve team’ler etkinken Claude’un adlandırdığı bir subagent bir takım arkadaşı olarak başlar.',
+    },
+    {
+      text: 'Bir takım arkadaşı başlar, çünkü Claude’un adlandırdığı bir subagent, team’ler etkinken bir takım arkadaşı olur',
+      correct: true,
+      explanation: 'Adlandırılmış subagent’ları geri almak için değişkeni 0’a ayarlayın.',
+    },
+    {
+      text: 'Claude Code takımı onaylamanızı ister',
+      explanation: 'Bir takım arkadaşı spawn etmek için bir onay istemi yoktur.',
+    },
+    {
+      text: 'Oturum reddeder, çünkü takımlar önce bir TeamCreate çağrısı gerektirir',
+      explanation: 'TeamCreate ve TeamDelete artık yok.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m16-orchestration/agent-teams-messaging"
+  questionId="q2"
+  lang="tr"
+  prompt="A oturumunun bir komutu çalıştırma izni reddedildi. B oturumuna, B'nin onu çalıştırmasını isteyen bir mesaj atıyor. Claude Code ne yapar?"
+  options={[
+    {
+      text: 'B onu çalıştırır: başka bir oturumdan gelen bir mesaj göndericinin onaylarını taşır',
+      explanation: 'Bir mesaj asla sizin onayınız sayılmaz ve bir onayı taşıyamaz.',
+    },
+    {
+      text: 'B mesajı başka bir Claude’dan gelen güvenilmeyen bir girdi olarak ele alır ve B’nin kendi izin kuralları ve istemleri yine de geçerli olur',
+      correct: true,
+      explanation:
+        'Claude ayrıca, kendisinde reddedilen bir şeyi başka bir oturumdan istememesi için talimatlandırılır.',
+    },
+    {
+      text: 'Mesaj bir komut adlandırdığı için reddedilir',
+      explanation:
+        'Bir mesajdaki komutlar düz metindir; mesajın kendisi normal şekilde teslim edilir.',
+    },
+    {
+      text: 'B, auto mode’da otomatik onaylar',
+      explanation:
+        'Auto mode’da sınıflandırıcı, aktarılan bir onay iddiasını güvenilmeyen olarak ele alır ve her mesajı inceler.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m16-orchestration/agent-teams-messaging"
+  questionId="q3"
+  lang="tr"
+  prompt="Claude, diğer oturumlarınıza ulaşmak için hangi tool'ları kullanır?"
+  options={[
+    {
+      text: 'Keşfetmek için ListAgents, teslim etmek için SendMessage',
+      correct: true,
+      explanation:
+        'Aynı SendMessage ayrıca subagent’lara ve takım arkadaşlarına da ulaşır — onu reddetmek üçünü de kaldırır.',
+    },
+    { text: 'TeamCreate ve Mailbox', explanation: 'İkisi de bir tool değildir.' },
+    {
+      text: 'Task ve TaskUpdate',
+      explanation:
+        'Bunlar mesajlaşmayı değil, bir takımın içindeki paylaşılan görev listesini koordine eder.',
+    },
+    {
+      text: 'Bir oturum kimliğiyle Agent',
+      explanation: 'Agent işçileri spawn eder; var olan oturumlara mesaj atmaz.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m16-orchestration/agent-teams-messaging"
+  questionId="q4"
+  lang="tr"
+  prompt="crossOturumInbound için hiçbir şey ayarlamadınız. bypassPermissions mode’unda çalışan bir oturum, sıradan izin isteyen oturumunuza mesaj atıyor. Ne olur?"
+  options={[
+    {
+      text: 'Diğer her mesaj gibi teslim edilir',
+      explanation:
+        'İstem gösteren bir oturum varsayılan olarak teslim eder, ama kendini atladığını belirten bir oturumdan geleni bekletir.',
+    },
+    {
+      text: 'Onayınız için bekletilir',
+      correct: true,
+      explanation:
+        'Diyalog göndereni ve önizlemeyi gösterir ve dialogExpiry’den sonra — varsayılan olarak beş dakika — sona erer.',
+    },
+    {
+      text: 'Reddedilir ve gönderene söylenir',
+      explanation: 'Reddetmek açık bir refuse ayarı gerektirir.',
+    },
+    {
+      text: 'Yalnızca iki oturum aynı çalışma dizinini paylaşırsa teslim edilir',
+      explanation:
+        'Çalışma dizini yalnızca aynı ada sahip oturumları ayırt etmenize yardımcı olur.',
+    },
+  ]}
+/>
+
+**Sırada:** `04-pipeline-lab` — inceleme → doğrulama → düzeltme pipeline'ını laboratuvar deposuna
+karşı inşa edin ve gerçekten neye mal olduğunu okuyun.

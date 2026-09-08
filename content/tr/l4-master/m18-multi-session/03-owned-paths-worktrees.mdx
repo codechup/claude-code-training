@@ -1,15 +1,15 @@
 ---
-title: 'Ayrık owned_paths, plan başına worktree ve paylaşılan dosyalar'
-description: 'İki oturum asla aynı dosyayı düzenlemez — çünkü plan seti bunu daha ikisi de başlamadan söyler. Ayrık owned_paths, plan başına bir git worktree, Claude Code’un kendi --worktree izolasyonu ve herkesin dokunmak zorunda olduğu dosyalar için ekleme-yalnızca kuralları.'
+title: 'Ayrık owned_paths, plan başına bir worktree ve paylaşılan dosyalar'
+description: 'İki oturum hiçbir zaman aynı dosyayı düzenlemez — çünkü plan seti bunu ikisi başlamadan önce söyler. Ayrık owned_paths’ı, plan başına bir git worktree’sini, Claude Code’un kendi --worktree izolasyonunu ve herkesin dokunmak zorunda olduğu dosyalar için yalnızca-ekleme kurallarını öğrenin.'
 level: 4
 module: 'm18-multi-session'
 order: 3
 duration_min: 20
 difficulty: core
-tags: ['multi-session', 'worktrees', 'owned-paths', 'isolation', 'this-repo']
+tags: ['çoklu-oturum', 'worktree', 'owned-paths', 'izolasyon', 'bu-depo']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Run parallel sessions with worktrees'
@@ -35,4 +35,326 @@ lab:
   repo_tag: 'lesson/m18-03-start'
 ---
 
-Bu dersin Türkçe çevirisi henüz yapılmadı. `draft: true` kaldığı sürece bu sayfa gezinmede görünmez; İngilizce kaynak `content/en/l4-master/m18-multi-session/03-owned-paths-worktrees.mdx` dosyasındadır.
+## Hedefler ve ön koşullar
+
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Bir projeyi ayrık `owned_paths`'a bölmek ve önemli olan testin tam eşitlik değil önek çakışması olduğunu açıklamak.
+- İki plan aynı yolu üstlenmek istediğinde plan aracının ne yaptığını — hem claim anında hem `check` anında — tahmin etmek ve her iki reddi de okumak.
+- Plan başına bir git [worktree](/tr/playbook/glossary/#worktree)'si (aynı git geçmişini paylaşan ama kendi dosyalarına ve branch'ine sahip ayrı bir çalışma dizini) oluşturmak ve içlerinde birden çok Claude Code oturumunu düzenlemeleri çakışmadan çalıştırmak.
+- Git ile kendi oluşturduğunuz bir worktree, Claude Code'un `--worktree` bayrağı ve `isolation: worktree` taşıyan bir [subagent](/tr/playbook/glossary/#subagent) (ana oturumdan ayrı, kendi bağlamında çalışan yardımcı agent) arasında seçim yapmak.
+- Hiçbir tek planın sahiplenemeyeceği dosyalara yalnızca-ekleme kurallarını uygulamak ve gereken bir dosyanın kuralın değil planın yanlış olduğu anlamına geldiği anı bilmek.
+
+**Ön koşullar.** Bu modülün 01. ve 02. dersleri, ve `git worktree` hakkında çalışma bilgisi.
+
+<WhenNotToUse>
+  İzolasyonun diske, kuruluma ve dikkate maliyeti vardır: her worktree kendi bağımlılık kurulumunu
+  gerektiren taze bir checkout'tur ve birindeki bir oturum, işi bir branch'e inene kadar diğerindeki
+  çalışmayı göremez. Oturumlar yazmak yerine okuyorsa buna başvurmayın — aynı checkout'taki birkaç
+  salt-okunur oturum hiçbir şeyle çakışmaz. Aslında yapmadığınız bir bölümlemeyi örtbas etmek için
+  de kullanmayın: iki worktree'de aynı dosyayı düzenleyen iki oturum, kaybolan bir düzenleme yerine
+  bir birleştirme çakışması üretir — bu daha iyidir ama yine de bir planlama başarısızlığıdır. Ve
+  değişikliklerini birbirinin olurken görmesi gereken işi izole etmeyin; bu tek bir oturumdur, ya da
+  bir pipeline'dır, iki değil.
+</WhenNotToUse>
+
+## Kavram
+
+### Önce bölümleyin, sonra izole edin
+
+Dokümanlar sıralama konusunda net. "Görevler aynı dosyalara mı dokunuyor?" başlığı altında paralel-agent sayfası işi worktree'lerle izole etmeyi söyler — ama takım arkadaşlarını izole etmeyen agent team'ler için "işi her takım arkadaşının farklı bir dosya kümesine sahip olacağı şekilde bölümleyin" der.
+
+Asıl hamle bölümlemedir. Bir worktree, bir oturumun düzenlemesinin bir diğerinin üzerine yazılmasını durdurur; ama iki oturumun bağımsız olarak aynı fonksiyonu iki farklı [branch](/tr/playbook/glossary/#branch)'te (bir git deposunun bağımsız bir geliştirme hattı) yeniden yazmaya karar vermesini durdurmaz — bunu birleştirme ([merge](/tr/playbook/glossary/#merge)) anında keşfedersiniz. `owned_paths`, bu bölümlemenin, ikisinden biri başlamadan önce yazıya döküldüğü yerdir.
+
+Bu depoda, bir içerik planı üç glob'u sahiplenir ve başka hiçbir şeyi değil:
+
+<CodeBlock title="plans/P35-l4-m18-multi-session.md (alıntı)">
+
+```yaml
+owned_paths:
+  - content/en/l4-master/m18-multi-session/**
+  - content/tr/l4-master/m18-multi-session/**
+  - content/_shared/transcripts/m18-multi-session/**
+shared_paths:
+  - content/_shared/sources.json
+```
+
+</CodeBlock>
+
+Laboratuvar deposu aynı şekli küçük ölçekte gösterir — biri CLI'ı ve testini, diğeri tek bir dokümantasyon dosyasını sahiplenen iki plan:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/03-owned-paths-worktrees/01-disjoint-owned-paths.txt"
+  range="2-13"
+/>
+
+Kendi plan metinleri nedenini söylüyor: "Bu planın `owned_paths`'ı `P02`'ninkiyle asla çakışmaz — ikisini de paralel worktree'lerde çalıştırmayı güvenli kılan da bu."
+
+İşte bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni) — ikisinden birini başlatmadan önce herhangi iki plana sorabileceğiniz bir soru:
+
+```text
+Read plans/P01-cli-usability.md and plans/P02-api-error-docs.md. Do their
+owned_paths overlap? Say why that answer decides whether the two plans can
+be worked at the same time in separate git worktrees.
+```
+
+### Çakışma öneklerde hesaplanır
+
+İki glob, birinin statik kısmı — ilk joker karakterden önceki her şey — diğerinin öneki olduğunda çakışır. Yani `content/en/l1-beginner/**`, `content/en/l1-beginner/m01-start/runtime.test.ts` ile çakışırken, `content/en/l1-beginner/**` ile `content/en/l2-intermediate/**` çakışmaz.
+
+Bu tanım kasıtlı olarak muhafazakârdır: dikkatli bir insanın belki bir arada olabilir diye tartışabileceği bir üst-alt çift bile çakışma olarak işaretlenir. Kimsenin izlemediği bir sistemde "belki iyidir" güvenmek istediğiniz bir özellik değildir.
+
+Kural iki kez uygulanır. Önce, hiçbir iş başlamadan claim anında:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/03-owned-paths-worktrees/02-overlap-refused.txt"
+  range="2-12"
+/>
+
+Ve bir daha, [CI](/tr/playbook/glossary/#ci)'ın (her push'ta ya da pull request'te testleri ve kontrolleri otomatik çalıştıran hat) her [pull request](/tr/playbook/glossary/#pull-request)'te (bir branch'teki değişikliklerin gözden geçirilip ana koda alınması için açılan istek) çalıştırdığı `check` tarafından — claim edildikten sonra bir plan dosyasının düzenlenmesiyle ortaya çıkan bir çakışmayı yakalayarak:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/03-owned-paths-worktrees/03-overlap-check.txt"
+  range="2-7"
+/>
+
+Her iki ret de iki planı ve tam yolu adlandırır. Bu kasıtlıdır: düzeltme, o dizini kimin sahiplenmesi gerektiğine dair bir konuşmadır ve mesaj size bu konuşmayı kiminle yapacağınızı söyler.
+
+### Plan başına bir worktree
+
+Bir git worktree'si, ana checkout'unuzla deponun geçmişini ve remote'unu paylaşan ama kendi dosyalarına ve branch'ine sahip ayrı bir çalışma dizinidir. Bu projenin kuralı, plan numarasının adını taşıyan bir kardeş dizinde, plan başına bir worktree'dir:
+
+<CodeBlock title="Claim edilmiş bir plan için worktree oluşturun">
+
+```bash
+git worktree add ../cct-wt-35 plan/35-l4-m18-multi-session
+cd ../cct-wt-35
+npm ci
+```
+
+</CodeBlock>
+
+Her worktree'nin kendi `node_modules`'ı vardır — bir worktree taze bir checkout'tur, bu yüzden geliştirme ortamının orada başlatılması gerekir. Planın pull request'i birleştirildiğinde worktree ortadan kalkar:
+
+<CodeBlock title="Merge sonrası temizlik">
+
+```bash
+git worktree list
+git worktree remove ../cct-wt-35
+```
+
+</CodeBlock>
+
+Önemli olan toplumsal kuralın hiçbir teknik uygulaması yoktur: **bir dosya ödünç almak için asla başka bir planın worktree'sine `cd` yapmayın.** Ondan bir şeye ihtiyacınız varsa, sizin planınızın `depends_on`'unda o plan eksiktir — ve bu, kopyalanmış bir dosyaya değil, Devir notlarınıza yazılması gereken bir şeydir.
+
+### Üç tür izolasyon
+
+Git worktree'leri izole bir checkout elde etmenin üç yolundan biridir ve birbirinin yerine geçmezler.
+
+| Mekanizma                                              | Neyi izole eder                                 | Ne zaman başvurulur                                                                                                 |
+| ------------------------------------------------------ | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `git worktree add <dir> <branch>`                      | Kendinizin oluşturup yönettiği bir checkout     | Plan başına, push edip PR açtığınız bir branch üzerinde, uzun ömürlü, adlandırılmış bir çalışma alanı istediğinizde |
+| `claude --worktree <name>` (`-w`)                      | Claude Code'un oluşturup temizlediği bir oturum | Şu an izole bir oturum istiyorsanız ve dizinin nerede yaşadığını umursamıyorsanız                                   |
+| Bir subagent'ın frontmatter'ında `isolation: worktree` | Tek bir subagent için geçici bir checkout       | Devredilen bir agent birçok dosyayı düzenleyecek ve ana oturumun ağacına dokunmamalıysa                             |
+
+`claude --worktree feature-auth`, worktree'yi depo kökündeki `.claude/worktrees/<name>/` altında, `worktree-<name>` adlı yeni bir branch'te oluşturur ve Claude'u içinde başlatır; adı atlarsanız Claude Code bir tane üretir. Dokümanlar `.claude/worktrees/`'i `.gitignore`'a eklemeyi öneriyor. Yeni worktree'ler, `worktree.baseRef`'i `"head"` olarak ayarlamadıkça deponun varsayılan branch'inden dallanır ve (`.gitignore` sözdizimini kullanan) bir `.worktreeinclude` dosyası, `.env` gibi git tarafından yok sayılan dosyaları her yeni worktree'ye kopyalar.
+
+Claude'dan oturum ortasında bir worktree'de çalışmasını da isteyebilirsiniz; bunu `EnterWorktree` [tool](/tr/playbook/glossary/#tool)'uyla (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) oluşturur, `ExitWorktree` ise ondan çıkar. Deponun `.claude/worktrees/` dizini dışındaki bir yola girmek her zaman önce onayınızı ister, "çünkü bu hareket oturumun çalışma dizinini, yazma erişimini ve `CLAUDE.md` ile ayarlar gibi proje yapılandırmasını o konuma taşır" — ve dokümanlar açıkça bir izin kuralının ya da "tekrar sorma"nın bu istemi bastırmadığını söyler; yalnızca `bypassPermissions` modu onu atlar.
+
+Bir oturum izole durumdayken Claude Code sınırı güvenmek yerine uygular. Ana checkout'u hedefleyen bir `Edit`, `Write` ya da `NotebookEdit`'i engeller; çalışma dizini ana checkout'a çözümlenen bir Bash, PowerShell ya da Monitor komutunu engeller; `git -C`, `--git-dir`, `GIT_DIR`, `GIT_WORK_TREE` ya da bir `cd` üzerinden ana checkout'a geri yönlendirilen git'i engeller; ve şeklini doğrulayamadığı bir komutu engelleyip Claude'a onu nasıl yeniden yazacağını söyler.
+
+Bir subagent için, [agent](/tr/playbook/glossary/#agent)'ın (bir hedefi kendi başına adım adım yürüten, araç çağırabilen yapay zekâ süreci) frontmatter'ındaki `isolation: worktree`, ona "ana oturumun `HEAD`'i yerine varsayılan olarak varsayılan branch'inizden dallanan geçici bir git worktree'si" verir — subagent hiçbir değişiklik yapmadığında otomatik olarak temizlenir.
+
+<Callout>
+  Bir worktree bir [sandbox](/tr/playbook/glossary/#sandbox) (Claude'un çalıştığı, ağ ve dosya
+  erişimini kısıtlayan izole ortam) değildir. Yalnızca *bu depodaki dosyaları* izole eder; ağı,
+  başka dizinleri ya da checkout dışındaki hiçbir şeyi kısıtlamaz. Bu sınırlara da ihtiyacınız
+  varsa, bu sandboxing ve izinlerdir — Seviye 3'ün konusu.
+</Callout>
+
+### Kimsenin sahiplenemeyeceği dosyalar
+
+Bazı dosyalara birçok plan dokunur: paylaşılan bir kaynak kaydı, bir kilit dosyası, bir çeviri haritası. Bunlar `shared_paths` altında listelenir ve farklı bir kurala tabidirler — **yalnızca ekleme, minimum [diff](/tr/playbook/glossary/#diff)** (bir dosyadaki ya da commit'teki değişikliklerin satır satır gösterimi):
+
+- Var olan içeriği asla yeniden biçimlendirmeyin ya da yeniden sıralamayın; kendi girdinizi ekleyin ve geri kalan her şeyi byte-eş bırakın.
+- Paylaşılan dosya başına, plan başına tek bir mantıksal parça (hunk).
+- Her paylaşılan-dosya değişikliğini pull request gövdesinde belirtin, böylece bir gözden geçiren ona bilinçli olarak bakar.
+- Çakışmaları `main` üzerine rebase yaparak ve — varsa — üreteciyi yeniden çalıştırarak çözün, bir tarafı bütünüyle almak yerine.
+
+Ve en önemli kural: **bir plan ne o listede ne bu listede olan bir dosyaya ihtiyaç duyuyorsa, durun.** Ya dosya `shared_paths`'a ait olmalıdır — Devir notlarında, onu ekleyecek küçük bir takip için sorun — ya da bağımlılık çizgesi yanlıştır. "Sadece dokunmayın." Bu deponun kendi geçmişi tam olarak burada başlayan açık sorularla doludur ve her biri, başka bir oturum altında sessizce değişmemiş bir dosyadır.
+
+### Kendi yollarınızın dışını okumak
+
+Sahiplik yazmayı kısıtlar, okumayı asla. Depodaki herhangi bir şeyi okumak sorunsuzdur ve beklenir — `plans/README.md`'yi okumadan bir plan sistemi hakkında ders yazamazsınız.
+
+Okumanız gereken şey depo dışındaysa, `--add-dir` Claude'un okuyup düzenleyebileceği çalışma dizinleri ekler; dokümanlar bunun "dosya erişimi verdiğini" ama Claude Code'un "`.claude/` yapılandırmasının çoğunu bu dizinlerden keşfetmediğini" ve ayarlardaki `permissions.additionalDirectories`'in eklemeyi oturumlar arasında kalıcı kıldığını belirtir. Bunu bir oturumu okuması gereken kardeş bir checkout'a yönlendirmek için kullanın; başka bir planın worktree'sine ulaşıp düzenlemek için değil.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · iki planı bölümleyin, sonra onları paralel worktree'lerde çalıştırın"
+  lessonId="tr/l4-master/m18-multi-session/owned-paths-worktrees"
+  repoTag="lesson/m18-03-start"
+  steps={[
+    'Laboratuvar deposunun klonunuzda `git checkout lesson/m18-03-start`. Her iki planın `owned_paths`\'ını okuyun: `grep -A4 "^owned_paths" plans/P01-cli-usability.md plans/P02-api-error-docs.md`.',
+    'Bölümlemeyi sizin için Claude\'a kontrol ettirin: `claude -p "Read plans/P01-cli-usability.md and plans/P02-api-error-docs.md. Do their owned_paths overlap? Say why that answer decides whether the two plans can be worked at the same time in separate git worktrees. At most four lines. Do not edit anything." --model sonnet --max-turns 6 --output-format text --allowedTools Read,Glob,Grep`',
+    'Plan başına bir worktree oluşturun: `git worktree add ../claude-code-lab-p01 -b plan/01-cli-usability` ve `git worktree add ../claude-code-lab-p02 -b plan/02-api-error-docs`, ardından `git worktree list`.',
+    "Her worktree'de `npm ci` çalıştırın — her birinin kendi `node_modules`'a ihtiyacı var.",
+    "Şimdi bölümlemeyi bilerek bozun, bu sitenin deposunun kullan-at bir klonunda: iki planı claim edin, ardından bir planın `owned_paths`'ını diğerinin zaten sahiplendiği bir yolu listeleyecek şekilde düzenleyin ve `node tools/plan/cli.ts check` çalıştırın. Hatayı okuyun.",
+    "Bu düzenlemeyi geri alın (`git checkout plans/`) ve işiniz bitince laboratuvar worktree'lerini kaldırın: `git worktree remove ../claude-code-lab-p01` ve p02 için de aynısı.",
+  ]}
+  expected="İki planın owned_paths'ı ayrıktır (`src/cli.ts` + `test/cli-usability.test.ts` karşısında `docs/API.md`); `git worktree list` üç girdi gösterir — ana checkout artı plan başına bir tane; ve `plan check`, P36, P38 ve paylaşılan glob'u adlandıran bir owned_paths çakışmasıyla 1 koduyla çıkar."
+  checklist={[
+    "Her planın owned_paths'ını bir kez okuduktan sonra ezbere söyleyebiliyorsunuz",
+    "Üç worktree listeleniyor, her biri kendi branch'inde",
+    "Her worktree'nin kendi node_modules'ı var",
+    '`plan check` sıfır olmayan bir kodla çıktı ve her iki planı ile tam yolu adlandırdı',
+    "Bilerek yapılan çakışma geri alındı ve worktree'ler kaldırıldı",
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/03-owned-paths-worktrees/05-claude-checks-overlap.txt"
+    range="4-6"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/03-owned-paths-worktrees/04-worktree-add.txt"
+    range="2-11"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/03-owned-paths-worktrees/03-overlap-check.txt"
+    range="2-7"
+  />
+</Lab>
+
+Worktree listesi saklamaya değer bir tablodur: üç dizin, üç branch, tek bir `.git`. Her oturum bunlardan birini açar ve diğerlerinin [commit](/tr/playbook/glossary/#commit)'lenmemiş (bir git deposundaki değişiklik kümesinin kalıcı, mesajlı kaydı) işini göremez — tam da istediğiniz şey budur, çünkü aralarındaki tek kanal gözden geçirilmiş, birleştirilmiş bir commit olmalıdır.
+
+## Anti-pattern'ler
+
+**Bölümlemeden izole etmek.** İki worktree, iki oturum, aynı dosya: kaybolan bir düzenlemeyi bir birleştirme çakışmasıyla takas ettiniz. _Düzeltme:_ ikisinden birini oluşturmadan önce `owned_paths`'ı ayrık yapın — dokümanların agent team'ler için kendi tavsiyesi de her işçinin farklı bir dosya kümesi sahiplenecek şekilde bölümlemektir.
+
+**Başka bir planın worktree'sinden bir dosya ödünç almak.** Çalışır, ta ki o planın branch'i değişip kopyanız sessizce bayatlayana kadar. _Düzeltme:_ ihtiyacı eksik bir `depends_on` olarak ele alın ve Devir notlarına yazın.
+
+**"Temizlemek" için paylaşılan bir dosyayı yeniden yazmak.** Paylaşılan bir kaydın yeniden biçimlendirilmesi, açık olan diğer her branch'le aynı anda çakışır. _Düzeltme:_ yalnızca ekleme, tek parça, yeniden sıralama yok ve bunu PR gövdesinde belirtin.
+
+**"Sadece bir dakikalığına" tek bir checkout'u birden çok oturum için yeniden kullanmak.** Bir ağacı düzenleyen iki agent, worktree'lerin önlemek için var olduğu tam başarısızlıktır ve ikinci düzenleme genellikle sessizce kazanır. _Düzeltme:_ her zaman oturum başına bir checkout.
+
+**Taze bir worktree'nin taze bir ortam olduğunu unutmak.** Bir worktree'de `node_modules`, `.env` ya da derleme önbelleği yoktur, ve aksini varsayan bir oturum kafa karıştırıcı biçimde başarısız olur. _Düzeltme:_ kurulumu çalıştırın ve bir oturumun gerçekten ihtiyaç duyduğu git tarafından yok sayılan dosyalar için `.worktreeinclude` kullanın.
+
+**Birleştirmeden sonra worktree'leri geride bırakmak.** Bayat worktree'ler birikir ve öldürülmüş bir oturumun bıraktığı bir kilit `git worktree remove`'un reddetmesine yol açabilir. _Düzeltme:_ squash birleştirmeden sonra `git worktree remove`; git worktree kilitli olduğu için reddederse önce `git worktree unlock`.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/owned-paths-worktrees"
+  questionId="q1"
+  lang="tr"
+  prompt="A planı `content/en/l1-beginner/**`'ı, B planı ise `content/en/l1-beginner/m01-start/index.mdx`'i sahipleniyor. Bunlar ayrık mı?"
+  options={[
+    {
+      text: "Evet — farklı string'ler.",
+      explanation: "Çakışma string eşitliği değildir. Her glob'un statik önekini karşılaştırır.",
+    },
+    {
+      text: "Hayır — A'nın statik öneki B'nin yolunun bir öneki, bu yüzden araç bunları çakışıyor sayar ve ikinci claim'i reddeder.",
+      correct: true,
+      explanation:
+        'Kasıtlı olarak muhafazakâr: dikkatli bir insanın belki çalıştırabileceği bir üst-alt çift bile işaretlenir.',
+    },
+    {
+      text: "Yalnızca iki plan da aynı milestone'undaysa.",
+      explanation: "Milestone'lar çakışma hesabında hiçbir rol oynamaz.",
+    },
+    {
+      text: 'Yalnızca iki plan da `todo` ise.',
+      explanation:
+        'Tam tersi — çakışma *aktif* olan planlara (`in_progress` ya da `review`) karşı kontrol edilir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/owned-paths-worktrees"
+  questionId="q2"
+  lang="tr"
+  prompt="Devredilen bir agent'ın çalışma ağacınıza dokunmadan birçok dosyada mekanik bir refactor uygulamasını istiyorsunuz. Belgelenmiş yol nedir?"
+  options={[
+    {
+      text: 'Ana oturumda `acceptEdits` ile çalıştırın.',
+      explanation: 'Bu, korumasını istediğiniz tek şeyi — çalışma ağacınızı — düzenler.',
+    },
+    {
+      text: "Subagent'ın frontmatter'ına `isolation: worktree` ekleyin, böylece hiçbir değişiklik yapmadığında otomatik temizlenen geçici bir worktree'de çalışır.",
+      correct: true,
+      explanation:
+        "Subagent, ana oturumun HEAD'i yerine varsayılan olarak varsayılan branch'inizden dallanmış izole bir kopya alır.",
+    },
+    {
+      text: "Subagent'a deponun bir kopyasını gösteren bir `--add-dir` verin.",
+      explanation:
+        '`--add-dir` başka bir dizine okuma ve düzenleme erişimi verir; izole bir checkout oluşturmaz ya da yönetmez.',
+    },
+    {
+      text: "`Edit` tool'unu reddedip değişikliği tarif etmesini isteyin.",
+      explanation: 'Bu bir refactor değil, bir gözden geçirmedir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/owned-paths-worktrees"
+  questionId="q3"
+  lang="tr"
+  prompt="Planınızın, ne `owned_paths`'ında ne `shared_paths`'ında olan bir dosyayı değiştirmesi gerekiyor. Doğru olan nedir?"
+  options={[
+    {
+      text: 'Düzenleyin ve PR açıklamasında not edin.',
+      explanation:
+        'Yollarınız dışındaki bir dosya, başka bir planın devam eden işi olabilir; sonradan yazılan bir not çakışmayı önlemez.',
+    },
+    {
+      text: "Kontrolün geçmesi için dosyayı kendi `owned_paths`'ınıza ekleyin.",
+      explanation:
+        'Bu, başka bir planın elinde tutabileceği bir bölgeyi sessizce claim eder ve çakışma kontrolü sizi değil diğer oturumu ısırır.',
+    },
+    {
+      text: "Durun: ya `shared_paths`'a aittir (Devir notlarında bunu isteyin) ya da bağımlılık çizgesi yanlıştır. Dokunmayın.",
+      correct: true,
+      explanation:
+        'Her iki sonuç da ucuzdur; yollarınız dışında sessiz bir düzenleme pahalı olandır.',
+    },
+    {
+      text: "Dosyayı worktree'nize kopyalayıp kopyayı düzenleyin.",
+      explanation: 'Şimdi iki sürüm var ve hiçbiri yetkili değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/owned-paths-worktrees"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir oturum bir worktree'de izole durumdayken Claude Code bunlardan hangisini engeller?"
+  options={[
+    {
+      text: "git'i `git -C` ya da bir `cd` ile ana checkout'a yönlendiren bir Bash komutu.",
+      correct: true,
+      explanation:
+        "Belgelenmiş dört kontrolden biri — ana checkout'a düzenlemeleri, çalışma dizini oraya çözümlenen komutları ve şekli doğrulanamayan komutları engellemenin yanında.",
+    },
+    {
+      text: 'Worktree dışındaki herhangi bir dosyayı okumak.',
+      explanation: 'Kontroller yazma ve çalışma dizinleri hakkındadır, okumalar hakkında değil.',
+    },
+    {
+      text: 'Bütün ağ erişimi.',
+      explanation: "Bu sandboxing'dir. Bir worktree dosyaları izole eder, ağı değil.",
+    },
+    {
+      text: 'Test setini çalıştırmak.',
+      explanation:
+        'Testler worktree içinde normal çalışır — git komutları paylaşılan `.git` dizinine bile yazar.',
+    },
+  ]}
+/>
+
+**Sonraki:** `04-model-effort-hints`, kural değil tavsiye olan iki frontmatter alanını kapsıyor — bir planın işinin hangi modeli ve ne kadar akıl yürütmeyi hak ettiğini.

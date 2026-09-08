@@ -9,7 +9,7 @@ difficulty: advanced
 tags: ['dataviz', 'grafik', 'skill', 'erişilebilirlik', 'görsel']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Commands reference (/dataviz)'
@@ -31,11 +31,202 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-`/dataviz [request]`, yerleşik (bundled) bir skill'dir ve dört şeye karar verir: veriye uygun grafik biçimi, rengin role göre atanması, paletin renk körlüğü ve kontrast açısından paketlenmiş bir betikle doğrulanması, ayrıca mark, etkileşim ve erişilebilirlik kuralları. Marka-nötr bir yer tutucu paletle çalışır; o paleti kendi renklerinizle değiştirdiğinizde doğrulamanın yeniden çalıştırılması gerekir. Ders, skill'in ilk grafik satırından **önce** çağrılması gerektiğini, "rengi role göre atamak"ın pratikte ne anlama geldiğini (kimlik için kategorik hue'lar, büyüklük için tek bir ramp, durum renkleri yalnızca duruma ayrılmış), farklı ölçekteki bir metriğin ikinci eksene değil ayrı bir küçük grafiğe gittiğini ve grafik bir artifact'e gidecekse sayfanın CSP kısıtlarının kütüphane seçimini nasıl belirlediğini anlatır. Laboratuvar tek bir veri kümesini üç farklı hedefe taşır ve paleti bilerek bozarak skill'in itirazını okutur.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur.
-</Callout>
+- `/dataviz`'in sizin yerinize neye karar verdiğini söylemek: grafik biçimi, role göre renk, doğrulanmış bir palet ve mark, etkileşim ile erişilebilirlik kuralları.
+- Onu doğru anda çağırmak — ilk grafik kod satırından önce, sonra değil.
+- Marka-nötr yer tutucu paletini garantileri kaybetmeden kendi paletinizle değiştirmek.
+- Bir grafik incelemesinin her zaman yakalaması gereken iki hatayı tanımak: yanlış biçim ve taşıyamayacağı bir anlamı taşıyan renk.
+
+**Ön koşullar.** Claude Code 2.1.198 ya da üzeri. `/dataviz` yerleşik (bundled) bir [skill](/tr/playbook/glossary/#skill)'dir (belirli bir görev için Claude'a verilen paketlenmiş talimat kümesi), bu yüzden yerleşik skill'ler `disableBundledSkills` ile kapatılmadığı sürece kullanılabilir. Grafiği bir artifact üzerine koymayı planlıyorsanız bu modülün 01 ve 02. dersleri — oradaki CSP, sayfanın hangi grafik kütüphanesini, varsa, yükleyebileceğine karar verir.
+
+<WhenNotToUse>
+  `/dataviz`, grafikler için tasarım rehberliğidir. Bir analiz aracı değildir: sayılarınızın doğru
+  olup olmadığını, örneklemin yeterince büyük olup olmadığını ya da eğilimin gerçek olup olmadığını
+  söylemez. Dürüst cevap bir sayı ya da bir cümle olduğunda onu atlayın — bir slayttaki tek bir
+  değer bir grafik gerektirmez ve dört satırlık bir tablo bir tablodur. Hedef, kendisine verdiğiniz
+  satırlardan grafikleri kendisi render ettiğinde de atlayın, çünkü render edilmiş bir grafik resmi
+  hover'ı, incelemeyi ve değer başına yorumları kaybeder. Ve biçimi yanlış olan bir grafiği yeniden
+  boyamak için ona başvurmayın: hiçbir palet bir zaman serisinin pasta grafiğini düzeltmez.
+</WhenNotToUse>
+
+## Kavram
+
+### Skill'in yaptığı şey
+
+`/dataviz [istek]` yerleşik bir skill'dir. Veri ve bir hedef verildiğinde Claude, veriye uygun grafik biçimini seçer, rengi role göre atar, paleti renk körlüğü güvenliği ve kontrast açısından paketlenmiş bir betikle doğrular ve mark, etkileşim ile erişilebilirlik kurallarını uygular. Kendi paletinizle değiştireceğiniz marka-nötr bir yer tutucu paletle çalışır.
+
+Bu dört fiil bütün değerdir ve grafiklerin genelde bozulduğu dört yola karşılık gelir: yanlış biçim, dekoratif kullanılan renk, kimsenin okuyamadığı bir palet ve yalan söyleyen bir mark (kesilmiş bir eksen, birikmeyen bir şeyin alan grafiği).
+
+Bu dersin örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni) veriyi, soruyu ve hedefi adlandırır — üçünü de, çünkü her biri cevabı değiştirir:
+
+```text
+/dataviz 30 days of tasks_created, tasks_completed and tasks_overdue from
+artifacts/task-activity.csv, for a dashboard artifact. The question is whether
+the backlog is growing.
+```
+
+Zamanlama, sözcüklerden daha önemlidir: onu ilk grafik kod satırından **önce**, renkleri seçmeden önce ve bir dashboard'u yerleştirmeden önce çağırın. Sonradan uygulandığında, işaretlemeye zaten pişmiş kararların bir yeniden boyaması hâline gelir.
+
+### Dekorasyona göre değil role göre renk
+
+"Role göre renk", pratikte skill'in tavsiyesinin dayandığı ve akılda kalması gereken fikirdir. İşte lab repository'sinin aktivite verisi üzerinde çalıştırılmış gerçek bir `/dataviz` çalışması — yazma ve yayınlama reddedilerek çağrıldı, böylece yalnızca tavsiye verebildi:
+
+<Transcript
+  src="content/_shared/transcripts/m19-visual/04-dataviz/01-dataviz-headless.txt"
+  range="8-14"
+/>
+
+Oradaki her öneri bir roldür. Aynı ölçekteki üç seri — created, completed, overdue — bir seri grafikler arasında renk değiştirmesin diye sabit bir sırayla atanmış bir **kategorik** palet alır. `avg_priority` farklı bir ölçekte durur, bu yüzden aynı grafikte ikinci bir eksen almaz; **tek, sıralı (sequential) bir hue** ile kendi küçük grafiğini alır. Bir legend, birden fazla seri olduğunda gereklidir ve yalnızca bir tane olduğunda anlamsızdır. Metin ve eksenler nötr ink'te kalır.
+
+İlginç satır `tasks_overdue` hakkında olandır. Skill kuralı mekanik olarak uygulamaz: overdue'nin nötr bir kategoriden çok "kötü durum" sinyali olduğunu belirtir ve onun için **status ramp**'ini önerir, böylece yükselen bir çizgi "3. seri" yerine bir sorun olarak okunur. Bu, kabul edilecek bir varsayılan değil sizin vermeniz gereken bir yargı çağrısıdır — durum renklerinizi bir seri için harcamak, sayfanın başka hiçbir yerinde artık "bir şey yanlış" anlamına gelmeyecekleri anlamına gelir. Dashboard başına bir kez karar verin ve tutarlı kalın.
+
+Disiplin budur: grafikteki her rengin bir işi vardır — kimlik, büyüklük ya da durum — ve hiçbir renk iki iş yapmaz.
+
+### Paleti doğrulamak
+
+Gözle yapamayacağınız kısım sonuncusudur. Claude, paleti yargıyla değil paketlenmiş bir betikle doğrular; renk körlüğü güvenliğini ve kontrastı kontrol eder — 27. hafta sürüm notları buna çalıştırılabilir bir renk paleti doğrulayıcısı diyor. Bundan iki şey çıkar.
+
+Birincisi, **marka paletinizi taktıktan sonra onu tekrar çalıştırın.** Varsayılan, marka-nötr bir yer tutucudur ve doğrulanmış bir yer tutucu (placebo) palet, markanızın size verdiği dört hue hakkında hiçbir şey söylemez. Değişim, garantinin risk altında olduğu andır.
+
+İkincisi, doğrulama saklayabileceğiniz bir build adımıdır. Bir kez geçen bir palet, bir tasarımcı bir hue'yu kıpırdattıktan sonra başarısız olabilir ve bu başarısızlık normal renk görüşüne sahip herkes için görünmezdir — incelemeyi bu yüzden atlatır.
+
+### Bir artifact üzerinde grafikler
+
+Grafik bir artifact'e gidecekse, 1. dersin kısıtları herhangi bir tasarım sorusundan önce uygulamaya karar verir. Sayfa yalnızca dört CDN sunucusundan script yükleyebilir — `cdnjs.cloudflare.com`, `cdn.jsdelivr.net`, `cdn.tailwindcss.com` ve `code.jquery.com` — her dış görsel engellenir ve render edilen sayfa 16 MiB'nin altında kalmalıdır. Pratikte bu sizi basit her şey için satır içi SVG'ye iter: yüklenecek kütüphane yok, engellenen istek yok, boyut sorunu yok ve grafikteki metin seçilebilir ve bir ekran okuyucu tarafından okunabilir kalır. Bir grafik kütüphanesine yalnızca etkileşim gerçekten buna ihtiyaç duyduğunda başvurun ve dört sunucudan birinden tam bir sürüm sabitleyin.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · tek bir veri kümesi, üç hedef"
+  lessonId="tr/l4-master/m19-visual/dataviz"
+  repoTag="none"
+  steps={[
+    'Örnek veriyi alın: lab repository’sinde `git checkout lesson/m19-01-start`, sonra `git checkout lesson/m19-01-solution -- artifacts/`. 30 gün boyunca tasks_created, tasks_completed, tasks_overdue ve avg_priority.',
+    'Herhangi bir koddan önce yalnızca tavsiye isteyin: dosyayı, soruyu ("is the backlog growing?") ve hedefi adlandırarak `/dataviz` çalıştırın ve biçim ile renk rolleri hakkında ne söylediğini okuyun.',
+    'Şimdi onu üç şekilde isteyin ve karşılaştırın: statik bir sayfa için satır içi bir SVG, bir dashboard artifact’inde bir grafik, ve bir rapor için bir matplotlib figürü. Hangi kararların değiştiğini, hangilerinin değişmediğini not edin.',
+    'Paleti değiştirin: Claude’a kendi marka renklerinizi verin ve hâlâ geçtiğini varsaymak yerine paleti yeniden doğrulamasını isteyin.',
+    'Kasten bozun: aynı veriyi bir pasta grafik olarak isteyin ve itirazı okuyun. O itiraz, skill’in yerini kanıtlamasıdır.',
+    'Erişilebilirlik iddialarını kendiniz kontrol edin — bir legend var mı, herhangi bir bilgi yalnızca renge mi bağlı ve grafikteki metin gerçek metin mi?',
+  ]}
+  expected="Yalnızca-tavsiye çalıştırması, aynı ölçekteki üç seri için çok serili bir çizgi grafik önerir, avg_priority’yi ikinci bir eksenden uzak tutar ve sabit sırada kategorik bir palet atar. Biçim üç hedefin de hepsinde hayatta kalır; yalnızca uygulama değişir. Değiştirilmiş bir paleti yeniden doğrulamak biçimsel değil gerçek bir kontroldür."
+  checklist={[
+    'Herhangi bir grafik kodu yazmadan önce /dataviz’i çağırdınız',
+    'Grafikteki her rengin oynadığı rolü adlandırabiliyorsunuz',
+    'avg_priority aynı grafiğin ikinci bir ekseninde son bulmadı',
+    'Palet, marka değişiminden sonra yeniden doğrulandı',
+    'Grafikte hiçbir şey anlaşılmak için yalnızca renge bağlı değil',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m19-visual/04-dataviz/01-dataviz-headless.txt"
+    range="7-14"
+  />
+</Lab>
+
+Kayıt yalnızca-tavsiye adımıdır ve dürüstçe olabileceği tek şey de budur: skill'in çıktısı rehberliktir ve rehberlik ettiği grafiği inşa etmek size kalır. Bayraklara dikkat edin — `Write` ve `Artifact` reddedilmiş `--allowedTools "Read,Skill"` — bu, bir dosya ortaya çıkmadan bir skill'in yargısını istediğinizde genel olarak yararlı bir biçimdir.
+
+## Anti-pattern'ler
+
+**`/dataviz`'i grafik ortaya çıktıktan sonra çağırmak.** O zamana kadar biçim, eksenler ve palet zaten işaretlemeye gömülmüştür ve skill yalnızca yeniden boyamayı önerebilir. _Düzeltme:_ onu ilk grafik kod satırından önce çağırın.
+
+**İki ölçek, bir grafik.** İkili bir eksen, aralıkları seçerek istediğiniz herhangi bir korelasyonu ima etmenizi sağlar. _Düzeltme:_ küçük çoklular (small multiples) — x eksenini paylaşan ikinci, daha küçük bir grafik.
+
+**Rengin iki iş yapması.** Sıradan bir seri üzerinde durum kırmızısını harcamak, kırmızının sayfanın başka hiçbir yerinde artık bir sorunu işaret etmediği anlamına gelir. _Düzeltme:_ kimlik için kategorik hue'lar, büyüklük için tek bir ramp, durum renkleri yalnızca duruma ayrılmış — ve bir seri gerçekten bir durum sinyaliyse, bunu bilinçli olarak söyleyin ve sayfadaki her diğer grafiği bu seçimle tutarlı tutun.
+
+**Marka paletini takıp göndermek.** Devraldığınız doğrulama yer tutucu palet içindi. _Düzeltme:_ doğrulayıcıyı gerçek renkler üzerinde yeniden çalıştırın ve onu build'de tutun.
+
+**Canlı satırların istendiği yerde bir grafik resmi vermek.** Grafikleri kendisi render eden bir hedefe render edilmiş bir PNG vermek hover'ı, incelemeyi ve değer başına yorumları çöpe atar. _Düzeltme:_ satırları verin.
+
+**Mesajı taşımak için bir legend'e güvenmek.** Okuyucu, noktayı anlamak için hangi çizginin hangisi olduğuna bakmak zorundaysa, nokta iletilmiyor demektir. _Düzeltme:_ tartıştığınız seriyi doğrudan, çizginin üzerinde etiketleyin.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m19-visual/dataviz"
+  questionId="q1"
+  lang="tr"
+  prompt="/dataviz ne zaman çağrılmalıdır?"
+  options={[
+    {
+      text: 'Grafik kurulduktan sonra, renkleri incelemek için.',
+      explanation:
+        'O zamana kadar biçim ve eksenler sabittir; skill kararlar için rehberliktir, bir yeniden boyama değil.',
+    },
+    {
+      text: 'İlk grafik kod satırını yazmadan, renkleri seçmeden ya da bir dashboard’u yerleştirmeden önce.',
+      correct: true,
+      explanation:
+        'Tam olarak dört kararının — biçim, renk rolleri, palet, mark’lar — hâlâ açık olduğu andır.',
+    },
+    {
+      text: 'Yalnızca hedef bir artifact olduğunda.',
+      explanation:
+        'Herhangi bir çıktı ortamına uygulanır: SVG, bir çizim kütüphanesi, bir görsel, bir dashboard.',
+    },
+    {
+      text: 'Yalnızca beşten fazla grafiği olan dashboard’lar için.',
+      explanation: 'Tek bir grafik de aynı kararlardan yararlanır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m19-visual/dataviz"
+  questionId="q2"
+  lang="tr"
+  prompt="Veri kümenizde aynı ölçekte üç günlük sayı ve 0–3 ölçeğinde bir ortalama öncelik var. Grafik disiplini ne söyler?"
+  options={[
+    {
+      text: 'Dördünü de bir grafikte toplayın, ortalama önceliği ikincil bir eksende gösterin.',
+      explanation:
+        'İkili bir eksen, aralık seçiminin istediğiniz herhangi bir korelasyonu ima etmesine izin verir — klasik yanıltıcı mark.',
+    },
+    {
+      text: 'Üç sayıyı tek bir çok serili çizgi grafikte; ortalama önceliği tek bir hue ile ayrı bir küçük grafik olarak.',
+      correct: true,
+      explanation:
+        'Aynı ölçek bir grafiği paylaşır; farklı bir ölçek kendi grafiğini alır ve tek serili bir grafik kategorik bir palet değil tek bir hue ister.',
+    },
+    {
+      text: 'Her metrik için bir tane olmak üzere dört pasta grafik.',
+      explanation:
+        'Pasta grafikler bir bütünün parçalarını gösterir, zaman içindeki değişimi değil.',
+    },
+    {
+      text: 'Dördünün de yığılmış bir alan grafiği.',
+      explanation: 'Yığmak, değerlerin biriktiğini ima eder; bunlar birikmiyor.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m19-visual/dataviz"
+  questionId="q3"
+  lang="tr"
+  prompt="Yer tutucu paleti şirketinizin dört marka rengiyle değiştiriyorsunuz. Ne yapmanız gerekir?"
+  options={[
+    {
+      text: 'Hiçbir şey — palet zaten doğrulanmıştı.',
+      explanation: 'Doğrulama yer tutucu paletin doğrulamasıydı, sizinkinin değil.',
+    },
+    {
+      text: 'Yeni renkler üzerinde renk körlüğü güvenliği ve kontrast için palet doğrulamasını yeniden çalıştırın.',
+      correct: true,
+      explanation:
+        'Değişim, garantinin tam olarak kaybolduğu andır ve başarısızlık normal renk görüşüne sahip inceleyenler için görünmezdir.',
+    },
+    {
+      text: 'Palet her zaman geçsin diye grafiği iki seriye indirin.',
+      explanation: 'Veriyi renklere uydurmak için değiştirmek yanlış yöndür.',
+    },
+    {
+      text: 'Renk yerine her seriye desen (pattern) ekleyin.',
+      explanation: 'Fazladan kodlama yardımcı olabilir, ama paleti doğrulamanın yerini tutmaz.',
+    },
+  ]}
+/>
+
+**Sırada:** `m20-team`, yayınladığınız eserlerden bütün bir ekibin bu şekilde çalışmasına izin veren ayarlara, allowlist'lere ve inceleme süreçlerine geçer.

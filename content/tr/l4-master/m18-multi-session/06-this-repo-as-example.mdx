@@ -6,10 +6,10 @@ module: 'm18-multi-session'
 order: 6
 duration_min: 15
 difficulty: advanced
-tags: ['multi-session', 'plans', 'case-study', 'this-repo']
+tags: ['çoklu-oturum', 'planlar', 'vaka-analizi', 'bu-depo']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Run agents in parallel'
@@ -31,4 +31,296 @@ lab:
   repo_tag: 'none'
 ---
 
-Bu dersin Türkçe çevirisi henüz yapılmadı. `draft: true` kaldığı sürece bu sayfa gezinmede görünmez; İngilizce kaynak `content/en/l4-master/m18-multi-session/06-this-repo-as-example.mdx` dosyasındadır.
+## Hedefler ve ön koşullar
+
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Gerçek, çalışır durumdaki bir plan sisteminde gezinmek: 48 plan dosyası, üretilmiş bir durum dosyası ve ikisini de sahiplenen bir CLI.
+- Üretilmiş bir `STATE.md`'nin her bölümünü okuyup her birinin hangi kararı desteklediğini söylemek.
+- Açık sorular listesini bir başarısızlık yığını değil, sistemin en değerli çıktısı olarak yorumlamak.
+- Bu desenin hangi parçalarının kendi projenize kopyalanmaya değer olduğuna, hangilerinin ihtiyacınız olmayan bir ek yük olduğuna karar vermek.
+
+**Ön koşullar.** Bu modülün geri kalanı. Bu ders, herkese açık bir depoya karşı yapılan bir okuma alıştırmasıdır, bu yüzden onu klonlayıp takip edebilirsiniz.
+
+<WhenNotToUse>
+  Bir vaka analizini olduğu gibi kopyalamak bu dersin en çok önlemek istediği hatadır. Bu sistem
+  belirli bir iş şekli için inşa edildi: bağımsız, dosya bazında bölünebilir çok sayıda birimden
+  oluşan, gelip giden oturumların yürüttüğü ve tüm resmi elinde tutan tek bir kişinin olmadığı bir
+  iş. Çoğu proje bu şekilde değildir. İşiniz her gün birbiriyle konuşan üç kişinin sürdürdüğü tek
+  bir gelişen kod tabanıysa, plan dosyaları dosyalanıp göz ardı edilecek ve gerçek koordinasyon
+  konuşmada gerçekleşecektir, siz de zamanla bayatlayan bir belge kümesi eklemiş olacaksınız.
+  Gerçekten sahip olduğunuz bir soruna denk gelen parçaları alın — en sık olarak ayrık sahiplik ve
+  yazılı devirler — gerisini bırakın.
+</WhenNotToUse>
+
+## Kavram
+
+### Diskte ne var
+
+Bu web sitesi, çalışma yönteminin tamamı içeriğiyle birlikte [commit](/tr/playbook/glossary/#commit)'lenmiş (bir git deposundaki değişiklik kümesinin kalıcı, mesajlı kaydı) herkese açık bir depodan inşa edilir:
+
+<CodeBlock title="Koordinasyon yüzeyi">
+
+```text
+plans/README.md          the contract: file format, lifecycle, claim rules, shared-file rules
+plans/PNN-slug.md        48 work orders, one per unit of work
+STATE.md                 generated; never hand-edited
+tools/plan/cli.ts        state | next | claim | status | check | show
+DECISIONS.md             100 owner decisions, cited as (Dnnn), never re-litigated in a plan
+docs/CURRICULUM.md       the authoritative map every content plan reads and none of them edits
+research/                the only source for "what the tool does today"
+```
+
+</CodeBlock>
+
+Bu listeyle ilgili üç şey listenin kendisinden daha değerli.
+
+**Sözleşme bir alışkanlık değil, bir dosyadır.** `plans/README.md`, bir oturumun uyması gereken kuralları belirtir ve CLI mekanik olanları uygular. Yalnızca birinin kafasında yaşayan kurallara yarın başlayacak bir oturum uyamaz.
+
+**Kararlar planlardan ayrıdır.** Bir plan bir kararı gösterebilir ve birine değişiklik önerebilir, ama kayıt defterini asla düzenlemez. Bu ayrım, elli oturumun aynı soruyu her seferinde biraz farklı yeniden karara bağlamasını engelleyen şeydir.
+
+**Gerçeklerin tek bir sahibi vardır.** Bir dersteki her iddia bir araştırma dosyasına ya da yazım sırasında getirilen bir URL'ye kadar izlenebilir. "Asla hafızadan yazma" ancak hafızanın yaşaması gereken tek bir yer olduğu için uygulanabilir.
+
+### Üretilmiş durumu okumak
+
+`node tools/plan/cli.ts state`, `STATE.md`'yi frontmatter'dan yeniden yazar. Hiçbir şey değişmediğinde "up to date" (güncel) raporlar, [CI](/tr/playbook/glossary/#ci)'ın (her push'ta ya da pull request'te testleri ve kontrolleri otomatik çalıştıran hat) tazelik kontrolünü anlamlı kılan da budur:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/06-this-repo-as-example/01-state.txt"
+  range="2-24"
+/>
+
+Dokuz bölüm, her biri farklı bir soruyu yanıtlar:
+
+| Bölüm                  | Yanıtladığı soru                                                                                              |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------- |
+| TL;DR                  | Proje ne kadar ilerledi ve şu anda ne başlatılabilir?                                                         |
+| Milestone ilerlemesi   | Hangi dalga hareket ediyor, hangisi başlamadı?                                                                |
+| Şu an claim edilebilir | Neyi almalıyım?                                                                                               |
+| Devam ediyor           | Kim neyi ne zamandan beri elinde tutuyor, bayatlamış mı?                                                      |
+| Blocked                | Ne takıldı ve neye takıldı?                                                                                   |
+| İncelemede             | Ne bir [merge](/tr/playbook/glossary/#merge)'ü (iki git branch'inin tarihçesini birleştirme işlemi) bekliyor? |
+| Bitti                  | Milestone'a göre ne tamamlandı?                                                                               |
+| Son değişiklikler      | En son ne hareket etti?                                                                                       |
+| Açık sorular           | Yürüten oturumlar neyi buldu da kimse çözmedi?                                                                |
+
+Devam-ediyor tablosu, herhangi bir şeyi üstlenmeden önce okunması gereken tablodur, çünkü bayatlık işareti orada görünür:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/06-this-repo-as-example/02-state-sections.txt"
+  range="2-11"
+/>
+
+### İlginç olan kısım açık sorular listesi
+
+Bu kayıtların alındığı noktada plan seti 58 açık soru taşıyordu. Bu sayı bir soruna benziyor ama tam tersi.
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/06-this-repo-as-example/02-state-sections.txt"
+  range="12-21"
+/>
+
+Her giriş, bir oturumun planın yanıtlamadığı bir şeye çarptığı ve **tahmin etmek yerine yazdığı** bir andır. Gerçek dosyada birkaçını okuyun ve bir desen ortaya çıkar: neredeyse hepsi sahiplikle ilgili. Bir plan başka bir plana ait bir dosyaya ihtiyaç duydu; bir doküman bir şey söyledi, canlı dokümantasyon başka bir şey; kuralların var olduğunu varsaydığı bir script yoktu. Her biri, sistemin kendisi hakkında gerçeği söyleyen küçük bir parça.
+
+Onlarca açık sorusu olan bir plan seti, her şeyin net olduğu bir sistem değildir. Bu, oturumların tahmin ettiği bir sistemdir.
+
+### İşe yaramasını sağlayan şey
+
+Geri kalan her şeyin hizmet ettiği özellik 01. dersten gelen özellik: **bir oturum yalnızca depo durumundan devam eder.** Herhangi bir koordinasyon sistemini buna karşı test edebilirsiniz. Bağlamı olmayan bir oturumu depoya yöneltin ve ne yapması gerektiğini çözüp çözemediğine bakın:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/06-this-repo-as-example/03-resume-from-repo-state.txt"
+  range="4-6"
+/>
+
+İki dosya okundu ve claim komutunu, [branch](/tr/playbook/glossary/#branch) (bir git deposunun bağımsız bir geliştirme hattı) adını, [worktree](/tr/playbook/glossary/#worktree) (aynı git geçmişini paylaşan ama kendi dosyalarına sahip ayrı bir çalışma dizini) kuralını, kurulum adımını, okuma sırasını, bağımlılık kontrolünü ve dokunmaması gereken şeylerin tam listesini — sahiplenilen bir yol ile paylaşılan, yalnızca-ekleme yapılabilen bir yol arasındaki ayrım dâhil — üretti. O yanıtta hiçbir şey bir insandan gelmedi.
+
+İşte kendi projenizde buna benzer bir şey inşa ettikten sonra ona karşı çalıştıracağınız bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni):
+
+```text
+Read this repository's coordination files. If you were a new session with no
+context, what would you work on next, and what are you not allowed to touch?
+```
+
+Yanıt belirsizse, ortaya çıkardığı boşluk gerçektir.
+
+### Desen burada icat edilmedi
+
+Bu şekil — yazılı iş emirleri, ayrık sahiplik, üretilmiş durum, devirler — buna uygulanmadan önce daha önceki bir projede kanıtlanmıştı. Bunu söylemekte fayda var, çünkü beklentileri belirliyor: işi bu şekilde yürütmekten ortaya çıkmış bir desen, önce birinin çizdiği bir tasarım değil.
+
+Bu aynı zamanda ilginç sorunun "bu doğru sistem mi" değil, "projem bunun hangi parçalarına gerçekten ihtiyaç duyuyor" olduğu anlamına gelir. En ucuzdan başlayarak üç kademe:
+
+1. **Yazıya dökülmüş, ayrık sahiplik.** En az törenle en yüksek değer. Bir dosyanın üstünde hangi iş akışının onu sahiplendiğini söyleyen bir yorum bile çoğu çakışmayı önler.
+2. **Bir oturumdan fazlasını kapsayan her şey için handoff notları.** Bunlar da ucuzdur ve ikinci oturumun birincinin çıkmaz sokaklarını yeniden keşfetmesini engelleyen şey budur.
+3. **Üretilmiş bir durum dosyası ve bir claim protokolü.** Yalnızca plan sayısı kafanızda tutabileceğinizi ve oturum sayısı biri aştığında değer taşır. Bunun altında, zaten sahip olduğunuz bilginin ikinci bir kopyasıdır — bu modülün laboratuvar deposu, iki planlık durum dosyasını elle tutar ve bunu söyler.
+
+Claude Code'un kendi paralellik özellikleri aynı üç kademeye oturur. Worktree'ler her oturuma ayrı bir checkout verir; oturumlar arası mesajlaşma değişken gerçekleri aralarında taşır; [subagent](/tr/playbook/glossary/#subagent)'lar (ana oturumun bir alt görevi devrettiği yardımcı agent'lar), agent view ve agent team'ler, işçileri sizin yerinize Claude'un koordine ettiği durumları kapsar. Plan seti hepsinin altındaki katmandır: bir işçiye "kendi dosyaları"nın ne olduğunu en başta söyleyen odur.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · çalışan bir plan sistemini baştan sona okuyun"
+  lessonId="tr/l4-master/m18-multi-session/this-repo-as-example"
+  repoTag="none"
+  steps={[
+    'Bu sitenin deposunu kullan-at bir dizine klonlayın ve kurun: `git clone https://github.com/codechup/claude-code-training cct-plan-lab && cd cct-plan-lab && npm ci`.',
+    "Durum dosyasını yeniden üretin ve değişmediğini doğrulayın: `node tools/plan/cli.ts state`. STATE.md'nin güncel olduğunu raporlamalı — belirlenimlilik (determinism), CI'ın dayandığı özelliktir.",
+    "STATE.md'yi baştan sona okuyun. Dokuz bölümünün her biri için, hangi kararı desteklediğini adlandırın.",
+    'Açık soruları sayın: `grep -c "^- \\*\\*P" STATE.md`. Beşini okuyun ve her birini bir sahiplik sorunu, bir dokümantasyon çelişkisi ya da eksik bir araç olarak sınıflandırın.',
+    "`done` olarak listelenen bir plan seçin ve onun Handoff notlarını okuyun. Sonra sevk edildiği pull request'i okuyun ve notların size [diff](/tr/playbook/glossary/#diff)'in (bir dosyadaki değişikliklerin satır satır gösterimi) söylemediği neyi söylediğini sorun.",
+    'Taze-session testini çalıştırın: `claude -p "Read STATE.md and plans/P33-l4-m16-orchestration.md. If you were the session claiming P33, what would you do first, and which files may you not touch? At most five lines. Do not edit anything." --model sonnet --max-turns 6 --output-format text --allowedTools Read,Glob,Grep`',
+    'Son olarak uygulayın: kendi projenizin üç kademeden hangisine ihtiyaç duyduğunu ve üstündeki kademelerin neden ek yük olacağını yazın.',
+  ]}
+  expected="`state`, STATE.md'nin güncel olduğunu raporlar ve kaç plan okuduğunu adlandırır; dosya ilk milestone'ların tamamlandığını ve daha sonraki birinin devam ettiğini, claim edilebilir bir Master seviyesi modül dalgasıyla birlikte gösterir; `grep -c` düzinelerce açık soru sayısı döner; ve headless (etkileşimli arayüz olmadan tek komutla çalıştırma) oturum, claim komutunu, branch'i, worktree yolunu ve tam yasak listesini iki dosyadan türetir."
+  checklist={[
+    "Yeniden üretilen STATE.md, commit'lenmiş olanla byte'a byte aynıydı",
+    'Dokuz bölümün her birinin hangi kararı desteklediğini adlandırabiliyorsunuz',
+    'Beş açık soruyu sınıflandırdınız ve en yaygın nedenin sahiplik olduğunu buldunuz',
+    "Bir Handoff notunda diff'in size söylemediği bir şey buldunuz",
+    'Kendi projenizin hangi kademeye ihtiyaç duyduğuna karar verdiniz — ve bir üstteki kademeye neden ihtiyaç duymadığınızı yazdınız',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/06-this-repo-as-example/01-state.txt"
+    range="2-9"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/06-this-repo-as-example/02-state-sections.txt"
+    range="11-21"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/06-this-repo-as-example/03-resume-from-repo-state.txt"
+    range="4-6"
+  />
+</Lab>
+
+## Anti-pattern'ler
+
+**Bütün sistemi ona ihtiyacı olmayan bir projeye kopyalamak.** Kimsenin okumadığı tören yine de herkesin zamanına mal olur, daha kötüsü, hiçbir şey sağlamazken koordinasyon gibi görünür. _Düzeltme:_ birinci kademeden başlayın ve bir kademeyi ancak yokluğu gerçekten canınızı yaktığında ekleyin.
+
+**Kimsenin üretmediği bir plan seti.** Durumu elle düzenlenen, üretilmiş bir görünümü olmayan plan dosyaları, bayat belgelerden oluşan bir dizindir. _Düzeltme:_ ya görünümü üretin ve tazeliğini CI'da kontrol edin ya da durum alanlarını bırakıp planları spesifikasyon olarak tutun.
+
+**Kimsenin triyaj etmediği açık sorular.** Yalnızca büyüyen bir liste duvar kâğıdına dönüşür ve oturumlar ona eklemeyi bırakır — bu noktada tekrar tahmin etmeye dönerler. _Düzeltme:_ onları sabit bir ritimde triyaj edin; her biri bir karar, bir takip planı ya da bir dokümantasyon düzeltmesi olarak kapansın.
+
+**Vaka analizini dersin kendisi sanmak.** Aktarılabilir parçalar ayrık sahiplik, yazılı devirler ve türetilmiş durumdur. Belirli dosya adları, CLI ve milestone harfleri bu projenin uygulamasıdır. _Düzeltme:_ özellikleri kopyalayın, dosya adlarını değil.
+
+**Plan dosyalarında insan adı geçirmek.** Bir plan "Sam'in" olduğu an, sistemin işi müsait olana yönlendirme yeteneği gider. _Düzeltme:_ `owner` bir oturum adıdır ve araç tarafından ayarlanır.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/this-repo-as-example"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir plan seti düzinelerce açık soru taşıyor. Bu en olası neyi gösterir?"
+  options={[
+    {
+      text: 'Planlar kötü yazılmış.',
+      explanation:
+        'Bazıları gerçekten zayıf planlara işaret eder — ama girdinin var olması sistemin çalıştığını gösterir, başarısız olduğunu değil.',
+    },
+    {
+      text: 'Oturumlar belirsizliklere çarptı ve tahmin etmek yerine onları kaydetti, alanın amacı tam olarak bu.',
+      correct: true,
+      explanation:
+        'Büyük bir projede boş bir açık-sorular listesi asıl şüpheli olandır: genellikle oturumların tahmin ettiği ve kimsenin fark etmediği anlamına gelir.',
+    },
+    {
+      text: 'Proje engellenmiş durumda.',
+      explanation:
+        'Engellenme (blocked) kendi tablosuna sahip ayrı bir durumdur; açık bir soru çözülmesi gereken bir şeydir, bir duruş değil.',
+    },
+    {
+      text: 'Bağımlılık çizgesi döngüsel.',
+      explanation: 'Döngüler bir `check` başarısızlığıdır, açık sorularla ilgisizdir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/this-repo-as-example"
+  questionId="q2"
+  lang="tr"
+  prompt="Durum üreticisini değişmemiş bir plan setinde çalıştırmak, dosyanın zaten güncel olduğunu yazdırıyor. Bu neden önemli?"
+  options={[
+    {
+      text: 'Diske bir yazmayı önler.',
+      explanation: 'Doğru ve ilgisiz.',
+    },
+    {
+      text: "Belirlenimlilik, CI'ın durum dosyası bayat olan bir pull request'i başarısız kılmasını sağlayan şeydir, bu da dosyayı güvenilir kılan şeydir.",
+      correct: true,
+      explanation:
+        "Aynı girdi, byte'a byte aynı çıktı. Bu olmadan bayatlık tespit edilemez ve dosya danışma niteliğine döner.",
+    },
+    {
+      text: 'Hiçbir planın engellenmediğini kanıtlar.',
+      explanation:
+        'Engellenen planlar dosyada raporlanır; yeniden üretmek onlar hakkında hiçbir şey söylemez.',
+    },
+    {
+      text: 'Her bağımlılığın karşılandığını doğrular.',
+      explanation: "Bu `state`'in değil `check`'in işidir.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/this-repo-as-example"
+  questionId="q3"
+  lang="tr"
+  prompt="Küçük bir projede bu sistemin hangi tek parçasını ilk önce benimsersiniz?"
+  options={[
+    {
+      text: 'Milestone tabloları olan üretilmiş bir durum dosyası.',
+      explanation:
+        'En yüksek tören, en düşük erken getiri. Plan setini artık kafanızda tutamadığınızda karşılığını verir.',
+    },
+    {
+      text: 'Her iki iş akışının da okuyabileceği bir yere yazılmış, dosyaların ayrık sahipliği.',
+      correct: true,
+      explanation:
+        'Neredeyse hiç maliyetsiz olarak en yaygın ve en pahalı hatayı — iki oturumun bir dosyayı düzenlemesini — önler.',
+    },
+    {
+      text: 'Bayat-claim geri alımıyla birlikte bir claim protokolü.',
+      explanation: 'Yalnızca birkaç oturum aynı iş havuzu için yarıştığında anlamlıdır.',
+    },
+    {
+      text: 'Yüz numaralandırılmış girdisi olan bir kararlar kayıt defteri.',
+      explanation:
+        'Ölçekte değerlidir, ama küçük bir projenin donduracak yüz kararı nadiren vardır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/this-repo-as-example"
+  questionId="q4"
+  lang="tr"
+  prompt="Kendi koordinasyon kurulumunuzun gerçekten işe yarayıp yaramadığını nasıl test edersiniz?"
+  options={[
+    {
+      text: 'Bağlamı olmayan bir oturumu depoya yöneltin ve neyi çalışacağını ve neye dokunamayacağını söyleyip söyleyemediğine bakın.',
+      correct: true,
+      explanation:
+        'Geri kalan her şeyin hizmet ettiği tek özellik: bir oturum yalnızca depo durumundan devam eder. Yanıt belirsizse, boşluk gerçektir.',
+    },
+    {
+      text: 'Plan dosyalarını sayın.',
+      explanation: 'Hacim, hiçbirinin yürütülebilir olup olmadığı hakkında hiçbir şey söylemez.',
+    },
+    {
+      text: "CI'ın yeşil olduğunu kontrol edin.",
+      explanation:
+        'Yeşil CI, kodun çalıştığını kanıtlar, bir yabancının bir sonraki iş parçasını üstlenebileceğini değil.',
+    },
+    {
+      text: 'Planları yazan kişiye net olup olmadıklarını sorun.',
+      explanation:
+        'Bunu söyleyemeyecek tek okuyucu odur — planın sağlaması gereken bağlama zaten sahip.',
+    },
+  ]}
+/>
+
+Bu modülü kapatıyor. Bir plan dosyası biçiminiz, projenin üretilmiş bir görünümünüz, sunucu gerektirmeyen bir claim protokolünüz, hem plan setinin hem de Claude Code'un uyguladığı dosya seviyesinde izolasyonunuz, yargıyı ileriye taşıyan ipuçlarınız ve onu yazan oturumdan sonra da hayatta kalan handoff notlarınız var. Bir sonraki modül oturumları koordine etmekten, ürettiklerine geçiyor: artifact'ler, tasarım kanvasları ve tarayıcı.

@@ -1,15 +1,15 @@
 ---
-title: 'Bağlam mühendisliği (context engineering)'
-description: "Bir oturumun bildiği her şey tek bir context window'da yaşar. Siz yazmadan önce neyin yüklendiğini, compaction'dan neyin sağ çıktığını, /context, /compact, /clear ve /autocompact arasındaki farkı ve bir okumayı subagent'a devretmenin ne zaman işe yaradığını — tahminle değil, gerçek ölçümlerle — öğrenin."
+title: 'Context mühendisliği'
+description: 'Bir oturum’ın bildiği her şey tek bir pencerede yaşar. Yazmaya başlamadan önce neyin yüklendiğini, sıkıştırmadan neyin sağ çıktığını, /context, /compact, /clear ve /autocompact’ın nasıl farklılaştığını ve bir okumayı bir subagent’a devretmenin ne zaman gerçekten karşılığını verdiğini — tahminle değil gerçek çalıştırmalarla ölçülmüş olarak — öğrenin.'
 level: 4
 module: 'm21-scale'
 order: 2
 duration_min: 20
 difficulty: core
-tags: ['context', 'compaction', 'subagent', 'token']
+tags: ['context', 'sıkıştırma', 'subagent', 'token']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Explore the context window'
@@ -35,11 +35,276 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders, uzun bir oturumun biriktirdiği context'i yönetmeyi anlatır: ilk komutunuzdan önce pencerede ne olduğu; her isteğin sıralandığı üç katman (system prompt, proje bağlamı, konuşma); `/context` ile kendi sayılarınızı okumak; `/compact`, `/compact <talimat>`, `/clear`, `/rewind` ve `/autocompact <token>` arasında bilinçli seçim yapmak; compaction'dan neyin sağ çıktığı (diskten yeniden enjekte edilenler, en fazla beş dosyanın yeniden okunması, skill gövdelerinin 5.000/25.000 token sınırları); ve bir okumayı subagent'a devretmenin dürüst dengesi. Laboratuvarda ölçülen gerçek sonuç: subagent ana context'e 8.596 yerine 1.185 token ekledi, ama toplam maliyet 0,064 dolar yerine 0,128 dolar oldu.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur: `/en/l4-master/m21-scale/context-engineering/`.
+- İlk kelimenizi yazmadan önce [context window](/tr/playbook/glossary/#context-window)'a (bir modelin tek bir istekte görebildiği toplam token miktarı) neyin yüklendiğini listelemek ve bir isteğin sıralandığı üç katmanı adlandırmak.
+- `/context`'i okumak ve hangi kategorinin size mal olduğunu söylemek.
+- `/compact`, `/compact <talimatlar>`, `/clear`, `/rewind` ve `/autocompact <token>` arasında bilerek seçim yapmak.
+- Sıkıştırmadan neyin sağ çıkıp neyin çıkmadığını söylemek — beş-dosya yeniden okuma, [skill](/tr/playbook/glossary/#skill) (`SKILL.md` ile tanımlanan, yeniden kullanılabilir talimat paketi)-gövdesi sınırları ve hangi kuralların geri geldiği dâhil.
+- Dürüst takas kullanarak bir okumayı bir [subagent](/tr/playbook/glossary/#subagent)'a (ana oturumun bir alt görevi devrettiği, kendi context window'u ve tool izinleri olan yardımcı agent) ne zaman devredeceğinize karar vermek: daha yalın bir ana context, ikinci bir soğuk context window'a ödenen bedelle.
+
+**Ön koşullar.** `m10-subagents` (bir subagent'ın ne olduğu ve birinin nasıl çağrılacağı) ve `m03-memory` (`CLAUDE.md`, kurallar, auto memory). Önceki dersin kapsamlama teknikleri context'in _başlangıç_ büyüklüğünü küçültür; bu ders bir oturum çalıştıkça ona ne olduğuyla ilgilidir.
+
+<WhenNotToUse>
+  İyi giden bir oturumda context mühendisliği yapmayın. Sıkıştırma bedava değildir — ayrıntıyı atar
+  ve konuşma önbelleğini yeniden inşa eder — bu yüzden her birkaç turda bir `/compact` refleksi,
+  kazandırdığından daha fazlasına mal olur. Dosya küçükken ya da aynı oturumda daha sonra tam
+  içeriğe ihtiyacınız olacaksa bir okumayı bir subagent'a devretmeyin: subagent dosyayı değil bir
+  özet döndürür ve kendi context'i soğuk başlar. Ve `/clear`'ı kötü bir yanıt için bir düzeltme
+  olarak ele almayın; bu, ilgisiz bir işe geçmiş bir oturum için bir düzeltmedir.
+</WhenNotToUse>
+
+## Kavram
+
+### Yazmadan önce pencerede ne var
+
+Bir oturum asla boş değildir. İlk prompt'unuzdan önce, pencere zaten sistem [prompt](/tr/playbook/glossary/#prompt)'unu (Claude'a verilen istek metni; burada temel talimatlar, [tool](/tr/playbook/glossary/#tool) (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) tanımları ve herhangi bir output style ya da `--append-system-prompt` metni), `CLAUDE.md`'yi, auto memory'yi, MCP tool isimlerini ve skill açıklamalarını, artı ortam bilgisini — çalışma dizini, platform, shell, OS sürümü, git durumu — tutar. Kendi kurulumunuz buna eklenir.
+
+Claude çalıştıkça, her dosya okuması context'e eklenir, yol-kapsamlı kurallar eşleştikleri dosyalarla birlikte yüklenir ve bir [hook](/tr/playbook/glossary/#hook) (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan komut) da ona ekleyebilir — bir `SessionStart` hook'unun stdout'u ilk prompt'unuzdan önce context'e girer.
+
+Claude Code, nadiren değişen kısımlar önce gelsin diye her isteği üç katmana sıralar:
+
+| Katman          | İçerik                                            | Şu durumda değişir                                                             |
+| --------------- | ------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Sistem prompt'u | Temel talimatlar, tool tanımları, output style    | Yüklenen tool tanımları kümesi değiştiğinde ya da Claude Code güncellendiğinde |
+| Proje context'i | `CLAUDE.md`, auto memory, kapsamsız kurallar      | Oturum başladığında, ya da `/clear` ya da `/compact`'tan sonra                 |
+| Konuşma         | Mesajlarınız, Claude'un yanıtları, tool sonuçları | Her tur                                                                        |
+
+Bu sıralama bir önbellekleme kararıdır ve bir sonraki ders tamamen bunun size ne kazandırdığıyla ilgilidir. Burada, aksi hâlde bir hata gibi görünen bir davranışı açıklar: **proje-kökü `CLAUDE.md`'nizi oturum ortasında düzenlemek uygulanmaz.** Oturum başında bir kez okunur ve tutulur; yeni içerik bir sonraki `/clear`, `/compact` ya da yeniden başlatmada yüklenir. Aynı şey output style için de geçerlidir.
+
+### Kendi sayılarınızı görmek
+
+`/context`, optimizasyon önerileriyle ve yüklenen `CLAUDE.md` ve auto-memory dosyalarının listesiyle birlikte kategoriye göre canlı bir döküm yazdırır. `/memory`, düzenlemek için o dosyaları açar. İkisi de yalnızca etkileşimlidir — aşağıdaki ikinci [transcript](/tr/playbook/glossary/#transcript)'in (gerçek bir Claude Code oturumunun kaydı) gösterdiği gibi [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma, `claude -p`) bir eşdeğeri yoktur. Bir betikte, [token](/tr/playbook/glossary/#token) (bir dil modelinin metni işlerken kullandığı en küçük birim) sayıları bunun yerine `claude -p … --output-format json`'daki `usage` nesnesinden gelir.
+
+### Pencere dolmadan harekete geçmek
+
+Claude Code, sınıra yaklaştıkça otomatik olarak sıkıştırır, bu yüzden dolu bir pencere asla bir oturumu bitirmez. Ondan önde olmanın beş yolu var:
+
+<CodeBlock title="bir oturum içinde">
+
+```text
+/compact focus on the auth bug fix   # summarise now, keeping what you name
+/rewind                              # then "Summarize from here" / "Summarize up to here"
+/autocompact 500k                    # compact earlier: set how full the window gets first
+/clear                               # switching to unrelated work
+```
+
+</CodeBlock>
+
+`/autocompact <token>`, [`autoCompactWindow`](https://code.claude.com/docs/en/settings-reference.md) ayarını user settings'inize yazar. Otomatik sıkıştırmanın kendisi `autoCompactEnabled` ile açılıp kapatılır; `DISABLE_AUTO_COMPACT` onu bir oturum için kapatır ve elle `/compact` kapalıyken de çalışmaya devam eder. Bir oturum için, `--autocompact` CLI bayrağı o ayara göre önceliklidir ve `CLAUDE_CODE_AUTO_COMPACT_WINDOW` ikisine göre de önceliklidir.
+
+Beşinci yol, içeriği penceenize hiç koymamaktır — okumayı bir subagent'a devretmek, ki bu dersin ikinci yarısı budur.
+
+İhtiyacınız olan şey daha kısa bir konuşma değil daha büyük bir pencereyse, Fable 5.1, Fable 5, Sonnet 5, Opus 4.6 ve sonrası, ve Sonnet 4.6, 1 milyon token'lık bir context window'u destekler; Sonnet 5, seçilecek bir `[1m]` varyantı olmadan 1M'de çalışır. Sıkıştırma, daha büyük sınırda da aynı şekilde çalışır.
+
+### Sıkıştırmadan ne sağ çıkar
+
+Sıkıştırma, mesaj geçmişini bir özetle değiştirir. Bir içerik parçasına ne olacağı, oraya nasıl geldiğine bağlıdır:
+
+| Mekanizma                                                                                                                                         | Sıkıştırmadan sonra                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Sistem prompt'u ve output style                                                                                                                   | Değişmez; mesaj geçmişinin parçası değildir                                                                  |
+| Proje-kökü `CLAUDE.md`, kapsamsız kurallar                                                                                                        | Diskten yeniden enjekte edilir                                                                               |
+| Auto memory                                                                                                                                       | Diskten yeniden enjekte edilir                                                                               |
+| Claude'un [plan mode](/tr/playbook/glossary/#plan-mode)'da (Claude'un değişiklik yapmadan önce yalnızca okuyup bir plan sunduğu mod) yazdığı plan | Diskten yeniden enjekte edilir                                                                               |
+| `paths:` frontmatter'lı kurallar                                                                                                                  | Claude eşleştikleri dosyaları okudukça yeniden yüklenir                                                      |
+| Alt dizinlerdeki iç içe `CLAUDE.md`                                                                                                               | Claude o alt dizindeki dosyaları okudukça yeniden yüklenir                                                   |
+| Claude'un okuduğu ya da düzenlediği dosyalar                                                                                                      | Claude Code en çok beşini, en son değiştirilen önce olacak şekilde yeniden okur                              |
+| Çağrılan skill gövdeleri                                                                                                                          | Yeniden enjekte edilir, skill başına 5.000 token ve toplamda 25.000 token'la sınırlı; en eski önce düşürülür |
+| Hook'ların önceden eklediği context                                                                                                               | Konuşmanın geri kalanıyla birlikte özetlenir                                                                 |
+| `compact` ile eşleşen `SessionStart` hook'ları                                                                                                    | Claude Code onları çalıştırır ve çıktılarını ekler                                                           |
+
+Bundan doğrudan üç sonuç çıkar. 5.000 token'ı aşan bir dosya, yeniden okumadan sonra içeriği yerine bir yol referansı olarak geri gelir — `Read` yerine `Referenced file` olarak gösterilir — kuralları yine de yeniden yüklense de. Sıkıştırma boyunca kalıcı olması gereken bir kural, `paths:` frontmatter'ını bırakmalı ya da proje-kökü `CLAUDE.md`'ye taşınmalıdır. Ve skill gövdeleri sondan kırpıldığı için, en önemli talimatlar `SKILL.md`'nin en üstüne aittir.
+
+v2.1.198'den beri özetleme isteği, oturumun genişletilmiş-düşünme yapılandırmasını miras alır — oturumunızda açıksa düşünme açıkken akıl yürütür. Bu yalnızca özetin nasıl üretildiğini etkiler.
+
+### Bir okumayı bir subagent'a devretmek
+
+Bir subagent kendi context window'unda çalışır. İhtiyacı olanı orada okur ve yalnızca cevabını döndürür, bu yüzden dosya içeriği asla konuşmanıza girmez. Sizin tarafınızdan, çağrı ve sonuç iki eklenmiş mesajdır.
+
+Bu iyi bilinen yarısı. Dürüst yarısı maliyettir. Bu dersin işlenmiş örnek prompt'u, yedi dosyalık bir dizine karşı iki şekilde çalıştırılmış:
+
+```text
+Read every .ts file in large/src/notifications/ and give me a one-line summary of each.
+```
+
+Doğrudan yapıldığında, bu context'inize düşen yedi okumadır. Yerleşik `Explore` subagent'ına devredildiğinde, okumalar subagent'ın context'ine düşer ve tek bir özet geri gelir. Aşağıdaki laboratuvardan ölçülen sonuç: **ana konuşmanın önbelleğine doğrudan eklenen 8.596 token'a karşı subagent üzerinden 1.185** — ve toplam maliyette **0,064 dolara karşı 0,128 dolar.** Devretme, ana pencereyi sekizde yedi oranında daha temiz tuttu ve kabaca iki kat daha fazlaya mal oldu, çünkü subagent kendi soğuk önekinden başlar.
+
+Yani kural "her zaman devret" değildir. Şudur: ana oturumun context'i kıt kaynak olduğunda — devam ettirmeniz gereken uzun bir oturum, içeriğine bir daha asla ihtiyaç duymayacağınız bir okuma — devredin ve oturum kısaysa ya da dosyayı yine de daha sonra isteyecekseniz doğrudan okuyun.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Laboratuvar deposunda hiç `lesson/m21-scale-*` etiketi yok; bu modülün fixture'ları `main`'de
+  yaşar. Düz bir klonda çalışın. `large/src/notifications/`, bu laboratuvarın okuduğu yedi dosyayı
+  tutar.
 </Callout>
+
+<Lab
+  title="Laboratuvar · bir subagent'ın context'inizin dışında ne tuttuğunu ölçün"
+  lessonId="tr/l4-master/m21-scale/context-engineering"
+  repoTag="none"
+  steps={[
+    'Laboratuvar deposunun düz bir klonunda, doğrudan versiyonu çalıştırın ve zarfı saklayın: `claude -p "Read every .ts file in large/src/notifications/ and give me a one-line summary of each." --model sonnet --max-turns 12 --allowedTools Read Glob --output-format json > direct.json`',
+    'Devredilmiş versiyonu çalıştırın: `claude -p "Delegate to the Explore subagent: have it read every .ts file in large/src/notifications/ and return a one-line summary of each. Report its answer." --model sonnet --max-turns 12 --allowedTools Agent --output-format json > subagent.json`',
+    "İki dosya arasında `usage.cache_creation_input_tokens`'ı (bu turun önbelleklenmiş öneke ne eklediği), `num_turns`'ü ve `total_cost_usd`'yi karşılaştırın.",
+    "Aynı klonda etkileşimli bir oturum başlatın ve `/context`'i çalıştırın. Memory files listesini ve kategori başına dökümü okuyun.",
+    '`/context`\'in hiç headless biçimi olmadığını doğrulayın: `claude -p "/context" --model sonnet --max-turns 2 --output-format text`\'i çalıştırın ve geri geleni okuyun.',
+  ]}
+  expected="Doğrudan çalıştırma, ana konuşmaya devredilmiş çalıştırmadan kabaca yedi kat daha fazlasını ekler (burada 8.596'ya karşı 1.185 önbellek-oluşturma token'ı) ve çok daha fazla tur alır; devredilmiş çalıştırma toplamda kabaca iki kat daha fazlaya mal olur. Prompt olarak /context ile `claude -p`, komutu çalıştırmış gibi değil, metni yazmışsınız gibi yanıt verir."
+  checklist={[
+    'Her iki JSON zarfına da sahipsiniz ve iki cache_creation_input_tokens rakamını işaret edebiliyorsunuz',
+    'Uzun bir oturumda bu ikisinden hangisini seçeceğinizi ve nedenini söyleyebiliyorsunuz',
+    "/context'i etkileşimli olarak çalıştırdınız ve Memory files listesini buldunuz",
+    "/context'in varsaymak yerine yalnızca etkileşimli olduğunu doğruladınız",
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m21-scale/02-context-engineering/01-direct-reads-vs-subagent.txt"
+    range="3-30"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m21-scale/02-context-engineering/02-context-command-is-interactive-only.txt"
+    range="3-5"
+  />
+</Lab>
+
+`num_turns` rakamları aynı hikâyeyi başka bir açıdan anlatır: kendi döngünüzde dokuz turluk tool çağrısına karşı bütün işi devreden tek bir tur. Ve ikinci transcript, bu dersin `/context`'i sahte bir ekran görüntüsü göstermek yerine düzyazıyla tarif etmesinin nedenidir — `claude -p`'ye gönderildiğinde, `/context` metni bir selamlama olarak yanıtlanır, bu yüzden gösterecek bir kaydı yoktur. Yalnızca-etkileşimli özellikler tarif edilir, asla icat edilmez.
+
+## Anti-pattern'ler
+
+**`CLAUDE.md`'yi düzenleyip çalışan oturumun onu almasını beklemek.** Oturum başında okundu ve hafızada tutuldu; düzenleme diske düşer ve `/clear`, `/compact` ya da bir yeniden başlatmaya kadar hiçbir şeyi değiştirmez. _Düzeltme:_ düzenlemeyi yapın, ardından `/clear`'layın, ya da bu oturumun geri kalanı için yeni talimatı prompt'ta belirtin.
+
+**Görev ortasında sıkıştırmak.** Özet, otomatik geçişin önemli olduğunu tahmin ettiğini korur, ki bir görevin ortasında bu nadiren ihtiyacınız olacak şeydir. _Düzeltme:_ doğal bir kesme noktasında sıkıştırın, ya da talimatlar geçirin — `/compact focus on the auth bug fix`.
+
+**Kötü bir yoldan vazgeçmek için `/compact` kullanmak.** Sıkıştırma, yanlış turu her şeyle birlikte özetler. _Düzeltme:_ ondan öncesine `/rewind` yapın. Geri sarma, yeni bir tane inşa etmek yerine zaten var olan bir öneke kısaltır.
+
+**"Context'ten tasarruf etmek" için her şeyi subagent'lara devretmek.** Her subagent soğuk başlar ve buna göre faturalandırılır; laboratuvar, tek bir küçük dizin için kabaca iki kat maliyet ölçtü. _Düzeltme:_ içeriğine bir daha ihtiyaç duymayacağınız okumaları, ana pencerenin kısıt olduğu oturumlarda devredin.
+
+**Önemli kısmı bir `SKILL.md`'nin en altına yazmak.** Sıkıştırmadan sonra, skill gövdeleri yeniden enjekte edilir ama sondan kırpılır, her biri 5.000 token ve toplamda 25.000 ile sınırlıdır. _Düzeltme:_ sağ çıkması gereken talimatları dosyanın en üstüne koyun.
+
+**Bir `paths:`-kapsamlı kuralın uzun bir oturum boyunca kalıcı olduğuna güvenmek.** Mesaj geçmişinde yaşar, bu yüzden sıkıştırma onu özetleyerek yok eder ve yalnızca eşleşen bir dosya tekrar okunduğunda geri gelir. _Düzeltme:_ her zaman uygulanması gereken bir kural için, `paths:`'i bırakın ya da onu proje-kökü `CLAUDE.md`'ye taşıyın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/context-engineering"
+  questionId="q1"
+  lang="tr"
+  prompt="Uzun bir oturumun ortasında proje-kökü CLAUDE.md'nizi düzenliyorsunuz. Ne olur?"
+  options={[
+    {
+      text: 'Yeni içerik bir sonraki mesajdan itibaren uygulanır',
+      explanation: 'Claude, oturum başında yüklenen sürümle çalışmaya devam eder.',
+    },
+    {
+      text: 'Bir sonraki `/clear`, `/compact` ya da yeniden başlatmaya kadar hiçbir şey uygulanmaz',
+      correct: true,
+      explanation:
+        'Proje-kökü ve user-düzeyi hafıza dosyaları oturum başında bir kez okunur ve tutulur.',
+    },
+    {
+      text: 'Önbellek geçersiz kılınır ve bir sonraki tur yavaştır',
+      explanation:
+        'Düzenleme önbelleği geçersiz kılmaz — tam olarak dosya yeniden okunmadığı için.',
+    },
+    {
+      text: 'Claude onu bir sonraki dosya düzenlemesinden sonra yeniden okur',
+      explanation:
+        'Alt dizinlerdeki iç içe CLAUDE.md dosyaları talep üzerine yüklenir; proje-kökü olan yüklenmez.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/context-engineering"
+  questionId="q2"
+  lang="tr"
+  prompt="Sıkıştırma hakkında hangi ifade doğrudur?"
+  options={[
+    {
+      text: 'CLAUDE.md ve auto memory dâhil her şey özetlenir',
+      explanation:
+        'Proje-kökü CLAUDE.md, kapsamsız kurallar, auto memory ve plan-mode planı diskten yeniden enjekte edilir.',
+    },
+    {
+      text: "Claude Code, dokunduğu dosyalardan en fazla beşini, en son değiştirilen önce olacak şekilde yeniden okur ve 5.000 token'ı aşan bir dosya içeriği yerine bir yol referansı olarak geri gelir",
+      correct: true,
+      explanation:
+        '`Read` yerine `Referenced file` olarak gösterilir; onu eşleştiren kurallar yine de yeniden yüklenir.',
+    },
+    {
+      text: 'Skill gövdeleri tamamen düşürülür',
+      explanation:
+        'Skill başına 5.000 token ve toplamda 25.000 ile sınırlı, en eski önce düşürülerek yeniden enjekte edilirler.',
+    },
+    {
+      text: '200k penceresini aştığınızda sıkıştırma kullanılamaz',
+      explanation:
+        'Sıkıştırma dolu bir pencereyi ele alan mekanizmadır ve 1M sınırında da aynı şekilde çalışır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/context-engineering"
+  questionId="q3"
+  lang="tr"
+  prompt="Laboratuvarda, yedi dosya okumasını bir subagent'a devretmek ana konuşmaya 8.596 yerine 1.185 token ekledi — ama 0,064 dolar yerine 0,128 dolara mal oldu. Doğru sonuç nedir?"
+  options={[
+    {
+      text: "Subagent'lar bir maliyet optimizasyonudur ve varsayılan olmalıdır",
+      explanation:
+        'Ölçüm maliyet hakkında tersini söylüyor: subagent çalıştırması kabaca iki kat daha pahalıydı.',
+    },
+    {
+      text: "Subagent'lar parayı ana-context alanıyla takas eder, bu yüzden pencere kıt kaynak olduğunda devredin",
+      correct: true,
+      explanation:
+        'Bir subagent kendi soğuk önekinden başlar; okumaları penceenizin dışında tutmak için bunu ödersiniz.',
+    },
+    {
+      text: 'Ölçüm yanlış; bir subagent daha fazlaya mal olamaz',
+      explanation:
+        'Her iki rakam da bu ders için yakalanan gerçek `--output-format json` zarflarından geliyor.',
+    },
+    {
+      text: 'Doğrudan okumak her zaman daha ucuz ve her zaman daha iyidir',
+      explanation:
+        'Tek bir kısa görev için daha ucuz; uzun bir oturumda harcadığınız context, oturumu bitiren şeydir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/context-engineering"
+  questionId="q4"
+  lang="tr"
+  prompt="Otomatik sıkıştırmanın varsayılandan daha erken çalışmasını istiyorsunuz. Belgelenen yol hangisi?"
+  options={[
+    {
+      text: "`autoCompactWindow` ayarını yazan `/autocompact 500k`'yı çalıştırın",
+      correct: true,
+      explanation:
+        'Bir oturum için `--autocompact` bayrağı o ayarı geçersiz kılar ve `CLAUDE_CODE_AUTO_COMPACT_WINDOW` ikisini de geçersiz kılar.',
+    },
+    {
+      text: "Settings'te `autoCompactAt`'i ayarlayın",
+      explanation:
+        "Böyle bir anahtar yok. Anahtarlar `autoCompactEnabled` ve `autoCompactWindow`'dur.",
+    },
+    {
+      text: "`DISABLE_AUTO_COMPACT=1`'i ayarlayın",
+      explanation: 'Bu, otomatik sıkıştırmayı oturum için kapatır, daha erkene almaz.',
+    },
+    {
+      text: 'Bir zamanlayıcıda `/compact` çalıştırın',
+      explanation:
+        'Elle sıkıştırma görev sınırlarında iyi bir alışkanlıktır, ama istenen ayar bu değildir.',
+    },
+  ]}
+/>
+
+**Sonraki:** `03-prompt-caching`, yukarıdaki katman sıralamasının neden var olduğunu, oturum ortasında bir model değişiminin gerçekte neye mal olduğunu ve kendi önbellek isabet oranınızı nasıl okuyacağınızı açıklıyor.

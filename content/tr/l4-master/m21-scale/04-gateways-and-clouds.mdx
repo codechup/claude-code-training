@@ -1,6 +1,6 @@
 ---
-title: 'Gateway’ler ve bulut sağlayıcılar'
-description: "Claude Code'u Amazon Bedrock, Google Cloud'un Agent Platform'u, Microsoft Foundry veya kurumunuzun işlettiği bir gateway üzerinden çalıştırın — her biri için ortam değişkenleri, bir gateway'in ne kazandırdığı ve neye mal olduğu, ve altındaki proxy ile allowlist yapılandırması."
+title: 'Gateway’ler ve bulut sağlayıcıları'
+description: 'Claude Code’u Amazon Bedrock’a, Google Cloud’ın Agent Platform’una, Microsoft Foundry’ye ya da organizasyonunuzun işlettiği bir gateway’e karşı çalıştırın — her biri için ortam değişkenleri, bir gateway’in size ne kazandırdığı, neye mal olduğu ve hepsinin altındaki proxy ve allowlist yapılandırması.'
 level: 4
 module: 'm21-scale'
 order: 4
@@ -9,7 +9,7 @@ difficulty: advanced
 tags: ['bedrock', 'vertex', 'foundry', 'gateway', 'ağ']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Run Claude Code through a gateway'
@@ -47,11 +47,308 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders modele giden dört yolu anlatır — doğrudan Anthropic API/abonelik, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX` ve `CLAUDE_CODE_USE_FOUNDRY` — her birinin ortam değişkenlerini, model sabitlemenin (pinning) neden bir ekip dağıtımından önce yapılması gerektiğini, gateway'in kuruma ne kazandırdığını (merkezi kimlik bilgileri, kullanıcı başına kullanım takibi, bütçe, denetim kaydı, sağlayıcı değiştirme) ve neye mal olduğunu, `ANTHROPIC_BASE_URL` ile kimlik bilgisi değişkenlerinin hangi HTTP başlığına düştüğünü, gateway kimlik bilgisi etkinken claude.ai aboneliğinin kullanılmadığını ve `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS` ile ağ erişim listesini kapsar. Bu dersin transcript'i yoktur: hiçbir bulut sağlayıcısına giriş yapılmamıştır.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur: `/en/l4-master/m21-scale/gateways-and-clouds/`.
+- Dört sağlayıcı yolunu — Anthropic API ya da abonelik, Amazon Bedrock, Google Cloud'ın Agent Platform'u, Microsoft Foundry — ve her birini seçen ortam değişkenini adlandırmak.
+- Bir gateway'in (organizasyonunuzun Claude Code ile bir sağlayıcı arasında çalıştırdığı bir proxy) bir organizasyona ne verdiğini, onlara neye mal olduğunu ve Anthropic'in Claude apps gateway'i ile zaten çalıştırdığınız bir gateway arasındaki farkı söylemek.
+- Bir gateway kimlik bilgisi ayarlandığında bir geliştiricinin claude.ai aboneliğine ne olacağını ve yalnızca `ANTHROPIC_BASE_URL` ayarlandığında ne olacağını tahmin etmek.
+- `ANTHROPIC_BASE_URL`'i artı doğru kimlik bilgisi değişkenini yapılandırmak ve her birinin hangi HTTP başlığına düştüğünü bilmek.
+- Bir `HTTPS_PROXY` ve özel bir CA yapılandırmak ve model trafiği başka bir yere gittiğinde hangi alan adlarının hâlâ ulaşılabilir olması gerektiğini bilmek.
+
+**Ön koşullar.** Settings kapsamları ve managed settings için `m14-security` ve `m20-team`; model takma adları ve sabitleme için `m05-models-effort`. Bu bir yönetici-şeklindeki derstir: onu bir organizasyon olmadan okuyabilirsiniz, ama kararlar yaygınlaştırmayı sahiplenen kişiye aittir.
+
+<WhenNotToUse>
+  Bir gateway, organizasyonunuzun sonsuza kadar işleteceği bir altyapıdır. Claude Code her sürümde
+  yetenekler ekler ve onları iletmeyen bir gateway ilgili özellikleri bozar — bu yüzden gerçekten
+  merkezi kimlik bilgilerine, geliştirici başına kullanım atfına, bütçelere ya da denetim
+  günlüklemesine ihtiyacınız olmadıkça, yola bir tane koymayın. Aynısı bulut sağlayıcıları için de
+  geçerlidir: bir veri-yerleşimi ya da tedarik gereksinimiyle bağlı olmayan bir Claude
+  aboneliğindeki bir geliştirici, doğrudan Anthropic'e giden daha basit, daha iyi desteklenen bir
+  oturum alır. Ve buradaki hiçbir şey bir bireyin shell profiline ait değildir — bir filo için
+  yapılandırma, her geliştiriciden değişkenleri doğru export etmesini istemek yerine managed
+  settings üzerinden teslim edilir.
+</WhenNotToUse>
+
+## Kavram
+
+<Callout>
+  Bu dersin bir [transcript](/tr/playbook/glossary/#transcript)'i (gerçek bir Claude Code oturumunun
+  kaydı) yok ve bu bilerek böyle. Aşağıdaki her komut bir yapılandırma örneğidir: bir sağlayıcı
+  yolunu doğrulamak bir AWS, Google Cloud, Azure ya da gateway hesabı gerektirir, ki bu kurs bunlara
+  giriş yapmaz, ve burada bugün çalıştırabileceğiniz tek komut olan `/status` yalnızca
+  etkileşimlidir, bu yüzden ondan da yakalanacak hiçbir şey yoktur. Öyle görünen bir oturum icat
+  etmek fabrikasyon bir kayıt olurdu (D070). Sources'taki sağlayıcı sayfalarını kendi hesabınız için
+  otorite olarak ele alın.
 </Callout>
+
+### Bir modele giden dört yol
+
+| Yol                              | Şununla seçilir             | Kimlik bilgileri şuradan gelir                                                                             |
+| -------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Anthropic API / abonelik         | Varsayılan                  | Tarayıcı girişi, `ANTHROPIC_API_KEY`, ya da `claude setup-token`                                           |
+| Amazon Bedrock                   | `CLAUDE_CODE_USE_BEDROCK=1` | Varsayılan AWS SDK kimlik bilgisi zinciri                                                                  |
+| Google Cloud'ın Agent Platform'u | `CLAUDE_CODE_USE_VERTEX=1`  | Application Default Credentials                                                                            |
+| Microsoft Foundry                | `CLAUDE_CODE_USE_FOUNDRY=1` | `ANTHROPIC_FOUNDRY_AUTH_TOKEN`, `ANTHROPIC_FOUNDRY_API_KEY`, ya da Azure varsayılan kimlik bilgisi zinciri |
+
+Bedrock ve Agent Platform'un ikisi de etkileşimli bir kurulum sihirbazına sahiptir — giriş [prompt](/tr/playbook/glossary/#prompt)'unda (Claude'a verilen istek metni) **3rd-party platform**'u seçin, ya da bir oturumda `/setup-bedrock` ya da `/setup-vertex`'i çalıştırın — bu, kimlik bilgilerinizi ve bölgenizi tespit eder, hesabınızın hangi Claude modellerini çağırabileceğini kontrol eder ve sonucu user settings dosyanızın `env` bloğuna yazar. Microsoft Foundry'nin bir sihirbazı yoktur; ortam değişkenleri tek yoldur.
+
+<CodeBlock title="Amazon Bedrock">
+
+```bash
+export CLAUDE_CODE_USE_BEDROCK=1
+export AWS_REGION=us-east-1            # only needed to override your profile's region
+
+# Optional: pin the models a rollout uses, so an upgrade never changes them under you
+export ANTHROPIC_DEFAULT_SONNET_MODEL='us.anthropic.claude-sonnet-4-6'
+export ANTHROPIC_DEFAULT_HAIKU_MODEL='us.anthropic.claude-haiku-4-5-20251001-v1:0'
+```
+
+</CodeBlock>
+
+<CodeBlock title="Google Cloud'ın Agent Platform'u">
+
+```bash
+export CLAUDE_CODE_USE_VERTEX=1
+export CLOUD_ML_REGION=global          # or a multi-region such as `eu`, or a region such as us-east5
+export ANTHROPIC_VERTEX_PROJECT_ID=YOUR-PROJECT-ID
+
+# With CLOUD_ML_REGION=global, override the region for models that have no global endpoint
+export VERTEX_REGION_CLAUDE_HAIKU_4_5=us-east5
+```
+
+</CodeBlock>
+
+<CodeBlock title="Microsoft Foundry">
+
+```bash
+export CLAUDE_CODE_USE_FOUNDRY=1
+export ANTHROPIC_FOUNDRY_RESOURCE=<your-resource-name>
+export ANTHROPIC_DEFAULT_SONNET_MODEL='claude-sonnet-5'   # your deployment names
+```
+
+</CodeBlock>
+
+Üç şey her üçünde de genelleşir. **Bir takıma yaygınlaştırmadan önce modellerinizi sabitleyin**: sabitlenmemiş bir dağıtım, Claude Code'un yerleşik varsayılanlarını izler ve Bedrock'ta dokümanlar, birincil bir modeli sabitlemeyen bir dağıtımın v2.1.207'den itibaren Opus oranında faturalandırılacağını açıkça belirtir. **Model kimlikleri sağlayıcı-şeklindedir** — Bedrock'ta `us.anthropic.claude-sonnet-4-6`, Foundry'de bir dağıtım adı — bu yüzden doğrudan bir oturumdan bildiğiniz takma adlar harfiyen taşınmaz. Ve **her sağlayıcı kendi model kümesini taşır**, ki bu genellikle Anthropic API'nin sunduğundan daha eskidir; bir modeli bir takıma vaat etmeden önce bölgenizde kullanılabilirliği kontrol edin. Claude Code'un gerçekte seçtiği sağlayıcıyı ve çözülen bölgeyi görmek için `/status`'u çalıştırın.
+
+### Bir gateway ne içindir
+
+Bir gateway, organizasyonunuzun Claude Code ile bir sağlayıcı arasında çalıştırdığı bir proxy'dir. Geliştiriciler gateway'e kimlik doğrular; gateway isteği organizasyonun sağlayıcı kimlik bilgisiyle iletir. İki kimlik bilgisi devrededir: gateway tarafından verilen geliştirici başına bir tane ve gateway'in tuttuğu bir sağlayıcı kimlik bilgisi.
+
+Bu, tek bir yerde beş şey kazandırır: kimlik bilgileri sunucu tarafında kalır, kullanım geliştirici ya da takım başına atfedilir, bütçeler ve hız sınırları merkezi olarak zorlanır, her istek uyumluluk için günlüklenebilir ve — gateway tek bir Anthropic-biçimli endpoint açığa çıkarırsa — sağlayıcı, geliştirici makinelerine dokunmadan değiştirilebilir.
+
+Maliyeti, gateway'in işlettiğiniz ve her Claude Code sürümüyle güncel tuttuğunuz bir altyapı hâline gelmesidir.
+
+İki türü var. **Claude apps gateway'i**, Anthropic'in kendisininkidir, `claude` ikili dosyasının içinde gönderilir, `/login` üzerinden kurumsal-IdP girişi, grup başına model allowlist'leri ve managed-settings zorlaması ve kendi gözlemlenebilirlik yığınınıza OTLP kullanım metrikleri ile birlikte. CLI ile yayınlandığı için güncel tutulacak bir iletme listesi yoktur. Girişi, hizmet-token akışı olmayan bir tarayıcı SSO adımıdır, bu yüzden girişi onaylayacak kimsenin olmadığı bir [CI](/tr/playbook/glossary/#ci) (her push'ta otomatik olarak testleri çalıştıran hat) pipeline'ı onun üzerinden kimlik doğrulayamaz. **Başka herhangi bir gateway** de, desteklenen bir API biçimini açığa çıkardığı sürece çalışır; Anthropic üçüncü taraf gateway ürünlerini onaylamaz, bakımını yapmaz ya da denetlemez ve Claude Code'u herhangi bir gateway üzerinden Claude-olmayan modellere yönlendirmeyi desteklemez.
+
+### Zaten çalıştırdığınız bir gateway'e bağlanmak
+
+<CodeBlock title="Claude Code'u bir gateway'e işaret edin">
+
+```bash
+export ANTHROPIC_BASE_URL=https://llm-gateway.example.com
+export ANTHROPIC_AUTH_TOKEN=<your-gateway-credential>
+```
+
+</CodeBlock>
+
+Hangi kimlik bilgisi değişkenini kullandığınız kozmetik değildir — her biri farklı bir başlığa düşer. `ANTHROPIC_AUTH_TOKEN`, `Authorization: Bearer`'a gider, `ANTHROPIC_API_KEY` `x-api-key`'e gider ve bir `apiKeyHelper` ikisini de sağlar. Yanlış değişkendeki bir kimlik bilgisi, gateway'e okumadığı bir başlıkta ulaşır ve istek `401` ile başarısız olur. Gateway'inizin hangi türü istediği size söylenmediyse `ANTHROPIC_AUTH_TOKEN` ile başlayın ve bir `401` alırsanız değiştirin.
+
+Bir filo için, bunları managed bir settings dosyasının `env` bloğuna koyun ve dağıtın, böylece geliştiriciler hiçbir şey yapılandırmaz. Bir gateway'e bağımlı olmadan önce, her geliştiricinin `/status`'u çalıştırmasını ve base URL ile kimlik bilgisinin gerçekten mevcut olduğunu doğrulamasını sağlayın — dağıtım sorunları o zaman ortaya çıkmalı, bir olay sırasında değil.
+
+Bu dersin işlenmiş örnek prompt'u, yapılandırma sorunlarını birbirinden ayırmaya çalıştığınız an için:
+
+```text
+I set ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN in my shell, but /status still shows
+my claude.ai login. Read my settings files and tell me which scope is winning and why.
+```
+
+### Abonelik kuralı ve tek istisna
+
+Bir gateway kimlik bilgisi değişkeni ya da bir `apiKeyHelper` aktifken, geliştiricinin claude.ai aboneliği **kullanılmaz**: kimlik bilgisi o oturum için abonelik girişinin yerine geçer, aboneliğin kullanım sınırları uygulanmaz ve her istek, gateway'in ilettiği kimlik bilgisine sahip olana [token](/tr/playbook/glossary/#token) (bir dil modelinin metni işlerken kullandığı en küçük birim) başına faturalandırılır.
+
+İstisna, **yalnızca** `ANTHROPIC_BASE_URL`'i kimlik bilgisi olmadan ayarlamaktır. İstekler yine gateway üzerinden yönlendirilir, ama kaydedilmiş bir claude.ai girişi aktif kimlik bilgisi olarak kalır, bu yüzden onun sınırları ve faturalandırması uygulanır. O trafiği Anthropic'e ileten bir gateway'in çalışması için `anthropic-beta`'daki OAuth yeteneğini iletmesi gerekir.
+
+### Bir gateway üzerinden önbellekleme
+
+Önceki dersin önbelleği, isteklerinizin hizmet verildiği her yerde yaşar ve bir gateway üzerinden neyin önbellekte kaldığı, gateway'in Claude Code'un gönderdiği `cache_control` işaretlerini nasıl ele aldığına tamamen bağlıdır. Üç sonuç:
+
+- **Değişmeden iletildi** — önbellekleme, sağlayıcının kendi endpoint'indeki gibi davranır.
+- **`cache_control`'ü adlandıran bir `400` ile reddedildi** — Claude Code işareti son konuşma mesajınıza taşır ve orada tutar; sistem bloğu önbelleksiz girdi olarak faturalandırılır, konuşmanız önbellekte kalır.
+- **Başarı döndürürken sessizce kaldırıldı** — bütün konuşma geçmişiniz her turda önbelleksiz girdi olarak faturalandırılır.
+
+Üçüncüsü acı vereni ve kimsenin fark etmediğidir. Bir gateway üzerinden önbellek token sayıları sıfırda kalıyorsa, kontrol edilecek ilk şey budur. Bir saatlik TTL de kısmen `anthropic-beta` başlığında seyahat eder, bu yüzden bir gateway'in çalışması için o başlığı değiştirmeden iletmesi gerekir; Claude apps gateway'i bir saatlik TTL'yi hiç sunmaz.
+
+### Altındaki ağ
+
+Bir gateway model API isteklerini yönlendirir. Onun kapsayacağını beklediğiniz birkaç şey ayrı olarak yapılandırılır.
+
+<CodeBlock title="proxy ve CA yapılandırması">
+
+```bash
+export HTTPS_PROXY=https://proxy.example.com:8080
+export NO_PROXY="localhost,192.168.1.1,example.com,.example.com"
+export NODE_EXTRA_CA_CERTS=/path/to/corporate-ca.pem
+```
+
+</CodeBlock>
+
+Küçük harfli varyantlar da çalışır ve Claude Code, `https_proxy`, `HTTPS_PROXY`, `http_proxy`, `HTTP_PROXY`'den ayarlanmış olan ilkini kullanır. SOCKS proxy'leri desteklenmez. Loopback WebSocket bağlantıları asla proxy üzerinden gitmez, bu yüzden `NO_PROXY`'nin onlar için bir loopback girdisine ihtiyacı yoktur.
+
+İki yaygınlaştırma ayrıntısı yanlış yapılması kolay. **Bunları shell'inizde değil settings'te ayarlayın.** Arka plan [agent](/tr/playbook/glossary/#agent)'ları (bir hedefi kendi başına adım adım yürüten yapay zekâ süreci), shell'inizden daha uzun yaşayan ve onu ilk başlatan hangi shell ise onun ortamını miras alan kullanıcı-başına bir süpervizör süreci altında çalışır — OS-kurulu bir süpervizör hiç shell ortamı almaz. `~/.claude/settings.json`'ın ya da managed settings'in `env` bloğundaki değişkenler, her arka plan oturumuna ulaşan tek biçimdir. **Zorunlu bir kurumsal başlatıcı `processWrapper` ayarını gerektirir** (ya da `CLAUDE_CODE_PROCESS_WRAPPER`), çünkü süpervizör Claude Code'u sabit bir yoldan başlatır ve `PATH`'e daha önce yerleştirilmiş bir wrapper'ı atlar — bir sonraki ders başlatıcı sözleşmesini kapsar.
+
+Model trafiği bir bulut sağlayıcısına ya da bir gateway'e gittiğinde bile, bazı host'lara hâlâ ulaşılabilir olması gerekir. `skipWebFetchPreflight: true`'yu ayarlamadığınız sürece `api.anthropic.com`, WebFetch alan adı güvenlik kontrolü için hâlâ çağrılır ve `ANTHROPIC_BASE_URL`'in arkasında bile fast-mode kullanılabilirlik kontrolü için çağrılır. `downloads.claude.ai`, kurulumcuya ve otomatik güncelleyiciye hizmet verir; `registry.npmjs.org`, npm-kaynaklı [plugin](/tr/playbook/glossary/#plugin)'lere (hook, skill, subagent ve MCP server gibi bileşenleri paket hâlinde ekleyen eklenti) ve `npx` ile başlatılan [MCP server](/tr/playbook/glossary/#mcp-server)'lara (Model Context Protocol ile Claude'a dış araç ve veri sağlayan sunucu) hizmet verir; `code.claude.com` dokümantasyon aramalarına hizmet verir. İki Datadog alım host'u yalnızca isteğe bağlı telemetri taşır — `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` ikisini de devre dışı bırakır ve üçüncü taraf sağlayıcılardaki oturumlar onlara hiç göndermez.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · yaygınlaştırma yapılandırmasını yazın, sonra kendi oturumunızı kontrol edin"
+  lessonId="tr/l4-master/m21-scale/gateways-and-clouds"
+  repoTag="none"
+  steps={[
+    "Zaten sahip olduğunuz etkileşimli bir oturumu açın ve `/status`'u çalıştırın, ardından sağlayıcıyı, giriş yöntemini ve bölgeyi kendi ekranınızdan okuyun — `/status` yalnızca etkileşimlidir, bu yüzden bu adım bu dersin size bir kaydını gösterebileceği bir şey değil, sizin gözlemleyeceğiniz bir şey. Bir yaygınlaştırmayı karşılaştıracağınız temel çizgi budur.",
+    'Kâğıt üzerinde, mevcut bir AWS varlığına ve her model isteğini günlüklemek için bir uyumluluk gereksinimine sahip varsayımsal 40-geliştiricili bir takım için bir yol seçin ve dört yoldan hangisini artı hangi gateway türünü seçeceğinizi ve nedenini yazın.',
+    'Seçiminizi teslim edecek managed-settings `env` bloğunu yazın — sağlayıcı seçici, bölge, sabitlenmiş model kimlikleri ve proxy değişkenleri — hesaba özgü her değer için yer tutucular kullanarak.',
+    "Bloğunuzdaki her değişken için, geldiği resmi sayfada bulun ve tam yazımını doğrulayın. Makul görünen ama yanlış olan iki yazım: `autoCompactAt` diye bir şey yok ve `GOOGLE_CLOUD_PROJECT` da ayarlıysa `ANTHROPIC_VERTEX_PROJECT_ID`'nin önüne geçer.",
+    'Kişisel bir Claude Max aboneliği olan takımınızdaki bir geliştiriciye gateway kimlik bilginiz makinesine teslim edildiğinde ne olacağını yazın.',
+  ]}
+  expected="İçinde gerçek kimlik bilgisi olmayan, her anahtarın hatırladığınız değil resmi bir sayfada bulduğunuz bir anahtar olduğu, bir yöneticiye verebileceğiniz bir settings bloğu — ve gateway kimlik bilgisi aktifken geliştiricinin aboneliğinin kullanılmadığını ya da ücretlendirilmediğini söyleyen tek satırlık bir yanıt."
+  checklist={[
+    '/status size mevcut sağlayıcınızı ve giriş yönteminizi söyledi',
+    'env bloğunuzda bir sağlayıcı seçici, bir bölge ve sabitlenmiş model kimlikleri var',
+    'Her değişken adı hatırlanmadı, resmi sayfaya karşı kontrol edildi',
+    'İçinde hiçbir yerde gerçek hesap kimliği, host adı ya da kimlik bilgisi yok',
+    'Abonelik kuralını ve tek istisnasını belirtebiliyorsunuz',
+  ]}
+/>
+
+## Anti-pattern'ler
+
+**Modelleri sabitlemeden bir bulut sağlayıcısını yaygınlaştırmak.** Yerleşik varsayılanlar, Claude Code sürümleriyle ve hesabınızın etkinleştirdiğiyle birlikte hareket eder; Bedrock'ta birincil bir modeli sabitlememenin belgelenen sonucu, v2.1.207'den itibaren Opus oranında faturalandırılmaktır. _Düzeltme:_ yaygınlaştırmadan önce `ANTHROPIC_DEFAULT_SONNET_MODEL` ve benzerlerini sabitleyin, ya da sihirbazın sabitleme adımını tamamlayın.
+
+**Geliştiricilerden shell profillerinde değişken export etmelerini istemek.** Arka plan süpervizörü, onu ilk başlatan hangi shell ise onu miras alır, bu yüzden proxy, CA ve sağlayıcı değişkenleri arka plan oturumlarına öngörülemez şekilde ulaşır. _Düzeltme:_ onları managed settings'in ya da `~/.claude/settings.json`'ın `env` bloğunda teslim edin.
+
+**Kimlik bilgisini yanlış değişkene koymak.** `ANTHROPIC_AUTH_TOKEN` ve `ANTHROPIC_API_KEY` farklı başlıklara düşer; gateway, okumadığı başlıktaki birini basitçe görmez. _Düzeltme:_ kötü bir anahtar varsaymadan önce `401`'i "yanlış değişken" olarak okuyun ve değiştirin.
+
+**Bir gateway'in önbelleklemeyi koruduğunu varsaymak.** `200` döndürürken `cache_control`'ü çıkaran bir gateway, her turu hiçbir yerde hata olmadan önbelleksiz girdi olarak faturalandırır. _Düzeltme:_ bağlandıktan hemen sonra bir `--output-format json` çalıştırmasında `cache_read_input_tokens`'ı kontrol edin; sıfır, işaretlerin sağ çıkmadığı anlamına gelir.
+
+**Bir Claude apps gateway'inin CI'da çalışmasını beklemek.** Girişi, hizmet-token akışı olmayan bir tarayıcı SSO adımıdır. _Düzeltme:_ CI'ı doğrudan sağlayıcıya karşı yapılandırın.
+
+**Yalnızca gateway'i allowlist'lemek.** Sürüm kontrolleri, plugin kurulumları, WebFetch alan adı güvenlik kontrolü ve fast-mode kullanılabilirlik kontrolü, makineyi hâlâ kendi yollarında bırakır. _Düzeltme:_ kurulum yönteminizin ve özellik setinizin gerçekten ihtiyaç duyduğu host'lar için ağ-erişimi tablosunda çalışın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/gateways-and-clouds"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir Claude Max aboneliğine sahip bir geliştiriciye şirket gateway'i için ANTHROPIC_BASE_URL ve ANTHROPIC_AUTH_TOKEN veriliyor. Aboneliğine ne olur?"
+  options={[
+    {
+      text: 'Önce kullanılır ve sınırlara ulaşıldığında gateway bir yedek olur',
+      explanation: 'Gateway kimlik bilgisi, o oturum için abonelik girişinin yerine geçer.',
+    },
+    {
+      text: "Kullanılmaz ya da ücretlendirilmez; her istek, gateway'in sağlayıcı kimlik bilgisinin arkasındaki hesaba faturalandırılır",
+      correct: true,
+      explanation:
+        'Kaydedilmiş claude.ai girişi diskte kullanılmadan kalır; değişkeni kaldırırsanız geri gelir.',
+    },
+    {
+      text: 'Trafik ikisinden de geçtiği için ikisi de faturalandırılır',
+      explanation: 'Yalnızca bir kimlik bilgisi bir isteği kimlik doğrular.',
+    },
+    {
+      text: 'Claude Code, biri kaldırılana kadar başlamayı reddeder',
+      explanation:
+        'Bir gateway kimlik bilgisi değişkeni, basitçe kaydedilmiş bir girişe göre önceliklidir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/gateways-and-clouds"
+  questionId="q2"
+  lang="tr"
+  prompt="Microsoft Foundry'yi hangisi seçer ve varsayılan olarak kimlik bilgilerini ne sağlar?"
+  options={[
+    {
+      text: '`CLAUDE_CODE_USE_FOUNDRY=1`; ne ANTHROPIC_FOUNDRY_AUTH_TOKEN ne de ANTHROPIC_FOUNDRY_API_KEY ayarlıyken Azure SDK varsayılan kimlik bilgisi zinciri',
+      correct: true,
+      explanation: 'ANTHROPIC_FOUNDRY_AUTH_TOKEN, API anahtarına ve zincire göre önceliklidir.',
+    },
+    {
+      text: '`CLAUDE_CODE_USE_AZURE=1`; bir Azure CLI girişi',
+      explanation: 'Böyle bir değişken yok.',
+    },
+    {
+      text: "Azure endpoint'ine işaret eden `ANTHROPIC_BASE_URL`; bir API anahtarı",
+      explanation: 'Bu, Foundry sağlayıcı yolu değil, LLM-gateway yoludur.',
+    },
+    {
+      text: '`/setup-foundry` sihirbazı',
+      explanation:
+        "Microsoft Foundry'nin etkileşimli bir kurulum sihirbazı yoktur — ortam değişkenleri tek yapılandırma yoludur.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/gateways-and-clouds"
+  questionId="q3"
+  lang="tr"
+  prompt="Üçüncü taraf bir gateway üzerinden bağlandıktan sonra, her turda `cache_read_input_tokens` 0 ve hiçbir hata görünmüyor. En olası neden nedir?"
+  options={[
+    {
+      text: 'Gateway, başarı döndürürken `cache_control` işaretlerini kaldırıyor',
+      correct: true,
+      explanation:
+        'Bu, bütün konuşma geçmişinin her turda sessizce önbelleksiz girdi olarak faturalandırılmasına neden olur.',
+    },
+    {
+      text: "Gateway, işaretli istekleri `cache_control`'ü adlandıran bir 400 ile reddediyor",
+      explanation:
+        'O durumda Claude Code işareti son mesajınıza taşır ve konuşmanız önbellekte kalır.',
+    },
+    {
+      text: 'Önbellekleme yalnızca bir Claude aboneliğinde kullanılabilir',
+      explanation:
+        'Önbellekleme API anahtarlarında ve bulut sağlayıcılarında da çalışır; yalnızca varsayılan TTL farklıdır.',
+    },
+    {
+      text: "`promptCacheTtl`'i ayarlamanız gerekiyor",
+      explanation: 'Bu, 5m ile 1h arasında seçim yapar; önek hiç eşleşmediğinde isabet yaratmaz.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/gateways-and-clouds"
+  questionId="q4"
+  lang="tr"
+  prompt="Shell profilinizde HTTPS_PROXY'yi ayarlıyorsunuz ve arka plan agent'ları yine de proxy'yi atlıyor. Neden?"
+  options={[
+    {
+      text: "Arka plan agent'ları ağı kullanmaz",
+      explanation: 'Diğer herhangi bir oturum gibi aynı model isteklerini yapar.',
+    },
+    {
+      text: 'Arka plan oturumlarını barındıran kullanıcı-başına süpervizör, onu ilk başlatan hangi shell ise onu miras alır ve OS-kurulu bir tanesi hiç shell ortamı almaz',
+      correct: true,
+      explanation:
+        "Bunun yerine ağ değişkenlerini `~/.claude/settings.json`'ın ya da managed settings'in `env` bloğuna koyun.",
+    },
+    {
+      text: 'HTTPS_PROXY yok sayılır; yalnızca `https_proxy` çalışır',
+      explanation:
+        "İkisi de çalışır — Claude Code, `https_proxy`, `HTTPS_PROXY`, `http_proxy`, `HTTP_PROXY`'den ayarlanmış olan ilkini alır.",
+    },
+    {
+      text: "Claude Code proxy'leri desteklemiyor",
+      explanation: "HTTP ve HTTPS proxy'lerini destekler; yalnızca SOCKS desteklenmez.",
+    },
+  ]}
+/>
+
+**Sonraki:** `05-devcontainers`, bir oturumu bir konteynerin içine koyar — kilitli bir yaygınlaştırmanın son parçası ve bu dersteki başlatıcının, güvenlik duvarının ve managed settings'in gerçekte nereye düştüğü.

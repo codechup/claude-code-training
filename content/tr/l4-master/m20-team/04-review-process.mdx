@@ -1,15 +1,15 @@
 ---
-title: 'Claude’ü code review ve CI gate’lerine entegre etmek'
-description: '“Claude PR’larımızı review ediyor” denen üç ayrı şey vardır: yönetilen Code Review servisi, sizin sahip olduğunuz bir GitHub Actions workflow’u ve yerel `/code-review` komutu. Her birinin ne olduğunu, neyi okuduğunu ve gate’in nereye ait olduğunu öğrenin.'
+title: 'Claude’ı kod incelemesine ve CI kapılarına entegre etmek'
+description: '"Claude PR’larımızı inceliyor" denince üç farklı şey kastedilir: managed Code Review servisi, sizin sahip olduğunuz bir GitHub Actions workflow’u ve yerel `/code-review` komutu. Her birinin ne olduğunu, neyi okuduğunu ve kapının nereye ait olduğunu öğrenin.'
 level: 4
 module: 'm20-team'
 order: 4
 duration_min: 15
 difficulty: core
-tags: ['team', 'code-review', 'ci', 'github-actions']
+tags: ['takım', 'code-review', 'ci', 'github-actions']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Code Review'
@@ -31,8 +31,371 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders Claude'ün code review sürecine üç farklı biçimde girdiğini ayırt etmeyi öğretir: (1) Anthropic altyapısında çalışan, GitHub PR'larına satır içi yorum bırakan yönetilen **Code Review** servisi (research preview, Team ve Enterprise); (2) kendi runner'larınızda çalışan `anthropics/claude-code-action@v1` workflow'u; (3) oturum içinde çalışan yerel `/code-review` komutu. Yönetilen servis hem `CLAUDE.md` hem `REVIEW.md` okur, yerel komut yalnızca `CLAUDE.md` okur. Check run bilinçli olarak her zaman nötr sonuçlanır — merge'ü engellemek isterseniz gate'i check run çıktısındaki makine-okunur severity sayılarından kendiniz kurmalısınız. Laboratuvarda scratch bir repository'ye kasıtlı bir hata yerleştirilir ve `claude -p '/code-review medium'` ile gerçek bir review çalıştırılır; review her iki hatayı da somut başarısız girdilerle bulur.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.
+- Üç inceleme mekanizmasını birbirinden ayırmak — managed Code Review, sizin sahip olduğunuz `claude-code-action` workflow'u ve yerel `/code-review` komutu — ve aralarında seçim yapmak.
+- Her birinin neyi okuduğunu söylemek: managed servis için `REVIEW.md`, hepsi için `CLAUDE.md`, düz bir workflow prompt'u için hiçbiri.
+- Şiddeti yeniden kalibre eden, ince ayrıntıları sınırlayan ve yolları atlayan bir `REVIEW.md` yazmak.
+- İncelemenin merge'leri kendi başına engellemesine izin vermeden, check run'ın şiddet sayılarını okuyarak bir merge'i inceleme bulgularına bağlamak.
+- Gerçek bir incelemeyi [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) çalıştırmak ve `-p`'nin onunla ilgili neyi değiştirdiğini bilmek.
+
+**Ön koşullar.** İncelenecek bir şeye sahip bir git deposu. Managed Code Review servisi, Team ve Enterprise abonelikleri için bir araştırma önizlemesidir ve Zero Data Retention ile kullanılamaz; yerel komut ve GitHub Actions yolu her planda çalışır.
+
+<WhenNotToUse>
+  Otomatik bir inceleme, insan bir gözden geçirenin yerine geçmez ve onu öyle ele almak bu dersin
+  karşısında yazıldığı hata modudur: bulgular onaylamaz ya da engellemez ve check run bilerek her
+  zaman nötr tamamlanır. Birkaç PR'da maliyeti izlemeden yüksek trafikli bir depo için
+  push-tetiklemeli incelemeleri açmayın — incelemeler ortalama 15-25 dolar tutar ve PR büyüklüğüyle
+  ölçeklenir. Bir incelemeyi üretilmiş koda, kilit dosyalarına ya da vendored bağımlılıklara
+  yöneltmeyin. Ve bir incelemeden linter'ınızın zaten zorladığı şeyi zorlamasını istemeyin: CI'ın
+  size iki saniyede bedava verebileceği bir görüş için [token](/tr/playbook/glossary/#token) (bir
+  dil modelinin metni işlerken kullandığı en küçük birim) ödersiniz.
+</WhenNotToUse>
+
+## Kavram
+
+### Üç mekanizma, bir isim
+
+| Mekanizma                           | Nerede çalışır                           | Kullanılabilirlik                                       | Okur                                  |
+| ----------------------------------- | ---------------------------------------- | ------------------------------------------------------- | ------------------------------------- |
+| **Code Review** (managed)           | Anthropic altyapısı, GitHub PR'larınızda | Araştırma önizlemesi; Team ve Enterprise; ZDR ile değil | `CLAUDE.md` ve `REVIEW.md`            |
+| **`claude-code-action`** workflow'u | GitHub Actions runner'larınız            | Bir anahtar ya da abonelik token'ı olan her plan        | `CLAUDE.md`; prompt'ladığınız her şey |
+| **`/code-review`** komutu           | Makineniz, oturum içinde                 | Her plan                                                | `CLAUDE.md`, `REVIEW.md` değil        |
+
+Birbirini tamamlarlar. Managed servis, sorun bulduğu satırlara satır içi yorumlar bırakan servistir; workflow, incelemenin kendi CI'ınızın içinde, kendi runner'larınızda, self-hosted bir GitHub'da ya da başka şeyler de yapan bir işin parçası olarak çalışması gerektiğinde başvurduğunuz şeydir; komut, bir yazarın push'lamadan önce çalıştırdığı şeydir.
+
+### Managed Code Review servisi
+
+Bir Owner, onu Claude Code admin settings sayfasında organizasyon için bir kez etkinleştirir ve hangi depoların dâhil olduğunu seçer, ki bu da Claude [GitHub App](/tr/playbook/glossary/#github-app)'i (bir GitHub deposunu Claude Code'a bağlayan entegrasyon) kurar. Ardından her depo bir **Review Behavior** alır: _PR oluşturulduktan sonra bir kez_, _Her push'tan sonra_, ya da _Manual_. Herhangi bir modda, bir PR'a `@claude review` yorumu yazmak bir incelemeyi başlatır ve `@claude review always`, o PR'ı push-tetiklemeli incelemelere abone eder. Bir fork'tan gelen bir pull request yalnızca açık bir `@claude review` ile incelenir.
+
+Bir inceleme çalıştığında, birkaç [agent](/tr/playbook/glossary/#agent) (bir hedefi kendi başına adım adım yürüten yapay zekâ süreci) [diff](/tr/playbook/glossary/#diff)'i (bir dosyadaki değişikliklerin satır satır gösterimi) ve çevresindeki kodu paralel olarak analiz eder, bir doğrulama adımı her aday bulguyu yanlış pozitifleri filtrelemek için gerçek kod davranışına karşı kontrol eder ve sonuçlar yinelenenlerden arındırılır, sıralanır ve satır içi yorumlar olarak yayınlanır. Bulgular bir şiddet taşır: 🔴 Important ([merge](/tr/playbook/glossary/#merge)'den (iki git branch'inin tarihçesini birleştirme işlemi) önce düzeltilecek bir hata), 🟡 Nit (küçük), 🟣 Pre-existing (PR'ın ortaya çıkarmadığı bir hata). İncelemeler ortalama 20 dakikada tamamlanır.
+
+Her inceleme ayrıca her bulguyu tek bir tabloda listeleyen bir Details görünümüne sahip bir **Claude Code Review** check run'ı doldurur ve Files changed sekmesindeki diff satırlarına ek açıklamalar yazar. Check run **her zaman nötr bir sonuçla tamamlanır**, bu yüzden branch protection üzerinden asla bir merge'i engellemez. Bu bir tasarım kararıdır, bir eksiklik değil: bir kapı istiyorsanız, onu check run çıktısındaki makine tarafından okunabilir şiddet sayılarından kendiniz inşa edin.
+
+<CodeBlock title="kendi CI'ınızda şiddet sayılarını okuyun">
+
+```bash
+gh api repos/OWNER/REPO/commits/<commit-sha>/check-runs --jq '.check_runs[] | {id, name}'
+gh api repos/OWNER/REPO/check-runs/CHECK_RUN_ID \
+  --jq '.output.text | split("bughunter-severity: ")[1] | split(" -->")[0] | fromjson'
+```
+
+</CodeBlock>
+
+Bu, `{"normal": 2, "nit": 1, "pre_existing": 0}` gibi bir şey döndürür — `normal`, Important sayısıdır, bu yüzden sıfır olmayan bir değer, Claude'un merge'den önce düzeltilmeye değer en az bir hata bulduğu anlamına gelir. İstediğiniz ilke buysa kendi işinizi buna göre başarısız kılın.
+
+### Neyin işaretleneceğini ayarlamak: `REVIEW.md`
+
+Managed servis iki dosya okur. `CLAUDE.md`, sıradan proje hafızanızdır; Code Review, onun yeni tanıtılan ihlallerini **nit düzeyinde** bulgular olarak ele alır ve bu iki yönlü çalışır — bir `CLAUDE.md` ifadesini güncel dışı bırakan bir değişiklik, güncellenmesi gereken dokümantasyon olarak işaretlenir. Depo kökündeki `REVIEW.md`, yalnızca inceleme için talimattır: bulguları bulan ve doğrulayan [subagent](/tr/playbook/glossary/#subagent)'lar onu deponuzun inceleme rehberliği olarak alır ve sıralayan ve raporlayan agent'lar şiddeti belirlemeden önce ona danışır.
+
+`REVIEW.md`, düz metin olarak okunur. `@` importları genişletilmez ve referans verilen dosyalar getirilmez, bu yüzden kurallar dosyada olmalıdır. Karşılığını veren kalıplar:
+
+- **Şiddet**: burada Important'ın ne anlama geldiğini yeniden tanımlayın. Varsayılan kalibrasyon üretim kodunu hedefler; bir dokümantasyon ya da yapılandırma deposu çok daha dar bir tanım ister.
+- **Nit hacmi**: sınırlayın. "En fazla beş nit bildir, gerisini bir sayı olarak belirt" bir incelemeyi eyleme geçirilebilir tutar.
+- **Atlama kuralları**: dışında kalınacak yolları, branch desenlerini ve bulgu kategorilerini adlandırın — üretilmiş kod, kilit dosyaları, CI'ın zaten zorladığı her şey. Biraz inceleme hak eden yollar için, atlamak yerine çıtayı yükseltin: "`scripts/`'te, yalnızca neredeyse kesin ve ciddiyse bildir."
+- **Doğrulama çıtası**: "davranış iddiaları, isimlendirmeden bir çıkarım değil bir `file:line` alıntısı gerektirir" bütün bir yanlış pozitif sınıfını kaldırır.
+- **Yeniden inceleme yakınsaması**: "ilk incelemeden sonra, yeni nit'leri bastır ve yalnızca Important bulguları yayınla" tek satırlık bir düzeltmenin stil konusunda yedinci tura ulaşmasını durdurur.
+
+Kısa tutun. Uzun bir `REVIEW.md`, önemli kuralları sulandırır.
+
+### Sahip olduğunuz workflow
+
+`anthropics/claude-code-action@v1`, Claude Code'u kendi GitHub Actions işinizde çalıştırır. İki modu var, yapılandırılmak yerine workflow'dan tespit edilir: hiç `prompt` girdisi vermediğinizde **etkileşimli** — bu durumda Claude, bir yorumda, incelemede ya da yeni bir [issue](/tr/playbook/glossary/#issue)'da (bir GitHub deposundaki takip edilen görev ya da hata kaydı) `@claude` tetikleme ifadesini bekler; ve bir `prompt` verdiğinizde **otomasyon** — bu durumda promptsuz çalışır ve prompt yayınlamasını söylemedikçe run log'una yazar.
+
+Claude başlamadan önce tetikleyen aktör üzerinde iki kontrol çalışır ve ikisinden biri reddederse iş başarısız olur: aktörün issue ve PR olaylarında **yazma erişimi** olması gerekir (`allowed_non_write_users` artı kendi `github_token`'ınız bunu genişletir) ve `allowed_bots`'ta listelenmedikçe **bir bot aktör reddedilir** — bu, zamanlanmış çalıştırmalar için de geçerlidir, çünkü GitHub bunları bir kullanıcıya atfeder.
+
+Gerçekte kullanacağınız girdiler `prompt`, `claude_args` (herhangi bir CLI argümanı — `--max-turns`, `--model`, `--allowedTools`, `--mcp-config`), `anthropic_api_key` ya da `claude_code_oauth_token`'dan biri ve isteğe bağlı olarak `settings`, `plugin_marketplaces`, `plugins` ve `trigger_phrase`'dir. Claude Code'un içinden `/install-github-app`, bütün kurulumu yapar — uygulama, [secret](/tr/playbook/glossary/#secret) (depoya commit'lenmemesi gereken hassas değer), workflow [branch](/tr/playbook/glossary/#branch)'i (bir git deposunun bağımsız bir geliştirme hattı) ve [pull request](/tr/playbook/glossary/#pull-request) (bir branch'teki değişikliklerin gözden geçirilip ana koda alınması için açılan istek) — ve onu yeniden çalıştırmak, daha eski bir sürümün ürettiği bir workflow'u güncellemeyi önerir.
+
+Bu yoldaki maliyet kontrolü workflow şeklindedir: `claude_args`'ta `--max-turns`'ü sınırlayın, bir iş zaman aşımı ayarlayın, eşzamanlılık sınırları kullanın, `CLAUDE.md`'yi kısa tutun çünkü her çalıştırmada okunur ve token'ların yanı sıra GitHub Actions dakikaları da harcadığınızı unutmayın.
+
+### Hiçbir inceleme olmayan bir CI kapısı
+
+Her kalite kapısı bir LLM olmamalı. Bu kursun kendi deposu işlenmiş örnektir: CI işi `npm run typecheck`, `npm run lint`, `node scripts/check-public-hygiene.mjs`, `node scripts/check-raw-colors.mjs`, `node tools/plan/cli.ts check`, `node scripts/content-gate.ts` ve `gitleaks`'i çalıştırır — hepsi belirlenimli, hepsi hızlı, hepsi bedava. `.claude/settings.json`'ı, ardından aynı hijyen ihlallerini bir yazma ağaca ulaşmadan _önce_ engelleyen bir `PreToolUse` [hook](/tr/playbook/glossary/#hook)'u (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan komut) bağlar, bu yüzden kural üç anda zorlanır: Claude çalışırken, [commit](/tr/playbook/glossary/#commit) (bir git deposundaki değişiklik kümesinin kalıcı kaydı) zamanında ve [CI](/tr/playbook/glossary/#ci)'da (her push'ta ya da pull request'te otomatik olarak testleri ve kontrolleri çalıştıran hat).
+
+<CodeBlock title=".claude/settings.json — bu depodaki koruma hook'ları">
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|Bash|PowerShell",
+        "hooks": [{ "type": "command", "command": "node .claude/hooks/guard-hygiene.mjs" }]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [{ "type": "command", "command": "node .claude/hooks/guard-bash.mjs" }]
+      }
+    ]
+  }
+}
+```
+
+</CodeBlock>
+
+Genel kural: bir kontrol bir betik olarak yazılabiliyorsa, onu bir betik olarak yazın ve CI'a koyun. İncelemeyi bir betiğin veremeyeceği yargılar için saklayın.
+
+### Yerel komut
+
+`/code-review`, branch'inizin upstream'inin ilerisindeki commit'lerini artı commit'lenmemiş her değişikliği inceler; başka bir şeyi incelemek için bir hedef geçin — bir yol, bir PR numarası, bir branch ya da `main...my-feature` gibi bir ref aralığı. `--fix` bulguları uygular, `--comment` onları satır içi PR yorumları olarak yayınlar, `ultra` bulut incelemesine yükseltir. `/review` bir takma addır.
+
+Effort, kapsamı güvenle takas eder: `low` ve `medium`, incelemenin en emin olduğu bulguları bildirir; `high`'dan `max`'e kapsamı genişletir ve daha az kesin olanları da içerebilir. Hiçbir seviye yazılmadığında, önceki bir oturumdan bile olsa, yazdığınız son seviyeyi yeniden kullanır.
+
+Bir takım için iki davranış önemli. İnceleme normalde kendi [context window](/tr/playbook/glossary/#context-window)'una (bir modelin tek bir istekte görebildiği toplam token miktarı) sahip bir **arka plan subagent'ı** olarak çalışır, bu yüzden konuşmanızı doldurmaz — ama bir `-p` çalıştırmasında ön planda çalışır ve bulgular yanıtta geri gelir. Ve Claude onu kendi başına başlatabilir, ya da zamanlanmış bir görev başlatabilir; bunu durdururken komutu size açık tutmak için bir settings dosyasına `"skillOverrides": { "code-review": "user-invocable-only" }` ekleyin.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni), kapı var olduğunda söyleyebilmeniz gereken şey:
+
+```text
+Review my branch against main, apply only the correctness fixes, and leave the style notes as comments.
+```
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Managed Code Review servisi bir Team ya da Enterprise organizasyonu ve kurulu bir GitHub App
+  gerektirir, bu yüzden bu laboratuvar aynı diff üzerinde aynı türden analizi yapan yerel komutu
+  kullanır. GitHub Actions workflow'u bir [transcript](/tr/playbook/glossary/#transcript) (gerçek
+  bir Claude Code oturumunun kaydı) olarak değil, kopyalanacak bir dosya olarak gösterilir: bir
+  Actions çalıştırması bir dizüstü bilgisayardan yakalanamaz ve bir tane icat etmek fabrikasyon bir
+  kayıt olurdu.
+</Callout>
+
+<Lab
+  title="Laboratuvar · bir hata ekin, inceleyin, sonra onu yakalayacak kuralları yazın"
+  lessonId="tr/l4-master/m20-team/review-process"
+  repoTag="none"
+  steps={[
+    "Tek bir dosyayla kullan-at bir depo oluşturun: doğru şekilde `price - (price * percent) / 100` döndüren `applyDiscount(price, percent)`'i export eden `src/discount.js`. Onu temel çizgi olarak commit'leyin.",
+    "Şimdi onu, gerçek bir PR'ın yaptığı şekilde çalışma ağacında bozun: `/100`'ü kaldırın ve bir clamp'in negatif fiyatları engellediğini iddia eden ama clamp'in yalnızca `percent > 100`'ü koruduğu bir yorum ekleyin.",
+    "Important'ı hesaplanan bir sonucu değiştiren, veri kaybeden ya da kimlik bilgisi sızdıran bulgularla sınırlayan ve nit'leri üçle sınırlayan bir `REVIEW.md` ekleyin.",
+    "İncelemeyi headless çalıştırın: `claude -p '/code-review medium' --model sonnet --max-turns 30 --output-format text < /dev/null`. Zaman verin — bir inceleme dakikalar sürer ve `-p`'de ön planda çalışır.",
+    "Bulguları hatanın kendi bilginize karşı okuyun: hem eksik `/100`'ü hem de tek taraflı clamp'i yakaladı mı ve yorumun kodla çeliştiğini fark etti mi?",
+    "Son olarak, her bulgunun nereye ait olduğuna karar verin: hangisini bir birim testinin, hangisini bir linter'ın yakalaması gerekirdi ve hangisi gerçekten bir gözden geçiren gerektiriyordu.",
+  ]}
+  expected="İnceleme her iki kusuru da somut başarısız girdilerle bildirir — `applyDiscount(100, 20)`'nin 80 yerine -1900 döndürmesi ve negatif bir `percent`'in bir fiyat artışı üretmesi — ve clamp yorumunun tutmadığını belirtir."
+  checklist={[
+    "İnceleme dosyanın tamamına değil, commit'lenmemiş diff'e karşı çalıştı",
+    'Her iki kusur da, her biri işlenmiş bir başarısız girdiyle bulundu',
+    'Yorum ile kod arasındaki çelişki işaretlendi',
+    "`REVIEW.md`'nin bu çalıştırmayı neden şekillendirmediğini söyleyebiliyorsunuz (yerel komut onu okumaz)",
+    "Hangi bulguların bunun yerine bir teste ya da linter'a ait olması gerektiğini yazdınız",
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m20-team/04-review-process/01-code-review-local.txt"
+    range="3-15"
+  />
+</Lab>
+
+O kayıttaki üç şey durup düşünmeye değer.
+
+İnceleme yalnızca diff'i yeniden ifade etmedi: **başarısız girdiler** üretti. `applyDiscount(100, 20)`'nin `80` yerine `-1900` döndürmesi, tek satırda kontrol edebileceğiniz bir iddiadır, ki bu tam olarak bir incelemenin bir gözden geçirenin dikkatine mal olmadan önce karşılaması gereken çıtadır. Bu, doğrulama adımının işini yapması.
+
+Yorumu da yakaladı. Kod bir şey söyledi ve yorum başka bir şey iddia etti, ve üç satırlık bir diff'i göz gezdiren bir gözden geçiren, tam olarak yorumun iddiasını kabul edecek okuyucudur. Bir incelemenin karşılığını verdiği yer burasıdır.
+
+Ve dil karışık, ki bu düzensiz değil öğreticidir. Bunu kaydeden makinenin Türkçe yanıt isteyen global tercihleri var, bu yüzden çerçeveleme cümleleri Türkçe; bulguların kendisi İngilizce çünkü kullan-at deponun `CLAUDE.md`'si inceleme çıktısının İngilizce olması gerektiğini söylüyor. Bu, `CLAUDE.md`'nin bir incelemeyi gerçek zamanlı olarak yönlendirmesi. Neyin _olmadığına_ dikkat edin: o depodaki `REVIEW.md`'nin burada hiçbir etkisi olmadı, çünkü yerel `/code-review` komutu onu okumaz — yalnızca managed servis okur.
+
+### Bir inceleme çalıştırmak, işletim sistemine göre
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+claude -p '/code-review medium' --model sonnet --max-turns 30 --output-format text < /dev/null
+claude -p '/code-review high main...HEAD' --output-format text < /dev/null
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+claude -p '/code-review medium' --model sonnet --max-turns 30 --output-format text < /dev/null
+claude -p '/code-review high main...HEAD' --output-format text < /dev/null
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+claude -p '/code-review medium' --model sonnet --max-turns 30 --output-format text
+claude -p '/code-review high main...HEAD' --output-format text
+```
+
+  </Fragment>
+</OSTabs>
+
+### Kopyalanacak bir workflow
+
+<CodeBlock title=".github/workflows/claude.yml">
+
+```yaml
+name: Claude Code
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+jobs:
+  claude:
+    if: contains(github.event.comment.body, '@claude')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+</CodeBlock>
+
+`id-token: write`, action'ın varsayılan GitHub App kimlik doğrulaması için gereklidir, `actions: read` Claude'un PR'daki CI sonuçlarını okumasına izin verir ve `if`, runner'ların `@claude`'dan bahsetmeyen yorumlarda başlamasını engeller. Bir API anahtarı yerine bir abonelikle kimlik doğruluyorsanız, anahtar satırını `claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}` ile değiştirin.
+
+## Anti-pattern'ler
+
+**İncelemeyi zorunlu bir kontrol yapmak.** Claude Code Review check run'ı tasarım gereği her zaman nötr tamamlanır, bu yüzden onun üzerinde bir branch-protection kuralı hiçbir şeyi engellemez — ve her şeyi engelleyecek versiyon merge'leri nit'lerde bile engellerdi. _Düzeltme:_ kendi işinizde şiddet sayılarını okuyun ve `normal > 0` ise başarısız olun.
+
+**İlk günden her yerde push-tetiklemeli incelemeleri açmak.** Her push bir inceleme çalıştırır ve incelemeler ortalama 15-25 dolar tutar. _Düzeltme:_ Manual ya da _PR oluşturulduktan sonra bir kez_ ile başlayın, admin tablosunda depo başına ortalama maliyeti izleyin ve karşılığını veren depoları terfi ettirin.
+
+**İnceleme kurallarını `CLAUDE.md`'ye koymak.** İncelemeye yalnızca nit düzeyinde proje bağlamı olarak ulaşırlar ve her sıradan oturumun okuduğu dosyayı uzatırlar. _Düzeltme:_ yalnızca-inceleme kurallarını `REVIEW.md`'ye koyun; `CLAUDE.md`'yi projenin nasıl çalıştığı için tutun.
+
+**`REVIEW.md`'nin `/code-review`'ı şekillendirmesini beklemek.** Yerel komut `CLAUDE.md`'yi okur, `REVIEW.md`'yi okumaz. _Düzeltme:_ hangi mekanizmayı ayarladığınızı bilin; managed-servis kurallarını gerçek bir PR'da test edin.
+
+**Bir bulguya yanıt verip beklemek.** Satır içi bir yoruma yanıt vermek Claude'u yanıt vermeye ya da PR'ı güncellemeye teşvik etmez. _Düzeltme:_ kodu düzeltin ve push'layın, ya da taze bir çalıştırma için üst düzeyde `@claude review` yazın.
+
+**İncelemeden linter'ın işini yapmasını istemek.** Biçimlendirme, import sırası ve tip hataları CI adımları olarak daha ucuz, daha hızlı ve daha güvenilirdir. _Düzeltme:_ onları `REVIEW.md`'de "bildirme" altında listeleyin ve kontrolü pipeline'a koyun.
+
+**`--fix` düzenlemelerinin kaybolmasına izin vermek.** Bir arka plan incelemesinin `--fix` düzenlemeleri, oturumunızın [checkpoint](/tr/playbook/glossary/#checkpoint)'lerinin (Claude Code'un oturum sırasında dosya durumunu kaydettiği, geri dönülebilir an) dışında uygulanır, bu yüzden `/rewind` onları geri almaz. _Düzeltme:_ git kullanın.
+
+<Callout variant="changed">
+  Hâlâ `anthropics/claude-code-action@beta`'da olan workflow'ların güncellenmesi gerekiyor:
+  `@beta`'yı `@v1`'e çevirin, `mode` girdisini kaldırın (action, modu bir `prompt` geçirip
+  geçirmediğinizden tespit eder), `direct_prompt`'u `prompt` olarak yeniden adlandırın ve
+  `max_turns` ve `model` gibi CLI seçeneklerini `claude_args`'a taşıyın. `custom_instructions`,
+  `--append-system-prompt` olur.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/review-process"
+  questionId="q1"
+  lang="tr"
+  prompt="Takımınız, Claude Important bir hata bulduğunda merge'lerin engellenmesini istiyor. Gerçekte ne işe yarar?"
+  options={[
+    {
+      text: "Claude Code Review kontrolünü zorunlu bir kontrol olarak branch protection'a ekleyin.",
+      explanation:
+        'Check run her zaman nötr bir sonuçla tamamlanır, bu yüzden onu zorunlu kılmak hiçbir şeyi engellemez.',
+    },
+    {
+      text: 'Kendi CI işinizde check run çıktısından şiddet sayılarını okuyun ve sıfır olmayan bir Important sayısında başarısız olun.',
+      correct: true,
+      explanation:
+        'Details metninin son satırı makine tarafından okunabilir; `normal`, Important sayısını tutar.',
+    },
+    {
+      text: 'Deponun Review Behavior\'ını "Her push\'tan sonra"ya ayarlayın.',
+      explanation:
+        'Bu, incelemelerin ne zaman çalıştığını değiştirir, engelleyip engellemediğini değil.',
+    },
+    {
+      text: "Bir workflow'da `/code-review --fix` çalıştırın, böylece engellenecek bir şey kalmaz.",
+      explanation:
+        'Düzeltmeleri otomatik olarak uygulamak bir kapı değildir ve insan kararını kaldırır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/review-process"
+  questionId="q2"
+  lang="tr"
+  prompt="Yerel `/code-review` komutu hangi dosyayı okur?"
+  options={[
+    {
+      text: 'Yalnızca REVIEW.md',
+      explanation: "Yerel komut `REVIEW.md`'yi hiç okumaz.",
+    },
+    {
+      text: 'CLAUDE.md, ama REVIEW.md değil',
+      correct: true,
+      explanation:
+        "İnceleme, herhangi bir oturum gibi `CLAUDE.md`'nizi izler; `REVIEW.md` yalnızca managed Code Review servisine ulaşır.",
+    },
+    { text: 'İkisi de', explanation: 'Yalnızca managed servis ikisini de okur.' },
+    {
+      text: "Hiçbiri — yerel komut diff'i hiçbir proje bağlamı olmadan inceler.",
+      explanation: 'Bu sıradan bir Claude Code oturumudır, bu yüzden proje hafızası uygulanır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/review-process"
+  questionId="q3"
+  lang="tr"
+  prompt="Workflow'unuz `anthropics/claude-code-action@v1`'e bir `prompt` girdisi geçiriyor. Bu neyi değiştirir?"
+  options={[
+    {
+      text: 'Hiçbir şey; `prompt` tetikleme ifadesi için bir takma addır.',
+      explanation: "Bunun için ayrı girdi `trigger_phrase`'tir.",
+    },
+    {
+      text: "Otomasyon modunu seçer: Claude bir `@claude` bahsi beklemeden çalışır ve prompt yayınlamasını söylemedikçe run log'una yazar.",
+      correct: true,
+      explanation:
+        "Action, modu bir `prompt`'un var olup olmadığından tespit eder — artık bir `mode` girdisi yok.",
+    },
+    {
+      text: 'Tetikleyen kullanıcı üzerindeki yazma-erişimi ve bot-aktör kontrollerini devre dışı bırakır.',
+      explanation: 'Bu kontroller her iki modda da uygulanır.',
+    },
+    {
+      text: 'İncelemeyi satır içi yorumlar yayınlamaya zorlar.',
+      explanation:
+        "Yayınlamak, code-review örneğinde olduğu gibi promptun bunu söylemesini ve yayınlayabilen bir [tool](/tr/playbook/glossary/#tool) (Claude'a işlem yaptıran araç) gerektirir.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/review-process"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir gözden geçiren, her PR'ın otuz stil yorumu aldığından şikâyet ediyor. Hangi `REVIEW.md` değişikliği bunu en doğrudan ele alır?"
+  options={[
+    {
+      text: 'İnceleme başına Nit bulgusu sayısını sınırlayın ve gerisini özette bir sayı olarak isteyin.',
+      correct: true,
+      explanation:
+        'Nit hacmi belgelenen ayarlama kalıplarından biridir ve bir sınır incelemeyi eyleme geçirilebilir tutar.',
+    },
+    {
+      text: 'Effort seviyesini düşürün.',
+      explanation:
+        'Effort, yerel `/code-review` komutunu ayarlar; managed servisin kalibre edilme şekli bu değildir.',
+    },
+    {
+      text: "Stil kurallarını CLAUDE.md'ye taşıyın.",
+      explanation:
+        'Bu onları kötüleştirir: yeni tanıtılan `CLAUDE.md` ihlalleri nit olarak bildirilir.',
+    },
+    {
+      text: 'Depoyu Manual inceleme davranışına geçirin.',
+      explanation:
+        'Bu, incelemelerin ne sıklıkta çalıştığını azaltır, her birinin ne kadar gürültülü olduğunu değil.',
+    },
+  ]}
+/>
+
+**Sonraki:** `05-cost-budgeting`, bunların ne kadarını karşılayabileceğinize karar veren sayıya dönüyor.

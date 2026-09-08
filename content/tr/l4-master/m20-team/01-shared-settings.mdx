@@ -1,15 +1,15 @@
 ---
-title: 'Paylaşılan ayarlar ve allowlist’ler'
-description: 'Tek bir `.claude/settings.json` dosyasını commit ederek bütün ekibe aynı permission, hook ve plugin setini verin — ve commit edilen bir kuralın takım arkadaşlarınıza gerçekten ulaşıp ulaşmadığını belirleyen iki kuralı öğrenin: precedence ve workspace trust.'
+title: 'Paylaşılan settings ve allowlist’ler'
+description: 'Bütün bir takımın aynı izinleri, hook’ları ve plugin’leri alması için tek bir `.claude/settings.json`’ı commit’leyin — ve commit’lenmiş bir kuralın takım arkadaşlarınıza gerçekten ulaşıp ulaşmadığına karar veren iki kuralı öğrenin: öncelik ve workspace trust.'
 level: 4
 module: 'm20-team'
 order: 1
 duration_min: 15
 difficulty: core
-tags: ['team', 'settings', 'permissions', 'allowlist']
+tags: ['takım', 'settings', 'izinler', 'allowlist']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Claude Code settings'
@@ -35,8 +35,345 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders Claude Code'un dört ayar kapsamını (user, paylaşılan proje, proje-yerel ve managed) ve bunların precedence sırasını anlatır: en üstte managed ayarlar, sonra komut satırı, `.claude/settings.local.json`, `.claude/settings.json` ve `~/.claude/settings.json`. Liste tipindeki anahtarlar — örneğin `permissions.allow` — üzerine yazmak yerine birleşir. Permission kuralları her kapsamda önce `deny`, sonra `ask`, sonra `allow` sırasıyla değerlendirilir; bu yüzden bir takım arkadaşınızın kendi dosyasından iptal edemeyeceği tek şey `deny` kuralıdır. Dersin can alıcı noktası workspace trust'tır: commit edilmiş bir `allow` kuralı, o klasöre güvenilene kadar uygulanmaz ve `claude -p` çalıştırmalarında trust diyaloğu hiç gösterilmediği için kural sessizce atlanır — stderr'e bir uyarı yazılarak. Laboratuvarda bir scratch projede dört gerçek headless çalıştırma yapılır ve `permission_denials` alanı ile stream-json çıktısındaki `tool_result` üzerinden kanıtlanır.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.
+- Dört settings kapsamını — user, shared project, project local ve managed — adlandırmak ve her birinin hangi dosya olduğunu ve kime ulaştığını söylemek.
+- Öncelik yığınını ezbere sayıp iki dosya aynı anahtarı ayarladığında hangi değerin kazanacağını tahmin etmek.
+- `allow`, `ask` ve `deny` kurallarıyla paylaşılan bir `.claude/settings.json` yazmak ve `deny`'in hangi kapsamdan gelirse gelsin `allow`'u neden yendiğini açıklamak.
+- Workspace trust'ı açıklamak: commit'lenmiş bir `allow` kuralının, klasöre güvenene kadar bir takım arkadaşı için neden hiçbir işe yaramadığını ve `deny` kurallarının neden hemen uygulandığını.
+- Bütün bunları [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) olarak, bir `claude -p --output-format json` çalıştırmasından `permission_denials`'ı okuyarak kanıtlamak.
+
+**Ön koşullar.** Claude Code 2.1.263 ya da üstü, laboratuvar betiği için PATH'inizde Node.js ve içinde dosya oluşturabileceğiniz bir proje. Seviye 1'in izinler dersi (`m14-security`) kural sözdizimini derinlemesine kapsıyor; bu ders kuralları başka insanlarla paylaşmakla ilgili.
+
+<WhenNotToUse>
+  Paylaşılan bir settings dosyası, bir takımın üzerinde anlaştığı şey içindir, bir kişinin tercih
+  ettiği şey için değil. Temanızı, varsayılan modelinizi ya da rastgele onayladığınız Bash
+  izinlerini commit'lemeyin — bunlar kendi `~/.claude/settings.json`'ınıza ya da
+  `.claude/settings.local.json`'a aittir. Kural, commit'leyebilen herhangi biri tarafından
+  kaldırılamaz olmalıysa bir proje dosyasına hiç başvurmayın: bunun için managed settings var (bir
+  sonraki ders). Ve bir allowlist'i düşman bir depoya karşı bir güvenlik sınırı olarak kullanmayın —
+  izin kuralları işletim sistemi tarafından değil Claude Code tarafından uygulanır; bir shell
+  komutunun ağa ulaşmasını durduran katman [sandbox](/tr/playbook/glossary/#sandbox)'tır (bir
+  sürecin dosya sistemi ve ağ erişimini kısıtlayan izole ortam).
+</WhenNotToUse>
+
+## Kavram
+
+### Dört kapsam, dört dosya
+
+Claude Code, ayarları dört kaynaktan okur ve her birinin bir **kapsamı** vardır: içindeki bir değerin geçerli olduğu kişi ve proje kümesi.
+
+| Kapsam         | Dosya                                                                   | Kime ulaşır                                                                      |
+| -------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| User           | `~/.claude/settings.json`                                               | Bu makinedeki her projede size                                                   |
+| Shared project | `.claude/settings.json`                                                 | Onu içeren klasörde çalışan herkese — commit'leyin ve takım arkadaşlarınız alır  |
+| Project local  | `.claude/settings.local.json`                                           | Size, yalnızca bu tek projede                                                    |
+| Managed        | `managed-settings.json`, bir MDM ilkesi ya da sunucu-yönetimli settings | Organizasyonunuzun onu dağıttığı herkese; kendi dosyalarınız onu geçersiz kılmaz |
+
+Windows'ta `~/.claude`, `%USERPROFILE%\.claude` anlamına gelir. Claude Code'un kendisi için yazdığı beşinci bir dosya var, `~/.claude.json` — oturum açma durumu, [MCP server](/tr/playbook/glossary/#mcp-server) (Model Context Protocol ile Claude'a dış araç ve veri sağlayan sunucu) yapılandırması, proje başına trust kararları — ve normalde onu düzenlemezsiniz.
+
+Bu dersin konusu olan paylaşılan dosyadır. Onu [commit](/tr/playbook/glossary/#commit)'leyin (bir git deposundaki değişiklik kümesinin kalıcı kaydı) ve depoyu klonlayan herkes aynı izinleri, [hook](/tr/playbook/glossary/#hook)'ları (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan komut), telemetriyi ve [plugin](/tr/playbook/glossary/#plugin)'leri (hook, skill, subagent ve MCP server gibi bileşenleri paket hâlinde ekleyen eklenti) alır. Her takım arkadaşı yine de onu kendisi için `.claude/settings.local.json`'da geçersiz kılabilir, böylece kişisel bir istisna hiçbir zaman bir commit gerektirmez. Claude Code, bu dosyayı zaten yok saymayan bir depoda ilk kez yazdığında `**/.claude/settings.local.json`'ı global git dışlama listenize ekler; onu elle oluşturursanız, kendiniz `.gitignore`'a ekleyin.
+
+### Öncelik: en yüksek kazanır, listeler birleşir
+
+İki dosya aynı anahtarı ayarladığında, onu ayarlayan en yüksek seviye kazanır. En yüksekten başlayarak:
+
+1. **Managed settings** — birkaç güvenlik açısından hassas istisna dışında, ayarladığınız hiçbir şey onları geçersiz kılmaz.
+2. **Komut satırı** — bir oturum için `--settings '<json ya da yol>'`.
+3. **Project local** — `.claude/settings.local.json`.
+4. **Shared project** — `.claude/settings.json`.
+5. **User** — `~/.claude/settings.json`.
+
+Takımlar için iki nitelendirme önemli. Birincisi, **listeler geçersiz kılmak yerine birleşir**: `permissions.allow`'u üç dosyada ayarlayın ve Claude Code üçünü de birleştirir, böylece dosyanız kimsenin girdisini silmeden yenilerini ekler. (Model şeklindeki dört anahtar — `fallbackModel`, `modelPicker`, `availableModels` ve `modelSettings` — kendi kurallarını izler.) İkincisi, ortam değişkenleri bu yığında bir seviye değildir; `ANTHROPIC_MODEL` mi yoksa `model` anahtarı mı kazanır sorusu, ortam değişkenleri referansında her çift için ayrı karara bağlanır.
+
+### İzin kuralları: önce deny, sonra ask, sonra allow
+
+`permissions` altındaki her girdi bir [tool](/tr/playbook/glossary/#tool)'u (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç), isteğe bağlı bir belirteçle birlikte adlandırır: `Bash(npm run lint)`, `Read(./.env)`, `WebFetch`. Kurallar **önce deny, sonra ask, sonra allow** olarak değerlendirilir ve o sıradaki ilk eşleşme karar verir. Özgüllük sırayı değiştirmez, bunun takımların takıldığı iki sonucu var:
+
+- `Bash(aws *)` gibi geniş bir `deny`, `Bash(aws s3 ls)` gibi daha dar bir `allow`'a da uyan bir çağrı dâhil, eşleşen her çağrıyı engeller. Bir deny kuralı allowlist istisnaları taşıyamaz.
+- Deny, bir dosya içinde olduğu kadar kapsamlar arasında da kazanır. User settings'iniz bir şeye izin veriyor ve proje onu reddediyorsa, reddedilir — tersi de doğrudur.
+
+Bir deny kuralındaki çıplak bir tool adı (`Bash`), tool'u Claude'un bağlamından tamamen kaldırır, böylece Claude onu hiç görmez; kapsamlı bir kural (`Bash(rm *)`) tool'u kullanılabilir bırakır ve eşleşen çağrıları engeller. `EndConversation` tek istisnadır: başka bir tool kaldığı sürece bir deny kuralı onu kaldıramaz.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni) — bir takım allowlist'inin sürtünmesiz kılmak için tasarlandığı türden bir istek:
+
+```text
+Run the lint and test scripts, then fix whatever they report.
+Don't touch anything under secrets/.
+```
+
+İlk yarı, `Bash(npm run lint)` ve `Bash(npm run test *)` paylaşılan allowlist'te olmadıkça prompt'suz çalışmaz; ikinci yarı bir cümle olarak değil `deny` kuralı olarak ifade edilirse daha iyidir, çünkü bir prompt'taki ya da bir `CLAUDE.md`'deki cümle Claude'un ne _yapmaya çalıştığını_ şekillendirir, oysa bir kural Claude Code'un neye _izin verdiğine_ karar verir.
+
+### Yakalayıcı: workspace trust
+
+`permissions.allow` kuralları ve `permissions.additionalDirectories` **yetenek verir**, bu yüzden Claude Code onları bir depo dosyasından yalnızca orada çalışan kişi o klasör için workspace-trust diyaloğunu kabul ettikten sonra uygular. `deny` ve `ask` kuralları yalnızca kısıtlar, bu yüzden hemen uygulanırlar. Aynı trust kapısı bir depodan gelen `extraKnownMarketplaces` girdilerini de kapsar — bir sonraki dersten sonraki dersin takım marketplace'inin de trust'ı beklemesinin nedeni bu.
+
+Diyalog yalnızca etkileşimli oturumlarda görünür. Bir `claude -p` çalıştırması ya da bir Agent SDK oturumu onu asla göstermez, bu yüzden headless modda güvenilmeyen bir deponun `allow` kuralları basitçe atlanır ve Claude Code stderr'e bir uyarı yazdırır. Bu uyarıyı laboratuvarda kendiniz göreceksiniz.
+
+Trust, git deposunun köküne ve bir [worktree](/tr/playbook/glossary/#worktree)'de (aynı deponun farklı bir branch'ini ayrı bir dizinde çalışır tutan git çalışma ağacı) ana checkout'un köküne bağlıdır. Onu elle kabul etmek için — örneğin bir konteyner imajında — `~/.claude.json`'da `projects["<yol>"].hasTrustDialogAccepted`'ı `true`'ya ayarlayın.
+
+### Allowlist'i tahmin etmeden doğru yapmak
+
+Bir allowlist icat etmek yerine, onu hasat edin. Birlikte gelen `/fewer-permission-prompts` [skill](/tr/playbook/glossary/#skill)'i (`SKILL.md` ile tanımlanan yeniden kullanılabilir talimat paketi), onaylamaya devam ettiğiniz salt-okunur Bash ve MCP çağrıları için [transcript](/tr/playbook/glossary/#transcript)'lerinizi (gerçek bir Claude Code oturumunun kaydı) tarar ve projenin `.claude/settings.json`'ına önceliklendirilmiş bir allowlist yazar. `/permissions`, her aktif kuralı geldiği settings dosyasıyla birlikte gösterir, bu da "Claude neden bunu bana hâlâ soruyor?" sorusunu yanıtlamanın en hızlı yolu. `/status` ise oturumun gerçekte yüklediği settings kaynaklarını listeler.
+
+Paylaşılan dosyalar hakkında iki küçük not daha. Bunlar katı JSON'dır — bir `//` yorumu ya da sondaki bir virgül bir sözdizimi hatasıdır ve Claude Code dosyayı bir sonraki başlangıçta bir Settings Error olarak bildirir. Ve `https://json.schemastore.org/claude-code-settings.json`'a işaret eden bir `$schema` satırı, JSON şemasını destekleyen herhangi bir editörde size otomatik tamamlama ve doğrulama verir.
+
+### Her anahtar bir depo dosyasından çalışmaz
+
+Bazı anahtarlar commit'lenmiş bir dosyada yok sayılır — settings referansının Scope sütunu bunları `User, local, or managed`, `User or managed`, `Managed` ya da `Global config` olarak işaretler. `permissions.defaultMode`, takımları ısıran anahtardır: `auto` ve `bypassPermissions` değerleri proje ya da local settings'ten etkili olmaz. Bunları user ya da managed settings'te ayarlayın, ya da bir oturum için `--permission-mode` geçirin.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Bu laboratuvar kurs laboratuvar deposuna karşı değil, kullan-at bir klasörde çalışır: settings
+  dosyalarını çalıştırmalar arasında yeniden yazabileceğiniz bir proje gerektirir ve zaten
+  güvendiğiniz bir depodan kural miras almamalıdır.
+</Callout>
+
+<Lab
+  title="Laboratuvar · bir takım allowlist'ini headless olarak kanıtlayın"
+  lessonId="tr/l4-master/m20-team/shared-settings"
+  repoTag="none"
+  steps={[
+    'Önemsediğiniz herhangi bir deponun dışında kullan-at bir proje oluşturun: `mkdir team-demo && cd team-demo && git init`. `add(2,3) = 5` yazdıran bir `src/math.js` ve içinde bir yer tutucu satır olan `secrets/credentials.txt` ekleyin.',
+    'Takım dosyası `.claude/settings.json`\'ı `"permissions": { "allow": ["Bash(node src/math.js)"], "deny": ["Read(./secrets/**)"] }` ve bir `$schema` satırıyla yazın.',
+    "Komutu headless çalıştırın ve her iki akışı da okuyun: `claude -p 'Run the shell command `node src/math.js` and report exactly what it printed. Answer with one short line.' --model sonnet --max-turns 4 --output-format json < /dev/null > out.json 2> err.txt`, ardından `cat err.txt` ve `jq '{subtype, permission_denials}' out.json`.",
+    "Şimdi *aynı* allow kuralını kendi `.claude/settings.local.json`'ınıza ekleyin, takım dosyasını olduğu gibi bırakarak, ve aynı komutu tekrar çalıştırın. `permission_denials`'ı karşılaştırın — ve güvenilmeyen-allow uyarısının hâlâ takım dosyasını adlandırdığını fark edin, çünkü kuralın o kopyası hâlâ atlanıyor.",
+    "`Bash(node src/math.js)`'ı takım dosyasının `deny` listesine ekleyin — kişisel allow kuralınızı yerinde bırakarak — ve üçüncü kez çalıştırın.",
+    "Son olarak, reddedilen dosyayı isteyin: `claude -p 'Read the file secrets/credentials.txt and print its contents. Answer with one short line.' --model sonnet --max-turns 4 --output-format stream-json --verbose < /dev/null` ve `Read` çağrısı için `tool_result`'a bakın.",
+  ]}
+  expected="1. çalıştırma reddedilir ve stderr'e 'this workspace has not been trusted' uyarısı yazdırır; 2. çalıştırma boş bir permission_denials ile başarılı olur; 3. çalıştırma yerel dosyanız izin verse bile yine reddedilir; Read çağrısı, dizinin izin ayarlarınızca reddedildiğini söyleyen bir tool hatası olarak döner."
+  checklist={[
+    'stderr uyarısı, klasöre güvenmek için ayarlayacağınız tam `hasTrustDialogAccepted` anahtarını adlandırıyor',
+    "1. çalıştırma, takım dosyası izin verse bile Bash çağrısını `permission_denials`'ta gösteriyor",
+    '2. çalıştırma `permission_denials: []` ve gerçek program çıktısını gösteriyor',
+    "3. çalıştırma reddi tekrar gösteriyor — projenin `deny`'i local `allow`'unuzu yendi",
+    'Read tool sonucu boş bir yanıt değil, bir izin-ayarları mesajıyla `is_error=true`',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m20-team/01-shared-settings/01-team-allow-untrusted.txt"
+    range="3-13"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m20-team/01-shared-settings/02-personal-allow-applies.txt"
+    range="3-9"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m20-team/01-shared-settings/03-team-deny-wins.txt"
+    range="3-12"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m20-team/01-shared-settings/04-deny-read-refused.txt"
+    range="4-6"
+  />
+</Lab>
+
+Bu kayıtlardaki üç şey durup düşünmeye değer.
+
+Birincisi stderr satırı: `Ignoring 1 permissions.allow entry from .claude/settings.json: this workspace has not been trusted.` Bu, takım-benimseme sorununun tamamı tek cümlede. Kural commit'lendi, dosya okundu ve kural yine de atlandı — çünkü headless bir çalıştırma asla bir trust diyaloğu almaz. [CI](/tr/playbook/glossary/#ci) (her push'ta otomatik olarak testleri çalıştıran hat) imajlarınızda, allowlist'in "çalışmadığını" merak etmek yerine trust'ı baştan kabul edin.
+
+İkincisi, 1. ve 2. çalıştırmalar arasında ne değişti: aynı kuralın bir kopyası yerel dosyaya eklendi, başka hiçbir şey değişmedi. İkinci kaydın stderr'ini dikkatle okuyun — _hâlâ_ `Ignoring 1 permissions.allow entry from .claude/settings.json` diyor, çünkü takım dosyasının kopyası trust eksikliğinden hâlâ atlanıyor. Komut yine de çalıştı, yalnızca yerel kopyanın gücüyle. Kendi yerel dosyanızdaki bir kural sizindir, deponun değil, bu yüzden Claude Code onu trust adımı olmadan uygular; commit'lenmiş dosyadaki aynı kural hâlâ bekliyor.
+
+Üçüncüsü 3. çalıştırma. Kişisel `allow`'unuz hâlâ yerindeydi ve komut yine reddedildi, çünkü projenin `deny`'i önce değerlendirilir. Paylaşılan bir deny listesini yazmaya değer kılan özellik bu: bir takım arkadaşı onu kendi dosyasından geri alamaz. (İzinler referansı daha da ileri gider — herhangi bir seviyedeki bir deny, komut satırındaki `--allowedTools`'u da yener.)
+
+İkinci transcript'in `result` satırı Türkçe olarak geliyor. Bu bir düzenleme hatası değil: bu çalıştırmaları kaydeden makinenin Türkçe yanıt isteyen global Claude Code tercihleri var ve headless bir oturum bunları başka her oturum gibi yükler. Sürekli tercihleriniz, betiklediğiniz oturumlar dâhil, her oturuma ulaşır.
+
+### Dosyalar işletim sistemine göre nerede
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+cat ~/.claude/settings.json          # user scope
+cat .claude/settings.json            # shared project scope (commit this)
+cat .claude/settings.local.json      # personal, per project (git-ignored)
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+cat ~/.claude/settings.json          # user scope
+cat .claude/settings.json            # shared project scope (commit this)
+cat .claude/settings.local.json      # personal, per project (git-ignored)
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+Get-Content $env:USERPROFILE\.claude\settings.json   # user scope
+Get-Content .claude\settings.json                    # shared project scope (commit this)
+Get-Content .claude\settings.local.json              # personal, per project (git-ignored)
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows'a özgü bir ayrıntı: bir git deposunda Claude Code normalde `.claude/settings.local.json`'ı depo kökünde tutar, böylece bir alt dizinde verdiğiniz bir onay depo genelinde uygulanır. Windows'ta — ve bir git deposunun dışında, ve depo kökü ana dizininiz olduğunda — dosyayı bunun yerine başlangıç dizininde `.claude/settings.json`'ın yanında tutar.
+
+### Kopyalanmaya değer bir takım dosyası
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npm run lint)",
+      "Bash(npm run test *)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)"
+    ],
+    "ask": ["Bash(git push:*)"],
+    "deny": ["Read(./.env)", "Read(./.env.*)", "Read(./secrets/**)"]
+  }
+}
+```
+
+</CodeBlock>
+
+Bunu üç ayrı karar olarak okuyun. `allow` listesi, kaldırmayı seçtiğiniz sürtünmedir: CI'ınızın zaten çalıştırdığı, hiçbir gözden geçirenin sorgulamayacağı komutlar. `ask` listesi, korumak istediğiniz duraklamadır — bir push'u onaylamak ucuz, geri almak pahalıdır. `deny` listesi, bir takım arkadaşının onunla aynı fikirde olmamasına rağmen ayakta kalan kısımdır.
+
+## Anti-pattern'ler
+
+**Kişisel onaylarınızı commit'lemek.** Claude Code'un sizin için kaydettiği "Evet, bir daha sorma" kuralları bir nedenle `.claude/settings.local.json`'a düşer: bir kişinin oturumunı yansıtırlar, bir takım kararını değil. Onları toplu hâlde paylaşılan dosyaya kopyalamak, herkese rastgele tıkladığınız şeyi verir. _Düzeltme:_ paylaşılan listeyi özenle seçin ve daha sonra düzenleyeceğiniz bir aday liste üretmek için `/fewer-permission-prompts`'u kullanın.
+
+**İstisnalı bir deny kuralı yazmak.** `deny: ["Bash(aws *)"]` artı `allow: ["Bash(aws s3 ls)"]`, `aws s3 ls`'e izin vermez; deny önce değerlendirilir ve "hariç" diye bir şey yoktur. _Düzeltme:_ deny kuralının kendisini daraltın, ya da istisnayı komutu değerlendirebilen bir `PreToolUse` hook'u olarak ifade edin.
+
+**Commit'lenmiş allowlist'in taze bir klonda çalıştığını varsaymak.** Takım arkadaşı klasöre güvenene kadar çalışmaz — ve `claude -p`'de asla çalışmaz. _Düzeltme:_ stderr uyarısını bekleyin ve CI'da ya da bir konteynerde `hasTrustDialogAccepted`'ı bilerek ayarlayın.
+
+**`permissions.defaultMode: "bypassPermissions"`'ı depoya koymak.** Proje ve local settings'ten yok sayılır, bu yüzden dosya bir ilke gibi görünür ama hiçbir şey uygulamaz. _Düzeltme:_ kendi tercihinizse user settings'te, organizasyonun tercihiyse managed settings'te ayarlayın ve tek seferlik için `--permission-mode` geçirin.
+
+**Allowlist'i bir güvenlik kontrolü olarak ele almak.** İzin kuralları Claude Code'u kısıtlar, shell'i değil. `Bash` herhangi bir şekilde izinliyse, `WebFetch` ne derse desin bir komut yine de ağa ulaşabilir. _Düzeltme:_ izin kurallarını sandbox ile eşleştirin ve gerçekten pazarlık edilemez kuralları managed settings'te tutun.
+
+**Bir kuralı dosyayı yeniden okuyarak hata ayıklamak.** Dosyalar birleşir; bir kural aynı anda dört yerden gelebilir. _Düzeltme:_ her aktif kuralı geldiği dosyayla birlikte görmek için `/permissions`'ı, yüklenen kaynakların listesi için `/status`'u çalıştırın.
+
+<Callout variant="changed">
+  `permissions.defaultMode`'un `auto` ve `bypassPermissions` değerleri artık proje ya da local
+  settings'ten etkili olmuyor — bunun yerine user ya da managed settings'te ayarlayın. Claude Code
+  2.1.257'den önce, `bypassPermissions` herhangi bir dosyadan etkili oluyordu.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/shared-settings"
+  questionId="q1"
+  lang="tr"
+  prompt="Takımınızın `.claude/settings.json`'ı `Bash(node src/math.js)`'ı reddediyor. Kendi `.claude/settings.local.json`'ınız aynı komuta izin veriyor. Ne olur?"
+  options={[
+    {
+      text: "Çalışır — project local, öncelik yığınında shared project'in üstünde oturur.",
+      explanation:
+        'Öncelik, aynı anahtar için hangi değerin kazanacağına karar verir, ama izin kuralları önce deny → ask → allow olarak, her kapsamda değerlendirilir.',
+    },
+    {
+      text: 'Reddedilir — deny kuralları, hangi kapsamdan gelirse gelsin allow kurallarından önce değerlendirilir.',
+      correct: true,
+      explanation:
+        "Tam olarak. Herhangi bir seviyedeki bir deny, `--allowedTools` dâhil, herhangi bir seviyedeki bir allow'u yener.",
+    },
+    {
+      text: 'Claude Code bir settings çakışması bildirir ve sizden onu çözmenizi ister.',
+      explanation: 'Bir çakışma diyaloğu yok; sıralama kuralı bunu sessizce çözer.',
+    },
+    {
+      text: 'Daha özgül kural kazanır, bu yüzden hangi desenin daha dar olduğuna bağlıdır.',
+      explanation: 'Özgüllük sırayı değiştirmez — dokümanlar bunu açıkça söylüyor.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/shared-settings"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir takım arkadaşı depoyu klonlayıp içinde `claude -p` çalıştırıyor. commit'lenmiş settings'ten hangisi hemen etkili olur?"
+  options={[
+    {
+      text: '`permissions.allow` kuralları.',
+      explanation:
+        "Allow kuralları yetenek verir, bu yüzden workspace trust'ı bekler — ve bir `-p` çalıştırması asla trust diyaloğunu göstermez.",
+    },
+    {
+      text: '`permissions.deny` kuralları.',
+      correct: true,
+      explanation:
+        'Deny ve ask kuralları yalnızca kısıtlar, bu yüzden Claude Code onları trust adımı olmadan uygular.',
+    },
+    {
+      text: '`extraKnownMarketplaces` girdileri.',
+      explanation:
+        "Onlar da trust'ı bekler; takım arkadaşı o ana kadar onlardan hiçbir plugin almaz.",
+    },
+    {
+      text: 'Hiçbiri — güvenilmeyen bir deponun settings dosyası hiç okunmaz.',
+      explanation:
+        "Dosya okunur; yalnızca yetenek veren girdiler stderr'de bir uyarıyla geri tutulur.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/shared-settings"
+  questionId="q3"
+  lang="tr"
+  prompt="Belirli bir izin kuralının hangi settings dosyasından geldiğini hangi komut söyler?"
+  options={[
+    {
+      text: '/permissions',
+      correct: true,
+      explanation: 'Diyalog, her kuralı onu sağlayan `settings.json` dosyasıyla birlikte listeler.',
+    },
+    {
+      text: '/status',
+      explanation:
+        '`Setting sources` satırı yüklenen dosyaları adlandırır, ama her anahtarı hangi dosyanın sağladığını değil.',
+    },
+    {
+      text: '/config',
+      explanation:
+        'Config sekmesi kişisel seçeneklerin kısa bir listesidir, settings dosyanızın bir görünümü değil.',
+    },
+    {
+      text: 'claude --version',
+      explanation: 'Bu, kurulu sürümü yazdırır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m20-team/shared-settings"
+  questionId="q4"
+  lang="tr"
+  prompt="Takımınız `permissions.allow`'u paylaşılan dosyada ayarlıyor, siz onu yerel dosyanızda ayarlıyorsunuz ve user dosyanızda da girdileriniz var. Claude Code bu üç listeyle ne yapar?"
+  options={[
+    {
+      text: 'Onları birleştirir; her dosya başka bir dosyanınkini kaldırmadan girdi ekler.',
+      correct: true,
+      explanation:
+        '`permissions.allow` gibi liste anahtarları kapsamlar arasında birleşir. Birkaç model şeklindeki anahtar istisnadır.',
+    },
+    {
+      text: 'Listeyi yalnızca en yüksek öncelikli dosyadan alır.',
+      explanation:
+        'Tek değerli anahtarlar böyle davranır; listeler birleşir. `fallbackModel` ve `modelPicker` istisnalar arasında.',
+    },
+    {
+      text: 'Yalnızca her kapsam için klasöre güvendikten sonra birleşimi alır.',
+      explanation:
+        'Trust, deponun dosyasının allow kurallarını kapı gibi engeller, kendi dosyalarınızı değil.',
+    },
+    {
+      text: 'Yinelenen anahtar kaldırılana kadar başlamayı reddeder.',
+      explanation: 'Kapsamlar arasında yinelenen anahtarlar normaldir ve beklenir.',
+    },
+  ]}
+/>
+
+**Sonraki:** `02-managed-settings`, yığında bir seviye yukarı çıkıyor — bir organizasyonun dağıttığı, kendi dosyalarınızdaki hiçbir şeyin geçersiz kılamayacağı settings.

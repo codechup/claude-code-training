@@ -1,15 +1,15 @@
 ---
-title: 'Başka bir oturumun devam ettirebileceği devir teslim notları'
-description: 'Plan dosyasının son bölümü, bir sonraki oturumun baştan mı başlayacağını yoksa devam mı edeceğini belirler. Bir handoff (devir teslim) notunun neleri kaydetmesi gerektiğini, blocked (engellenmiş) gerekçesinin nasıl otomatik olarak nota dönüştüğünü ve açık soruların nereye yazıldığını öğrenin.'
+title: 'Başka bir oturum’ın devam edebileceği handoff notları'
+description: 'Bir plan dosyasının son bölümü, bir sonraki oturum’ın başlayıp başlamayacağına ya da yeniden başlayıp başlamayacağına karar veren bölümdür. Bir handoff notunun ne kaydetmesi gerektiğini, bir blocked nedeninin nasıl otomatik olarak bir handoff notuna dönüştüğünü ve açık soruların nereye gittiğini öğrenin.'
 level: 4
 module: 'm18-multi-session'
 order: 5
 duration_min: 15
 difficulty: core
-tags: ['multi-session', 'plans', 'handoff', 'blocked', 'this-repo']
+tags: ['çoklu-oturum', 'planlar', 'handoff', 'blocked', 'bu-depo']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Best practices for Claude Code'
@@ -27,4 +27,276 @@ lab:
   repo_tag: 'lesson/m18-05-start'
 ---
 
-Bu dersin Türkçe çevirisi henüz yapılmadı. `draft: true` kaldığı sürece bu sayfa gezinmede görünmez; İngilizce kaynak `content/en/l4-master/m18-multi-session/05-handoff-notes.mdx` dosyasındadır.
+## Hedefler ve ön koşullar
+
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Farklı bir oturumun bir soru sormadan bir planı devam ettirebilmesi için bir handoff notunun ne kaydetmesi gerektiğini sıralamak.
+- Claimlar yerine kanıt bildiren ve planın belirsiz olduğu yerlerde alınan kararları adlandıran bir not yazmak.
+- Engelleyicinin hem plan dosyasına hem üretilen durum görünümüne aynı anda ulaşması için `status PNN blocked --reason` kullanmak.
+- Bir handoff notu, bir açık soru ve bir takip planı arasındaki farkı ayırt etmek ve her birini doğru yere koymak.
+- Başarısız olan notları tanımak: boş yer tutucu, [diff](/tr/playbook/glossary/#diff)'in (bir dosyadaki ya da commit'teki değişikliklerin satır satır gösterimi) özeti ve iyimser "geçmesi lazım".
+
+**Ön koşullar.** Bu modülün 01–04. dersleri. Laboratuvar, laboratuvar deposunun `lesson/m18-05-start` ve `lesson/m18-05-solution` etiketlerini kullanır.
+
+<WhenNotToUse>
+  Bir handoff notu, bir oturumdan uzun yaşayan iş içindir. Bir değişiklik günlüğü değildir —
+  [commit](/tr/playbook/glossary/#commit)'ler (bir git deposundaki değişiklik kümesinin kalıcı,
+  mesajlı kaydı) zaten neyin satır satır değiştiğini söyler ve onları tekrarlamak, _apaçık
+  olmayanın_ ait olduğu tek yeri israf eder. Bir kod yorumu da değildir: koda ait akıl yürütme, o
+  fonksiyonun bir sonraki okuyucusunun bulacağı yerde, kodun yanında yaşamalıdır. Ve kimsenin işin
+  ortasında olmadığı, önümüzdeki beş dakika içinde kendinizin birleştireceği bir değişiklik için
+  bütün bu töreni atlayın — o durumda [pull request](/tr/playbook/glossary/#pull-request) (bir
+  branch'teki değişikliklerin gözden geçirilip ana koda alınması için açılan istek) gövdesi
+  handoff'un kendisidir ve onu plan dosyasına kopyalamak iletişim değil dosyalamadır.
+</WhenNotToUse>
+
+## Kavram
+
+### Notun cevapladığı soru
+
+Her plan dosyası `## Handoff notes` ile biter ve taze bir plan yalnızca bir yer tutucu taşır:
+
+<CodeBlock title="Doldurulmamış bölüm">
+
+```markdown
+## Handoff notes
+
+- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+```
+
+</CodeBlock>
+
+Bölüm tek bir soruyu cevaplar: **bir sonraki oturum diff'ten elde edemeyeceği neye ihtiyaç duyar?** Diff zaten neyin değiştiğini söyler. Neyi deneyip başarısız olduğunuzu, belirsiz bir gereksinimin iki okumasından hangisini seçtiğinizi, neyi ve nasıl doğruladığınızı, neyi bilerek düzeltmediğinizi ya da sizi neyin şaşırttığını söylemez.
+
+Bu, bir insan takımında olduğundan burada daha çok önem taşır, çünkü bir sonraki oturum bunun hiçbir anısına sahip olmayabilir. Claude Code'un kendi en iyi uygulama rehberliği de aynı yöne işaret eder: bir spesifikasyon işe yarar çünkü "yeni oturum, tamamen uygulamaya odaklanmış temiz bir bağlama sahiptir" ve "Claude'un başarıyı claim etmek yerine kanıt göstermesini sağlayın: test çıktısı, çalıştırdığı komut ve döndürdüğü şey … Kanıtı gözden geçirmek, doğrulamayı kendiniz yeniden çalıştırmaktan daha hızlıdır ve izlemediğiniz oturumlar için de işe yarar" tavsiyesini verir.
+
+Bir oturuma notlarının ne içermesi gerektiğini sorun, plan'ın kendi bölümlerinden aşağı yukarı doğru listeyi türetsin:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/05-handoff-notes/01-claude-drafts-handoff.txt"
+  range="4-10"
+/>
+
+### Gerçek bir tanesi neye benziyor
+
+Laboratuvar deposunun `lesson/m18-05-solution` etiketi doldurulmuş iki not içerir. Bu ikisinin daha öğretici olanı:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/05-handoff-notes/03-a-real-handoff-note.txt"
+  range="3-25"
+/>
+
+O notun ne yaptığını okuyun:
+
+- **Ne teslim edildiği**, dokunulan dosyalar açısından değil, üretilen şey açısından.
+- **Gerçek bir tutarsızlık bulundu ve bilerek düzeltilmedi**, nedeniyle birlikte: düzeltmek, başka bir plana ait bir dosyayı düzenlemek anlamına gelir. Bulgu kaybolmak ya da sessizce üzerine hareket edilmek yerine korunur.
+- **Gerçekten doğrulandı**, komutu ve sonucunu adlandırarak — `npm test` (hâlâ 20/20) — ve elle neyin kontrol edildiğini.
+- **Takipler**, bir plan hâline gelecek kadar somut: düzeltme, onun tek `owned_paths` girdisi ve her iki mevcut plandan da ayrık olduğu gözlemi.
+- **Durum**, ve bir sonraki okuyucudan ne beklendiği.
+
+Bu etiketteki diğer planın notu kopyalanmaya değer bir kategori daha ekliyor: bir karar, nedeniyle birlikte ("bespoke bir işleyici yerine commander'ın kendi `.version()`'ını kullandık — üstelik `-V`'yi de ücretsiz veriyor"), ve kaydedilmeye değer bir başarısızlık ("önce ona karşı testi yazıp başarısız olduğunu izleyerek öğrenildi"). Bir kez belgelenen yanlış bir dönüş, kimsenin tekrarlamadığı bir yanlış dönüştür.
+
+İşte bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni), bir planı kapatmadan önce çalıştırılacak olan:
+
+```text
+Read this plan file and the diff on this branch. What would a different
+session need to know that neither of them says? Write it as the plan's
+Handoff notes.
+```
+
+### Blocked bir not değil, bir durumdur
+
+Devam edemediğinizde, durum değişikliği ve not tek bir eylemdir. `status PNN blocked --reason "…"` bir neden olmadan çalışmayı reddeder, onu `## Handoff notes` altına tarihli bir satır olarak ekler ve durum dosyasını yeniden üretir, böylece engelleyici herkes için görünür olur:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/05-handoff-notes/02-status-blocked.txt"
+  range="2-16"
+/>
+
+Orada iki şey birlikte hareket eder. Plan dosyası kalıcı bir `- Blocked (2026-09-07): …` satırı kazanır ve `STATE.md`'deki üretilen `Blocked` tablosu bu en yeni satırı otomatik olarak alır. Kimsenin kimseye söylemesi gerekmez.
+
+Sözleşme, blocked bir nedenin üç şeyi söylemesini ister: sizi ne engelliyor, ne denediniz ve neye ihtiyacınız var. İnsanların atladığı üçüncüsüdür ve başka biri tarafından harekete geçirilebilir olan tek şey de odur.
+
+### Handoff notu mu, açık soru mu, yoksa takip planı mı?
+
+Üç yer, üç yaşam süresi. Bunu yanlış yapmak, bulguların kaybolma şeklidir.
+
+| Şu ise…                                                           | Şuraya koyun                                   | Çünkü                                                                          |
+| ----------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------ |
+| _Bu planı_ yürüten bir sonraki oturumun ihtiyaç duyduğu bir şey   | `## Handoff notes`                             | Bu plana özgüdür ve plan devralındığında okunur                                |
+| Sahibinin çözmesi gereken bir doküman çakışması ya da ürün sorusu | `open_questions` frontmatter'ı                 | Üretici bunu, kendi plan id'sinin yanında, proje genelinde görünür kılar       |
+| Olması gereken ama burada değil bir iş                            | Bir öneri olarak ifade edilmiş handoff notları | Planlar özenle seçilir; bir oturum kendi başına yeni plan dosyaları oluşturmaz |
+
+Bir engelleyici için yükseltme merdiveni ezberlenmeye değer. **Eksik bir bağımlılık**: onu sağlaması gereken plan id'sini adlandırın, ya da hiçbir planın onu sahiplenmediğini söyleyen bir `open_questions` satırı ekleyin. **Bir doküman çakışması**: kapsam soruları için müfredat dokümanını, zaten karara bağlanmış herhangi bir şey için kararlar kaydını tercih edin; hiçbiri kapsamıyorsa, soruyu kaydedin ve en muhafazakâr okumayla devam edin — kaydedilmiş bir kararı asla kendiniz değiştirmeyin. Bir sır ya da onay gibi **bir sahip eylemi**: gereken tam eylemi yazın ve başka bir plan seçin.
+
+### Ve bir mesajın daha iyi olduğu zaman
+
+Bir handoff notu tasarım gereği kalıcı ve asenkrondur. Diğer oturum _şu anda_ çalışıyorsa ve gerçeğin yarı ömrü dakikalar sürüyorsa — "şema değişikliğini az önce push ettim, devam etmeden önce rebase yap" — doğru kanal cross-session messaging'dir (oturumlar arası mesajlaşma): Claude, metni adıyla belirttiğiniz başka bir oturuma iletmek için `ListAgents` ve `SendMessage`'ı kullanır ve dokümanlar paralel-[worktree](/tr/playbook/glossary/#worktree) (aynı git geçmişini paylaşan ama kendi dosyalarına sahip ayrı bir çalışma dizini) durumunu doğrudan örnek gösterir. Dokümanların çizdiği sınıra dikkat edin: mesajı alan Claude'a, mesajın sizden değil başka bir oturumdan geldiği söylenir ve o Claude "hiçbir şeyi onaylayamaz" ve başka bir oturum istedi diye izin ayarlarını ya da yapılandırmayı asla değiştirmemesi talimatı verilir.
+
+Yani: kalıcı gerçekler dosyalarda, geçici olanlar mesajlarda. Yalnızca bir mesajda kaydedilmiş bir karar, bir sonraki oturumun asla göremeyeceği bir karardır.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · bir handoff notu yazın ve okuyun"
+  lessonId="tr/l4-master/m18-multi-session/handoff-notes"
+  repoTag="lesson/m18-05-start"
+  steps={[
+    'Laboratuvar deposunun klonunuzda `git checkout lesson/m18-05-start`. Her iki plan dosyasını da okuyun: Handoff notları hâlâ doldurulmamış yer tutucu.',
+    'Cevabı görmeden önce kontrol listesini türetin: `claude -p "Read plans/P01-cli-usability.md and plans/P02-api-error-docs.md. Both are about to move from in_progress to review. List the five things their Handoff notes must record so a different session could take either plan over without asking a question. At most six lines. Do not edit anything." --model sonnet --max-turns 6 --output-format text --allowedTools Read,Glob,Grep`',
+    'Çalışma ağacında `P02` için kendi notunuzu yazın — ne teslim edildi, hangi komutla neyi doğruladınız, bir karar ve nedeni, ve varsa herhangi bir takip.',
+    'Gerçek olanla karşılaştırın: `git show lesson/m18-05-solution:plans/P02-api-error-docs.md | sed -n "/^## Handoff notes/,$p"`. Sizin kaydetmediğiniz neyi kaydetmiş?',
+    "Şimdi blocked yolunu bu sitenin deposunun kullan-at bir klonunda uygulayın. `node tools/plan/cli.ts next`'in sunduğu herhangi bir plan id'si seçin — aşağıdaki kayıt `P38`'i kullanıyor — ve `node tools/plan/cli.ts status <PNN> blocked --reason \"what blocks you, what you tried, what you need\"` çalıştırın, sonra plan dosyasını `tail -3` yapın ve `STATE.md`'deki `## Blocked` tablosunu okuyun.",
+    'İkisini de geri alın: her klonda `git checkout -- plans STATE.md`.',
+  ]}
+  expected="`-start`'ta her iki not da yer tutucudur. Çözümün P02 notu, dosyası başka bir plana ait olduğu için bilerek düzeltmediği gerçek bir 404-vs-400 tutarsızlığını kaydeder ve somut bir owned_paths girdisiyle bir takip önerir. `status blocked`, planın yeni durumunu ve STATE.md'yi yeniden yazdığını yazdırır, planın Handoff notları altına tarihli bir `- Blocked (YYYY-MM-DD): …` satırı ekler ve neden, sahibiyle birlikte STATE.md'nin Blocked tablosunda görünür."
+  checklist={[
+    'Referans notu okumadan önce kendi notunuzu yazdınız',
+    'Notunuz gerçekten çalıştırdığınız bir komutu ve sonucunu adlandırıyor, "geçmesi lazım" demiyor',
+    'Referans notun kaydettiği ve sizinkinin kaydetmediği en az bir şey buldunuz',
+    '`status blocked`, `--reason` olmadan çalışmayı reddetti ve plan dosyasına tarihli bir satır ekledi',
+    'Engelleyici, kimse düzenlemeden üretilen Blocked tablosunda görünüyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/05-handoff-notes/01-claude-drafts-handoff.txt"
+    range="4-10"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/05-handoff-notes/02-status-blocked.txt"
+    range="2-16"
+  />
+</Lab>
+
+## Anti-pattern'ler
+
+**Yer tutucunun yerinde bırakılması.** Notları hâlâ "_Filled by the executing oturum_" diyen birleştirilmiş bir plan, o oturumun öğrendiği her şeyi çöpe atmıştır. _Düzeltme:_ onu doldurmayı sonradan yapılan bir kâğıt işi değil, `review`'a geçmenin bir parçası olarak ele alın.
+
+**Diff'i özetlemek.** "Üç dosya eklendi ve testler güncellendi" zaten `git log`'da var. _Düzeltme:_ diff'te _olmayanı_ yazın — kararları, çıkmaz sokakları, yapmamayı seçtiğiniz şeyleri.
+
+**"Testler geçmesi lazım."** Ya onları çalıştırdınız ya da çalıştırmadınız, ve fark her şeydir. _Düzeltme:_ dokümanların istediği gibi komutu ve sonucu adlandırın: başarıyı claim etmek yerine kanıt gösterin.
+
+**Yollarınızın dışında bir şeyi bulduğunuz için düzeltmek.** Bulgu değerlidir; sessiz düzenleme değildir. _Düzeltme:_ notlarda kaydedin, kendi `owned_paths`'ıyla takibi önerin ve dosyayı olduğu gibi bırakın.
+
+**Yalnızca bir mesajda ya da commit'te kaydedilmiş bir engelleyici.** `STATE.md`'yi okuyan hiç kimse onu asla görmeyecek, ki bu da projeyi sessizce engellediği anlamına gelir. _Düzeltme:_ `status blocked --reason`, böylece plan dosyası ve üretilen görünüm birlikte hareket eder.
+
+**Talebi olmayan bir blocked nedeni.** "API dokümanlarını bekliyorum" kimseye sizi neyin serbest bırakacağını söylemez. _Düzeltme:_ sizi ne engelliyor, ne denediniz ve neye ihtiyacınız var deyin — üçüncü kısım harekete geçirilebilir olandır.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/handoff-notes"
+  questionId="q1"
+  lang="tr"
+  prompt="Bunlardan hangisi bir handoff notuna aittir?"
+  options={[
+    {
+      text: "Branch'in değiştirdiği dosyaların bir listesi.",
+      explanation: 'Diff bunu zaten, daha ayrıntılı ve her zaman doğru biçimde taşır.',
+    },
+    {
+      text: 'Başka bir planın dosyasında bulduğunuz bir tutarsızlık, onu neden düzeltmediğiniz ve bir takip planının neyi sahiplenmesi gerektiği.',
+      correct: true,
+      explanation:
+        'Tam olarak yazılmazsa kaybolan türden bir bulgu: değerli, kapsam dışı ve başkası tarafından harekete geçirilebilir.',
+    },
+    {
+      text: "Planın Goal'unun yeniden ifadesi.",
+      explanation: 'Üç bölüm yukarıda, değişmeden duruyor.',
+    },
+    {
+      text: 'Tam test çıktısı.',
+      explanation:
+        'Komutu ve sonucu adlandırın; tam log plan dosyasına değil pull request kanıtına aittir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/handoff-notes"
+  questionId="q2"
+  lang="tr"
+  prompt="`status PNN blocked --reason`, durumu değiştirmenin ötesinde ne yapar?"
+  options={[
+    {
+      text: 'Taslak bir pull request açar.',
+      explanation: 'Bir taslak PR memnuniyetle karşılanır, ama onu siz kendiniz açarsınız.',
+    },
+    {
+      text: "Planın Handoff notları altına tarihli bir `- Blocked (…):` satırı ekler ve STATE.md'yi yeniden üretir, böylece engelleyici Blocked tablosunda görünür.",
+      correct: true,
+      explanation:
+        'Durum değişikliği ve yazılan neden tek bir eylemdir, komutun `--reason` olmadan çalışmayı reddetmesinin nedeni de budur.',
+    },
+    {
+      text: 'Diğer çalışan oturumlara mesaj gönderir.',
+      explanation:
+        'Mesajlaşma, geçici gerçekler için ayrı bir mekanizmadır. Bir engelleyici kalıcıdır ve dosyaya aittir.',
+    },
+    {
+      text: "Planı `todo`'ya geri bırakır.",
+      explanation: "`blocked` sahibi korur; onu temizleyen durum `todo`'dur.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/handoff-notes"
+  questionId="q3"
+  lang="tr"
+  prompt="Müfredat dokümanının cevaplamadığı ve hiçbir kararın kapsamadığı bir soruyla karşılaştınız. Doğru olan nedir?"
+  options={[
+    {
+      text: 'Kendiniz karar verin ve kararı kararlar kaydına yazın.',
+      explanation:
+        'Kararlar sahibine aittir. Bir plan bir tanesini önerebilir; asla bir tane yazmaz.',
+    },
+    {
+      text: "Soruyu `open_questions`'a ve Handoff notlarına yazın, en muhafazakâr okumayı benimseyin ve devam edin.",
+      correct: true,
+      explanation:
+        "Soru, kendi plan id'sinin yanında proje genelinde görünür hâle gelir ve iş geri alınması en ucuz olan şekilde ilerler.",
+    },
+    {
+      text: 'Planı blocked işaretleyip durun.',
+      explanation:
+        "`blocked`'ı gerçekten ilerlemeyi engelleyen şeyler için ayırın. Açık bir sorunun genellikle devam edebileceğiniz muhafazakâr bir cevabı vardır.",
+    },
+    {
+      text: 'Başka bir oturuma mesaj gönderip söylediğini kullanın.',
+      explanation:
+        'Başka bir oturum sizden daha fazla yetkiye sahip değildir ve cevabı hiçbir yerde kalıcı olarak kaydedilmez.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/handoff-notes"
+  questionId="q4"
+  lang="tr"
+  prompt="Handoff notları neden bir takımdaki insanlar arasında olduğundan oturumlar arasında daha çok önem taşır?"
+  options={[
+    {
+      text: "Oturum'lar daha hızlı yazar, bu yüzden kaydedilecek daha fazla şey vardır.",
+      explanation: 'Sorun hacim değil, kurtarılabilirliktir.',
+    },
+    {
+      text: 'Bir iş arkadaşına sonradan sorulabilir; işi yapan oturum artık var olmayabilir ve yazılmamış her şey kaybolmuştur.',
+      correct: true,
+      explanation: 'Bu asimetri, bölümün teşvik edilen değil zorunlu olmasının bütün nedenidir.',
+    },
+    {
+      text: "Oturum'lar git geçmişini okuyamaz.",
+      explanation:
+        'Okuyabilirler, hem de okurlar — notun onu tekrarlamaması gerekmesinin tam nedeni de budur.',
+    },
+    {
+      text: "Çünkü [CI](/tr/playbook/glossary/#ci) (her push'ta otomatik olarak testleri çalıştıran hat) bölümün boş olmamasını zorunlu kılar.",
+      explanation:
+        'Bölüm, sabit gövde yapısının bir parçasıdır; onu işe yarar biçimde doldurma disiplini bir kontrol değil, bir kuraldır.',
+    },
+  ]}
+/>
+
+**Sonraki:** `06-this-repo-as-example`, bu web sitesinin kendi `plans/` dizinini ve `STATE.md`'sini baştan sona geziyor — beş milestone boyunca birkaç düzine plan ve sistem bir süredir çalışıyorken neye benzediği.

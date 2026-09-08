@@ -1,6 +1,6 @@
 ---
 title: 'Büyük kod tabanlarında çalışmak'
-description: 'Bir monorepo, context window’u göreviniz ile ilgisi olmayan talimatlar ve dosya okumalarıyla doldurur. Katmanlı CLAUDE.md dosyaları, claudeMdExcludes, Read deny kuralları, sparse worktree’ler, dizin başına skill’ler ve --add-dir ile Claude’u çalıştığınız alt ağaca daraltın.'
+description: 'Bir monorepo, göreviniz ile hiçbir ilgisi olmayan talimatlar ve dosya okumalarıyla context window’unu doldurur. Katmanlı CLAUDE.md dosyalarıyla, claudeMdExcludes ile, Read deny kurallarıyla, seyrek worktree’lerle, dizin başına skill’lerle ve --add-dir ile Claude’ı içinde bulunduğunuz alt ağaca sınırlayın.'
 level: 4
 module: 'm21-scale'
 order: 1
@@ -9,7 +9,7 @@ difficulty: core
 tags: ['büyük-kod-tabanları', 'monorepo', 'add-dir', 'context']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Set up Claude Code in a monorepo or large codebase'
@@ -31,11 +31,385 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders, büyük bir depoda Claude Code'u göreve göre daraltmayı anlatır: `claude`'u nereden başlattığınızın dosya erişimini ve yüklenen `CLAUDE.md` dosyalarını nasıl belirlediği; talimatları dizin başına `CLAUDE.md` dosyalarına bölmek; `claudeMdExcludes` ve `permissions.deny` içindeki `Read` kurallarıyla alakasız içeriği context dışında tutmak; `worktree.sparsePaths` ile worktree'lere yalnızca gereken dizinleri yazmak; ve `--add-dir` ile `permissions.additionalDirectories` arasındaki farkı — birincisi eklenen dizinin skill'lerini de yükler, ikincisi yalnızca dosya erişimi verir. Laboratuvar, aynı komutun `--add-dir` olmadan reddedildiğini ve onunla başarılı olduğunu gerçek bir kayıtla gösterir.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur: `/en/l4-master/m21-scale/large-codebases/`.
+- Büyük bir depoda `claude`'u nerede başlatacağınıza karar vermek ve bu seçimin dosya erişimi, hangi `CLAUDE.md` dosyalarının yüklendiği ve hangi proje settings'inin uygulandığı konusunda neyi değiştirdiğini söylemek.
+- Talimatları dizin başına `CLAUDE.md` dosyalarına bölmek ve bunlardan biri ile `.claude/rules/`'daki yol-kapsamlı bir kural arasında seçim yapmak.
+- İlgisiz talimatları ve dosyaları `claudeMdExcludes` ile ve `permissions.deny`'de `Read` deny kurallarıyla context'in dışında tutmak.
+- `worktree.sparsePaths` ve `worktree.symlinkDirectories` ile bir [worktree](/tr/playbook/glossary/#worktree)'nin (aynı deponun farklı bir branch'ini ayrı bir dizinde çalışır tutan ek bir git çalışma ağacı) diske ne yazdığını küçültmek.
+- Bir kardeş pakete ya da ayrı bir checkout'a `--add-dir` ya da `permissions.additionalDirectories` ile ulaşmak ve ikisinden her birinin tam olarak neyi yüklediğini söylemek.
+
+**Ön koşullar.** Seviye 3'ün hafıza ve izinler materyali: `CLAUDE.md`, `.claude/rules/` yol-kapsamlı kuralları, `permissions.deny` sözdizimi ve settings kapsamlarıyla (project, local, user, managed) zaten rahat olmalısınız. `m18-multi-session`'dan git worktree'leri yardımcı olur ama gerekli değildir.
+
+<WhenNotToUse>
+  Tek bir kök `CLAUDE.md` ve kapsamsız bir oturumun zaten iyi davrandığı kadar küçük bir depoda
+  bunların hiçbiri yapmaya değmez — bu sayfadaki her ayar sonsuza kadar ödediğiniz bir bakım
+  maliyetidir ve kimsenin budamadığı bir dışlama listesi eninde sonunda birinin ihtiyaç duyduğu kodu
+  gizler. Sorun kod tabanı değil tek bir kontrolden çıkmış oturum olduğunda da atlayın: görevler
+  arasında `/clear`, ya da bir sonraki dersteki context teknikleri, daha ucuz düzeltmedir. Ve
+  `claudeMdExcludes`'ı görev başına bir anahtar olarak kullanmayın — liste statiktir, bu yüzden
+  "bugün bu pakete odaklan" Claude'u o paketin dizininden başlatarak daha iyi ifade edilir.
+</WhenNotToUse>
+
+## Kavram
+
+### Sorun büyüklük değil context'tir
+
+Claude Code herhangi bir depo büyüklüğünde çalışır. İlk kırılan şey [context window](/tr/playbook/glossary/#context-window)'dur (bir modelin tek bir istekte görebildiği toplam token miktarı): küçük bir proje için ayarlanmış varsayılanlar, görevle hiçbir ilgisi olmayan talimatları yükler ve dosyaları okur, ki bu [token](/tr/playbook/glossary/#token)'lara (bir dil modelinin metni işlerken kullandığı en küçük birim) mal olur ve yanıtı kötüleştirir. Aşağıdaki her teknik, bir oturumun gördüğünü daraltmanın bir yoludur.
+
+### `claude`'u nerede başlattığınız çoğunu belirler
+
+Tek en büyük kaldıraç, başlattığınız çalışma dizinidir.
+
+| Buradan başlayın | Dosya erişimi                                        | Başlangıçta yüklenen `CLAUDE.md`                                                 | Şu durumda kullanın                                   |
+| ---------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Depo kökü        | Her dosya                                            | Yalnızca kök; alt dizin dosyaları Claude orada okuduğunda talep üzerine yüklenir | Görevler birden çok paketi ya da alt sistemi kapsıyor |
+| Bir alt dizin    | Daha fazlasına izin verene kadar yalnızca o alt ağaç | O dizininki artı her atasınınki                                                  | İş tek bir pakete ya da alt sisteme kapsanmış         |
+
+Bir asimetri insanları yakalar: `CLAUDE.md` dosyaları üst dizinlerden miras alınır, ama bir `.claude/settings.json` alınmaz. Düzenli olarak başladığınız her alt dizinin kendi kendine yeten bir settings dosyasına ihtiyacı vardır.
+
+### CLAUDE.md'yi dizine göre katmanlayın
+
+Bir monorepo'daki tek bir kök `CLAUDE.md`, ya her alt sistemi kapsayacak şekilde büyür — dokunmadığınız kod için kurallara context harcayarak — ya da hiçbir şey söylemeyecek kadar genel kalır. Alışılmış bölünme iki seviyedir: her yerde geçerli olan için bir kök dosya ve o alanın kuralları için paket ya da alt sistem başına bir dosya.
+
+<CodeBlock title="CLAUDE.md (depo kökü)">
+
+```markdown
+Run package scripts from the package directory, not the monorepo root.
+Prefix commit subjects with the package name, for example `api: add rate limiting`.
+Never edit files under packages/*/generated/. Run `npm run codegen` in the package instead.
+```
+
+</CodeBlock>
+
+<CodeBlock title="packages/api/CLAUDE.md">
+
+```markdown
+Copy `.env.example` to `.env` before running anything. Tests and the dev server fail without it.
+Write database queries with the Knex query builder. Never put raw SQL strings in route handlers.
+Never edit a migration after it has merged. Add a new migration instead.
+```
+
+</CodeBlock>
+
+Claude'u `packages/api/`'den başlatın ve her iki dosya da yüklenir — depo-geneli olanların yanında yerel kurallar, context'te `packages/web/`'den hiçbir şey olmadan. Hangi dosyaların gerçekten yüklendiğini doğrulamak için `/context`'i çalıştırın ve **Memory files** listesini okuyun.
+
+Dizin başına bir `CLAUDE.md` ve `.claude/rules/` altındaki yol-kapsamlı bir kural, aynı sorunu farklı şekilde çözer. `CLAUDE.md`, kodunun yanındaki dizinde yaşar, o dizinin sahipleri tarafından bakımı yapılır ve onlarla birlikte sürümlenir. Kural, depo kökündeki merkezi bir `.claude/`'da yaşar ve Claude, `paths:` glob'una uyan bir dosyayla çalıştığında yüklenir — her kuralı tek bir yerde istediğinizde ya da aynı kural dağınık yollara uygulandığında daha iyidir.
+
+### İlgisiz talimatları ve dosyaları dışarıda tutun
+
+`claudeMdExcludes`, `CLAUDE.md` ve rules dosyalarını yol ya da glob'a göre atlar, böylece asla yüklenmezler. Desenler **mutlak** yollara karşı eşleştirilen glob'lardır, bu yüzden göreli görünen bir desen ağaçta herhangi bir yerde eşleşmek için `**/` ile başlamalıdır.
+
+<CodeBlock title=".claude/settings.local.json">
+
+```json
+{
+  "claudeMdExcludes": ["**/packages/web/**"]
+}
+```
+
+</CodeBlock>
+
+Diziler settings kapsamları arasında birleşir, bu yüzden bir takım proje varsayılanlarını ayarlayabilir ve bireyler kendilerinkini ekleyebilir. Managed-ilke `CLAUDE.md` dosyaları dışlanamaz — organizasyon-geneli talimatlar her zaman uygulanır.
+
+Dosya okumaları maliyetin diğer yarısıdır. İçerik aramaları zaten `.gitignore`'a saygı gösterir, bu yüzden `node_modules/`, `dist/` ve `build/` yok sayıldıklarında sonuçların dışında kalır. _Check in edilmiş_ yollar için — vendored bir SDK, [commit](/tr/playbook/glossary/#commit)'lenmiş (bir git deposundaki değişiklik kümesinin kalıcı, mesajlı kaydı) üretilmiş kod — `Read` deny kuralları ekleyin:
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "permissions": {
+    "deny": [
+      "Read(./**/dist/**)",
+      "Read(./**/build/**)",
+      "Read(./**/*.generated.*)",
+      "Read(./vendor/**)"
+    ]
+  }
+}
+```
+
+</CodeBlock>
+
+Deny kuralları yerleşik dosya [tool](/tr/playbook/glossary/#tool)'larını (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) kapsar ve Bash'te, reddedilen bir yol bir argüman ya da bir yönlendirme hedefi olduğunda Claude Code'un tanıdığı dosya komutlarını — `cat`, `head`, `grep`, `find` — kapsar. Kendi başına dosya açan alt süreçleri kapsamazlar ve reddedilen dosyalar içeren bir dizin üzerinde bir `grep -r`, onları yine de yazdırır.
+
+Bir tanımın nerede yaşadığı üçüncü bir maliyettir. Bir [code intelligence plugin](https://code.claude.com/docs/en/discover-plugins.md), Claude'u ağacı taramak yerine tanımlara atlaması ve referansları bulması için bir dil sunucusuna bağlar:
+
+<CodeBlock title="bir Claude Code oturumunda">
+
+```text
+/plugin install typescript-lsp@claude-plugins-official
+```
+
+</CodeBlock>
+
+### Seyrek worktree'ler
+
+`--worktree`, taze bir git worktree'sinde bir oturum başlatır. Varsayılan olarak bütün depoyu checkout eder. `worktree.sparsePaths`, yalnızca listelediğiniz dizinleri artı kök düzeyi dosyaları yazmak için git sparse-checkout'u kullanır ve `worktree.symlinkDirectories`, ağır bir dizini onu kopyalamak yerine ana checkout'a geri bağlar.
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "worktree": {
+    "sparsePaths": [".claude", "packages/api", "packages/shared"],
+    "symlinkDirectories": ["node_modules"]
+  }
+}
+```
+
+</CodeBlock>
+
+Yollar, hangi alt dizinden başlarsanız başlayın depo köküne görelidir. Dosyaları değil dizinleri listeleyin. Kök düzeyi _dizinler_ otomatik olarak dâhil edilmez, bu yüzden worktree içinde kökün settings'ini, kurallarını ve skill'lerini istiyorsanız `.claude` listede olmalıdır.
+
+### Çalışma dizininin dışına ulaşmak
+
+Claude'u `packages/api/`'den başlatırsanız, o dizinin içinde okuyup yazabilir. `packages/shared/`'a da dokunan bir değişiklik açık bir yetki gerektirir ve bir tane vermenin iki yolu vardır — önemli bir farkla:
+
+| Şununla eklendi                             | CLAUDE.md ve kuralları yükler         | Skill'leri yükler |
+| ------------------------------------------- | ------------------------------------- | ----------------- |
+| `additionalDirectories` ayarı               | Asla                                  | Asla              |
+| `--add-dir` bayrağı ya da `/add-dir` komutu | Yalnızca aşağıdaki ortam değişkeniyle | Evet              |
+
+<CodeBlock title="erişimi iki şekilde verin">
+
+```bash
+# For everyone in this area: commit it to packages/api/.claude/settings.json
+#   { "permissions": { "additionalDirectories": ["../shared", "../web"] } }
+
+# For one session, at launch:
+claude --add-dir ../shared
+
+# ...and, if you also want that directory's CLAUDE.md and rules:
+CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1 claude --add-dir ../shared
+```
+
+</CodeBlock>
+
+O ortam değişkeninin `additionalDirectories` üzerinde hiçbir etkisi yoktur; ayar yalnızca dosya erişimi verir, başka hiçbir şey vermez. Elle eklemeye devam ettiğiniz dizinleri kalıcı kılmak için, onları `permissions.additionalDirectories`'e taşıyın.
+
+Herhangi bir şeyi betiklemeden önce bilmeye değer iki kısıtlama: `--add-dir`, her yolun bir dizin olarak var olduğunu doğrular ve `\\server\share` gibi çoğu ağ yolu hiç eklenemez.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni) — Claude'un bir yolu tahmin etmek yerine verdiğiniz erişimi kullanmak zorunda kalacağı şekilde ifade edilmiş, paketler arası bir değişiklik:
+
+```text
+Rename the `retryBudget` field on the shared RequestOptions type in ../shared,
+then update every call site in this package. Run the package tests when you are done.
+```
+
+### Dizin başına skill'ler ve katmanlamayı ne zaman durduracağınız
+
+Herhangi bir alt dizin `.claude/skills/` tutabilir ve o [skill](/tr/playbook/glossary/#skill)'ler (`SKILL.md` ile tanımlanan, yeniden kullanılabilir talimat paketi) yalnızca Claude o alanda çalıştığında yüklenir. Onları tarif ettikleri kodun yanına commit'leyin. İki şey bunun ölçeklenmesini sağlar: birçok dizinden keşfedilen skill'ler, Claude'un seçtiği listeye isim ve açıklama katkısında bulunur ve **çok sayıda olduklarında açıklamalar kısaltılır** — bu yüzden bir isteğin gerçekten içereceği kelimelerle başlayın ("`packages/api/`'de test yazmak ya da değiştirmek"). Birçok dizinin paylaştığı skill'ler kök `.claude/skills/`'e aittir; kendi sürüm geçmişine ihtiyaç duyan skill'ler, `plugin-name:skill-name` isim alanının çakışmaları da önlediği bir plugin'e aittir.
+
+Belirli bir büyüklüğün ötesinde, dizin başına dosyalar yönetilebilir olmaktan çıkar: kurallar kayar, dosyalar bayatlar, kimse kökü sahiplenmez. Bu, referans içeriğini her zaman yüklenen `CLAUDE.md`'den çıkarıp talep üzerine yüklenen şeylere — skill'lere, dahili bir marketplace üzerinden dağıtılan [plugin](/tr/playbook/glossary/#plugin)'lere (hook, skill, subagent ve MCP server gibi bileşenleri paket hâlinde ekleyen eklenti) ya da organizasyonunuzun zaten çalıştırdığı bir kod-arama endeksini açığa çıkaran bir [MCP server](/tr/playbook/glossary/#mcp-server)'a (Model Context Protocol ile Claude'a dış araç ve veri sağlayan sunucu) — taşıma noktasıdır.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Laboratuvar deposunda hiç `lesson/m21-scale-*` etiketi yok — bu modülün materyali doğrudan
+  `main`'e eklendi (laboratuvar deposunun README'sine bakın, "Modules with no tags"). `main`'in düz
+  bir klonunda çalışın; `large/`, bu laboratuvarın kullandığı fixture dizinidir.
 </Callout>
+
+<Lab
+  title="Laboratuvar · --add-dir'in neyi verip vermediğini kanıtlayın"
+  lessonId="tr/l4-master/m21-scale/large-codebases"
+  repoTag="none"
+  steps={[
+    'Laboratuvar deposunu kullan-at bir yere klonlayın: `git clone https://github.com/codechup/claude-code-lab cct-lab-38` ve `cd cct-lab-38`.',
+    'Yanına bir "kardeş paket" oluşturun — bir alt dizin değil bir kardeş, böylece yetki gerçekten gerekli olsun: `../cct-lab-38-shared/src/` yapın ve içine `WINDOW_MS = 60_000`\'i export eden tek satırlık bir `rate-limit.ts` koyun.',
+    'Klonun içinden, o dosyayı hiç yetki olmadan isteyin: `claude -p "Read ../cct-lab-38-shared/src/rate-limit.ts and reply with the exact value of WINDOW_MS. If you cannot read it, say why in one sentence." --model sonnet --max-turns 4 --output-format text`',
+    "Aynı komutu, `--output-format`'tan önce `--add-dir ../cct-lab-38-shared` eklenmiş olarak tekrar çalıştırın.",
+    "Klondaki `large/`'a bakın: beş alanda 30 yer tutucu modül. Claude'dan yola söylemeden fatura export'larını işleyen dosyayı bulmasını isteyin ve grep mi yaptığını yoksa tahmin mi ettiğini izleyin.",
+  ]}
+  expected="--add-dir olmadan okuma reddedilir ve Claude, dizinin oturumun izin verilen çalışma dizinlerinin dışında olduğunu söyler. --add-dir ile aynı prompt 60_000 döndürür. Her iki çalıştırma da workspace-trust uyarısını yazdırır, çünkü taze bir klon hiç etkileşimli olarak güvenilmedi."
+  checklist={[
+    'İlk çalıştırma okumayı reddetti ve nedeni adlandırdı',
+    'İkinci çalıştırma yalnızca --add-dir ile farklıydı ve başarılı oldu',
+    '`permissions.allow` girdilerinin, workspace güvenilene kadar yok sayıldığını fark ettiniz',
+    "`--add-dir`'in `additionalDirectories`'in yüklemediği neyi yüklediğini belirtebiliyorsunuz (skill'ler; yalnızca ortam değişkeniyle CLAUDE.md)",
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m21-scale/01-large-codebases/01-add-dir-denied.txt"
+    range="2-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m21-scale/01-large-codebases/02-add-dir-granted.txt"
+    range="2-4"
+  />
+</Lab>
+
+O çiftteki üç şey durup düşünmeye değer.
+
+İki komut `--add-dir` dışında byte'ı byte'ına aynıdır ve reddetme, belirsizce başarısız olmak yerine gerçek nedeni adlandırır — dizin, oturumun çalışma dizinlerinin dışındadır. Mekanizmanın tamamı bu: erişim dizin başınadır ve isteğe bağlıdır.
+
+Her iki çalıştırma da, deponun kendi `.claude/settings.json`'ından 14 `permissions.allow` girdisinin workspace güvenilmediği için **yok sayıldığını** söyleyen bir uyarıyla açılır. Taze bir klon, siz orada Claude Code'u bir kez etkileşimli olarak başlatıp diyaloğu kabul edene kadar güvenilmezdir. Büyük-kod-tabanı yaygınlaştırmasında gerçekte karşılaşacağınız hata modu budur: takım için commit'lediğiniz settings, klasöre hiç güvenmemiş bir makinede sessizce hiçbir şey yapmaz.
+
+Yanıtlar Türkçe. Bu kaydı üreten makinenin Türkçe isteyen global tercihleri var ve `-p`, herhangi bir oturum gibi onları miras alır — `m01-start`'ın belgelediği aynı fenomen. Bu gerçek bir kayıt, bir çeviri hatası değil.
+
+### İşletim sistemine göre başlatma
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+cd ~/code/monorepo/packages/api
+claude --add-dir ../shared
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+cd ~/code/monorepo/packages/api
+claude --add-dir ../shared
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+Set-Location $HOME\code\monorepo\packages\api
+claude --add-dir ..\shared
+```
+
+  </Fragment>
+</OSTabs>
+
+## Anti-pattern'ler
+
+**Her paketi belgeleyen tek bir kök `CLAUDE.md`.** Neye dokunduğunuzdan bağımsız olarak her oturumda context'e mal olur ve kimsenin sahiplenmediği dosyadır. _Düzeltme:_ depo-geneli kuralları kökte tutun ve her alanın kurallarını o alanın kendi `CLAUDE.md`'sine itin.
+
+**`claudeMdExcludes`'ı bir odak anahtarı olarak kullanmak.** Liste statik ve paylaşılan; hangi pakette olduğunuzu değiştirmek için her gün düzenlemek, karmaşa üretir ve eninde sonunda ihtiyaç duyduğunuz bir şeyi dışlar. _Düzeltme:_ Claude'u çalıştığınız dizinden başlatın.
+
+**`additionalDirectories`'in kardeşin kurallarını getirmesini beklemek.** Yalnızca dosya erişimi verir — hiç `CLAUDE.md`, hiç kural, hiç skill — bu yüzden Claude kardeşi kurallarını bilmeden düzenler. _Düzeltme:_ `--add-dir`'i kullanın (hafıza dosyalarına ihtiyacınız varsa artı `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1`), ya da kısıtlamaları prompt'unuzda yeniden belirtin.
+
+**Okumaları reddedip hiçbir şeyin dosyayı göremeyeceğini varsaymak.** Deny kuralları kendi başına dosya açan alt süreçleri kapsamaz ve bir dizin üzerindeki bir `grep -r`, içine girdiği reddedilen dosyaları yine de yazdırır. _Düzeltme:_ deny kurallarını bir güvenlik sınırı değil, context hijyeni olarak ele alın — `m14-security` bunun için var.
+
+**`.claude` olmadan seyrek worktree'ler.** Kök düzeyi dizinler otomatik olarak checkout edilmez, bu yüzden worktree hiç kök settings'i, kuralı ya da skill'i olmadan başlar ve ana checkout'unuzdan farklı davranır. _Düzeltme:_ `.claude`'u `sparsePaths`'te ilk sıraya koyun.
+
+**Alan başına settings commit'leyip uygulandığını varsaymak.** Her geliştirici klasöre güvenene kadar, `permissions.allow` ve `additionalDirectories` yok sayılır — laboratuvar [transcript](/tr/playbook/glossary/#transcript)'inin (gerçek bir Claude Code oturumunun kaydı) harfiyen gösterdiği gibi. _Düzeltme:_ "depoyu bir kez etkileşimli olarak açın ve trust diyaloğunu kabul edin"i onboarding adımlarınızın parçası yapın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/large-codebases"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir monorepo'da Claude'u `packages/api/`'den başlatıyorsunuz. Başlangıçta hangi CLAUDE.md dosyaları yüklenir?"
+  options={[
+    {
+      text: 'Depo kökü dâhil, `packages/api/CLAUDE.md` artı her atasınınki',
+      correct: true,
+      explanation:
+        'Hafıza dosyaları çalışma dizininden yukarı doğru miras alınır. Kardeş paketler context dışında kalır.',
+    },
+    {
+      text: 'Yalnızca depo kökü dosyası',
+      explanation: 'Bu, kökten başladığınızda olur, bir alt dizinden değil.',
+    },
+    {
+      text: 'Depodaki her CLAUDE.md',
+      explanation:
+        'Alt dizin dosyaları Claude orada okuduğunda talep üzerine yüklenir, asla hepsi birden değil.',
+    },
+    {
+      text: "`packages/api/CLAUDE.md` ve `packages/api/.claude/settings.json`'ın üst settings'i",
+      explanation: "Proje settings'i üst dizinlerden *miras alınmayan* tek şeydir.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/large-codebases"
+  questionId="q2"
+  lang="tr"
+  prompt={
+    '`--add-dir ../shared` ile `permissions.additionalDirectories: ["../shared"]` arasındaki fark nedir?'
+  }
+  options={[
+    {
+      text: 'Hiçbiri; bayrak ayarın yalnızca tek-session biçimidir',
+      explanation:
+        'Yalnızca ne kadar sürdükleri açısından değil, eklenen dizinden neyin yüklendiği açısından farklılar.',
+    },
+    {
+      text: "`--add-dir` ayrıca dizinin skill'lerini ve `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD=1` ayarlandığında CLAUDE.md'sini ve kurallarını yükler; ayar yalnızca dosya erişimi verir",
+      correct: true,
+      explanation:
+        "Ortam değişkeninin `additionalDirectories`'te listelenen dizinler üzerinde hiçbir etkisi yoktur.",
+    },
+    {
+      text: 'Ayar yazma erişimi verir, bayrak yalnızca okuma erişimi verir',
+      explanation: 'İkisi de dizindeki dosyalara okuma ve düzenleme erişimi verir.',
+    },
+    {
+      text: 'Bayrak ağ yollarıyla çalışır, ayar çalışmaz',
+      explanation: '`\\\\server\\share` gibi çoğu ağ yolu `--add-dir` ile hiç eklenemez.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/large-codebases"
+  questionId="q3"
+  lang="tr"
+  prompt={
+    '`worktree.sparsePaths: ["packages/api"]` ekliyorsunuz ve worktree oturum\'ları kök izin kurallarınıza uymayı durduruyor. Neden?'
+  }
+  options={[
+    {
+      text: "Sparse checkout worktree'ler içinde proje settings'ini devre dışı bırakır",
+      explanation:
+        'Settings hâlâ yüklenir — worktree kökünden, yolun önemli olmasının nedeni de bu.',
+    },
+    {
+      text: "Kök düzeyi dizinler onları listelemedikçe checkout edilmez, bu yüzden `.claude` worktree'den eksik",
+      correct: true,
+      explanation:
+        "Kök düzeyi *dosyalar* otomatik olarak gelir; kök düzeyi dizinler gelmez. `.claude`'u listeye ekleyin.",
+    },
+    {
+      text: 'Kurallar her pakete kopyalanmalıdır',
+      explanation:
+        "Worktree, checkout edildikten sonra `.claude/settings.json`'ın depo kökü kopyasını okur.",
+    },
+    {
+      text: '`sparsePaths` başladığınız dizine göreli',
+      explanation:
+        "`sparsePaths`'teki yollar, nereden başladığınızdan bağımsız olarak depo köküne görelidir.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/large-codebases"
+  questionId="q4"
+  lang="tr"
+  prompt="Vendored, check in edilmiş bir SDK'yı context'in dışında tutmak için bunlardan hangisi yanlış araçtır?"
+  options={[
+    {
+      text: "`permissions.deny`'de `Read` deny kuralları",
+      explanation: 'Bu, check in edilmiş yollar için belgelenen kullanımın tam olarak kendisi.',
+    },
+    {
+      text: '`.gitignore`',
+      correct: true,
+      explanation:
+        "İçerik aramaları `.gitignore`'a saygı gösterir, ama vendored bir SDK check in edilmiştir — bu yüzden yok sayılmaz ve kural asla uygulanmaz.",
+    },
+    {
+      text: "Bir code intelligence plugin'i, böylece Claude taramak yerine tanımlara bakar",
+      explanation: 'Meşru bir tamamlayıcı: kalan kısmın ne kadarının okunduğunu azaltır.',
+    },
+    {
+      text: "Claude'u gerçekten çalıştığınız alt dizinden başlatmak",
+      explanation: 'Vendored ağacı kapsam dışında tutmanın kaba ama etkili bir yolu.',
+    },
+  ]}
+/>
+
+**Sonraki:** `02-context-engineering`, aynı sorunu bir seviye içeri taşır — zaten iyi kapsadığınız bir depoda bile, tek bir uzun oturumun biriktirdiği context konusunda ne yapılacağı.

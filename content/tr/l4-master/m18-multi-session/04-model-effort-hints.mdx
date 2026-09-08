@@ -1,15 +1,15 @@
 ---
-title: 'İş türüne göre model ve efor ipuçları atamak'
-description: 'Bir plan, işinin hangi modeli ve ne kadar akıl yürütmeyi hak ettiğine dair tavsiye taşıyabilir. model_hint ve effort_hint alanlarının ne anlama geldiğini, iş türüne göre nasıl atandığını ve bir ipucu kurala dönüştüğünde neden işe yaramaz hale geldiğini öğrenin.'
+title: 'İş türüne göre model ve effort ipuçları atamak'
+description: "Bir plan, işinin hangi modeli ve ne kadar akıl yürütmeyi hak ettiğine dair tavsiye taşıyabilir. model_hint ve effort_hint'in ne anlama geldiğini, bunları iş türüne göre nasıl atayacağınızı ve bir ipucunun kural hâline gelmesinin neden işe yaramaz olduğunu öğrenin."
 level: 4
 module: 'm18-multi-session'
 order: 4
 duration_min: 10
 difficulty: core
-tags: ['multi-session', 'plans', 'models', 'effort', 'this-repo']
+tags: ['çoklu-oturum', 'planlar', 'modeller', 'effort', 'bu-depo']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Model configuration'
@@ -27,4 +27,232 @@ lab:
   repo_tag: 'none'
 ---
 
-Bu dersin Türkçe çevirisi henüz yapılmadı. `draft: true` kaldığı sürece bu sayfa gezinmede görünmez; İngilizce kaynak `content/en/l4-master/m18-multi-session/04-model-effort-hints.mdx` dosyasındadır.
+## Hedefler ve ön koşullar
+
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- `model_hint` ve `effort_hint`'in ne işe yaradığını ve neden claim eden oturum için bir kural değil tavsiye olduklarını açıklamak.
+- Bir iş parçasını, boyutuna değil ihtiyaç duyduğu yargı türüne göre bir ipucu çiftine eşlemek.
+- Bir ipucunun yanlış olduğu anı — bir karar uydurduğunuz anı — tanımak ve tahmin etmek yerine yükseltmek (escalate).
+- Bir planın ipucunu, bir modeli ya da [effort](/tr/playbook/glossary/#effort) (modelin bir yanıt için harcadığı düşünme çabası seviyesi) seviyesini gerçekten belirleyen mekanizmalara bağlamak: `--model`, `/effort`, `modelSettings` ve bir [subagent](/tr/playbook/glossary/#subagent)'ın (ana oturumun bir alt görevi devrettiği, kendi bağlam penceresi ve araç izinleri olan yardımcı agent) `model` ile `effort` frontmatter'ı.
+
+**Ön koşullar.** Bu modülün 01–03. dersleri ve Seviye 2'nin, model ailesini ve effort seviyelerinin kendisini kapsayan modeller-ve-effort modülü.
+
+<WhenNotToUse>
+  Her planın aynı türde iş olduğu bir plan setine ipucu koymayın — altı özdeş çeviri planı, aynı
+  tavsiyenin altı kopyasına ihtiyaç duymaz ve her zaman aynı şeyi söyleyen bir alan insanlara onu
+  görmezden gelmeyi öğretir. İpuçlarını bir bütçe kontrolü olarak kullanmayın: bunlar plan başına
+  tavsiyedir, harcama ise kullanım limitleri ve bir oturumun gerçekte verdiği kararlar tarafından
+  yönetilir. Ve bunları zorunlu kılmayın. Bir ipucu kural hâline geldiği anda, yükseltmesi gereken
+  bir oturum doğru olanı yapmak için kuralı çiğnemek zorunda kalır — bu, bir planın birinin tahmin
+  ettiğinden daha güçlü bir modelde çalışılmasından daha kötü bir başarısızlıktır.
+</WhenNotToUse>
+
+## Kavram
+
+### İki alan, tek amaç
+
+`model_hint` ve `effort_hint`, bir planın frontmatter'ında `estimate`'in yanında yer alır. Bunlar var çünkü bir planı _yazan_ oturum, genellikle işin şeklini onu _claim eden_ oturumdan daha iyi bilir ve bu bilgi aksi hâlde kaybolur:
+
+<CodeBlock title="Bir planın frontmatter'ındaki ipucu alanları">
+
+```yaml
+model_hint: opus # haiku | sonnet | opus | fable
+effort_hint: high # low | medium | high | xhigh | max
+estimate: L # S (≤0.5 day) | M (≤1 day) | L (≤2 days)
+```
+
+</CodeBlock>
+
+Üstlenilebilir her planın yanında yazdırılırlar, böylece ne üzerinde çalışacağınızı seçmek ile onu neyle çalışacağınızı seçmek iki karar değil tek bir karar olur:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/04-model-effort-hints/01-next-hints.txt"
+  range="2-9"
+/>
+
+### Gereken yargıya göre atayın
+
+Yararlı eksen işin ne kadar sürdüğü değil, ne kadar yargı gerektirdiğidir — özellikle de oturumun, planın kendisi için zaten vermediği bir kararla karşılaşma olasılığı.
+
+| İpucu                    | Anlamı                                                          | Tipik iş                                                                                                                                               |
+| ------------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `haiku` / `low`          | Mekanik ve tam olarak belirtilmiş: cevap zaten bir yerde yazılı | Kaynak taramaları, fixture'lar, bağlantı kodu, senkron tutulan dokümanlar                                                                              |
+| `sonnet` / `medium`      | Testleri olan normal özellik işi                                | Altyapı, [CI](/tr/playbook/glossary/#ci) (her push'ta otomatik olarak testleri çalıştıran hat) bağlantıları, dağıtım betikleri, çeviri, UI bileşenleri |
+| `opus` / `high`          | Yargı ağırlıklı içerik ve arayüz işi                            | Ders yazarlığı, MDX bileşenleri, etkileşim tasarımı                                                                                                    |
+| `fable` / `xhigh`, `max` | Mimari ve sistem düzeyinde tasarım yargısı                      | Bir tasarım kanvası, bir müfredat haritası, alanlar arası kompozisyon kararları                                                                        |
+
+Resmî effort rehberliği sağdaki sütunla örtüşür: `low`, "zekâ hassasiyeti olmayan kısa, kapsamı belirli, gecikmeye duyarlı görevler" içindir; `medium`, "biraz zekâdan taviz verebilecek maliyete duyarlı iş" içindir; `high`, "[token](/tr/playbook/glossary/#token) (bir dil modelinin metni işlerken kullandığı en küçük birim) kullanımı ile zekâyı dengeler" ve çoğu modelde varsayılandır; `xhigh`, "daha yüksek token harcamasıyla daha derin akıl yürütme" satın alır; ve `max` için dokümanlar şunu söyler: "zorlu görevlerde performansı iyileştirebilir ama azalan getiriler gösterebilir ve fazla düşünmeye eğilimlidir. Yaygın olarak benimsemeden önce test edin."
+
+İnsanların görmezden geldiği uyarı sonuncusudur. Mekanik işte `max`, yalnızca israf değildir — daha kötüdür, çünkü üzerinde düşünecek hiçbir şey olmayan bir görev hakkında düşünme alanı verilen bir model bir şey bulacaktır.
+
+Sağlıklı bir plan seti bu yüzden ortaya doğru ağırlıklanan çarpık bir dağılıma sahiptir:
+
+<Transcript
+  src="content/_shared/transcripts/m18-multi-session/04-model-effort-hints/02-hint-distribution.txt"
+  range="2-9"
+/>
+
+Set genelinde yirmi dört `opus` ve on dokuz `sonnet` planı; `fable` yalnızca üç, `haiku` ise iki plana ayrılmış. Dağılımınız düzse, ipuçları dekoratiftir.
+
+İşte bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni) — kendi plan setiniz hakkında sorulmaya değer bir soru:
+
+```text
+Read every plan file's frontmatter and group the plans by model_hint and
+effort_hint. Which plans carry a hint that does not match the kind of work
+their Goal describes?
+```
+
+### İpucu bir kapı değildir
+
+Hiçbir şey claim eden oturumun ipucuna uyup uymadığını kontrol etmez ve bu tasarım gereğidir. Plan sözleşmesinden: "İpucu, claim eden oturum için bir tavsiyedir, kapı değil: kendinizi bir karar uydururken bulursanız, yükseltin."
+
+Bu cümle tetikleyiciyi tam olarak adlandırıyor. "İş zor hissettiriyorsa" değil — **kendinizi bir karar uydururken bulursanız**. Ürün, müfredat ya da mimari hakkında bir tahmine zorlayan bir plan, ipucu çok düşük ya da Context'i çok ince olan bir plandır. Doğru tepki, soruyu `open_questions`'a ve Devir notlarına yazmak, en muhafazakâr okumayı benimsemek ve bütün plan yanlış ipuçlandırılmışsa bunu söylemektir, böylece bir sonraki oturum aynı keşfi tekrarlamaz.
+
+### İpucu gerçekte nerede karşılık bulur
+
+Plan dosyası niyeti kaydeder; onu uygulaması gereken başka bir şeydir. Pratikte:
+
+- **Oturumu başlatmak.** `claude --model opus` modeli seçer; takma ad o ailenin en son modeline çözümlenir. Effort, `--effort`'tan, oturum içindeki `/effort`'tan (argümansız çalıştırıldığında bir kaydırıcı açar), `/model` içindeki kaydırıcıdan ya da `CLAUDE_CODE_EFFORT_LEVEL`'den gelir.
+- **Model başına, kalıcı olarak.** Ayarlar dosyanızdaki `modelSettings`, model başına bir `effortLevel` belirler, böylece her model kendi seviyesini korur.
+- **Subagent başına.** Bir subagent'ın frontmatter'ı `model`'i (`sonnet`, `opus`, `haiku`, `fable`, tam bir model id'si ya da `inherit`) ve `effort`'u (`low` … `max`, oturum seviyesini geçersiz kılar) alır. `CLAUDE_CODE_SUBAGENT_MODEL`, başka bir yolla model atanmamış subagent'lar için varsayılan bir model belirler; çağrı başına modeller ve tanımın kendi `model` alanı buna göre öncelik taşır.
+
+Yani `opus`/`high` ipuçlu bir plan tipik olarak, mekanik alt görevlerini yine de bir `haiku` subagent'ına devredebilecek, Opus'ta yüksek effort'la başlatılmış tek bir oturum hâline gelir. İpucu, planın en zor kararını tarif eder, onu yürütürken atılan her eylemi değil.
+
+<Callout>
+  İpuçları eskir. Bir plan, projenin kuralları etrafında sertleşirken bir ay `todo`'da beklerse, bir
+  zamanlar yargı gerektiren iş mekanik hâle gelmiş olabilir — daha önceki planlar cevapları zaten
+  yazmıştır. İpucuya güvenmeden önce onu planın Context'ine karşı yeniden okuyun.
+</Callout>
+
+## Uygulamalı laboratuvar
+
+Bu dersin bir laboratuvar-deposu etiketi yok: malzeme bir plan setidir ve okunacak olan bu sitenin kendisidir.
+
+<Lab
+  title="Laboratuvar · bir plan setinin ipuçlarını denetleyin"
+  lessonId="tr/l4-master/m18-multi-session/model-effort-hints"
+  repoTag="none"
+  steps={[
+    'Bu sitenin deposunun kullan-at bir klonunda, claim edilebilir planları ipuçlarıyla listeleyin: `node tools/plan/cli.ts next`.',
+    'Bütün set genelindeki dağılımı sayın: `grep -h "^model_hint:\\|^effort_hint:" plans/P*.md | sort | uniq -c | sort -rn`.',
+    "`fable` ipuçlu bir planı ve `haiku` ipuçlu birini seçin, her birinin `Goal`'unu ve `Non-goals / pitfalls`'unu okuyun. İlkinin ikincinin yapmadığı hangi türde bir karar vermesi gerektiğini sorun.",
+    '`opus`/`high` ipuçlu herhangi bir planı seçin ve `Context` bölümünü okuyun. Bir `sonnet`/`medium` oturumunun çalışacak yeterli malzemesi olur muydu, yoksa bir şey uydurmak zorunda mı kalırdı?',
+    'Dört ipucu çiftinin her biri için, kendi sözcüklerinizle, temsil ettiği yargı türünü anlatan tek bir cümle yazın. Yazamıyorsanız, plan setinin ipuçları bilgi taşımıyordur.',
+  ]}
+  expected="`next`, claim edilebilir her planı model ipucu, effort ipucu ve tahminiyle yazdırır; bütün plan setindeki dağılım opus/high ve sonnet/medium'a doğru ağırlıklanmıştır, fable ve haiku ise yalnızca birkaç kez kullanılmıştır."
+  checklist={[
+    'Bir plan dosyasını açmadan, `next` çıktısından bir ipucu çiftini okuyabiliyorsunuz',
+    'Dağılım düz değil, çarpık',
+    '`fable` planının yapması gereken ve `haiku` planının yapmadığı somut bir karar buldunuz',
+    'Yükseltme tetikleyicisini tek cümlede söyleyebiliyorsunuz: bir karar uyduruyorsunuz',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/04-model-effort-hints/01-next-hints.txt"
+    range="2-9"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m18-multi-session/04-model-effort-hints/02-hint-distribution.txt"
+    range="2-9"
+  />
+</Lab>
+
+## Anti-pattern'ler
+
+**Boyuta göre ipuçlandırmak.** Mekanik düzenlemelerden oluşan iki günlük bir plan, bir saatlik mimari bir karardan daha güçlü bir modele ihtiyaç duymaz. _Düzeltme:_ yargıya göre ipuçlandırın; boyutu zaten `estimate` taşır.
+
+**Her yerde `max`.** Dokümanlar "fazla düşünmeye eğilimli" olduğu konusunda uyarıyor ve bu, basit bir görevde daha kötü bir cevap almanın en pahalı yoludur. _Düzeltme:_ ölçeğin tepesini, üzerinde test ettiğiniz iş için ayırın.
+
+**İpucunu izin olarak ele almak.** "Plan sonnet diyor" diye yükseltmeyi reddeden bir oturum bunun yerine tahmin yürütür — ve uydurulmuş bir karar, daha güçlü bir modelden çok daha pahalıdır. _Düzeltme:_ bir karar uydurduğunuz an yükseltin ve nedenini Devir notlarına kaydedin.
+
+**Sessiz yükseltme.** Bir `opus` planını sessizce `fable`'da çalışıp hiçbir şey söylememek, bir sonraki oturuma işi yanlış tarif eden bir ipucu bırakır. _Düzeltme:_ uyumsuzluğu Devir notlarında belirtin, böylece ipucu düzeltilebilir.
+
+**Düz bir dağılım.** Her plan `sonnet`/`medium` diyorsa, kimse onu yazarken alana danışmamıştır. _Düzeltme:_ ya bilerek atayın ya da bırakın; kimsenin okumadığı bir alan, hiç alan olmamasından kötüdür.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/model-effort-hints"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir planın model_hint'inin üzerine yükselmek için belgelenmiş tetikleyici nedir?"
+  options={[
+    {
+      text: 'Plan `L` olarak tahmin edilmiş.',
+      explanation: "Boyut `estimate`'in işidir ve gereken yargı hakkında hiçbir şey söylemez.",
+    },
+    {
+      text: 'Kendinizi, planın sizin için vermediği bir kararı uydururken buluyorsunuz.',
+      correct: true,
+      explanation:
+        "Bu, kuralın tam ifadesidir ve aynı zamanda planın Context'inin ya da ipucunun çok ince olduğunun sinyalidir.",
+    },
+    {
+      text: 'İş üç dosyadan fazlasını kapsıyor.',
+      explanation: 'Dosya sayısı zorluğun bir vekili değildir.',
+    },
+    {
+      text: 'Önceki oturum yükseltme yapmış.',
+      explanation:
+        'Önceki bir yükseltme Devir notlarında okumaya değerdir, ama tetikleyicinin kendisi değildir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/model-effort-hints"
+  questionId="q2"
+  lang="tr"
+  prompt="Hangi plan bir `haiku` / `low` ipucuna en çok uyar?"
+  options={[
+    {
+      text: "Projenin görsel dilini tasarlamak ve ondan tasarım token'ları türetmek.",
+      explanation: 'Sistem düzeyinde tasarım yargısı — ölçeğin tepesi, dibi değil.',
+    },
+    {
+      text: "Alıntılanan her URL'i yeniden getirip bir kayıt dosyasında doğrulama tarihini yenilemek.",
+      correct: true,
+      explanation:
+        'Mekanik ve tam olarak belirtilmiş: "zekâ hassasiyeti olmayan kısa, kapsamı belirli, gecikmeye duyarlı görevler".',
+    },
+    {
+      text: 'Neyin öğretileceğine ve neyin dışarıda bırakılacağına karar vermesi gereken bir ders yazmak.',
+      explanation: 'Yargı ağırlıklı yazarlık işi — `opus` / `high` bölgesi.',
+    },
+    {
+      text: 'İki modülün bir konuyu aralarında nasıl bölmesi gerektiğine karar vermek.',
+      explanation: 'Bir müfredat kararı: ölçekteki en güçlü ipucu.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m18-multi-session/model-effort-hints"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir subagent'ın tanımı bir model adlandırdığında hangi mekanizma gerçekten o modeli belirler?"
+  options={[
+    {
+      text: "Plan dosyasının `model_hint`'i.",
+      explanation:
+        'Bu, bir depo dosyasında kaydedilmiş tavsiyedir. Çalışma zamanında hiçbir şey onu okumaz.',
+    },
+    {
+      text: "Subagent'ın `model` frontmatter alanı — çağrı başına bir `model` parametresinden sonra, `CLAUDE_CODE_SUBAGENT_MODEL`'den ve ana konuşmanın modelinden önce.",
+      correct: true,
+      explanation: "Bu, bir subagent'ın modeli için belgelenmiş çözümleme sırasıdır.",
+    },
+    {
+      text: 'Ayarlar dosyasındaki `modelSettings`.',
+      explanation:
+        "`modelSettings`, model başına effort seviyesini yapılandırır; bir subagent'ın hangi modelde çalıştığını seçmez.",
+    },
+    {
+      text: '`estimate` alanı.',
+      explanation: 'Bir boyut ipucudur, çalışma zamanında hiçbir etkisi yoktur.',
+    },
+  ]}
+/>
+
+**Sonraki:** `05-handoff-notes`, plan dosyasının onuncu bölümünü kapsıyor — bir oturumun kendisinden sonra gelecek olan için yazdığı bölüm.

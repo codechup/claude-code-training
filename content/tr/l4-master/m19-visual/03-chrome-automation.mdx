@@ -9,7 +9,7 @@ difficulty: core
 tags: ['chrome', 'tarayıcı', 'otomasyon', 'görsel']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Use Claude Code with Chrome'
@@ -27,11 +27,303 @@ lab:
   repo_tag: 'lesson/m19-03-start'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Claude Code, Claude in Chrome eklentisi üzerinden sizin tarayıcınızı sürer: yeni sekmeler açar, oturum durumunuzu paylaşır ve giriş sayfası ya da CAPTCHA görünce durup size bırakır. Ders `claude --chrome` ile başlamayı, `/chrome` panelinden bağlantı durumu, izinler, **Reconnect extension** ve **Select browser…** işlemlerini, `claude-in-chrome` MCP sunucusunun gerçek araç listesini (`navigate`, `computer`, `read_page`, `find`, `form_input`, `gif_creator`, `browser_batch` ve diğerleri) ve plan mode'da salt-okunur çağrılarla durum değiştiren çağrılar arasındaki ayrımı anlatır. GIF kaydı durum değiştiren bir çağrıdır ve kayıt tarayıcıda görünen her şeyi — giriş yapılmış sayfalardaki hesap bilgileri dahil — içerir, bu yüzden paylaşmadan önce izlenmelidir. Dosya yükleme kısıtları, native messaging host yapılandırma dosyasının işletim sistemine göre yeri, WSL'de desteklenmediği ve en sık görülen dört hata mesajı da ele alınır.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur.
+- Claude Code'u kendi Chrome'unuza bağlamak ve bağlantıyı `/chrome` ile kontrol etmek.
+- Entegrasyonun gerçekte ne olduğunu söylemek — kendi gerçek tarayıcınız, kendi gerçek girişleriniz — ve bundan ne çıktığını.
+- Plan mode'da hangi tarayıcı çağrılarının sizi bir istemle karşılayacağını, hangilerinin sessizce çalışacağını tahmin etmek.
+- Bir tarayıcı çalıştırmasının GIF olarak kaydedilmesini istemek ve içinde ne olacağını bilmek.
+- Gerçekte karşılaşacağınız dört hatayı teşhis etmek ve WSL'in desteklenmediğini bilmek.
+
+**Ön koşullar.** Google Chrome, Microsoft Edge ya da başka bir Chromium tabanlı tarayıcı (Brave, Arc, Vivaldi, Opera); Claude in Chrome eklentisinin 1.0.36 ya da üzeri sürümü; doğrudan bir Anthropic planı (Pro, Max, Team ya da Enterprise); ve `/login` ile giriş yapılmış bir oturum. Bir API anahtarıyla ya da uzun ömürlü bir `claude setup-token` ile kimliği doğrulanmış bir oturum, `--chrome` geçseniz bile Chrome entegrasyonunu kapalı tutar, çünkü eklenti bu kimlik bilgileriyle kimlik doğrulayamaz. Chrome entegrasyonu WSL'de desteklenmez ve Amazon Bedrock, Google Cloud'un Agent Platform'u ve Microsoft Foundry üzerinden kullanılamaz.
+
+<WhenNotToUse>
+  Bu sizin tarayıcınız, kendi çerezleriniz ve kendi oturumlarınızla, bir
+  [agent](/tr/playbook/glossary/#agent) (bir hedefi kendi başına adım adım yürüten yapay zekâ
+  süreci) tarafından sürülüyor. Onu yararlı yapan tam olarak bu ve bazı işler için yanlış araç yapan
+  da tam olarak bu. Deterministik, tekrarlanabilir bir kontrole ihtiyacınız olduğunda ona yönelmeyin
+  — [CI](/tr/playbook/glossary/#ci)'daki (her push'ta otomatik olarak testleri çalıştıran hat) bir
+  Playwright paketi hangi sekmelerin açık olduğuna bağlı değildir. Yanlışlıkla bir tıklamanın gerçek
+  sonuçları olduğu yerlerde kullanmayın: production yönetim panelleri, ödeme akışları, mail gönderen
+  her şey. API'si olan bir site için onu bir scraper gibi kullanmayın ve sayfanın içeriği güvenilmez
+  olduğunda kullanmayın, çünkü Claude'un okuduğu bir sayfa onu bir şey yapmaya kandırmaya
+  çalışabilir. Chrome'u varsayılan olarak etkinleştirmek ayrıca tarayıcı
+  [tool](/tr/playbook/glossary/#tool)'larını (Claude'un dosya okumak, komut çalıştırmak gibi işleri
+  yapmasını sağlayan araç) her oturuma yükler, bu da başka bir yerde isteyebileceğiniz context'i
+  tüketir.
+</WhenNotToUse>
+
+## Kavram
+
+### Entegrasyonun ne olduğu
+
+Claude Code, Claude in Chrome tarayıcı eklentisiyle konuşur. Claude, tarayıcı görevleri için yeni sekmeler açar ve **tarayıcınızın giriş durumunu paylaşır**, böylece herhangi bir API connector'ına ihtiyaç duymadan zaten giriş yapmış olduğunuz herhangi bir sitenin içinde çalışabilir — Gmail, Notion, CRM'iniz, dahili bir dashboard. Eylemler gerçek zamanlı olarak görünür bir Chrome penceresinde çalışır ve Claude bir giriş sayfasına ya da CAPTCHA'ya çarptığında durur ve onu elle halletmenizi ister.
+
+Claude'un açtığı sekmeler, oturumunuza bağlı bir Chrome sekme grubunda toplanır. `/clear` yazdığınızda, temizlik sonrasında da hayatta kalan bir iş çalışmıyorsa Claude Code o grubu, içindeki açık sayfalarla birlikte kapatır. `/resume` ile oturum değiştirdiğinizde, çıktığınızda ya da böyle bir iş çalışırken `/clear` yaptığınızda, grubu yalnızca içinde boş yeni sekmelerden başka bir şey yoksa kapatır — böylece hâlâ okuyor olabileceğiniz sayfalar açık kalır.
+
+Bir oturumu bayrakla başlatın:
+
+<Transcript
+  src="content/_shared/transcripts/m19-visual/03-chrome-automation/01-chrome-flag.txt"
+  range="2-5"
+/>
+
+Bayrağı her seferinde vermekten kaçınmak için `/chrome` çalıştırın ve **Enabled by default**'ı seçin — bunun bedeli tarayıcı tool'larının her oturuma yüklenmesi ve context kullanımının artmasıdır.
+
+`/chrome` ayrıca geri kalan her şeyin de paneli: bağlantı durumu, izinler, **Reconnect extension** ve birden fazla tarayıcı bağlıyken **Select browser…**. Entegrasyon, panel `Status: Enabled` ve `Extension: Installed` gösterdiğinde çalışıyor demektir. Claude etkileşimli bir oturumda tarayıcıya ihtiyaç duyduğunda ve eklenti tespit edilmediğinde, Claude Code oturum başına en fazla bir kez "Claude wants to use your browser" istemini gösterir; **Install extension**, **Not now** ya da **Don't ask again** seçenekleriyle.
+
+Bu dersin örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni) dokümantasyonun kendi ilk örneğidir — bir gezinme, bir etkileşim ve bir rapor, tek bir cümlede:
+
+```text
+Go to code.claude.com/docs, click on the search box,
+type "hooks", and tell me what results appear
+```
+
+### Arkasındaki tool'lar
+
+Tarayıcı eylemleri `claude-in-chrome` sunucusundan gelen [MCP server](/tr/playbook/glossary/#mcp-server)'ı tool'larıdır (Claude'a dış veri ve araç bağlayan sunucular). Onları kendiniz listeleyebilirsiniz — `/mcp` çalıştırın, `claude-in-chrome`'u seçin, sonra **View tools** — ve işte gerçek bir `--chrome` oturumundan okunan o liste:
+
+<Transcript
+  src="content/_shared/transcripts/m19-visual/03-chrome-automation/02-browser-tools.txt"
+  range="8-29"
+/>
+
+Adları okuyun, yetenek listesi kendiliğinden ortaya çıkar: bir yere gitmek için `navigate` ve `tabs_*` tool'ları, tıklamak ve yazmak için `computer`, okumak için `read_page` / `get_page_text` / `find`, formlar için `form_input`, hata ayıklama için `read_console_messages` ve `read_network_requests`, ekler için `file_upload` ve `upload_image`, kayıtlar için `gif_creator` ve tek bir çağrıda birkaç eylem çalıştırmak için `browser_batch`.
+
+### Hangi çağrıların izin sorduğu
+
+Plan mode'da ayrım okumak ile değiştirmek arasındadır:
+
+|                                   | Çağrılar                                                                                                          |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| **Salt-okunur** — izin sormaz     | `read_page`, `get_page_text`, `find`, console mesajlarını ya da network isteklerini okumak, ekran görüntüsü almak |
+| **Durum değiştiren** — izin sorar | tıklamalar, yazma, gezinme, sekme ve pencere yönetimi, ve bir GIF kaydetmek                                       |
+
+Aksi hâlde salt-okunur bir çağrı, durum değiştiren bir girdi bayrağı ayarladığında da izin sorar — `tabs_context_mcp`'de `createIfEmpty`, console ve network okuyucularında `clear`, bir ekran görüntüsünde `save_to_disk`. Bir `browser_batch`, yalnızca içindeki her eylem salt-okunur olduğunda izin sormadan çalışır.
+
+Site düzeyi izinler ayrıdır ve eklentinin kendisinden gelir: Claude'un hangi sitelerde gezinip tıklayabileceğini ve yazabileceğini Chrome eklenti ayarlarından yönetin. Plan mode dışında, bir sitedeki ilk tarayıcı eylemi, "Claude in Chrome wants to" ile başlayan bir diyalog çıkarır; o oturum için o sitedeki tüm eylemlere izin verme seçeneğiyle birlikte.
+
+### Bir GIF kaydetmek
+
+Kelimelerle isteyin; kayıt çalıştırmanın sıradan bir parçasıdır:
+
+```text
+Record a GIF showing how to complete the checkout flow, from adding
+an item to the cart through to the confirmation page.
+```
+
+Claude etkileşim dizisini kaydeder ve onu bir GIF dosyası olarak kaydeder. Paylaşmadan önce içselleştirilmesi gereken şey: **kayıt, giriş yapılmış sayfalardaki hesap bilgileri dâhil, tarayıcıda görünen her şeyi yakalar.** Ekibinizden çıkmadan önce izleyin. Ve GIF kaydetmek durum değiştiren bir çağrı olduğu için, [plan mode](/tr/playbook/glossary/#plan-mode)'da (Claude'un değişiklik yapmadan önce yalnızca okuyup bir plan sunduğu mod) onay ister.
+
+Ekran görüntüleri de aynı şekilde çalışır — "take a screenshot of the checkout page and save it to disk" — ve Claude yazdığı dosya yolunu bildirir.
+
+### Yüklemeler
+
+Claude, bir sayfadaki bir yükleme alanına yerel bir dosya ekleyebilir; Claude Code dosyayı okur ve içeriğini tarayıcıya gönderir, bu yüzden bu hem yerel hem uzak oturumlarda çalışır (2.1.211 ya da üzeri). Üç kısıtlama vardır: bir dosyada `Read`'i reddeden bir permission kuralı onu yüklemeyi de engeller; tek bir yükleme toplamda en fazla 10 MB taşıyabilir; ve birden fazla hard link'i olan dosyalar reddedilir — `node_modules` gibi paket yöneticisi depolarında yaygındır, bu yüzden dosyayı kopyalayıp kopyayı yükleyin.
+
+### Bağlanmadığında
+
+Entegrasyonu ilk etkinleştirdiğinizde, Claude Code, Chrome'un başlangıçta okuduğu bir native messaging host yapılandırma dosyası kurar — bu yüzden eklenti ilk denemede tespit edilmezse Chrome'u yeniden başlatın. Hâlâ başarısız oluyorsa, host yapılandırmasının dokümantasyonun söylediği yerde olup olmadığını kontrol edin — macOS ve Linux'ta bir dosya, Windows'ta bir registry anahtarı; dokümantasyon anahtarın içindeki girdiyi değil ebeveyn anahtarı adlandırır:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+ls ~/Library/Application\ Support/Google/Chrome/NativeMessagingHosts/com.anthropic.claude_code_browser_extension.json
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+ls ~/.config/google-chrome/NativeMessagingHosts/com.anthropic.claude_code_browser_extension.json
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+Get-ChildItem 'HKCU:\Software\Google\Chrome\NativeMessagingHosts\'
+```
+
+  </Fragment>
+</OSTabs>
+
+Edge aynı dosya adını kendi yapılandırma dizini altında kullanır (`~/Library/Application Support/Microsoft Edge/NativeMessagingHosts/`, `~/.config/microsoft-edge/NativeMessagingHosts/`, ya da `HKCU\Software\Microsoft\Edge\NativeMessagingHosts\`), ve diğer her Chromium tarayıcısının kendi dizini ve registry anahtarı vardır. Windows (WSL) sekmesi bilerek eksiktir: Chrome entegrasyonu WSL'de desteklenmez.
+
+Ezberlemeye değer dört hata:
+
+| Hata                                           | Neden                                                                                            | Düzeltme                                                                           |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `Browser extension is not connected`           | Native messaging host eklentiye ulaşamıyor, ya da bir kurum IP allowlist'i bağlantıyı reddediyor | Chrome'u ve Claude Code'u yeniden başlatın, sonra yeniden bağlanmak için `/chrome` |
+| `/chrome`'da eklenti `Not detected` gösteriyor | Eklenti kurulu değil ya da devre dışı                                                            | `chrome://extensions`'ta kurun ya da etkinleştirin                                 |
+| `No tab available`                             | Claude bir sekme hazır olmadan hareket etti                                                      | Claude'dan yeni bir sekme oluşturmasını ve tekrar denemesini isteyin               |
+| `Receiving end does not exist`                 | Eklentinin service worker'ı boşta kaldı                                                          | `/chrome` → **Reconnect extension**                                                |
+
+Modal bir `alert`, `confirm` ya da `prompt` diyaloğu da tarayıcı olaylarını tamamen engeller: onu elle kapatın, sonra Claude'a devam etmesini söyleyin.
+
+## Uygulamalı laboratuvar
+
+Laboratuvar deposu, sürmeye yetecek kadar küçük bir HTTP API'siyle gelir: onu başlatır, Claude'u gerçek bir tarayıcıda ona yöneltir, console ve network'ü okur ve çalıştırmayı kaydedersiniz. Aşağıdaki her adım doğası gereği etkileşimlidir — ekranınızda bir tarayıcı açılır ve bir izin diyaloğu belirir — bu yüzden buradaki [transcript](/tr/playbook/glossary/#transcript) (kaydedilmiş gerçek bir oturum dökümü) tıklamayı değil bağlantıyı kanıtlar.
+
+<Lab
+  title="Laboratuvar · lab API'sini kendi tarayıcınızda sürün ve kaydedin"
+  lessonId="tr/l4-master/m19-visual/chrome-automation"
+  repoTag="lesson/m19-03-start"
+  steps={[
+    'Claude in Chrome eklentisini (1.0.36 ya da üzeri sürüm) kurun ve `/login` ile Claude Code’a giriş yapın.',
+    'Lab deposunda: `git checkout lesson/m19-03-start`, `npm ci`, sonra `npm run api` — API 3000 portunda dinler.',
+    'Aynı depoda ikinci bir terminalde `claude --chrome` başlatın. Tek seferlik diyaloğu kabul edin, sonra `/chrome` çalıştırın ve Status: Enabled ve Extension: Installed gösterdiğini doğrulayın.',
+    'Önce salt-okunur bir geçiş isteyin: "Open http://localhost:3000/health in a new tab, read the page text, and report the console messages and the network requests for that load."',
+    'Sonra durum değiştiren bir tane: "Open http://localhost:3000/tasks, and tell me what the response looks like." `Claude in Chrome wants to` ile başlayan diyaloğu onaylayın ve o oturum için o sitedeki tüm eylemlere izin verme seçeneğini not edin.',
+    'Kaydı isteyin: "Record a GIF of opening /health and then /tasks." Onaylayın, sonra Claude’un bildirdiği GIF dosyasını açın ve içinde ne göründüğünü kontrol edin.',
+    '`/clear` çalıştırın ve Claude’un açtığı sekme grubunun oturumla birlikte kapandığını izleyin.',
+  ]}
+  expected="/chrome, Status: Enabled ve Extension: Installed bildirir. Salt-okunur geçiş, plan mode’da hiçbir izin diyaloğu olmadan /health JSON’unu artı console ve network girdilerini döndürür. Gezinme ve GIF ikisi de izin sorar. GIF dosyası Claude’un bildirdiği yolda vardır ve iki sayfa yüklemesini gösterir."
+  checklist={[
+    'Eklenti bağlı ve /chrome bunu doğruluyor',
+    'Salt-okunur bir çağrı (read_page / console / network) plan mode’da izin sormadan çalıştı',
+    'Bir gezinme `Claude in Chrome wants to` diyaloğuyla izin sordu',
+    'GIF var ve paylaşmadan önce içinde ne göründüğünü incelediniz',
+    '/clear, Claude’un açtığı sekme grubunu kapattı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m19-visual/03-chrome-automation/03-list-connected-browsers.txt"
+    range="7-12"
+  />
+</Lab>
+
+Bu kayıt bilerek asgari düzeydedir: `--chrome` ile başlatılmış, tam olarak tek bir salt-okunur tool'a — `list_connected_browsers`'a — izin verilmiş [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma, `claude -p`) bir oturum. Eklentinin bağlı olduğunu kanıtlar ve tarayıcıyı adlandırır, hiçbir şey açmadı, gezinmedi ve tıklamadı — bir dersin sizin için kaydedebileceğinin dürüst sınırı budur. JSON, tool'un kendi çıktısıdır; içindeki cihaz kimliği sansürlenmiştir.
+
+## Anti-pattern'ler
+
+**Onu production'a yöneltmek.** Bu sizin gerçek tarayıcınız, gerçek oturumlarınızla; bir yönetim panelinde yanlış okunan bir seçici gerçek bir değişikliktir. _Düzeltme:_ yerel bir sunucuyu ya da bir staging sitesini sürün ve eklentideki site izinlerini dar tutun.
+
+**"Bütün console çıktısını" istemek.** Console logları ayrıntılıdır ve [context window](/tr/playbook/glossary/#context-window)'unuza (Claude'un o oturumda tuttuğu bağlam alanı) iner. _Düzeltme:_ dokümantasyonun kendisinin de önerdiği gibi neye bakılacağını söyleyin — "sayfa yüklenirken console'da hataları kontrol et".
+
+**Onu bir CI kontrolü olarak kullanmak.** Giriş yapmış tarayıcınıza bağlı bir çalıştırma başka hiç kimse tarafından tekrarlanabilir değildir ve bir build makinesinde headless çalışamaz. _Düzeltme:_ Chrome'u keşif ve hata ayıklama için kullanın; kalıcı kontrolü Playwright'ta yazın.
+
+**Bir GIF'i izlemeden paylaşmak.** Kayıt, giriş yapılmış bir sayfadaki hesap bilgileri dâhil, görünen her şeyi yakalar. _Düzeltme:_ ekibinizden çıkmadan önce açın ve her kareye bakın.
+
+**Chrome'u varsayılan olarak etkin bırakmak ve context'in nereye gittiğini merak etmek.** Varsayılan açıkken tarayıcı tool'ları her oturuma yüklenir. _Düzeltme:_ varsayılanı kapatın ve ihtiyaç duyduğunuzda `--chrome` geçin.
+
+**WSL içinde denemek.** Orada desteklenmez ve hiçbir yeniden bağlanma bunu düzeltmez. _Düzeltme:_ tarayıcıya ihtiyaç duyduğunuzda Claude Code'u host üzerinde yerel olarak çalıştırın.
+
+<Callout variant="changed">
+  Bir API anahtarı ya da bir `claude setup-token` token'ıyla kimliği doğrulanmış oturumlar artık
+  `--chrome` geçseniz bile Chrome entegrasyonunu kapalı tutuyor. 2.1.216'dan önce böyle bir oturum
+  onu etkinleştirebiliyordu ve eklentiye ulaşmaya çalışan her deneme 403 ile başarısız oluyordu.
 </Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m19-visual/chrome-automation"
+  questionId="q1"
+  lang="tr"
+  prompt="Plan mode'da, bunlardan hangisi izin istemi olmadan çalışır?"
+  options={[
+    {
+      text: 'Sayfadaki bir düğmeye tıklamak.',
+      explanation: 'Tıklamalar durumu değiştirir, bu yüzden izin sorarlar.',
+    },
+    {
+      text: 'Sayfa metnini okumak.',
+      correct: true,
+      explanation:
+        'read_page, get_page_text, find, console ve network okumaları ve ekran görüntüleri — save_to_disk gibi durum değiştiren bir bayrak ayarlamadıkları sürece — salt-okunurdur.',
+    },
+    {
+      text: 'Bir GIF kaydetmek.',
+      explanation: 'Kayıt, durum değiştiren olarak sınıflandırılır ve izin sorar.',
+    },
+    {
+      text: 'Yeni bir sekme oluşturmak.',
+      explanation: 'Sekme ve pencere yönetimi durum değiştirendir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m19-visual/chrome-automation"
+  questionId="q2"
+  lang="tr"
+  prompt="`claude setup-token`'dan gelen bir token'la kimliği doğrulanmış bir oturumda `claude --chrome` çalıştırıyorsunuz. Ne olur?"
+  options={[
+    {
+      text: 'Chrome entegrasyonu kapalı kalır — eklenti bu kimlik bilgisiyle kimlik doğrulayamaz.',
+      correct: true,
+      explanation:
+        'Doğru. Bunun yerine /login ile giriş yapın. v2.1.216’dan önce oturum onu etkinleştirebiliyor, sonra her çağrıda 403 ile başarısız oluyordu.',
+    },
+    {
+      text: 'Çalışır, ama yalnızca salt-okunur çağrılar için.',
+      explanation: 'Salt-okunur bir yedek yoktur; entegrasyon kapalıdır.',
+    },
+    {
+      text: '/chrome çalıştırıp yeniden bağlandıktan sonra çalışır.',
+      explanation: 'Yeniden bağlanmak, oturumun tuttuğu kimlik bilgisini değiştirmez.',
+    },
+    {
+      text: 'Eklentiyi kurmanızı ister.',
+      explanation: 'Engel eklenti değil kimlik bilgisidir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m19-visual/chrome-automation"
+  questionId="q3"
+  lang="tr"
+  prompt="Uzun bir oturumdan sonra Claude'un tarayıcı komutları aniden `Receiving end does not exist` ile çalışmayı durduruyor. Düzeltme nedir?"
+  options={[
+    {
+      text: 'Claude Code’u yeniden kurmak.',
+      explanation: 'Bu, Windows’ta çöken bir native messaging host’un çaresidir, bu hatanın değil.',
+    },
+    {
+      text: '/chrome çalıştırıp Reconnect extension’ı seçmek — eklentinin service worker’ı boşta kaldı.',
+      correct: true,
+      explanation: 'Uzun oturumlar için tam olarak belgelenmiş neden ve düzeltme budur.',
+    },
+    {
+      text: 'WSL’e geçmek.',
+      explanation: 'Chrome entegrasyonu WSL’de hiç desteklenmez.',
+    },
+    {
+      text: 'Claude’dan yeni bir sekme oluşturmasını istemek.',
+      explanation: 'Bu, `No tab available` için olan düzeltmedir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m19-visual/chrome-automation"
+  questionId="q4"
+  lang="tr"
+  prompt="Dokümantasyon neden bir GIF'i paylaşmadan önce izlemenizi söylüyor?"
+  options={[
+    {
+      text: 'GIF dosyaları büyüktür ve göndermesi yavaştır.',
+      explanation: 'Boyut belirtilen neden değildir.',
+    },
+    {
+      text: 'Kayıt, giriş yapılmış sayfalardaki hesap bilgileri dâhil, tarayıcıda görünen her şeyi yakalar.',
+      correct: true,
+      explanation:
+        'Claude gerçek oturumlarınızla gerçek tarayıcınızı sürüyor, bu yüzden ekrandaki her şey karede.',
+    },
+    {
+      text: 'Kayıt, modelin akıl yürütmesini içerebilir.',
+      explanation: 'Oturum transcript’ini değil tarayıcıyı kaydeder.',
+    },
+    {
+      text: 'GIF’ler sayfadan farklı bir çözünürlükte kaydedilir.',
+      explanation: 'Belgelenmiş bir endişe değil.',
+    },
+  ]}
+/>
+
+**Sırada:** `04-dataviz`, az önce yayınladığınız her şeyin arkasındaki disiplindir — grafik biçimi, role göre renk ve okunabilir olduğunu kanıtlayabileceğiniz bir palet.

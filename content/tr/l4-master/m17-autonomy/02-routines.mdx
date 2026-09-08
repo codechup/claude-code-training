@@ -9,7 +9,7 @@ difficulty: core
 tags: ['otonomi', 'routines', 'zamanlama', 'github', 'api']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Automate work with routines'
@@ -35,8 +35,383 @@ lab:
   repo_tag: 'lesson/m17-02-start'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders routine'leri (bulutta çalışan zamanlanmış Claude Code oturumları) anlatır: kaydedilmiş prompt, repository listesi, cloud environment ve connector'lardan oluşan yapı; üç tetikleyici türü — zamanlama (saatlik, günlük, hafta içi, haftalık; en küçük aralık bir saat) ve tek seferlik çalıştırmalar, `/fire` uç noktasına bearer token ile yapılan POST istekleri, ve pull request / release olayları için filtrelenebilen GitHub tetikleyicileri. Ayrıca `text` yükünün `<routine-fire-payload>` bloğu içinde güvenilmez veri olarak geldiği, routine'lerin hiçbir izin sorusu sormadan çalıştığı, `claude/` önekli branch'lere push ettiği ve yeşil durum işaretinin görevin başarısı anlamına gelmediği ele alınır. Laboratuvarda `lesson/m17-02-start` etiketinde routine'in repo tarafındaki yarısı — `routines/nightly-regression-check.md` — yazılır ve denetlenir.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.
+- Bir routine'in (kaydedilmiş [prompt](/tr/playbook/glossary/#prompt) (Claude'a verdiğiniz istek metni), repository'ler, environment ve connector'lardan oluşan otomatik çalışan yapılandırma) ne olduğunu ve nerede çalıştığını söylemek.
+- Üç tetikleyici türünün her birini eklemek: bir zamanlama (tekrarlayan ya da tek seferlik), bir API uç noktası ve filtreli bir GitHub olayı.
+- Bir routine'i bir bearer [token](/tr/playbook/glossary/#token) (bir dil modelinin metni işlerken kullandığı en küçük birim) ile HTTP üzerinden tetiklemek ve `text` yükünün çalıştırmaya nasıl ulaştığını açıklamak.
+- Gözetimsiz çalışması güvenli bir routine prompt'u yazmak, çünkü bir routine'in hiçbir izin istemi yoktur.
+- Routine'leri CLI'dan `/schedule` ile yönetmek ve yaygın "Unknown command" hatasını teşhis etmek.
+
+**Ön koşullar.** 1. ders (`/loop`), Pro, Max, Team ya da Enterprise'da bir claude.ai hesabı ve bir GitHub tetikleyicisi istiyorsanız Claude [GitHub App](/tr/playbook/glossary/#github-app)'i (bir GitHub deposunu Claude Code'a bağlayan entegrasyon). Routine'ler **research preview** (araştırma önizlemesi) aşamasındadır: davranış, sınırlar ve API yüzeyi değişebilir.
+
+<WhenNotToUse>
+  Bir routine, bulutta temiz bir klona karşı, hiçbir izin istemi olmadan ve bıraktığınız her
+  connector ile çalışır — bu yüzden yerel dosyalarınıza, yerel [MCP
+  server](/tr/playbook/glossary/#mcp-server)'larınıza (Model Context Protocol ile Claude'a dış araç
+  ve veri sağlayan sunucu) ya da çalışma sırasında bir insanın kararına ihtiyaç duyan hiçbir şey
+  için doğru yer değildir. Ayrıca bir saatin altında da yanlış araçtır: minimum zamanlama aralığı
+  bir saattir ve daha sık çalışan ifadeler reddedilir. Ve iş zaten bir push'la tetiklenen bir
+  [CI](/tr/playbook/glossary/#ci) (her push'ta otomatik olarak testleri çalıştıran hat) görevi ise,
+  GitHub Actions bunun için daha basit bir yerdir; bir routine, tetikleyici bir saat, bir uyarı ya
+  da pipeline'ınızın kapsamadığı bir repository olayı olduğunda değerini kanıtlar.
+</WhenNotToUse>
+
+## Kavram
+
+### Bir routine nedir
+
+Bir routine, kaydedilmiş bir Claude Code yapılandırmasıdır — bir prompt, bir ya da daha fazla
+repository, bir cloud environment ve bir dizi connector; bir kez paketlenir ve otomatik olarak
+çalışır. Routine'ler, Anthropic tarafından yönetilen bulut altyapısında ya da yönlendirildiğinde
+kurumunuzun kendi barındırdığı environment'ta çalışır, bu yüzden dizüstünüz kapalıyken de çalışmaya
+devam eder.
+
+Pro, Max, Team ve Enterprise planlarında kullanılabilirler ve onları `claude.ai/code/routines`'ta,
+Desktop uygulamasının **Code** sekmesinde ya da CLI'dan `/schedule` ile (`/routines` olarak da
+kullanılabilir) oluşturur ve yönetirsiniz. Her üç yüzey de aynı bulut hesabına yazar. Team ve
+Enterprise Owner'ları, yönetici ayarlarındaki **Routines** anahtarıyla routine'leri kurum genelinde
+devre dışı bırakabilir; bu, mevcut routine'leri durdurur ve yenilerini engeller.
+
+Bu dersin geri kalanını şekillendiren iki özellik var:
+
+- **Routine'ler otonom çalışır.** Çalıştırma sırasında bir izin kipi seçici ve onay istemi yoktur.
+  Oturum kabuk komutları çalıştırabilir, klonlanmış repository'ye [commit](/tr/playbook/glossary/#commit) (bir git deposundaki değişiklik kümesinin kalıcı kaydı) edilmiş [skill](/tr/playbook/glossary/#skill)'leri (`SKILL.md` ile tanımlanan, `/ad` ile çağrılan yeniden kullanılabilir talimat paketi)
+  kullanabilir ve dahil ettiğiniz herhangi bir connector'ı çağırabilir.
+- **Routine'ler sizin adınıza hareket eder.** Kendi bireysel claude.ai hesabınıza aittirler, ekip
+  arkadaşlarınızla paylaşılmazlar ve hesabınızın günlük çalıştırma kotasına sayılırlar. Commit'ler ve
+  [pull request](/tr/playbook/glossary/#pull-request)'ler sizin GitHub kullanıcınızı taşır; Slack mesajları ya da Linear biletleri
+  bağlantılı hesaplarınızı kullanır.
+
+Bütün güvence hikâyesi bu: bir routine'in nereye erişebileceğine, seçtiğiniz repository'ler,
+environment'ın ağ erişimi ve değişkenleri ve bıraktığınız connector'lar karar verir. Her birini
+routine'in gerçekten ihtiyaç duyduğuna göre kapsamlandırın.
+
+### Üç tetikleyici
+
+Bir routine, herhangi bir tetikleyici kombinasyonunu taşıyabilir; bunlar her an, düzenleme
+formunun **Select a trigger** bölümünden eklenip kaldırılabilir.
+
+| Tetikleyici   | Routine şu durumda başlar                                                                                                 |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Zamanlama** | Tekrarlayan bir tempo geldiğinde — saatlik, günlük, hafta içi, haftalık — ya da tek seferlik bir zaman damgası geldiğinde |
+| **API**       | Biri routine'in kendine özgü uç noktasına, bearer token'ıyla birlikte POST yaptığında                                     |
+| **GitHub**    | Bağlı bir repository'de bir pull request ya da release olayı eşleştiğinde                                                 |
+
+**Zamanlamalar.** Saatler yerel bölgenizde girilir ve dönüştürülür, bu yüzden routine, altyapı nerede
+olursa olsun o duvar saati zamanında çalışır. Çalıştırmalar, routine başına tutarlı bir kaymadan
+dolayı birkaç dakika geç başlayabilir. Hazır seçeneklerin sunmadığı bir aralık için — iki saatte bir,
+her ayın biri — en yakın hazır seçeneği seçip sonra CLI'da `/schedule update` çalıştırarak bir cron
+ifadesi ayarlayın. Minimum aralık bir saattir; daha sık olan her şey reddedilir. Tek seferlik bir
+zamanlama bir kez tetiklenir, sonra kendini devre dışı bırakır ve **Ran** olarak görünür; tek seferlik
+çalıştırmalar günlük routine tavanına sayılmaz.
+
+**API tetikleyicileri.** Routine'in `/fire` uç noktasına POST yapmak yeni bir oturum başlatır ve
+URL'sini döndürür. Gövde, çalıştırmaya özgü bağlam için isteğe bağlı bir `text` alanı alır — bir
+uyarı gövdesi, başarısız bir log. Serbest biçimlidir: JSON gönderin, routine onu düz bir dize olarak
+alır.
+
+<CodeBlock title="bir routine'i tetikleyin (trigger id bir yer tutucudur; token ortamdan gelir)">
+
+```bash
+curl -X POST https://api.anthropic.com/v1/claude_code/routines/trig_01ABCDEFGHJKLMNOPQRSTUVW/fire \
+  -H "Authorization: Bearer $CLAUDE_ROUTINE_TOKEN" \
+  -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Sentry alert SEN-4521 fired in prod. Stack trace attached."}'
+```
+
+</CodeBlock>
+
+Başarılı bir çağrı, yeni oturumun kimliğini ve URL'sini döndürür:
+
+```json
+{
+  "type": "routine_fire",
+  "claude_code_session_id": "session_01HJKLMNOPQRSTUVWXYZ",
+  "claude_code_session_url": "https://claude.ai/code/session_01HJKLMNOPQRSTUVWXYZ"
+}
+```
+
+Token, routine kaydedildikten sonra üretilir, **bir kez** gösterilir ve sonradan geri alınamaz —
+uyarı aracınızın gizli bilgi deposuna kaydedin ve aynı modalden döndürün ya da iptal edin. Uç nokta,
+routine'ler research preview aşamasındayken `experimental-cc-routine-2026-04-01` beta başlığı
+altında yayınlanır; kırılgan değişiklikler yeni tarihli başlık sürümleri altında gelir ve en son iki
+önceki sürüm çalışmaya devam eder.
+
+Ezberlemeye değer güvenlik ayrıntısı şu: **`text`, routine'e talimat olarak ulaşmaz.** Güvenilmez
+veri olarak etiketlenmiş bir `<routine-fire-payload>` bloğuna sarılı gelir; Claude'a, routine'in
+kendi prompt'u söylemediği sürece içindeki talimatları izlememesi söylenir. Yani yüke göre hareket
+etmesi gereken bir routine buna kendi isteğiyle katılmalıdır — "routine-fire-payload bloğunda
+açıklanan uyarıyı araştır" — yoksa metin edilgen bağlam olarak kalır. Aynı sarma, **Run now** ile
+verilen metin için de geçerlidir.
+
+**GitHub tetikleyicileri.** Claude GitHub App'in, hangi yüzeyden yapılandırdığınızdan bağımsız
+olarak repository'ye kurulu olması gerekir. İki olay kategorisi desteklenir ve her birinde belirli
+bir eylem ya da hepsini seçebilirsiniz:
+
+| Olay         | Şu durumda tetiklenir                                                                                                              |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Pull request | Bir PR açıldığında, kapatıldığında, atandığında, etiketlendiğinde, senkronize edildiğinde ya da başka bir şekilde güncellendiğinde |
+| Release      | Bir release oluşturulduğunda, yayınlandığında, düzenlendiğinde ya da silindiğinde                                                  |
+
+Pull request filtreleri, hangi PR'ların bir oturum başlatacağını daraltır; **tüm** koşullar
+eşleşmelidir. Alanlar yazar, başlık, gövde, base branch, head branch, label'lar, taslak-mı ve
+merge-edildi-mi'dir; her biri bir operatörle eşleştirilir: eşittir, içerir, ile başlar, şunlardan
+biridir, şunlardan biri değildir ya da regex ile eşleşir. `matches regex`, alanın **tamamını**
+sınar, bu yüzden bir başlığın `hotfix` içermesini eşleştirmek için `.*hotfix.*` kullanın, ya da
+bunun yerine `contains` kullanın.
+
+Claude Code, olaylar arasında oturumları yeniden kullanmaz: iki PR güncellemesi iki bağımsız oturum
+üretir. Research preview sırasında webhook olayları, routine başına ve hesap başına saatlik
+tavanlara tabidir ve sınırı aşan olaylar pencere sıfırlanana kadar düşürülür.
+
+### Repository'ler, branch'ler ve connector'lar
+
+Her repository her çalıştırmada, prompt aksini söylemediği sürece varsayılan [branch](/tr/playbook/glossary/#branch)'inden (bir git deposunun bağımsız bir geliştirme hattı)
+başlayarak klonlanır. Claude, `claude/` önekli branch'lere push eder; bunlar her zaman kabul edilir.
+Prompt'unuz başka bir yere push etmesini yönlendirdiğinde, Claude Code önce kontrol eder ve branch
+korumalıysa, başka biri ondan açık bir PR'a sahipse ya da sizden başka birinin yazdığı commit'ler
+taşıyorsa reddeder.
+
+Connector'lar, hesabınızdaki claude.ai entegrasyonlarıdır — `claude mcp add` ile yerel olarak
+eklediğiniz MCP server'lar kendi makinenizde yaşar ve görünmez. Bir routine oluşturduğunuzda bağlı
+tüm connector'lar varsayılan olarak dahil edilir; routine'in ihtiyaç duymadıklarını kaldırın, çünkü
+Claude, dahil edilen bir connector'ın her [tool](/tr/playbook/glossary/#tool)'unu (Claude'un dosya okuma, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) — **yazma dahil** — çalıştırma sırasında sormadan
+kullanabilir. Commit edilmiş bir `.mcp.json`'da bildirilen bir server, klonla birlikte gelir.
+
+Environment; ağ erişimini, environment değişkenlerini ve kurulum betiğini denetler. **Default**
+environment'ı **Trusted** erişimi kullanır ve yalnızca varsayılan izin listesine izin verir; diğer
+host'lara yapılan istekler `403` ve `x-deny-reason: host_not_allowed` ile başarısız olur. Connector
+trafiği Anthropic'in sunucuları üzerinden yönlendirilir, bu yüzden connector'lar izin listesi
+değişikliği olmadan çalışır.
+
+### Routine'leri CLI'dan yönetmek
+
+`/schedule`, zamanlanmış routine'leri konuşarak oluşturur ve doğrudan bir açıklama alır: `/schedule
+daily PR review at 9am`, ya da `/schedule in 2 weeks, open a cleanup PR that removes the feature
+flag` gibi tek seferlik bir örnek. Ardından `/schedule list`, `/schedule update` ve `/schedule run`
+gelir. Geçmiş hakkında da sorabilirsiniz — "gecelik incelemem bu sabah neden hiçbir şey yapmadı?" —
+ve Claude, durumu ve bağlantılarıyla birlikte son çalıştırmaları listeler, ve tool hatalarını, izin
+reddedilmelerini ve nihai sonucu açıklamak için bir çalıştırmanın kaydını okur (v2.1.227 ya da
+üstü). CLI'dan bir GitHub tetikleyicisi eklemek v2.1.225 ya da üstünü gerektirir; API
+tetikleyicileri web'de eklenmelidir, çünkü CLI token oluşturamaz ya da iptal edemez.
+
+`/schedule` kayıpsa, sebep neredeyse her zaman kimlik doğrulamadır: routine'ler bir claude.ai
+abonelik girişi gerektirir. Komut menüsü yazarken `No commands match "/schedule"` gösterir ve
+gönderdiğinizde `Unknown command: /schedule` döner — bir istisna dışında. Bir **Console API key**
+ile ya da feature-flag getirme etkinleştirilmiş bir **Anthropic profili** ile kimlik doğrulandığında
+farklı bir mesaj alırsınız: `/schedule is available with Claude for Enterprise — ask your admin
+about migrating from API-key access`. Bedrock, Google Cloud'ın Agent Platform'u ya da Microsoft
+Foundry gibi bir bulut sağlayıcı girişi hâlâ size `Unknown command` verir. `ANTHROPIC_API_KEY`,
+`ANTHROPIC_AUTH_TOKEN` ve `apiKeyHelper`, bir claude.ai girişine göre önceliklidir, bu yüzden önce
+onları kaldırın; bir profil ya da federasyon kimlik bilgisi de önceliklidir. Kalan sebepler, bir
+Claude Code on the web oturumu içinde olmak, Claude Code on the web'i devre dışı bırakan bir kurum
+politikası ya da bir Owner'ın routine'leri kapatmış olmasıdır.
+
+### Bir çalıştırmayı okumak
+
+Çalıştırma listesindeki yeşil bir durum, oturumun başladığı ve bir altyapı hatası olmadan çıktığı
+anlamına gelir. **Görevin başarılı olduğu anlamına gelmez.** Engellenen ağ istekleri, eksik connector
+tool'ları ve görev düzeyindeki başarısızlıkların hepsi durum noktasında değil, çalıştırmanın içinde
+görünür. Claude'un gerçekte ne yaptığını okumak için çalıştırmayı açın — o tam bir oturumdur.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Bir routine oluşturmak claude.ai web formunda, Desktop uygulamasında ya da etkileşimli bir
+  `/schedule` konuşmasında olur; hiçbiri [headless](/tr/playbook/glossary/#headless) (etkileşimli
+  arayüz olmadan tek komutla çalıştırma) olarak kaydedilemez — ve bir kurs, bir okuyucunun hesabında
+  çalışır durumda zamanlanmış bir [agent](/tr/playbook/glossary/#agent) (bir hedefi kendi başına
+  adım adım yürüten yapay zekâ süreci) bırakmamalıdır. Bu yüzden bu laboratuvar, routine'in
+  repository'nizde yaşayan yarısını inşa eder ve inceler; routine'i oluşturan adımlar ise resmî
+  dokümantasyondan bir adım listesi olarak verilir, [transcript](/tr/playbook/glossary/#transcript)
+  (gerçek bir Claude Code oturumunun kaydı) olmadan.
+</Callout>
+
+<Lab
+  title="Laboratuvar · gecelik bir routine'in repo tarafındaki yarısını yazın"
+  repoTag="lesson/m17-02-start"
+  lessonId="tr/l4-master/m17-autonomy/routines"
+  steps={[
+    "Lab reposunda `lesson/m17-02-start`'ı checkout edin.",
+    "`routines/nightly-regression-check.md` oluşturun ve bir routine'i anlatın: tetikleyicisi (cron, gece 03:00 UTC'de), tam prompt'u, kullanabileceği tool'lar, neden bir `/loop` yerine routine olduğu ve karşı koruduğu hata biçimi.",
+    "Prompt'u hiçbir izin istemi olmadan güvenli olacak şekilde yazın: okuyabilir, kontrolü çalıştırabilir ve bir issue açabilir; bir düzeltmeyi push edemez ya da dosyaları düzenleyemez; ve kontrol yeşilken sessiz kalmalıdır.",
+    "Claude'a kendi brief'inizi denetletin: `claude -p \"Read routines/nightly-regression-check.md. In English, list (a) every capability the routine's prompt grants, (b) every action it explicitly withholds, and (c) the one line that stops it becoming noise. Be terse: three short bullet groups, no preamble.\" --allowedTools Read --model sonnet --max-turns 4 --output-format text`.",
+    "claude.ai/code/routines'ta routine'i oluşturun: New routine → isim ve prompt (brief'in prompt'unu yapıştırın) → repository'yi seçin → Default environment'ı koruyun → Select a trigger → Schedule → Daily → saati ayarlayın → prompt'un ihtiyaç duymadığı her connector'ı kaldırın → Create.",
+    "**Run now**'a tıklayın, çalıştırma oturumunu açın ve Claude'un gerçekte ne yaptığını okuyun — yeşil noktaya güvenmeyin.",
+    "İşiniz bittiğinde routine'i silin. Bir kurs alıştırması, hesabınızda çalışır durumda bir zamanlanmış agent bırakmamalıdır.",
+  ]}
+  expected="Brief tek bir tetikleyici, tek bir prompt, açık bir tool listesi ve açık bir push reddi adlandırır. Denetim çalıştırması bu üç listeyi yalnızca dosyadan yeniden üretir — üretemiyorsa, prompt gözetimsiz çalıştırılamayacak kadar belirsizdir."
+  checklist={[
+    "Routine brief'i hedeflediği repo'nun yanında yaşıyor",
+    'Prompt yalnızca işin ihtiyaç duyduğunu veriyor ve neyi yapmaması gerektiğini söylüyor',
+    'Prompt başarıda sessiz kalıyor, böylece çıktısı okumaya değer kalıyor',
+    'Denetim çalıştırması, verdiği izinleri ve reddettiklerini yalnızca dosyadan doğruluyor',
+    'Bu laboratuvar için oluşturduğunuz routine silindi',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/02-routines/01-routine-brief-review.txt"
+    range="2-14"
+  />
+</Lab>
+
+Denetimin size verdiğine dikkat edin: izinler, reddedişler ve gürültü karşıtı satırın hepsi, sorulacak
+kimse olmadan tek başına dosyadan geri okunur. Bir routine prompt'unun geçmesi gereken sınav budur —
+kaydettiğiniz metinden taze bir oturum, routine'in ne yapıp yapamayacağını yeniden kuramıyorsa,
+gözetimsiz çalıştırma da kuramaz.
+
+## Anti-pattern'ler
+
+**Belirsiz bir prompt.** Bir routine'in soracak kimsesi yoktur. "Kod tabanını iyileştir" her gece
+farklı, incelenemeyen bir çalıştırma üretir. _Çözüm:_ görevi, başarının kanıtını ve neyin
+değişmemesi gerektiğini belirten kendi kendine yeterli bir prompt yazın.
+
+**Her connector'ı bağlı bırakmak.** Dahil edilen her connector'ın tool'ları — yazma dahil —
+çalıştırma sırasında onaysız kullanılabilir. _Çözüm:_ oluştururken ve her düzenlemede routine'in
+ihtiyaç duymadıklarını kaldırın.
+
+**Yeşil duruma güvenmek.** Başlayıp temiz çıkan bir çalıştırma, engellenen bir ağ çağrısı hiçbir işe
+yaramasa da yeşil görünmeye devam eder. _Çözüm:_ inanmadan önce çalıştırmayı açın ve transcript'i
+okuyun.
+
+**Fire metnini talimat olarak ele almak.** Bearer token'ı tutan herkes `text` gönderebilir.
+Prompt'unuz "yükün söylediğini yap" şeklinde yazılmışsa, sızmış bir token uzaktan kod çalıştırma
+temeli olur. _Çözüm:_ routine'in kendi prompt'unu yetkili tutun ve yükü araştırılacak veri olarak
+referanslayın.
+
+**Başarıda gönderi yapmak.** Her gece "her şey iyi" bildiren bir routine, tüm ekibi onu görmezden
+gelmeye alıştırır, böylece gerçekten bir şey söylediği gece de görmezden gelinir. _Çözüm:_
+bildirilecek bir şey yokken sessiz kalın.
+
+**Saatten sık zamanlama beklemek.** Minimum aralık bir saattir ve daha sık ifadeler reddedilir.
+_Çözüm:_ daha hızlısı için bir oturum içinde `/loop`, bir masaüstü görevi ya da bir CI zamanlaması
+kullanın.
+
+<Callout variant="changed">
+  Tetiklenen bir routine artık kaydedilmiş prompt'unu kendi görevi olarak alıyor. v2.1.213'ten önce
+  aynı prompt güvenilmez bir arka plan bildirimi olarak çerçevelenip geliyordu ve oturum ona göre
+  hareket etmeyi reddedebiliyordu. Claude Code 2.1.263 için `routines.md` üzerinden doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/routines"
+  questionId="q1"
+  lang="tr"
+  prompt="Uyarı aracınız, saldırgan kontrolündeki bir log satırı içeren bir `text` gövdesiyle bir routine'in /fire uç noktasına POST yapıyor. Bu metne ne olur?"
+  options={[
+    {
+      text: "Güvenilmez etiketli bir <routine-fire-payload> bloğuna sarılı gelir ve routine, yalnızca kendi kaydedilmiş prompt'u söylüyorsa buna göre hareket eder.",
+      correct: true,
+      explanation:
+        "Bu sarma, sızmış bir bearer token'ının fire metnini doğrudan talimata çeviremeyişinin nedenidir.",
+    },
+    {
+      text: "O çalıştırma için routine'in kaydedilmiş prompt'unun yerini alır.",
+      explanation: "Kaydedilmiş prompt her zaman routine'in görevidir; text ekstra bağlamdır.",
+    },
+    {
+      text: 'JSON olarak ayrıştırılır ve routine yapılandırmasına birleştirilir.',
+      explanation: 'Değer serbest biçimlidir ve ayrıştırılmaz — JSON düz bir dize olarak gelir.',
+    },
+    {
+      text: 'Tamamen görmezden gelinir; /fire hiçbir gövde almaz.',
+      explanation: 'İsteğe bağlı `text` alanı tam olarak çalıştırmaya özgü bağlam için vardır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/routines"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir routine'in her 20 dakikada bir çalışmasına ihtiyacınız var. Dokümantasyon ne diyor?"
+  options={[
+    {
+      text: 'Mümkün değil — minimum routine aralığı bir saattir ve daha sık ifadeler reddedilir.',
+      correct: true,
+      explanation:
+        'Daha hızlı tempolar için bir oturum içinde /loop ya da bir masaüstü zamanlanmış görevi kullanın (1 dakika minimum).',
+    },
+    {
+      text: 'Saatlik hazır seçeneği seçin, sonra /schedule update ile */20 ayarlayın.',
+      explanation:
+        '/schedule update özel cron ifadeleri ayarlar, ama bir saatin altındaki her şey reddedilir.',
+    },
+    {
+      text: '20 dakika arayla üç zamanlama tetikleyicisi ekleyin.',
+      explanation: 'Her tetikleyici yine aynı bir saatlik minimuma bağlıdır.',
+    },
+    {
+      text: 'Bir API tetikleyicisi ve dizüstünüzde bir cron işi kullanın.',
+      explanation:
+        "Bu teknik olarak çalışır, ama routine'lerin kaldırmaya çalıştığı makine bağımlılığını geri getirir — ve dokümantasyonun saatten sık iş için cevabı /loop ya da bir masaüstü görevidir.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/routines"
+  questionId="q3"
+  lang="tr"
+  prompt="`/schedule`, terminalinizde `Unknown command: /schedule` döndürüyor. Hangi sebep bu tam mesajla tutarlıdır?"
+  options={[
+    {
+      text: "Bedrock, Google Cloud'ın Agent Platform'u ya da Microsoft Foundry gibi bir bulut sağlayıcı üzerinden giriş yapmışsınız.",
+      correct: true,
+      explanation:
+        'Routine\'ler bir claude.ai girişi gerektirir ve bir bulut sağlayıcı girişi size tam olarak bu mesajı verir. Bir Console API key ya da feature-flag getirme etkinleştirilmiş bir Anthropic profili farklı bir mesaj üretir: "/schedule is available with Claude for Enterprise — ask your admin about migrating from API-key access".',
+    },
+    {
+      text: 'Claude Code kurulumunuz güncel değil ve bir güncelleme gerekiyor.',
+      explanation:
+        'Sürüm, CLI GitHub tetikleyicileri ve çalıştırma geçmişi için önemlidir, komutun var olması için değil.',
+    },
+    {
+      text: "Henüz hiç routine'iniz yok, bu yüzden komut gizli.",
+      explanation: 'Komut, ilkini oluşturma yolunuzdur.',
+    },
+    {
+      text: "Bir git repository'sinin içinde değilsiniz.",
+      explanation:
+        "Routine'ler, repository'leri çalışma dizininizden değil GitHub hesabınızdan seçer.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/routines"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir routine çalıştırması sırasında izinler hakkında hangi ifade doğrudur?"
+  options={[
+    {
+      text: "Bir izin kipi seçici ve istem yoktur: çalıştırma, eklediğiniz repository'ler, environment ve connector'larla sınırlıdır.",
+      correct: true,
+      explanation:
+        "Bu yüzden oluşturma sırasında connector'ları ve ağ erişimini kapsamlandırmak gerçek güvencedir.",
+    },
+    {
+      text: "Planı web'de onaylayana kadar plan mode'da çalışır.",
+      explanation: 'Bir şeyi onaylayacak kimse yoktur; çalıştırmalar otonomdur.',
+    },
+    {
+      text: 'Onu oluşturan oturumun izin kipini devralır.',
+      explanation:
+        "Routine'ler kendi bulut oturumlarıdır ve hiçbir yerel oturum durumunu devralmaz.",
+    },
+    {
+      text: "Yalnızca connector'lar üzerinden yapılan yazmalar için onay ister.",
+      explanation:
+        "Claude, dahil edilen bir connector'ın her tool'unu — yazma dahil — sormadan kullanabilir.",
+    },
+  ]}
+/>
+
+**Sonraki:** `03-goal`, aynı oturumu bir saat yerine bir koşula doğru çalışır tutuyor — ve koşul hiçbir zaman sağlanamayınca ne olduğunu gösteriyor.

@@ -1,15 +1,15 @@
 ---
 title: 'Masaüstü uygulamasında zamanlanmış görevler'
-description: 'Yerel zamanlanmış görevler kendi makinenizde, gerçek dosyalarınızla çalışır: nasıl oluşturulur, zamanlama seçenekleri nelerdir, kaçırılan çalıştırmalar nasıl telafi edilir, izinler görev başına nasıl saklanır ve görev diskte nerede durur.'
+description: 'Yerel zamanlanmış görevler makinenizde, gerçek dosyalarınızla çalışır: birini nasıl oluşturacağınız, zamanlama hazır seçeneklerinin neler sunduğu, kaçırılan çalıştırmaların nasıl telafi edildiği, izinlerin görev başına nasıl kaydedildiği ve görevin diskte nerede yaşadığı.'
 level: 4
 module: 'm17-autonomy'
 order: 4
 duration_min: 10
 difficulty: core
-tags: ['otonomi', 'desktop', 'zamanlama', 'izinler']
+tags: ['otonomi', 'masaüstü', 'zamanlama', 'izinler']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Schedule recurring tasks in Claude Code Desktop'
@@ -31,8 +31,228 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders masaüstü uygulamasının **Routines** sayfasında oluşturulan yerel zamanlanmış görevleri anlatır: **New routine → Local** akışı, Name / Description / Instructions / Schedule alanları, izole bir Git worktree'de çalıştırma seçeneği ve Manual, Hourly, Daily, Weekdays, Weekly hazır zamanlamaları. Ayrıca görevlerin yalnızca uygulama açık ve bilgisayar uyanıkken çalıştığı, uyku yüzünden kaçırılan çalıştırmalar için son yedi güne bakılıp yalnızca **tek bir** telafi çalıştırması başlatıldığı, Manual permission mode'daki bir görevin izin beklerken takıldığı ve bunu önlemek için **Run now** sırasında "always allow" seçilmesi, `~/.claude/scheduled-tasks/<task-name>/SKILL.md` dosyasının promptu tuttuğu ama zamanlamayı tutmadığı ele alınır. Ders, bir görevi silerken diskteki dosyalarının da silinmesini doğrulamayla biter.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.
+- Masaüstü uygulamasında yerel bir zamanlanmış görev oluşturmak ve doğru zamanlama hazır seçeneğini seçmek — ya da hazır seçeneklerin sunmadığı bir aralık istemek.
+- Zamanlanmış zamanda makineniz uykudaysa ne olacağını tahmin etmek ve buna dayanıklı bir [prompt](/tr/playbook/glossary/#prompt) (Claude'a verdiğiniz istek metni) yazmak.
+- Bir görevin izinlerini, siz orada olmadan onay bekleyip takılmayacak şekilde ayarlamak.
+- Bir görevin diskteki `SKILL.md`'sini bulmak, düzenlemek ve silmek; ve hangi ayarların o dosyada _olmadığını_ söylemek.
+- Belirli bir iş için yerel bir görev ile bir cloud routine arasında seçim yapmak.
+
+**Ön koşullar.** 2. ders (routine'lar) ve Claude Code Desktop 1.1.5368 ya da üstü — yerel zamanlanmış görevler daha eski build'lerde kullanılamaz.
+
+<WhenNotToUse>
+  Yerel bir görev yalnızca masaüstü uygulaması çalışırken ve bilgisayar uyanıkken tetiklenir; bu
+  yüzden ne olursa olsun zamanında olması gereken bir şey için yanlış yerdir — bir cloud routine
+  bunun için doğrusudur. İş makinenize hiç ihtiyaç duymuyorsa da yanlıştır: görev bir repoyu
+  klonlayıp bir PR açıyorsa, onu yerel çalıştırmak size dizüstünüzün kapağına bağımlılıktan başka
+  bir şey kazandırmaz. Ve önceden onaylamadığınız [tool](/tr/playbook/glossary/#tool)'lara
+  (Claude'un dosya okuma, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) dokunan
+  bir iş için Manual [permission mode](/tr/playbook/glossary/#permission-mode)'unda (bir oturumun
+  tool çağrılarını nasıl onaylayacağını belirleyen kip) yanlıştır, çünkü çalıştırma sadece orada
+  oturup sizi bekler.
+</WhenNotToUse>
+
+## Kavram
+
+### Yerel görev mi, cloud routine mi
+
+Masaüstü uygulamasının **Routines** sayfası ikisini de oluşturur. **New routine → Local**, makinenizde dosyalarınıza ve tool'larınıza doğrudan erişimle çalışan zamanlanmış bir görev yapar; **New routine → Cloud**, 2. dersteki routine'i yapar; bu, bilgisayarınız kapalıyken de çalışır ve API çağrılarında ya da GitHub olaylarında da tetiklenebilir.
+
+|                                                                                        | Cloud routine                              | Masaüstü görevi                   | `/loop`            |
+| -------------------------------------------------------------------------------------- | ------------------------------------------ | --------------------------------- | ------------------ |
+| Makinenin açık olması gerekir                                                          | Hayır                                      | Evet                              | Evet               |
+| Açık oturum gerektirir                                                                 | Hayır                                      | Hayır                             | Evet               |
+| Yerel dosyalara erişim                                                                 | Hayır (temiz bir klon)                     | Evet                              | Evet               |
+| [MCP server](/tr/playbook/glossary/#mcp-server)'lar (dış araç/veri sağlayan sunucular) | Görev başına yapılandırılmış connector'lar | Config dosyaları ve connector'lar | Oturumdan devralır |
+| İzin istemleri                                                                         | Hayır (otonom çalışır)                     | Görev başına yapılandırılabilir   | Oturumdan devralır |
+| Minimum aralık                                                                         | 1 saat                                     | 1 dakika                          | 1 dakika           |
+
+Yerel görev, üçünden "açık oturum yok"u "gerçek çalışma dizininiz" ile birleştiren tek olanıdır — bu tam olarak hem kullanımı hem de riskidir.
+
+### Birini oluşturmak
+
+**Code** sekmesinde, kenar çubuğunda **Routines**'e tıklayın (ya da kenar çubuğunun **More** menüsünde), sonra **New routine → Local**. Dört alan:
+
+| Alan         | Açıklama                                                                                                                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Name         | Küçük harfe ve kebab-case'e dönüştürülür ve diskteki klasör adı olarak kullanılır. Görevleriniz arasında benzersiz olmalıdır.                                                  |
+| Description  | Görev listesinde gösterilen kısa özet.                                                                                                                                         |
+| Instructions | Claude'un ne yapması gerektiği. Girdi, permission mode ve model için seçiciler taşır; altında çalışma klasörünü ve izole bir worktree'de çalışıp çalışmayacağınızı seçersiniz. |
+| Schedule     | Ne sıklıkla çalıştığı — aşağıdaki hazır seçeneklere bakın.                                                                                                                     |
+
+Kaydetmeden önce bir klasör gereklidir ve henüz güvenmediyseniz Desktop önce ona güvenmenizi ister. Bunu herhangi bir oturumda da düpedüz söyleyebilirsiniz: "her sabah 9'da çalışan günlük bir kod incelemesi kur" tekrarlayan bir görev oluşturur, "yarın saat 3'te deploy'u kontrol etmemi hatırlat" ise tetiklendikten sonra kendini kapatan tek seferlik bir görev oluşturur.
+
+Varsayılan olarak bir görev, çalışma dizininiz hangi durumdaysa ona karşı çalışır, **[commit](/tr/playbook/glossary/#commit)'lenmemiş** (bir git deposundaki değişiklik kümesinin kalıcı kaydı) **değişiklikler dahil**. Oluştururken [worktree](/tr/playbook/glossary/#worktree) (aynı deponun farklı bir branch'ini ayrı bir dizinde çalışır tutan git çalışma ağacı) anahtarını etkinleştirin, böylece her çalıştırma kendi izole Git worktree'sini alır.
+
+Hazır seçenekler **Manual** (zamanlama yok — yalnızca **Run now**), **Hourly**, **Daily** (saat seçici, varsayılan yerel 9:00), **Weekdays** (hafta sonu hariç Daily) ve **Weekly** (saat ve gün seçici)'dir. Başka bir şey için — her 15 dakikada bir, her ayın biri, gelecekte tek bir çalıştırma — herhangi bir Desktop oturumunda Claude'a düz dille sorun: "her 6 saatte bir tüm testleri çalıştıran bir görev zamanla."
+
+İşte beklenmedik bir saatte tetiklenebilecek bir görev için yazılmış, bu dersin üzerinde çalıştığı örnek prompt:
+
+```text
+Review the commits pushed to this repository today and post a three-bullet summary in the
+session. Only look at today's commits. If it is after 5pm, skip the review and just list
+what was missed. Never push, never edit files.
+```
+
+### Nasıl çalışırlar ve makine uyuduğunda ne olur
+
+Desktop, uygulama açıkken zamanlamayı her dakika kontrol eder ve bir görevin vadesi geldiğinde, herhangi bir manuel oturumdan bağımsız olarak yeni bir oturum başlatır. Her görev, API trafiğini kaydırmak için birkaç dakikalık küçük, belirlenimci bir gecikme alır. Tetiklendiğinde bir masaüstü bildirimi ve kenar çubuğunda bir **Scheduled** bölümü altında yeni bir oturum alırsınız; işi görmek, değişiklikleri incelemek ya da izin istemlerini yanıtlamak için onu açın. Claude, tıpkı sizin başlattığınız bir oturumdaki gibi dosya düzenleyebilir, komut çalıştırabilir, commit yapabilir ve [pull request](/tr/playbook/glossary/#pull-request) (bir branch'teki değişikliklerin gözden geçirilip ana koda alınması için açılan istek) açabilir — ama zamanlanmış bir oturum, masaüstü oturumları arasında mesaj gönderemez ya da alamaz.
+
+Görevler yalnızca uygulama çalışırken ve bilgisayar uyanıkken çalışır; zamanlanmış zaman boyunca uykuda olan bir makine görevi basitçe atlar. Ayarlar → Desktop app → General'daki **Keep computer awake**, boşta uykuyu önler, ama kapağı kapatmak yine de makineyi uyutur.
+
+Kaçırılan çalıştırmalar sonra muhafazakâr bir şekilde telafi edilir: uygulama açılışında ya da uyanmada, Desktop her görevin son yedi günde herhangi bir çalıştırma kaçırıp kaçırmadığını kontrol eder ve öyleyse en son kaçırılan zaman için **tam olarak bir** telafi çalıştırması başlatır, daha eski her şeyi bir bildirimle birlikte atarak. Altı gün kaçıran günlük bir görev bir kez çalışır. Yukarıdaki prompt'un kendini "bugünün commit'leri"ne sabitleyip saate göre dallanmasının nedeni budur — sabah 9 görevi gece 11'de çalışabilir.
+
+### İzinler, görev başına kaydedilir
+
+Her görev, oluşturduğunuzda ya da düzenlediğinizde belirlenen kendi permission mode'unu taşır ve `~/.claude/settings.json`'daki allow kuralları zamanlanmış oturumlara da uygulanır. Onaylanmamış bir tool'a ihtiyaç duyan Manual mode'daki bir görev, siz onaylayana kadar **takılır** — oturum kenar çubuğunda sizi bekler.
+
+Bunu önlemenin belgelenmiş yolu: görevi oluşturduktan sonra **Run now**'a tıklayın, istemleri izleyin ve her biri için "always allow" seçin. Sonraki çalıştırmalar aynı tool'ları otomatik onaylar ve bu onayları görevin ayrıntı sayfasından inceleyebilir ya da iptal edebilirsiniz. `requiresUserInteraction` olarak işaretlenmiş MCP tool'ları istisnadır — her çağrıda "always allow" seçeneği olmadan istem gösterirler, bu yüzden birini çağıran bir çalıştırma her seferinde takılır.
+
+### Görevleri yönetmek ve diskteki dosya
+
+**Routines** listesinde bir göreve tıklayarak ayrıntı sayfasını açın: **Run now**; Aktif/Duraklatılmış arasında geçiş için **Status**; **Edit**; atlananlar dahil geçmiş her çalıştırmayı listeleyen **Review history** (atlanan bir kaydın üzerine gelin, nedeni görünsün — uykuda, önceki çalıştırma hâlâ sürüyor ya da başka görevler zaten çalışıyor); **Always allowed** panelindeki **Review allowed permissions**; ve görevin oluşturduğu oturumları arşivleyip bir **Also delete files on disk** kutucuğu sunan **Delete**.
+
+Herhangi bir Desktop oturumunda da sorabilirsiniz — "bağımlılık denetimi görevimi duraklat", "zamanlanmış görevlerimi göster" — silme işlemi ise ayrıntı sayfasının düğmesinden yapılır. Çalışan bir görev, `update_scheduled_task` MCP tool'uyla kendi zamanlamasını ya da prompt'unu bile değiştirebilir; bir görevin bulduğuna göre kendini yeniden zamanlaması böyle olur.
+
+Prompt'un kendisi `~/.claude/scheduled-tasks/<task-name>/SKILL.md`'de yaşar (`CLAUDE_CONFIG_DIR` ayarlıysa onun altında): `name` ve `description` için YAML frontmatter, gövde olarak prompt; değişiklikler bir sonraki çalıştırmada etkili olur. **Schedule, folder, model ve etkinleştirme durumu o dosyada değildir** — bunları Edit formundan ya da Claude'a sorarak değiştirin.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Bu dersteki her şey masaüstü uygulamasının arayüzünde olur, bu da bir terminal
+  [transcript](/tr/playbook/glossary/#transcript)'i (gerçek bir Claude Code oturumunun kaydı) olarak
+  kaydedilemez — bu yüzden aşağıdaki adımlar resmi dokümantasyondan bir yürüyüş ve tek transcript
+  bir kabuktan gerçekten kontrol edilebilir olan kısım: diskteki konum ve bu modülün
+  alıştırmalarından sonra hiçbir şeyin zamanlanmış kalmadığının kanıtı.
+</Callout>
+
+<Lab
+  title="Laboratuvar · oluşturulan, izlenen ve kaldırılan tek bir yerel görev"
+  repoTag="none"
+  lessonId="tr/l4-master/m17-autonomy/desktop-scheduled-tasks"
+  steps={[
+    "Claude Code Desktop'ta, Code sekmesi → Routines → New routine → Local.",
+    "Adını `lab-daily-summary` yapın, Instructions'ı yukarıdaki örnek prompt olarak ayarlayın, lab checkout'unuzu klasör olarak seçin ve çalıştırmanın commit'lenmemiş işinize dokunamaması için worktree anahtarını etkinleştirin.",
+    "Schedule'ı Daily yapın ve şu andan birkaç dakika sonrasını seçin, böylece gerçek bir tetiklenmeyi izleyebilirsiniz.",
+    'Run now\'a tıklayın ve daha sonraki gözetimsiz bir çalıştırmanın takılmaması için her izin istemini "always allow" ile onaylayın.',
+    "Tetiklendiğinde kenar çubuğundaki Scheduled oturumunu açın ve Claude'un ne yaptığını okuyun.",
+    "Bir terminalden, görevi diskte inceleyin: `cat ~/.claude/scheduled-tasks/lab-daily-summary/SKILL.md` — frontmatter yalnızca `name` ve `description` taşır, gövde ise prompt'unuzdur.",
+    'Görevi ayrıntı sayfasından silin, "Also delete files on disk"i işaretleyerek, sonra terminalden `~/.claude/scheduled-tasks/`\'in artık onu tutmadığını doğrulayın. Bir alıştırmadan sonra zamanlanmış bir agent bırakmak, bu adımın önlemek için var olduğu hatadır.',
+  ]}
+  expected="Görev, zamanlanmış zamanından bir iki dakika içinde tetiklenir, kenar çubuğunda bir Scheduled oturumu belirir, ~/.claude/scheduled-tasks/lab-daily-summary/SKILL.md prompt'unuzu içerir ve silindikten sonra ne görev ne de klasörü kalır."
+  checklist={[
+    "Görev, çalışma ağacınızda değil izole bir worktree'de çalıştı",
+    'İhtiyaç duyduğu her tool, Run now sırasında "always allow" ile onaylandı',
+    'Çalıştırma saatlerce geç gerçekleşirse bile prompt hâlâ anlamlı',
+    "Diskteki SKILL.md prompt'u tuttu ama zamanlamayı tutmadı",
+    'Görev, siz ayrılmadan önce dosyaları dahil silindi',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/04-desktop-scheduled-tasks/01-nothing-left-scheduled.txt"
+    range="2-4"
+  />
+</Lab>
+
+O kayıt kasıtlı olarak sıkıcı: `False`, bu modülü yazan makinenin hiçbir zaman bir `~/.claude/scheduled-tasks` dizinine sahip olmadığı ve 1. dersin `/loop` işiyle diske hiçbir cron görevinin yazılmadığı anlamına gelir. Bu, herhangi bir otonomi oturumunun sonunda çalıştırılacak kontroldür — hiç tetiklenmeyen bir görevden daha kötü olan tek şey, oluşturduğunuzu unuttuğunuz bir görevdir.
+
+## Anti-pattern'ler
+
+**Zamanında çalıştığını varsayan bir prompt.** "Son bir saatin commit'lerini özetle", telafi çalıştırması sabah 9 için gece 11'de tetiklendiğinde yanlıştır. _Çözüm:_ örnek prompt'un yaptığı gibi, prompt'u mutlak bir pencereye sabitleyin ve mevcut saate göre dallanın.
+
+**Manual mode artı gözetimsiz bir zamanlama.** Çalıştırma ilk onaylanmamış tool'da takılır ve orada oturur. _Çözüm:_ bir kez **Run now**, ihtiyaç duyduğu şeyleri always-allow yapın ve bu onayları daha sonra ayrıntı sayfasında inceleyin.
+
+**Kirli bir çalışma ağacına karşı çalıştırmak.** Varsayılan, dizininiz hangi durumdaysa odur, commit'lenmemiş değişiklikler dahil, bu yüzden zamanlanmış bir refactor yarım bıraktığınız şeyle çakışabilir. _Çözüm:_ worktree anahtarını etkinleştirin.
+
+**Zamanında olması gereken bir şey için yerel bir görev kullanmak.** Kapaklar kapanır ve makineler uyur. _Çözüm:_ işin bağlı olduğu her şey için bir cloud routine.
+
+**`SKILL.md`'yi düzenleyip zamanlamanın değişmesini beklemek.** Dosya prompt'u, `name`'i ve `description`'ı tutar — başka hiçbir şeyi değil. _Çözüm:_ zamanlamayı, klasörü, modeli ve etkinleştirme durumunu Edit formunda ya da Claude'a sorarak değiştirin.
+
+**Görevi silip dosyalarını silmemek.** Kutucuk olmadan silmek, `~/.claude/scheduled-tasks/<name>/`'i geride bırakır. _Çözüm:_ **Also delete files on disk**'i işaretleyin, sonra bir kabuktan doğrulayın.
+
+<Callout>
+  Bu sayfada eski davranış yok — `research/deprecations.md`, Claude Code 2.1.263 itibarıyla masaüstü
+  zamanlanmış görev için hiçbir kayıt taşımıyor. Bunun yerine hatırlanmaya değer bir
+  kullanılabilirlik eşiği var: 1.1.5368'den önceki Claude Desktop'ta yerel zamanlanmış görevler
+  yoktur.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/desktop-scheduled-tasks"
+  questionId="q1"
+  lang="tr"
+  prompt="Günlük saat 9 göreviniz, dizüstü kapalı olduğu için altı gün kaçırdı. Kapağı açıyorsunuz. Ne olur?"
+  options={[
+    {
+      text: 'En son kaçırılan zaman için tam olarak bir telafi çalıştırması başlar; daha eski her şey atılır.',
+      correct: true,
+      explanation:
+        'Desktop yedi gün geriye bakar, bir kez çalışır ve bir telafinin başladığını size bildirir.',
+    },
+    {
+      text: 'Altı çalıştırma kuyruğa alınır ve sırayla yürütülür.',
+      explanation:
+        'Kaçırılan slot başına hiçbir şey kuyruğa alınmaz — yalnızca bir telafi çalıştırması olur.',
+    },
+    {
+      text: "Hiçbir şey çalışmaz; görev bir sonraki saat 9'u bekler.",
+      explanation: 'Bir telafi mekanizması var, bir çalıştırmayla sınırlı.',
+    },
+    {
+      text: 'Görev siz yeniden etkinleştirene kadar devre dışı kalır.',
+      explanation: 'Kaçırılan çalıştırmalar bir görevi devre dışı bırakmaz.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/desktop-scheduled-tasks"
+  questionId="q2"
+  lang="tr"
+  prompt="Aşağıdakilerden hangisi `~/.claude/scheduled-tasks/<task-name>/SKILL.md`'de SAKLANMAZ?"
+  options={[
+    {
+      text: 'Schedule.',
+      correct: true,
+      explanation:
+        "Schedule, folder, model ve etkinleştirme durumu dosyanın dışında yaşar — bunları Edit formunda ya da Claude'a sorarak değiştirin.",
+    },
+    { text: 'Prompt.', explanation: 'Prompt, dosyanın gövdesidir.' },
+    { text: 'Görev adı.', explanation: '`name`, iki frontmatter alanından biridir.' },
+    { text: 'Description.', explanation: '`description`, diğer frontmatter alanıdır.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m17-autonomy/desktop-scheduled-tasks"
+  questionId="q3"
+  lang="tr"
+  prompt="Manual permission mode'daki bir görev siz yokken tetikleniyor ve izni olmayan bir tool'a ihtiyaç duyuyor. Ne olur?"
+  options={[
+    {
+      text: 'Çalıştırma takılır ve siz onaylayana kadar oturum kenar çubuğunda açık kalır.',
+      correct: true,
+      explanation:
+        'Bu yüzden dokümanlar, zamanlamaya güvenmeden önce Run now artı her tool için "always allow" öneriyor.',
+    },
+    {
+      text: 'Tool çağrısı reddedilir ve çalıştırma onsuz devam eder.',
+      explanation: 'Reddetmek yerine bekler.',
+    },
+    {
+      text: "Görev, ~/.claude/settings.json'daki permission mode'a geri döner.",
+      explanation: 'O dosyadaki allow kuralları uygulanır, ama görevin kendi modu değiştirilmez.',
+    },
+    {
+      text: 'Çalıştırma iptal edilir ve bir sonraki zamanlanmış zamanda yeniden denenir.',
+      explanation: 'Oturum açık kalır, böylece daha sonra yanıtlayabilirsiniz.',
+    },
+  ]}
+/>
+
+**Sonraki:** `05-monitors-and-channels`, modülü gözlemlenebilirlikle kapatıyor — işi gerçekleşirken izlemek ve dış dünyanın olayları zaten açık olan bir oturuma itmesine izin vermek.

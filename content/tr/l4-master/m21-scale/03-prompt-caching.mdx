@@ -1,15 +1,15 @@
 ---
-title: 'Prompt caching (istem önbellekleme)'
-description: "Claude Code her turda tüm konuşmanızı yeniden gönderir ve API bunun ücretini alır — prefix daha önce işlediğiyle eşleşmezse. Bu eşleşmeyi hangi eylemlerin bozduğunu, iki TTL'in nasıl çalıştığını ve kendi cache sayılarınızı /usage ile JSON zarfından nasıl okuyacağınızı öğrenin."
+title: 'Prompt caching'
+description: 'Claude Code, her turda bütün konuşmanızı yeniden gönderir ve API bunun için sizden ücret alır — önek, zaten işlediği şeyle eşleşmedikçe. Bu eşleşmeyi hangi eylemlerin bozduğunu, iki TTL’nin nasıl çalıştığını ve kendi önbellek sayılarınızı /usage’dan ve JSON zarfından nasıl okuyacağınızı öğrenin.'
 level: 4
 module: 'm21-scale'
 order: 3
 duration_min: 15
 difficulty: advanced
-tags: ['prompt-caching', 'maliyet', 'token', 'usage']
+tags: ['prompt-caching', 'maliyet', 'token', 'kullanım']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'How Claude Code uses prompt caching'
@@ -35,11 +35,287 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders prompt caching'in Claude Code'da nasıl çalıştığını anlatır: API'nin her isteğin başlangıcını (prefix) eşleştirmesi, dosya veya bölüm bazlı bir cache olmaması, cache okumasının standart girdi ücretinin yaklaşık %10'u olması; cache'i geçersiz kılan eylemler (model değiştirme, effort değiştirme, fast mode, prefix'e yüklenen MCP tool'ları, çıplak tool adı deny kuralı, `/compact`, sürüm yükseltme) ve kılmayanlar (`/rewind`, `/recap`, skill çağırma, permission mode değiştirme); beş dakikalık ve bir saatlik TTL kovaları; cache'in makine ve dizin başına kapsamlanması. Laboratuvar, `--output-format json` zarfındaki gerçek sayılarla caching kapalıyken maliyetin yaklaşık yedi katına çıktığını gösterir.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur: `/en/l4-master/m21-scale/prompt-caching/`.
+- Önek eşleşmesini (prefix matching) tek cümlede açıklamak ve dosya başına ya da segment başına önbellekleme neden olmadığını söylemek.
+- Önbelleği geçersiz kılan eylemleri ve kılmayanları adlandırmak ve oturum ortasındaki iki değişiklikten hangisinin size tam bir yeniden okuma yaptıracağını tahmin etmek.
+- Beş dakikalık ve bir saatlik TTL arasında seçim yapmak ve bir [subagent](/tr/playbook/glossary/#subagent)'ın (ana oturumun bir alt görevi devrettiği yardımcı agent) isteklerinin hangi kovaya düştüğünü söylemek.
+- Gerçek bir `--output-format json` zarfından `cache_read_input_tokens`, `cache_creation_input_tokens` ve `cache_creation.ephemeral_*`'ı okumak ve aynı sayıları `/usage`'da bulmak.
+- Farklı dizinlerdeki — aynı deponun iki [worktree](/tr/playbook/glossary/#worktree)'si (aynı deponun farklı bir branch'ini ayrı bir dizinde çalışır tutan ek bir git çalışma ağacı) dâhil — iki oturumun neden asla bir önbelleği paylaşmadığını söylemek.
+
+**Ön koşullar.** Önceki dersin üç-katmanlı istek modeli. `m13-headless-ci`'den `claude -p` ve `--output-format json` ile bir miktar aşinalık.
+
+<WhenNotToUse>
+  Burada açacağınız hiçbir şey yok: Claude Code, prompt caching'i (prompt önbellekleme; API'nin daha
+  önce işlediği isteğin başlangıcını yeniden hesaplamak yerine önbellekten okuması) sizin için
+  yönetir ve neredeyse herkes için doğru yapılandırma varsayılandır. Devre dışı bırakma
+  değişkenlerine yalnızca belirli bir modelde ya da sağlayıcıda önbellekleme davranışını hata
+  ayıklarken başvurun ve varsayılan olmayan bir TTL'ye yalnızca varsayılanın nasıl çalıştığınız için
+  yanlış olduğunu ölçtüğünüzde başvurun. Önbellek ayarlarını ince ayarlamak, büyük bir faturaya da
+  yanlış yanıttır — o sayıyı gerçekten hareket ettiren kaldıraç ne kadar context taşıdığınızdır, ki
+  bu önceki derstir.
+</WhenNotToUse>
+
+## Kavram
+
+### Bunların hiçbirinin neden var olduğu
+
+Model, istekler arasında hiçbir şey hatırlamaz, bu yüzden her tur bütün context'i yeniden gönderir: sistem prompt'u, proje context'i, önceki her mesaj ve [tool](/tr/playbook/glossary/#tool) (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) sonucu, ardından yeni mesajınız. Önbellekleme olmadan API her seferinde hepsini yeniden işlerdi.
+
+API, her isteğin **başlangıcını** — öneki — yakın zamanda işlediği içerikle eşleştirerek önbelleğe alır. Normal bir turda önek, önceki isteğin tamamıdır ve yalnızca en son alışveriş yenidir. Eşleşme tamdır, bu yüzden önekteki herhangi bir yerdeki bir değişiklik ondan sonraki her şeyi yeniden hesaplar. Dosya başına ya da segment başına önbellekleme yoktur ve bir önbellek okuması standart girdi oranının kabaca %10'unda faturalandırılır.
+
+Bu, mekanizmanın tamamıdır ve bu sayfadaki neredeyse her davranışı açıklar — nadiren değişen içeriği önce koymak için var olan önceki dersteki katman sıralaması dâhil.
+
+O tablonun dışında oturan ama önbellekte kalanı yine de değiştiren iki şey var. **Her modelin kendi önbelleği vardır**, bu yüzden oturum ortasında `/model`, içerik aynı olsa bile bütün isteği yeniden hesaplar. **[Effort](/tr/playbook/glossary/#effort) seviyesi** (modelin bir yanıt için harcadığı düşünme çabası seviyesi) de çoğu modelde böyledir — bir istisnayla: bir API anahtarı ya da bir Claude aboneliğiyle Fable 5.1'de, effort'u değiştirmek önbelleği korur ve Claude Code onu sormadan uygular. O istisna, Amazon Bedrock'ta, Google Cloud'ın Agent Platform'unda, bir Claude apps gateway'inde, `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS` ayarlıyken ya da bir HIPAA yapılandırması altında geçerli değildir.
+
+### Önbelleği ne bozar, ne bozmaz
+
+| Geçersiz kılar                                                                                                                                                                                   | Önbelleği korur                                                                                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Modelleri değiştirmek (`/model`, [plan mode](/tr/playbook/glossary/#plan-mode)'a (Claude'un değişiklik yapmadan önce yalnızca okuyup bir plan sunduğu mod) girip çıkan `opusplan`)               | Deponuzdaki dosyaları düzenlemek                                                                                                            |
+| Effort seviyesini değiştirmek (yukarıdaki gibi Fable 5.1 hariç)                                                                                                                                  | Oturum ortasında `CLAUDE.md`'yi düzenlemek — bu da uygulanmaz                                                                               |
+| Konuşma başına bir kez fast mode'u açmak                                                                                                                                                         | Output style'ı değiştirmek — bu da yeniden başlatana kadar uygulanmaz                                                                       |
+| Tool'ları ertelenmemişken bir [MCP server](/tr/playbook/glossary/#mcp-server)'ın (Model Context Protocol ile Claude'a dış araç ve veri sağlayan sunucu) bağlanması ya da bağlantısının kesilmesi | [Permission mode](/tr/playbook/glossary/#permission-mode)'u (bir oturumun tool çağrılarını nasıl onaylayacağını belirleyen kip) değiştirmek |
+| Böyle bir MCP server sağlayan bir [plugin](/tr/playbook/glossary/#plugin)'i (hook, skill, subagent ve MCP server gibi bileşenleri paket hâlinde ekleyen eklenti) açmak ya da kapatmak            | [Skill](/tr/playbook/glossary/#skill)'leri (`SKILL.md` ile tanımlanan yeniden kullanılabilir talimat paketi) ve komutları çağırmak          |
+| `Bash` gibi çıplak bir tool-adı deny kuralı eklemek ya da kaldırmak                                                                                                                              | `/recap`'i çalıştırmak                                                                                                                      |
+| `/compact`                                                                                                                                                                                       | `/rewind`                                                                                                                                   |
+| Claude Code'un bir grubu düşürmesine yetecek kadar görsel biriktirmek                                                                                                                            | Bir subagent başlatmak                                                                                                                      |
+| Claude Code'u güncellemek                                                                                                                                                                        | `/advisor`'ı açıp kapatmak                                                                                                                  |
+
+Bunlardan birkaçı birer cümleyi hak ediyor.
+
+**Ertelenmiş MCP tool'ları desteklenen modellerde varsayılandır** ve ertelenmiş tanımlar hiçbir zaman önbelleklenmiş önekte değildi — bu yüzden bir server'ın bağlanması ya da bağlantısının kesilmesi yalnızca ekleme yapar. Tool'lar öneğe yüklendiğinde (tool araması kullanılamaz ya da devre dışı, bir `alwaysLoad` server'ı, eşik-tabanlı yükleme) bir stdio sürecinin çıkması ya da bir HTTP oturumunın süresinin dolması sessizce size tam bir yeniden okumaya mal olur.
+
+**Yalnızca tool-adı konumunda eşleşen bir deny kuralı** bir tool'u context'ten kaldırır: çıplak bir isim, `Bash(*)`, ya da `"*"` gibi bir tool-adı glob'u. `Bash(rm *)` gibi kapsamlı bir kural öneği olduğu gibi bırakır, çünkü Claude Code onu Claude çağrıyı denediğinde kontrol eder.
+
+**`/compact` tasarım gereği konuşma katmanını geçersiz kılar** — yeni geçmiş, eskiyle hiç önek paylaşmayan daha kısa bir geçmiştir. Ama özetleme isteğinin kendisi sıcak öneğinizi önbellekten okur, bu yüzden oturum ortasındaki bir compact, context büyüklüğünün önerdiğinin bir kesrine mal olur. TTL'den daha uzun bir aradan sonra okunacak hiçbir şey yoktur, ki devam ettirilen eski bir oturumda sıkıştırmanın pahalı durum olmasının nedeni de budur.
+
+**Bir güncellemeden sonra bir oturumu devam ettirmek**, artık farklı bir sistem prompt'unun arkasında oturduğu için bütün geçmişi hiç isabet olmadan yeniden işler. Uzun bir oturuma geri dönen ilk tur, göndereceğiniz en pahalı istek olabilir.
+
+### Ömür ve hangi TTL'yi aldığınız
+
+Önbelleklenmiş önekler bir hareketsizlik döneminden sonra sona erer; her isabet zamanlayıcıyı sıfırlar. İki TTL vardır: beş dakika ve bir saat — daha uzun olanı aralar boyunca önbelleği sıcak tutar ama önbellek _yazmalarını_ daha yüksek bir oranda faturalandırır.
+
+Claude Code, istek başına, iki sabit kovadan seçer:
+
+- **Ana konuşma** — etkileşimli turlarınız, `-p` çalıştırmaları, Agent SDK turları ve onlarla satır içinde çalışan yardımcılar.
+- **Geri kalan her şey** — subagent'lar, [workflow](/tr/playbook/glossary/#workflow)'lar (Claude Code'un bir görev için planladığı ve yürüttüğü çok adımlı otomatik iş akışı), süreç-içi teammate'ler, [fork](/tr/playbook/glossary/#fork)'lar (bir oturumu konuşma geçmişinin bir kopyasında devam ettirmek), sıkıştırma, oturum başlıkları.
+
+| İstek kovası       | Claude aboneliği, plan kullanımı içinde                                   | Kullanım kredileri, API anahtarı ya da bulut sağlayıcısı |
+| ------------------ | ------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Ana konuşma        | Bir saat                                                                  | Beş dakika                                               |
+| Geri kalan her şey | Beş dakika, sunucu-kontrollü yardımcı istekler hariç, onlar bir saat alır | Beş dakika                                               |
+
+Planınızın kullanımını aştığınızda ve Claude Code kullanım kredilerinden çektiğinde, ana konuşma daha ucuz beş dakikalık TTL'ye düşer. Kendiniz seçmek için, her iki kovanın da bir ayarı ve bir ortam değişkeni vardır — ana konuşma için `promptCacheTtl` / `CLAUDE_CODE_PROMPT_CACHE_TTL`, geri kalan her şey için `subagentPromptCacheTtl` / `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL`. Her biri yalnızca `5m` ya da `1h` alır; ikisi de v2.1.242 ya da üstünü gerektirir. `FORCE_PROMPT_CACHING_5M=1` her şeyi geçersiz kılar ve hata ayıklarken ya da karşılaştırırken doğru araçtır.
+
+### Önbellek kapsamı: bir makine, bir dizin
+
+Claude Code'da önbellek fiilen bir makineye _ve bir dizine_ kapsanmıştır. Sistem prompt'u çalışma dizinini, platformu, shell'i, OS sürümünü ve auto-memory yollarını gömer, bu yüzden farklı dizinlerdeki iki oturum farklı önekler inşa eder ve birbirinin önbelleğini kaçırır — **aynı deponun iki worktree'si dâhil.** Aynı dizindeki paralel oturumlar birbirinin önbelleğini okur; ardışık olanlar yalnızca başlangıç git-durumu anlık görüntüsü eşleştiğinde paylaşır, çünkü [branch](/tr/playbook/glossary/#branch) (bir git deposunun bağımsız bir geliştirme hattı) ve son [commit](/tr/playbook/glossary/#commit)'ler (bir git deposundaki değişiklik kümesinin kalıcı, mesajlı kaydı) de sistem prompt'undadır.
+
+### Kendi sayılarınızı okumak
+
+Her API yanıtındaki iki alan size işlerin nasıl gittiğini söyler:
+
+| Alan                          | Anlam                                                                                                                                                                       |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cache_creation_input_tokens` | Bu turda önbelleğe yazılan, önbellek yazma oranında faturalandırılan [token](/tr/playbook/glossary/#token)'lar (bir dil modelinin metni işlerken kullandığı en küçük birim) |
+| `cache_read_input_tokens`     | Bu turda önbellekten sunulan, standart girdi oranının kabaca %10'unda faturalandırılan token'lar                                                                            |
+
+Yüksek bir okuma-oluşturma oranı çalıştığı anlamına gelir. Oluşturmanın tur tur yüksek kalması, öneğinizde bir şeyin sürekli değiştiği anlamına gelir.
+
+Etkileşimli olarak, `/usage`, ilk yanıttan sonra Oturum bloğuna bir **`Prompt cache (main)`** satırı ekler — isabet oranı, kaçırma sayısı ve önbelleğin şu anda sıcak olup olmadığı (v2.1.251+). v2.1.260'tan beri ayrıca son kaçırmanın olası nedenini adlandırır, örneğin `likely cause: tool definitions changed`. Bir statusline betiği aynı değerleri `current_usage` ve `prompt_cache` nesnelerinden okuyabilir ve OpenTelemetry exporter'ı bunları bütün bir organizasyon için kullanıcı ve oturum başına bildirir.
+
+[Headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma, `claude -p`) olarak, bunlar laboratuvarın ölçtüğü `--output-format json`'ın `usage` nesnesindedir. Bu dersin işlenmiş örnek prompt'u — kasıtlı olarak önemsiz, çünkü mesele yanıt değil zarftır:
+
+```text
+In one sentence, what does src/cli.ts do?
+```
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Laboratuvar deposunda hiç `lesson/m21-scale-*` etiketi yok; `main`'in düz bir klonunda çalışın.
+  Aşağıdaki tam sayılar bir Claude aboneliğindeki bir makineden — sizinkiler farklı olacak, ama
+  sonucun şekli farklı olmamalı.
 </Callout>
+
+<Lab
+  title="Laboratuvar · önbelleği görünür kılın, sonra kapatın"
+  lessonId="tr/l4-master/m21-scale/prompt-caching"
+  repoTag="none"
+  steps={[
+    'Laboratuvar deposunun düz bir klonunda şunu çalıştırın: `claude -p "In one sentence, what does src/cli.ts do?" --model sonnet --output-format json > run1.json`',
+    'Ondan oturum id\'yi çıkarın — `jq -r .session_id run1.json` — ve aynı oturum\'a ikinci bir prompt çalıştırın: `claude -p "Now, in one sentence, what does src/store.ts do?" --resume "$SID" --model sonnet --output-format json > run2.json`',
+    "İki dosya arasında `.usage.cache_read_input_tokens`, `.usage.cache_creation_input_tokens` ve `.usage.cache_creation`'ı karşılaştırın.",
+    'İlk prompt\'u önbellekleme kapalıyken tekrar çalıştırın: `DISABLE_PROMPT_CACHING=1 claude -p "In one sentence, what does src/cli.ts do?" --model sonnet --output-format json`. `input_tokens` ve `total_cost_usd`\'yi 1. çalıştırmayla karşılaştırın.',
+    'Onu bir kez daha `FORCE_PROMPT_CACHING_5M=1` ile çalıştırın ve yazmanın `cache_creation` içindeki hangi anahtarın altına düştüğüne bakın.',
+    "Aynı klonda etkileşimli bir oturum başlatın, herhangi bir şey sorun, ardından `/usage`'ı çalıştırın ve `Prompt cache (main)` satırını bulun.",
+  ]}
+  expected="Önbellekleme açıkken, önbelleklenmemiş `input_tokens` bir avuç token iken `cache_read_input_tokens` on binlerce. DISABLE_PROMPT_CACHING=1 ile aynı prompt ~67.500 önbelleklenmemiş girdi token'ı, sıfır önbellek okuması ve kabaca 7 katı maliyet bildiriyor. FORCE_PROMPT_CACHING_5M=1 ile yazma `ephemeral_1h_input_tokens` yerine `ephemeral_5m_input_tokens` altında görünüyor."
+  checklist={[
+    'Her iki önbelleklenmiş çalıştırma da dört haneli oluşturma ve beş haneli okuma token sayıları gösteriyor',
+    'Devre dışı bırakılmış çalıştırma cache_read_input_tokens: 0 ve çok daha büyük bir total_cost_usd gösteriyor',
+    'Her çalıştırmanın hangi ephemeral_* anahtarına yazdığını ve nedenini adlandırabiliyorsunuz',
+    "/usage'da Prompt cache (main) satırını buldunuz",
+    '1. çalıştırmanın yepyeni bir oturum olmasına rağmen neden zaten sıcak bir önbelleğe sahip olduğunu açıklayabiliyorsunuz',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m21-scale/03-prompt-caching/01-cache-hits-across-two-runs.txt"
+    range="3-30"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m21-scale/03-prompt-caching/02-cache-disabled-and-5m-ttl.txt"
+    range="2-29"
+  />
+</Lab>
+
+O zarflardaki dört şey dikkatle okunmaya değer.
+
+**1. çalıştırma yepyeni bir oturumdu ve yine de önbellekten 66.548 token okudu.** Bu, önbellek-kapsamı kuralının iş başında olması: aynı makinede aynı dizindeki önceki oturumlar zaten o öneği inşa etmişti ve bu, onunla eşleşti.
+
+**Her iki önbelleklenmiş çalıştırma da `ephemeral_1h_input_tokens`'a yazdı.** O makine, ana konuşmanın varsayılan olarak bir saatlik TTL aldığı plan kullanımı içindeki bir Claude aboneliğinde. Bir API anahtarında ya da bir bulut sağlayıcısında, `promptCacheTtl` aksini söylemedikçe aynı çalıştırmalar `ephemeral_5m_input_tokens`'a yazardı.
+
+**Önbelleklemeyi kapatmak, aynı yanıt için kabaca yedi katı maliyete mal oldu** — 0,0198 dolara karşı 0,137 dolar — ve 67.572 token'ı ucuz önbellek-okuma sütunundan tam fiyat `input_tokens`'a taşıdı. Claude Code'un her turda sizin için sessizce yaptığı şeyin büyüklüğü budur.
+
+**Beş dakikalık TTL'yi zorlamak da bedava değildi**: 0,095 dolar, `ephemeral_5m_input_tokens` altında yazılan 34.533 token ve yalnızca okunan 33.399 ile. Mevcut bir saatlik önek, beş dakikalık kova için yeniden kullanılabilir değildi, bu yüzden o çalıştırma ikinci bir tane inşa etmek için ödedi. `FORCE_PROMPT_CACHING_5M=1`'in bir tasarruf değil bir hata ayıklama aracı olmasının nedeni tam olarak bu.
+
+## Anti-pattern'ler
+
+**"Bir şey denemek" için görev ortasında model değiştirmek.** Her modelin kendi önbelleği var, bu yüzden sıradaki istek bütün konuşmayı hiç isabet olmadan yeniden okur. _Düzeltme:_ model ve effort'u bir oturumun en başında seçin; değiştirmeniz gerekiyorsa, yeniden inşa edilecek az şey olduğunda, bir `/clear` ya da `/compact`'ın hemen ardından yapın.
+
+**Hijyen olarak her birkaç turda bir `/compact`.** Sıkıştırma ayrıntıyı atar ve konuşma önbelleğini yeni, daha kısa bir önekten yeniden inşa eder. _Düzeltme:_ doğal görev sınırlarında sıkıştırın, ya da bir yolu özetlemek yerine geri almak istediğinizde `/rewind` yapın.
+
+**Bir aradan sonraki yavaş bir ilk turu modelin suçlamak.** Önek sona erdi; istek sıfırdan yeniden işleniyor. _Düzeltme:_ bunu tanıyın ve uzun boşta kalma aralıkları bir API anahtarındaki normal deseniniz ise `promptCacheTtl: "1h"`'ı ayarlayın.
+
+**Bir `CLAUDE.md` düzenlemesinin çalışan oturumu değiştirmesini beklemek.** Önbelleği geçersiz kılmaz — çünkü `/clear`, `/compact` ya da bir yeniden başlatmaya kadar hiç uygulanmaz. _Düzeltme:_ yeniden başlatın, ya da yeni talimatı bir sonraki prompt'unuzda söyleyin.
+
+**Worktree'lerin sıcak bir önbelleği paylaştığını varsaymak.** Her worktree farklı bir çalışma dizinidir, bu yüzden her biri kendi öneğini inşa eder. _Düzeltme:_ worktree başına soğuk bir ilk turu bekleyin ve bunu kaç tanesini paralel çalıştırdığınıza katın.
+
+**Harcamayı kontrol etmek için `DISABLE_PROMPT_CACHING`'e başvurmak.** Laboratuvar tersini ölçtü: önbelleklemeyi devre dışı bırakmak, aynı bir prompt'un maliyetini kabaca yediyle çarptı. _Düzeltme:_ önbelleklemeyi açık bırakın ve bunun yerine context'te taşıdığınızı azaltın.
+
+<Callout variant="changed">
+  v2.1.260'tan önce, bir API anahtarı ya da Claude aboneliğiyle Fable 5.1'de effort'u değiştirmek de
+  önbelleği geçersiz kılıyordu; artık onu koruyor ve Claude Code değişikliği sormadan uyguluyor.
+  v2.1.238'den önce, `/model`, önbellek zaten sona ermiş olsa bile bir değişimi onaylamanızı
+  istiyordu.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/prompt-caching"
+  questionId="q1"
+  lang="tr"
+  prompt="Bunlardan hangisi önbelleklenmiş öneği bozulmadan tutar?"
+  options={[
+    {
+      text: "`Bash`'ı bir deny kuralı olarak eklemek",
+      explanation:
+        "Çıplak bir tool adı, tool'u sistem prompt'u katmanından kaldırır, ki bu ondan sonraki her şeyi geçersiz kılar.",
+    },
+    {
+      text: "`Bash(rm *)`'ı bir deny kuralı olarak eklemek",
+      correct: true,
+      explanation:
+        "Kapsamlı bir kural, Claude'un hangi tool'ları gördüğünü değiştirmez; Claude çağrıyı denediğinde kontrol edilir.",
+    },
+    {
+      text: "`/model` ile Sonnet'ten Opus'a geçmek",
+      explanation: 'Her modelin kendi önbelleği var.',
+    },
+    {
+      text: "`opusplan` model ayarıyla plan mode'a girmek",
+      explanation:
+        "`opusplan`, plan mode'da Opus'a, dışında Sonnet'e çözülür, bu yüzden geçiş bir model değişimidir.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/prompt-caching"
+  questionId="q2"
+  lang="tr"
+  prompt="JSON zarfınız `cache_creation.ephemeral_5m_input_tokens: 34533` ve `ephemeral_1h_input_tokens: 0` gösteriyor. Bu size ne söyler?"
+  options={[
+    {
+      text: 'Önbellekleme devre dışı',
+      explanation:
+        'Önbellekleme devre dışıyken her iki önbellek sütunu da sıfırdır ve `input_tokens` her şeyi taşır.',
+    },
+    {
+      text: "Bu isteğin önbellek yazmaları beş dakikalık TTL'yi kullandı",
+      correct: true,
+      explanation:
+        'Bu, bir API anahtarında ya da bulut sağlayıcısında varsayılan olarak olur, ya da `FORCE_PROMPT_CACHING_5M=1` ayarlıyken.',
+    },
+    {
+      text: 'Önbellek istek ortasında sona erdi',
+      explanation: "Alan, neyin sona erdiğini değil, yazmanın hangi TTL'yi istediğini kaydeder.",
+    },
+    {
+      text: "`cache_control`'ü çıkaran bir gateway üzerinden çalışıyorsunuz",
+      explanation:
+        'Bu durum, bütün konuşmanızın önbelleksiz girdi olarak faturalandırılması olarak görünür, 5 dakikalık bir yazma olarak değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/prompt-caching"
+  questionId="q3"
+  lang="tr"
+  prompt="Daha önce kullandığınız bir dizindeki yepyeni bir `claude -p` oturumu, ilk isteğinde on binlerce `cache_read_input_tokens` bildiriyor. Neden?"
+  options={[
+    {
+      text: 'Zarf, bu oturumunkini değil, bütün hesabın önbelleğini bildiriyor',
+      explanation: '`usage` nesnesi yalnızca bu isteği bildirir.',
+    },
+    {
+      text: 'Önbellek makineye ve dizine kapsanmıştır, bu yüzden aynı dizindeki önceki bir oturum zaten o öneği inşa etmişti',
+      correct: true,
+      explanation:
+        "Sistem prompt'u çalışma dizinini, platformu, shell'i ve OS sürümünü gömer — aynı değerler, aynı önek.",
+    },
+    {
+      text: '`-p` çalıştırmaları her zaman son etkileşimli oturumu yeniden kullanır',
+      explanation: 'Bir konuşmayı devam ettirmek `--resume` ya da `--continue` gerektirir.',
+    },
+    {
+      text: 'Önbellek okumaları tahmin edilir, ölçülmez',
+      explanation: "Bunlar API'nin yanıtta bildirdiği token sayılarıdır.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m21-scale/prompt-caching"
+  questionId="q4"
+  lang="tr"
+  prompt="Plan kullanımı içindeki bir Claude aboneliğinde bir subagent'ın istekleri varsayılan olarak hangi TTL'yi alır?"
+  options={[
+    {
+      text: 'Ana konuşmayla aynı, bir saat',
+      explanation: 'Subagent\'lar, aboneliğin saatini almayan "geri kalan her şey" kovasına düşer.',
+    },
+    {
+      text: "`subagentPromptCacheTtl` ya da `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL`'i ayarlayana kadar beş dakika",
+      correct: true,
+      explanation:
+        "Bir subagent'ın `experimental.cacheTtl` frontmatter'ı da bunu ayarlayabilir, v2.1.248 ya da üstünde.",
+    },
+    {
+      text: 'Ebeveynin önbelleğini miras alırlar, bu yüzden hiçbir TTL uygulanmaz',
+      explanation:
+        "Bir subagent'ın kendi sistem prompt'u ve tool kümesi vardır, bu yüzden ilk isteği ebeveynin önbelleğini okumaz. Bir *fork* okur.",
+    },
+    {
+      text: 'Hiçbiri; subagent istekleri asla önbelleklenmez',
+      explanation: 'Bir subagent, turları boyunca kendi önbelleğini ısıtır.',
+    },
+  ]}
+/>
+
+**Sonraki:** `04-gateways-and-clouds`, aynı isteği tamamen Anthropic'in altyapısının dışına taşıyor — Bedrock, Google Cloud'ın Agent Platform'u, Microsoft Foundry ve önlerindeki gateway'ler.

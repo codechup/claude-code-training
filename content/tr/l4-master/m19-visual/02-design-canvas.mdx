@@ -1,6 +1,6 @@
 ---
-title: '/design tuvali: brief girer, artboard çıkar'
-description: "/design'ı bir brief ile çalıştırın; Claude düzenlenebilir artboard'lardan oluşan bir tuvali artifact olarak yayınlar. Tuvalin ne işe yaradığını, onay ve dışa aktarmanın nasıl çalıştığını, /design-sync'in gerçek bileşenlerinizi nasıl beslediğini ve bu sitenin kendi tuvalini nasıl design token'larına dönüştürdüğünü öğrenin."
+title: '/design canvas’ı: brief girer, artboard çıkar'
+description: "/design'ı bir brief ile çalıştırın; Claude düzenlenebilir artboard'lardan oluşan bir canvas'ı artifact olarak yayınlar. Canvas'ın ne işe yaradığını, onay ve dışa aktarmanın nasıl çalıştığını, /design-sync'in gerçek bileşenlerinizi nasıl beslediğini ve bu sitenin kendi canvas'ını nasıl design token'larına dönüştürdüğünü öğrenin."
 level: 4
 module: 'm19-visual'
 order: 2
@@ -9,7 +9,7 @@ difficulty: core
 tags: ['design', 'artifact', 'token', 'görsel']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Share session output as artifacts (Draft a design canvas)'
@@ -31,11 +31,211 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-`/design [brief]`, artifact'ler üzerine kurulu yerleşik (bundled) bir skill'dir: verdiğiniz brief'ten tek bir pan/zoom tuvaline yerleştirilmiş artboard'lar çizer ve bu tuvali, Claude Design editörünün araştırma önizlemesini çalıştıran bir artifact olarak yayınlar. Ders, karar aldıran bir brief'in nasıl yazıldığını (tek ekran değil karşılaştırılabilir varyantlar, ad verilmiş frame'ler, baştan belli kısıtlar), yayınlanan tuvalde hesabınıza göre düzenleme mi yoksa görüntüleme ve PNG/PDF dışa aktarma mı yapabileceğinizi, `/design-sync` ile deponuzdaki React design system'in Claude Design'a yüklenmesini ve `/design-login`'in bu erişimi yetkilendirmesini anlatır. Kapanış, bu sitenin kendi tuvalidir: `docs/design/CANVAS.md`, dokuz artboard ve `docs/design/canvas-out/` altındaki `.dc.html` dosyaları — tuvalin `src/styles/tokens.css`'e dönüştürülmesi, ekran görüntüsü değil token üretmenin neden tek gerçek teslimat olduğunu gösterir.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur.
-</Callout>
+- `/design`'ın ne ürettiğini açıklamak — bir artifact olarak yayınlanan artboard'lardan oluşan bir canvas, bitmiş bir sayfa ya da bir bileşen kütüphanesi değil.
+- Tek bir olası ekran yerine karşılaştırılabilir seçenekler getiren bir brief yazmak.
+- Yayınlanan canvas'ta ne olduğunu söylemek: kaydetme etkinken düzenleme, etkin değilken görüntüleme ve dışa aktarma (PNG/PDF).
+- `/design-sync`'in ne zaman değerli olduğuna ve `/design-login`'in ne için olduğuna karar vermek.
+- Onaylanmış bir canvas'ı kodun tüketebileceği bir şeye — ekran görüntüsüne değil token'lara — dönüştürmek, bu sitenin kendi canvas'ını örnek çalışma olarak kullanarak.
+
+**Ön koşullar.** Artifact'lerin kullanılabilir olduğu bir oturum (1. ders: `/login`, Pro/Max/Team/Enterprise, Anthropic API) ve Claude Code 2.1.234 ya da üzeri. `/design`, artifact'ler üzerine kurulu yerleşik (bundled) bir [skill](/tr/playbook/glossary/#skill)'dir (belirli bir görev için Claude'a verilen paketlenmiş talimat kümesi), bu yüzden her artifact gereksinimini devralır. Amazon Bedrock, Google Cloud'un Agent Platform'u, Microsoft Foundry ve AWS üzerindeki Claude Platform'da kullanılamaz, çünkü artifact'ler orada kullanılamaz.
+
+<WhenNotToUse>
+  `/design`, çizime yönelik bir araştırma önizlemesidir — UI mockup'ları, ekran akışları, landing
+  page'ler ve poster, broşür gibi basılı parçalar. Tasarım zaten mevcutsa ve onu kodlanmış hâlde
+  istiyorsanız (değişikliği tarif edip Claude'un kodu düzenlemesine izin verin), ihtiyacınız olan
+  eser bir düzen değil bir belgeyse, karar görünümle değil davranışla ilgiliyse ya da kurumunuzun
+  gerçek tasarım sistemi zaten soruyu yanıtlıyorsa (bu durumda yararlı hamle yeni bir şey çizmek
+  değil, token'ları Claude'un bulacağı bir yere kaydetmektir) yanlış araçtır. Ve bir canvas bir
+  spesifikasyon değildir: alt akıştaki hiçbir şey bir `.dc.html` artboard'unu okumaz, bu yüzden hiç
+  token'a ya da koda dönüşmeyen bir tasarım, bir resimden başka bir şey üretmemiş demektir.
+</WhenNotToUse>
+
+## Kavram
+
+### Komutun yaptığı şey
+
+`/design [brief]` yerleşik bir skill'dir. Ona bir brief verin, Claude tasarımı tek bir canvas üzerine yerleştirilmiş artboard'lar olarak taslaklar, sonra o canvas'ı Claude Design editörünün bir araştırma önizlemesini çalıştıran bir artifact (Claude Code'un oturumunuzdan claude.ai üzerindeki özel bir URL'e yayınladığı canlı web sayfası) olarak yayınlar. Claude bir bağlantı yazdırır; onu açıp artboard'ları incelersiniz.
+
+Bu dersin örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni) dokümantasyonun kendi biçimidir — bir spesifikasyon değil, bir brief:
+
+```text
+/design a settings screen for a mobile banking app
+```
+
+Canvas bir artifact olduğu için, 1. dersteki her şey geçerlidir: bir `claude.ai/code/artifact/...` URL'ine iner, siz paylaşana kadar size özeldir, yeniden yayınlamak URL'i korur ve bir sürüm ekler, ve **Share** kontrolü hangi sürümü görüntüleyenlerin göreceğini seçer.
+
+Yayınlanan canvas'ta neler yapabileceğiniz hesabınıza bağlıdır. Kaydetme etkin olduğunda bir artboard üzerinde bir öğe seçer, onu değiştirir ve kaydedersiniz — bu, herkes için yeni bir sürüm yayınlar. Aksi hâlde Claude'un taslağının PNG ya da PDF olarak dışa aktarılabilen bir görüntüle-ve-dışa-aktar önizlemesini alırsınız.
+
+Bu özelliğin kurulduğu döngü kısadır: bir brief ile çalıştırın, canvas'ı açın, bir artboard seçin, sonra Claude'a hangi seçeneği uygulayacağını söyleyin. Canvas seçtiğiniz yerdir; repository seçimin indiği yerdir.
+
+### Karar aldıran bir brief yazmak
+
+Tek bir ekranı tarif eden bir brief size tek bir ekran verir ve onun iyi olup olmadığını anlamanın hiçbir yolu yoktur. Karşılığını veren brief'ler **karşılaştırılabilir varyantlar** ister — aynı içeriğin birkaç farklı şekilde çizilmesi, böylece farklar tartışmanın kendisi olur:
+
+```text
+/design four settings screens for a mobile banking app: vary density and grouping,
+same content in each, one line under each saying what it trades away.
+```
+
+Bir brief'te olması gereken iki şey daha vardır, çünkü Claude bunları tahmin edemez: önemsediğiniz **frame**'ler (390 px'te bir telefon ve 1280 px'te bir masaüstü, bir tasarımın iki boyutu değil, farklı tasarımlardır) ve zaten belirlenmiş **kısıtlar** — marka renkleri, yazı tipi, erişilebilirlik çıtası. Dışarıda bıraktığınız her şeye skill sizin yerinize karar verir ve fark edilmeden verilmiş bir kararı geri almak işin pahalı kısmıdır.
+
+### /design-sync ve /design-login
+
+Varsayılan olarak artboard'lar sıfırdan çizilir. `/design-sync [ipucu]`, repository'nizin React tasarım sistemini dönüştürür ve Claude Design'a yükler, böylece ürettiği tasarımlar gerçek bileşenlerinizi kullanır; sistemi `/design-sync Acme DS` gibi adlandırabilirsiniz. İlk senkronizasyon her bileşeni doğrular ve büyük bir repository'de birkaç saat sürebilir. `/design-login`, bu tasarım sistemi erişimini claude.ai hesabınızla yetkilendirir.
+
+İkisi de tam olarak bileşenleriniz yerleştirdiğiniz şey hâline geldiğinde değerlidir. Soru "bu neye benzemeli" ise sıfırdan çizmek daha hızlıdır; "mevcut parçalarımız bu ekranda nasıl dizilir" ise önce senkronize edin.
+
+### Canvas'tan koda
+
+Bir canvas bir build tarafından tüketilebilir değildir. Onu gerçek yapan adım, onu stylesheet'inizin sahip olduğu adlandırılmış değerlere — renkler, tip ölçeği, boşluk, köşe yarıçapı, hareket — dönüştürmek ve bir daha resme bakmamaktır.
+
+Bu site örnek çalışmadır. Canlı canvas'ı sahibinin claude.ai hesabına özel kalır; herkese açık olan yazı ve repository'ye eklenen dışa aktarılmış artboard'lardır. Lider oturum tasarımı `/design` ile 2026-09-06'da taslakladı ve `docs/design/CANVAS.md`'de yazdı: dokuz artboard (marka, token'lar, 1280 ve 390'da landing sayfası, 1280 ve 390'da ders sayfası, açık temada ders sayfası, bileşen galerisi ve `/design` sayfasının kendisi), her biri belirlediği frame ve onu uygulayan planla birlikte. O dosyadaki token tablosu — `bg-0`, `ink`, `accent`, `caret` ve gerisi, koyu ve açık temada — `src/styles/tokens.css`'e kopyalandı, ve bu repository'nin kuralları o zaman başka hiçbir yerde ham bir hex kelimesini yasaklıyor. El değiştirmenin bütün amacı budur: ondan sonra canvas bayatlayabilir ve hiçbir şeyi bozmaz, çünkü sözleşme token'lardır.
+
+O yazıdan çalınmaya değer iki ayrıntı var. Kontrast **hesaplandı**, gözle tahmin edilmedi: inceleme her iki temada da soluk-ink token'ını yükseltti ve ayrı bir `accent-text` token'ı ekledi, çünkü metin olarak ham altın rengi açık kâğıtta WCAG AA'yı geçemiyor. Ve artboard'lar depoya eklenmiş bir betikle (`docs/design/canvas-src/build.mjs`) üretilir, böylece canvas'taki her değer bir konuşma anısına değil bir kod satırına iz sürer.
+
+### Artboard dosyası
+
+Her artboard bir `.dc.html` dosyasıdır — kökünde bir `<x-dc>` ve panonun ihtiyaç duyduğu yazı tipleri ile stiller için bir `<helmet>` bloğu olan bir HTML belgesi — artı, her panoya bir başlık, bir frame boyutu ve paylaşılan canvas üzerinde bir `x`/`y` konumu veren bir `canvas.json`. Onları okumak, gerçekte ne çizildiğini kontrol etmenin yoludur:
+
+<Transcript
+  src="content/_shared/transcripts/m19-visual/02-design-canvas/01-canvas-out.txt"
+  range="4-25"
+/>
+
+## Uygulamalı laboratuvar
+
+Bir canvas'ın çizilişinin dürüst bir [transcript](/tr/playbook/glossary/#transcript)'i (gerçek bir Claude Code oturumunun kaydı) olamaz: `/design`, hesabınıza bir artifact yayınlar ve sonra size görsel bir editör verir, ikisi de bir dersin sizin adınıza yapabileceği ya da taklit edebileceği bir şey değildir. Bu yüzden bu laboratuvarın iki yarısı var — herkese açık bir repository'de zaten var olan bir canvas'ın gerçek, tekrarlanabilir bir okuması ve kendinizin çalıştıracağı etkileşimli yarı.
+
+<Lab
+  title="Laboratuvar · gerçek bir canvas'ı okuyun, sonra kendinizinkini taslaklayın"
+  lessonId="tr/l4-master/m19-visual/design-canvas"
+  repoTag="none"
+  steps={[
+    'Bu sitenin kendi repository’sini klonlayın (`git clone https://github.com/codechup/claude-code-training`) ve `docs/design/CANVAS.md`’yi baştan sona okuyun — girdiler, artboard’lar, token tablosu, farklar, el değiştirme.',
+    '`docs/design/canvas-out/` dizinini listeleyin ve `canvas.json`’ı okuyun: dokuz artboard, her biri bir frame boyutu ve bir konumla. `Tokens.dc.html`’i bir tarayıcıda açın ve paletini `src/styles/tokens.css` ile karşılaştırın.',
+    'Bir token seçin — mesela `accent-text` — ve CANVAS.md §5’te onun neden var olduğunu açıklayan paragrafı bulun. Bir tasarım kararının yazıya döküldüğünde neye benzediği budur.',
+    'Şimdi kendi sıranız: artifact’lerin kullanılabilir olduğu bir oturumda, birkaç varyant isteyen ve frame’lerinizi adlandıran bir brief ile `/design` çalıştırın, örn. `/design three dashboard layouts for a task tracker at 1280 and 390, same metrics in each, one line under each on what it trades away`.',
+    'Claude’un yazdırdığı bağlantıyı açın. Artboard’ları inceleyin; kaydetme etkinse bir şeyi değiştirip kaydedin; değilse taslağı PNG ya da PDF olarak dışa aktarın.',
+    'Bir artboard seçin ve Claude’a hangi seçeneği uygulayacağını söyleyin. Önce bitmiş ekranı değil, bir stylesheet’e yapıştırabileceğiniz bir renk, tip ve boşluk bloğu olan token’ları isteyin.',
+  ]}
+  expected="docs/design/canvas-out/ dokuz .dc.html artboard’u ve canvas.json’ı barındırır, ve CANVAS.md §3’teki her renk src/styles/tokens.css’te görünür. Kendi /design çalıştırmanız, istediğiniz her varyant için bir artboard gösteren canvas'a sahip bir claude.ai/code/artifact/... bağlantısı yazdırır."
+  checklist={[
+    'Dokuz artboard’un her birinin neyi belirlediğini adlandırabiliyorsunuz',
+    'Değeri belirtilen bir erişilebilirlik nedeniyle değişmiş bir token buldunuz',
+    'Brief’iniz varyantlar istedi ve frame’lerini adlandırdı',
+    '/design bir canvas bağlantısı yazdırdı ve canvas’ta istediğiniz her varyant için bir artboard var',
+    'Uygulama adımı bir ekran görüntüsüyle değil token’larla başladı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m19-visual/02-design-canvas/01-canvas-out.txt"
+    range="4-16"
+  />
+</Lab>
+
+## Anti-pattern'ler
+
+**Tek bir ekranı brief'lemek.** Tek bir artboard, onu neyle karşılaştıracağınızı vermez, bu yüzden "bu iyi mi?" bir zevk meselesi hâline gelir. _Düzeltme:_ aynı içeriğin üç dört varyantını ve her birinin neyi feda ettiğine dair tek satır isteyin.
+
+**Tek genişlikte tasarlamak.** Yalnızca 1280 px'te çizilmiş bir canvas, telefonda önemli olan her kararı saklar. _Düzeltme:_ brief'te her iki frame'i de adlandırın; bu sitenin canvas'ı her 1280 px pano yanında bir 390 px pano taşır.
+
+**Canvas'ı gerçeğin kaynağı gibi görmek.** Build'inizdeki hiçbir şey bir `.dc.html` dosyasını okumaz. Kimsenin dönüştürmediği bir canvas, fazladan adımı olan bir ekran görüntüsüdür. _Düzeltme:_ onu stylesheet'te token'lara dönüştürün ve her token'ın ne için olduğunu kaydedin.
+
+**Kontrastı gözle tahmin etmek.** Monitörünüzde iyi görünen bir palet, kâğıt renginde bir arka planda AA'yı geçemeyebilir ve altın rengi metin klasik suçludur. _Düzeltme:_ kontrast matrisini nihai token'lardan hesaplayın ve token'ları o değiştirsin.
+
+**İlk günden `/design-sync`'e yönelmek.** İlk senkronizasyon her bileşeni doğrular ve büyük bir repository'de saatler sürebilir — ekranın ne olduğuna hâlâ karar verirken bu kötü bir ödünleşimdir. _Düzeltme:_ zaten sahip olduğunuz bileşenleri yerleştirirken senkronize edin.
+
+**Herkesin düzenleyebildiğini varsaymak.** Canvas'ta düzenleme, hesap için kaydetme etkinleştirildiğinde vardır; aksi hâlde bir inceleyen görüntüle-ve-dışa-aktar önizlemesi alır. _Düzeltme:_ düzenleme beklemek yerine geri bildirimlerini artifact üzerinde yorum olarak toplayın (1. ders).
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l4-master/m19-visual/design-canvas"
+  questionId="q1"
+  lang="tr"
+  prompt="/design gerçekte ne üretir?"
+  options={[
+    {
+      text: 'Repository’nizde bir React bileşenleri kümesi.',
+      explanation:
+        'Bu, sonradan attığınız uygulama adımıdır; /design çizer, kod [commit](/tr/playbook/glossary/#commit) etmez (bir git deposundaki değişiklik kümesini kalıcı olarak kaydetmez).',
+    },
+    {
+      text: 'Claude Design editörünün bir araştırma önizlemesini çalıştıran, artifact olarak yayınlanmış bir artboard canvas’ı.',
+      correct: true,
+      explanation:
+        'Tam olarak — ve bir artifact olduğu için, sürümleri ve paylaşımıyla bir claude.ai artifact URL’inde yaşar.',
+    },
+    {
+      text: 'Çalışma dizininize kaydedilen bir PNG dışa aktarımı.',
+      explanation:
+        'PNG ve PDF, yayınlanan canvas’tan aldığınız dışa aktarımlardır, komutun yerelde yazdığı şey değil.',
+    },
+    {
+      text: 'Bir Figma dosyası.',
+      explanation: 'Hiçbir üçüncü taraf tasarım aracı işin içinde değildir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m19-visual/design-canvas"
+  questionId="q2"
+  lang="tr"
+  prompt="Oturumunuz bir API anahtarıyla kimlik doğruluyor. /design çalıştırıyorsunuz. Ne olur?"
+  options={[
+    {
+      text: 'Çalışır — /design yerel bir skill’dir.',
+      explanation:
+        '/design artifact’ler üzerine kuruludur, ve artifact’ler /login ile giriş yapılmış bir oturum gerektirir.',
+    },
+    {
+      text: 'Kullanılamaz, çünkü artifact gereksinimleri karşılanmıyor.',
+      correct: true,
+      explanation:
+        'Doğru. /design, artifact’lerin kullanılabilir olduğu bir oturum artı Claude Code 2.1.234 ya da üzerini gerektirir.',
+    },
+    {
+      text: "Canvas'ı yayınlar ama onu paylaşamazsınız.",
+      explanation: 'Hiçbir şey yayınlanmaz; ön koşul ondan önce başarısız olur.',
+    },
+    {
+      text: 'Artboard’ları repository’nize yazmaya geri düşer.',
+      explanation: 'Canvas için belgelenmiş bir yerel yedek yoktur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l4-master/m19-visual/design-canvas"
+  questionId="q3"
+  lang="tr"
+  prompt="/design-sync ne içindir?"
+  options={[
+    {
+      text: 'Yayınlanmış bir canvas’ı sonraki düzenlemelerle senkronize tutmak.',
+      explanation:
+        "Canvas'ta kaydetmek zaten yeni bir sürüm yayınlar; bunun için bir komuta gerek yoktur.",
+    },
+    {
+      text: 'Repository’nizin React tasarım sistemini dönüştürüp Claude Design’a yüklemek, böylece tasarımlar gerçek bileşenlerinizi kullansın.',
+      correct: true,
+      explanation:
+        'Ve ilk senkronizasyon her bileşeni doğrular — büyük bir repository’de birkaç saat sürebilir.',
+    },
+    {
+      text: 'Claude’un paletini token dosyanıza indirmek.',
+      explanation: 'O dönüştürme bir insan kararıdır, bir kez yapılır ve stylesheet’e yazılır.',
+    },
+    {
+      text: 'İki claude.ai hesabı arasında artboard senkronlamak.',
+      explanation: 'Bir artifact’i paylaşmak bunu karşılar; /design-sync bileşenlerle ilgilidir.',
+    },
+  ]}
+/>
+
+**Sırada:** `03-chrome-automation` canvas'ı bırakıp canlı tarayıcıya geçer — Claude in Chrome ile gerçek bir sayfayı sürmek ve olanı bir GIF olarak kaydetmek.
