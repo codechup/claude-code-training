@@ -2,7 +2,7 @@
 id: P49
 title: 'Public-repo hardening and a changelog-currency pipeline'
 milestone: M4
-status: review
+status: done
 owner: lane5-opus
 branch: plan/49-public-hardening-currency
 model_hint: opus
@@ -59,7 +59,7 @@ shared_paths:
   - content/en/playbook/changelog.mdx
   - content/tr/playbook/changelog.mdx
 estimate: L
-updated_at: 2026-09-08T21:44:26Z
+updated_at: 2026-09-08T22:48:25Z
 open_questions:
   - 'Resolved in this PR, recorded so the reviewer knows why the step exists: `changelog-weekly.yml` now runs `gh label create drift --force` before upserting the issue, because `gh issue create --label drift` fails outright when the label does not exist and would have made the first scheduled run red for a non-drift reason.'
   - 'Owner action: set the `HYGIENE_EXTRA_PATTERNS` repo secret on both codechup/claude-code-training and codechup/claude-code-lab. Every check works without it — the private patterns simply are not applied in CI.'
