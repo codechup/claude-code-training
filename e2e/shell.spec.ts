@@ -68,6 +68,33 @@ test('nav tree renders the whole curriculum on a lesson page', async ({ page }) 
   ).toBeVisible();
 });
 
+// Real defect found by P47 (docs/launch/hardening.md §3/§7): the skip link
+// jumped the visual scroll position but never moved keyboard focus, because
+// none of the three layouts gave their `<main id="main">` a `tabindex="-1"`.
+// This drives the link the way a keyboard-only visitor actually would —
+// Tab from a fresh page load, Enter to activate — and asserts the DOM's
+// actual focus target, not just the URL fragment.
+test.describe('skip link', () => {
+  test('Tab reaches the skip link and activating it moves keyboard focus into main', async ({
+    page,
+  }) => {
+    await page.goto('/en/l1-beginner/m01-start/what-claude-code-is/');
+
+    // The skip link is the first focusable element in the document.
+    await page.keyboard.press('Tab');
+    const skipLink = page.locator('.cc-skip');
+    await expect(skipLink).toBeFocused();
+    await expect(skipLink).toHaveAttribute('href', '#main');
+
+    await page.keyboard.press('Enter');
+
+    const isMainFocused = await page.evaluate(
+      () => document.activeElement === document.getElementById('main'),
+    );
+    expect(isMainFocused).toBe(true);
+  });
+});
+
 test.describe('theme toggle', () => {
   test('flips data-theme on click and persists across reload', async ({ page }) => {
     await page.goto('/en/');

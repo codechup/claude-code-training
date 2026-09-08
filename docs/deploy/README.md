@@ -112,6 +112,47 @@ other repository.
 | O6 | Enable GitHub Discussions on this repository; install the giscus app; provide its repo ID and category ID as `PUBLIC_GISCUS_REPO_ID` / `PUBLIC_GISCUS_CATEGORY_ID`. | `Giscus.astro` (P08) showing real comments instead of its placeholder. |
 | O7 | Provide a Cloudflare Web Analytics token for `cc.codechup.com` as `PUBLIC_CF_BEACON_TOKEN`. | The analytics beacon (P09) actually reporting. |
 | O8 | Set up the Cloudflare Worker + KV for 👍/👎 feedback (`wrangler login` or a `CLOUDFLARE_API_TOKEN` secret) — may be deferred. | `Helpful.astro` (P08) posting real votes instead of falling back to the GitHub Issues link. |
+| O9 | Add the three Cloudflare Cache Rules below. | Edge caching for `/pagefind/*` (currently `DYNAMIC` despite a correct origin TTL); explicit, future-proof rules for `/_astro/*` and `/`. |
+
+### Cloudflare Cache Rules
+
+P47's launch-hardening pass (`docs/launch/hardening.md` §5) measured real
+`curl -I` response headers against the live site on 2026-09-08 and found the
+origin/CDN split already correct for three of four route classes, with one
+edge-caching gap. These are the measured values and the rules they justify —
+transcribed from that record, not restated from memory:
+
+- **`/_astro/*` (a built, content-hashed asset)** — origin already sends
+  `Cache-Control: public, max-age=31536000, immutable`, and Cloudflare's edge
+  already honours it: `cf-cache-status: HIT`, `Age: 12914`. **Recommended
+  rule: Cache Everything + an edge TTL pinned to match the origin's
+  `max-age=31536000`.** Nothing is broken today — the default cache level
+  already serves these as `HIT` — but a rule makes that explicit instead of
+  relying on Cloudflare's own heuristic, which is a small operational risk
+  since the whole point of the immutable, content-hashed filename is that the
+  edge never has to revalidate it.
+- **`/pagefind/*` (the search index, e.g. `pagefind-entry.json`)** — origin
+  sends `Cache-Control: public, max-age=3600`, but Cloudflare's edge reports
+  `cf-cache-status: DYNAMIC` — it is not being cached at the edge at all.
+  This is because Cloudflare's default cache level only auto-caches by file
+  extension for a fixed list of "static" extensions, and `.json` is not on
+  that list. **Recommended rule: Cache Everything + a short edge TTL (e.g.
+  1h) for `/pagefind/*`**, so the edge — not just the origin — serves the
+  search index from cache. Not a regression or a correctness bug today (the
+  index files are small, ~230 bytes for the entry file, and origin-uncached
+  is safe, just slower on a cache miss); this is the one gap worth closing.
+- **A lesson/HTML page** — origin sends `Cache-Control: no-cache`, and
+  `cf-cache-status: DYNAMIC`, i.e. HTML is correctly never edge-cached today.
+  No rule is needed to fix anything here; leave HTML uncached (short/no
+  cache) so content updates go live immediately on the next request.
+- **`/` (the locale-redirect route)** — origin sends
+  `HTTP/1.1 302 Found`, `Cache-Control: private, no-store`,
+  `vary: Accept-Language, Cookie`, and `cf-cache-status: DYNAMIC`. This
+  already prevents Cloudflare from ever serving one visitor's locale redirect
+  to another. **Recommended rule: an explicit "Bypass cache" rule for `/`**
+  — belt-and-suspenders, not a fix for an observed problem, so that a future
+  Cloudflare dashboard change can't accidentally start caching a
+  per-visitor redirect.
 
 Ordering matters: O2 and O4 must both be done before the host-side vhost
 change is merged, or its own `nginx -t` preflight (on that side) aborts
