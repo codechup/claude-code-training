@@ -24,6 +24,7 @@ import {
   getPlan,
   claimableSet,
   resumable,
+  newest,
   setStatus,
   clearOwner,
   appendBlocked,
@@ -140,9 +141,12 @@ function cmdState(s: PlanSet, statePath: string, io: IO): void {
   io.stdout(`wrote ${rel(statePath)} (${s.files.length} plans)\n`);
 }
 
-function cmdNext(s: PlanSet, clock: Clock, io: IO): void {
-  const now = clock();
-  const claimable = claimableSet(s, now);
+function cmdNext(s: PlanSet, io: IO): void {
+  // Claimability is clock-free (plans/README.md §3): staleness is measured against the
+  // newest `updated_at` in the set, never the wall clock, so `next` agrees with `check`
+  // and `state` regardless of machine clock skew.
+  const ref = newest(s);
+  const claimable = claimableSet(s, ref);
   if (claimable.length === 0) {
     io.stdout("no claimable plans: every todo plan is blocked by dependencies or by an active claim\n");
     return;
@@ -178,8 +182,13 @@ function cmdClaim(
   if (!f) {
     throw new Error(`unknown plan "${pos[0]}"`);
   }
-  const now = clock();
-  const { ok, reason } = resumable(s, f, now);
+  // Staleness is decided clock-free, against the newest `updated_at` in the set
+  // (plans/README.md §3) — the same reference point `check` and `state` use — so a
+  // machine's wall clock (ahead or behind) can never make a fresh claim look stale or
+  // a stale claim look fresh. The wall clock (or `PLAN_NOW`) is used only below, to
+  // stamp the claim's own `updated_at`.
+  const ref = newest(s);
+  const { ok, reason } = resumable(s, f, ref);
   if (!ok) {
     throw new Error(`${f.meta.id} is not claimable: ${reason}`);
   }
@@ -190,6 +199,7 @@ function cmdClaim(
       `${f.meta.id} holds a stale claim by ${ownerName(f.meta)} (since ${formatStamp(f.meta.updated_at)}); read its branch ${f.meta.branch} and Handoff notes, then re-run with --force`,
     );
   }
+  const now = clock();
   const name = owner.trim();
   setStatus(f, STATUS_IN_PROGRESS, name, now);
   saveFile(f);
@@ -283,7 +293,7 @@ export function runCli(args: string[], io: IO, clock: Clock): number {
         cmdState(set, statePath, io);
         return 0;
       case "next":
-        cmdNext(set, clock, io);
+        cmdNext(set, io);
         return 0;
       case "claim":
         cmdClaim(set, pos, flags.owner, flags.force, statePath, clock, io);

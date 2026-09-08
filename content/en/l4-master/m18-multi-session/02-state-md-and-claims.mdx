@@ -78,7 +78,7 @@ Hand-edit it and you have created a second, competing source of truth that will 
 
 The claim rule is deliberately mechanical, so that two sessions computing it independently reach the same answer. A plan is claimable when **all three** hold:
 
-1. `status` is `todo` — or `in_progress` but **stale**, meaning its `updated_at` is more than 24 hours old. What that age is measured _against_ is the subtle part, and this repository measures it two different ways depending on the command; the next section takes that apart.
+1. `status` is `todo` — or `in_progress` but **stale**, meaning its `updated_at` is more than 24 hours old. What that age is measured _against_ is the subtle part — every command measures it the same way, and the next section spells out what that reference point is.
 2. Every id in `depends_on` has `status: done`.
 3. None of its `owned_paths` overlaps the `owned_paths` of a non-stale `in_progress` or `review` plan.
 
@@ -154,28 +154,25 @@ node tools/plan/cli.ts claim P27 --owner sonnet-p27-2026-09-08 --force
 
 </CodeBlock>
 
-**Twenty-four hours since when?** There are two possible reference points, and this repository
-uses both — which is worth studying, because the choice is the interesting design decision and
-because the discrepancy is real.
-
-- **Clock-free.** Compare `updated_at` against `newest(s)`, the largest `updated_at` anywhere in the
-  plan set. Nothing depends on the machine's clock, so two sessions reading the same commit always
-  reach the same verdict. This is what `plans/README.md` §3 specifies, and what `tools/plan/state.ts`
-  and `tools/plan/check.ts` implement — so the `STALE` marker in the generated `STATE.md`, and
-  `check`'s view of which plans are active, are clock-free.
-- **Wall clock.** Compare `updated_at` against `new Date()` at the moment the command runs. This is
-  what `tools/plan/cli.ts` actually passes to `next` and `claim` — the two commands a session uses
-  to take work.
-
-So the guarantee the contract states does not hold for the commands you type. In practice the two
-references sit minutes apart on an active plan set and agree, but on a quiet one — or between
-machines with skewed clocks — `next` and `check` can disagree about the same plan.
+**Twenty-four hours since when?** Against `newest(s)`, the largest `updated_at` anywhere in the plan
+set — never the machine's wall clock. Nothing depends on any one machine's clock, so two sessions
+reading the same commit always reach the same verdict. `plans/README.md` §3 specifies this once, and
+every command that touches staleness computes it the same way: `tools/plan/state.ts` and
+`tools/plan/check.ts` use `newest(s)` for the `STALE` marker in the generated `STATE.md` and for
+`check`'s view of which plans are active, and `tools/plan/cli.ts` uses the same `newest(s)` reference
+for `next` and `claim` — the two commands a session actually uses to take work.
 
 <Callout>
-  Treat that as the lesson, not as a footnote. A coordination rule is only as good as the code that
-  implements it, and "the contract says clock-free, two of the four call sites are" is exactly the
-  kind of finding a session should write into a plan's `open_questions` rather than smooth over.
-  This module's own plan file carries it as one.
+  This used to be a real gap, not a hypothetical one. An earlier version of `tools/plan/cli.ts`
+  passed the wall clock into `next` and `claim` instead of `newest(s)`, so the clock-free guarantee
+  the contract states did not hold for the commands a session actually types. In practice the wall
+  clock and `newest(s)` sit minutes apart on an active plan set and agree, so the gap was invisible
+  day to day — but on a quiet plan set, or between machines with skewed clocks, it meant a
+  fast-forwarded clock could "steal" a claim that was still fresh by the contract's own measure, and
+  a lagging one could refuse to reclaim a plan that had been abandoned for weeks. The fix makes
+  `next` and `claim` share the same `newest(s)` reference point `check` and `state` already used — a
+  contract-vs-implementation mismatch worth writing into a plan's `open_questions` the moment you
+  spot it, not smoothing over.
 </Callout>
 
 `--force` is deliberate friction. Before you type it, read the plan's branch and its Handoff notes and **continue from there** — reuse the branch, do not start over. A stale claim usually means work exists that was never merged; throwing it away is the expensive mistake, not the slow one.
@@ -319,7 +316,7 @@ That is exactly the failure mode a generated file removes: when the status file 
       text: "The verdict does not depend on any machine's clock or timezone, so two sessions reading the same commit agree.",
       correct: true,
       explanation:
-        'That is the property the rule is for — and this repository only gets it where it is actually implemented: `state` and `check` are clock-free, while `next` and `claim` use the wall clock.',
+        'That is the property the rule is for — and every command that touches staleness (`next`, `claim`, `check`, and the `STALE` marker in `state`) computes it against `newest(s)`, never the wall clock.',
     },
     {
       text: 'Plan files no longer need timestamps.',

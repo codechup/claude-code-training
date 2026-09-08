@@ -103,6 +103,66 @@ describe("cli claim", () => {
   });
 });
 
+describe("cli claim is clock-free (plans/README.md §3)", () => {
+  // testdata/plans' newest `updated_at` is P04's 2026-08-20T00:00:00Z. Staleness must be
+  // measured against that reference, never against the wall clock passed to the CLI.
+
+  it("does not let a wall clock far in the future steal a claim that is fresh relative to the newest updated_at", () => {
+    const dir = copyFixtures();
+    // P02 (in_progress, updated_at 2026-08-19T12:00:00Z) is only 12h older than the
+    // newest timestamp in the set (P04, 2026-08-20T00:00:00Z) — fresh, not stale.
+    // A wall clock a week later makes it look 7+ days old if staleness used the clock.
+    const now = new Date("2026-08-27T00:00:00Z");
+
+    const withoutForce = runCLI(dir, now, "claim", "P02", "--owner", "opus-y");
+    expect(withoutForce.code).not.toBe(0);
+    expect(withoutForce.err).toContain("claimed by fresh-2026-08-19");
+
+    // Must be refused outright — not just "needs --force" — because it is not stale.
+    const withForce = runCLI(dir, now, "claim", "P02", "--owner", "opus-y", "--force");
+    expect(withForce.code).not.toBe(0);
+    expect(withForce.err).toContain("claimed by fresh-2026-08-19");
+
+    const body = fs.readFileSync(path.join(dir, "P02-fresh-claim.md"), "utf8");
+    expect(body).toContain("owner: fresh-2026-08-19");
+  });
+
+  it("lets a claim that is stale relative to the newest updated_at be reclaimed even when the wall clock is close to it", () => {
+    const dir = copyFixtures();
+    // P03 (in_progress, updated_at 2026-08-01T00:00:00Z) is 19 days older than the
+    // newest timestamp in the set (P04, 2026-08-20T00:00:00Z) — stale by the contract's
+    // clock-free rule. A wall clock only 12h after P03's own timestamp would make it
+    // look fresh if staleness used the clock instead.
+    const now = new Date("2026-08-01T12:00:00Z");
+
+    const refused = runCLI(dir, now, "claim", "P03", "--owner", "opus-z");
+    expect(refused.code).not.toBe(0);
+    expect(refused.err).toContain("--force");
+    expect(refused.err).not.toContain("is not claimable");
+
+    const claimed = runCLI(dir, now, "claim", "P03", "--owner", "opus-z", "--force");
+    expect(claimed.code).toBe(0);
+    const body = fs.readFileSync(path.join(dir, "P03-stale-claim.md"), "utf8");
+    expect(body).toContain("owner: opus-z");
+    // The new updated_at stamp still comes from the wall clock, not from `newest`.
+    expect(body).toContain("updated_at: 2026-08-01T12:00:00Z");
+  });
+
+  it("agrees with `next` on what is claimable, regardless of wall clock", () => {
+    const dir = copyFixtures();
+    const now = new Date("2026-08-27T00:00:00Z");
+    const r = runCLI(dir, now, "next");
+    expect(r.code).toBe(0);
+    // Same wave as the existing "cli next" test, which uses a wall clock close to
+    // `newest` — the wave must not change just because the wall clock moved.
+    expect(r.out).toContain("claimable now (2)");
+    for (const want of ["P03", "P07", "stale claim by ghost-2026-08-01"]) {
+      expect(r.out).toContain(want);
+    }
+    expect(r.out).not.toContain("P02 ");
+  });
+});
+
 describe("cli status", () => {
   it("sets status, appends Blocked entries, and clears owner on todo", () => {
     const dir = copyFixtures();
