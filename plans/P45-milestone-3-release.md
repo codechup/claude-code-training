@@ -2,8 +2,8 @@
 id: P45
 title: Milestone M3 release
 milestone: M3
-status: todo
-owner: null
+status: in_progress
+owner: sonnet-p45
 branch: plan/45-milestone-3-release
 model_hint: sonnet
 effort_hint: medium
@@ -12,7 +12,7 @@ owned_paths:
   - docs/release/M3-release.md
 shared_paths: []
 estimate: M
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-08T03:23:47Z
 open_questions: []
 ---
 

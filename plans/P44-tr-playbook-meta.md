@@ -2,7 +2,7 @@
 id: P44
 title: "TR translation: Playbook and Meta"
 milestone: M3
-status: review
+status: done
 owner: sonnet-p44
 branch: plan/44-tr-playbook-meta
 model_hint: sonnet
@@ -13,7 +13,7 @@ owned_paths:
   - content/tr/meta/**
 shared_paths: []
 estimate: M
-updated_at: 2026-09-08T03:18:05Z
+updated_at: 2026-09-08T03:23:46Z
 open_questions:
   - >-
     The "ajan" calque for agent survives in eight TR module index.mdx files outside this
