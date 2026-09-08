@@ -2,7 +2,7 @@
 id: P46
 title: Sources verification sweep
 milestone: M4
-status: review
+status: done
 owner: lead-opus
 branch: plan/46-sources-verification-sweep
 model_hint: haiku
@@ -14,7 +14,7 @@ owned_paths:
   - content/tr/**/*.mdx
 shared_paths: []
 estimate: M
-updated_at: 2026-09-08T04:18:51Z
+updated_at: 2026-09-08T04:29:45Z
 open_questions: []
 ---
 

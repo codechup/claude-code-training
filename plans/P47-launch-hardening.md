@@ -2,7 +2,7 @@
 id: P47
 title: Launch hardening
 milestone: M4
-status: review
+status: done
 owner: lead-opus
 branch: plan/47-launch-hardening
 model_hint: sonnet
@@ -14,7 +14,7 @@ owned_paths:
   - .github/workflows/links-weekly.yml
 shared_paths: []
 estimate: M
-updated_at: 2026-09-08T04:24:48Z
+updated_at: 2026-09-08T04:29:46Z
 open_questions:
   - "Skip-link focus defect: <main id=\"main\"> in src/layouts/Lesson.astro, Section.astro and Landing.astro has no tabindex=\"-1\", so keyboard activation of \"Skip to content\" does not move focus past the header nav (confirmed live: document.activeElement lands on <body>). Real, cross-cutting a11y defect axe cannot detect; out of P47's owned_paths (touches three layout files, not src/lib/seo.ts). See docs/launch/hardening.md §3/§7."
   - "Cloudflare cache-rule recommendations (immutable /_astro/**, short-TTL /pagefind/**, never-cache / locale redirect) belong in docs/deploy/README.md's owner checklist, but that file is owned by P10 (status: done) and outside P47's owned_paths/shared_paths ([]). Recommendation and reasoning recorded in docs/launch/hardening.md §5/§7 instead; needs a follow-up plan or an owned_paths amendment to land in docs/deploy/README.md itself."
