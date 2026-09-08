@@ -9,7 +9,7 @@ difficulty: core
 tags: ['ci', 'github-actions', 'otomasyon', 'pull-request']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Claude Code GitHub Actions'
@@ -23,8 +23,286 @@ lab:
   repo_tag: 'lesson/m13-03-start'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders, `@claude` mention'ına cevap veren interactive mode workflow'unu anlatır: `issue_comment`, `pull_request_review_comment` ve `issues` trigger'ları; runner'ın boşuna başlamasını engelleyen `if:` koruması; branch push edip pull request açan bir job için gereken `contents: write`, `pull-requests: write`, `issues: write` ve `id-token: write`; çalıştırmayı tetikleyebilecek kişileri belirleyen write-access ve bot kontrolleri; ve çıktının biçimini belirleyen `CLAUDE.md`. Ayrıca Claude'un commit'lerinde CI'ın neden çalışmadığı (varsayılan `GITHUB_TOKEN`) açıklanır. Laboratuvar workflow'u yerel olarak doğrular; `lesson/m13-03-start` etiketi süreç odaklıdır.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.
+- [Issue](/tr/playbook/glossary/#issue)'larda (bir GitHub deposundaki takip edilen görev ya da hata kaydında), issue yorumlarında ve PR review yorumlarında `@claude`'a cevap veren bir interactive-mode [workflow](/tr/playbook/glossary/#workflow)'u (birden çok adımdan oluşan otomatik iş akışı) yazmak.
+- Tam olarak kimin bunu tetiklemeye izinli olduğunu ve izinli olmayan biri denediğinde ne olduğunu açıklamak.
+- Claude bir [branch](/tr/playbook/glossary/#branch)'ı (bağımsız bir geliştirme hattı; değişiklikler ana koddan ayrı, kendi commit zincirinde birikir) push edip bir [pull request](/tr/playbook/glossary/#pull-request) (bir branch'teki değişikliklerin gözden geçirilip ana koda alınması için açılan istek) açacaksa bir job'ın ihtiyaç duyduğu `permissions:` bloğunu seçmek.
+- `CLAUDE.md`'nin çıktıya ne yaptığını ve onu kısa tutmanın neden bir maliyet kararı olduğunu söylemek.
+- "Claude cevap vermiyor" bildirimlerinin çoğunu açıklayan üç başarısızlığı teşhis etmek.
+
+**Ön koşullar.** Ders 02 (action, input'ları, `claude_args`, secrets disiplini). Bu ders için lab tag'i yalnızca süreç odaklıdır: `lesson/m13-03-start` ve `lesson/m13-03-solution` aynı [commit](/tr/playbook/glossary/#commit)'i (bir git deposundaki değişiklik kümesinin kalıcı, mesajlı kaydı) işaret eder, çünkü alıştırma lab deposunun koduna bir değişiklik değil, GitHub tarafının döngüsüyle ilgilidir.
+
+<WhenNotToUse>
+  Issue-to-PR otomasyonu, issue kararı zaten içeriyorsa ve geriye yalnızca yazım kalıyorsa işe yarar
+  — bir bağımlılık güncellemesi, mekanik bir refactor, iyi tanımlanmış küçük bir özellik. Issue
+  gerçekten bir tasarım sorusu olduğunda, değişiklik işe yaradığını kanıtlayacak hiçbir testi
+  olmayan bir şeye dokunduğunda ya da depoda branch protection ve review zorunluluğu olmadığında
+  yanlış araçtır: buradaki tüm güvenlik modeli, bir insanın [diff](/tr/playbook/glossary/#diff)'i
+  (bir dosyadaki ya da commit'teki değişikliklerin satır satır gösterimini)
+  [merge](/tr/playbook/glossary/#merge) (iki git branch'inin tarihçesini birleştirme işlemi) olmadan
+  önce okumasıdır. Public bir depoda, bir kez daha tartın — write erişimi olan bir kullanıcıdan
+  gelen her `@claude` yorumu ücretlendirilen bir çalıştırma başlatır.
+</WhenNotToUse>
+
+## Kavram
+
+### Döngü
+
+Interactive mode özelliğin tamamıdır. `prompt`'u atlarsınız ve action, bir issue ya da pull request yorumunda, bir pull request review'ında ya da yeni açılan bir issue'nun gövdesinde veya başlığında tetikleyici ifadeyi — varsayılan olarak `@claude`, `trigger_phrase` ile değiştirilebilir — bekler. Claude aynı issue ya da PR üzerinde bir yorumla cevap verir ve çalışırken o yorumu günceller. İstek bir değişiklik ima ettiğinde, değişikliği bir branch'e yazar ve bir pull request açar.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni) bir CLI argümanı değil, bir yorumdur:
+
+```text
+@claude implement this feature based on the issue description
+```
+
+İyi çalışan istekler, herhangi bir iyi devretme gibi aynı şekle sahiptir: bir hedef, kısıtlar ve sonucu kontrol etmenin bir yolu. `@claude fix the TypeError in the user dashboard component`, Claude'a bir semptom ve bakacağı bir yer verir. `@claude make this better` ise hiçbir şey vermez.
+
+### Workflow
+
+Interactive mode hiçbir `prompt` gerektirmez, bu yüzden adım kısadır. Büyüyen şey `on:` bloğu ve `if:` korumasıdır, çünkü runner'ın yalnızca ifade gerçekten mevcut olduğunda başlamasını istersiniz:
+
+<CodeBlock title=".github/workflows/claude-issue.yml">
+
+```yaml
+name: Claude PR Action
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened]
+jobs:
+  claude-pr:
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: '--max-turns 15'
+```
+
+</CodeBlock>
+
+Onu ders 02'nin review workflow'uyla karşılaştırdığınızda üç şey öne çıkar.
+
+**`read` değil `contents: write`.** Bir branch push eden bir job buna ihtiyaç duyar. `pull-requests: write` PR'ı açmasını sağlar, `issues: write` onu tetikleyen issue'ya geri yorum yapmasını sağlar. `id-token: write`, her zamanki gibi, action'ın varsayılan [GitHub App](/tr/playbook/glossary/#github-app) (Claude Code'u bir depoya bağlayan, pull request ve issue'larda otomatik çalışan entegrasyon) kimlik doğrulaması için oradadır.
+
+**`if:` koruması, action'ın zaten yaptığı bir kontrolü tekrarlar.** Bu bilinçlidir: action, cevap vermeden önce tetikleyici ifadeyi kendisi kontrol eder, ama o zamana kadar bir runner zaten başlamıştır. Koruma, runner'ların depodaki her yorumda çalışmaya başlamasını engeller.
+
+**`actions/checkout` ilk sırada gelir.** Onsuz Claude'un içinde çalışacağı deponun yerel bir kopyası olmaz. Yalnızca GitHub API üzerinden okuyan bir job — ders 02'deki zamanlanmış rapor şekli — bunu atlayabilir; dosya düzenleyen bir job atlayamaz.
+
+### Kimin tetiklemeye izni var
+
+Claude başlamadan önce tetikleyen aktör üzerinde iki kontrol çalışır ve ikisinden biri onu reddettiğinde çalıştırma **başarısız olur**:
+
+- **Write erişimi.** Issue ve pull request olaylarında tetikleyen kullanıcının depoya write erişimi olmalıdır. Buna sahip olmayan belirli kullanıcılara izin vermek için `allowed_non_write_users`'ı ayarlayın ve kendi `github_token`'ınızı geçirin. Hiçbir kullanıcının yazmadığı olaylar, örneğin bir `schedule` tetikleyicisi, bu kontrolü atlar.
+- **İnsan aktör.** Her olayda, `allowed_bots`'ta listelenmediği sürece bir bot aktör reddedilir. Bu, GitHub'ın bir depo kullanıcısına — genelde workflow'un `cron` zamanlamasını en son değiştiren kişiye — atfettiği zamanlanmış çalıştırmalar için de geçerlidir. O kullanıcı bir bot ise, onu listeleyin.
+
+Public depolarda açıkça belirtilmeye değer keskin bir kenar var: workflow'unuzdaki kimlik bilgisi adımları, action yorumcunun write erişimini kontrol etmeden _önce_ çalışır. Workflow'unuz önce bir GitHub App token'ı üretiyor ya da bir bulut sağlayıcıya giriş yapıyorsa, yetkisiz bir yorum reddedilmeden önce yine de Actions dakikaları harcar ve denetim günlüğü kayıtları bırakır. Belgelenmiş düzeltme, kimlik bilgisi adımlarından önce yorumcunun write erişimini doğrulayan bir adım eklemektir.
+
+### Çıktıyı ne belirler
+
+Depo kökündeki bir `CLAUDE.md`, her çalıştırmada okunur. Kod stili, review kriterleri, proje kuralları ve tercih edilen kalıpların ait olduğu yer burasıdır ve Claude, PR oluştururken ve istekleri cevaplarken bunlara uyar. "Her çalıştırmada"dan iki sonuç çıkar: onu özlü tutun, çünkü her seferinde bedelini ödersiniz, ve onu depodaki, otomatik PR'ları ekibinizin PR'ları gibi göstermek için en yüksek kaldıraçlı dosya olarak ele alın.
+
+Issue şablonları aynı işi diğer uçtan yapar — bağlamı issue gövdesine sokarlar, böylece Claude'un ne demek istediğinizi çözmesi için daha az tur gerekir. Daha az tur, `claude_args`'taki `--max-turns` ve workflow düzeyindeki bir timeout'un yanında en çok önem taşıyan maliyet kaldıracıdır.
+
+### CI neden Claude'un commit'lerinde çalışmaz
+
+Bu en yaygın sürpriz ve bir Claude kuralı değil, bir GitHub kuralıdır: GitHub, varsayılan `GITHUB_TOKEN` ile yapılan commit'lerde workflow'ları tetiklemez. Action'a `github_token: ${{ secrets.GITHUB_TOKEN }}` geçirdiyseniz, action'ın Claude GitHub App olarak kimlik doğrulaması için satırı kaldırın, ya da onun yerine özel bir uygulama token'ı geçirin. Sonra [CI](/tr/playbook/glossary/#ci) (her push'ta ya da pull request'te otomatik olarak testleri ve kontrolleri çalıştıran hat) workflow'unuzun kendi tetikleyicilerinin, Claude'un push'larının ürettiği olayları — `push` ya da `pull_request` gibi — içerdiğini kontrol edin.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · yerel olarak doğrulanmış, issue tarafından tetiklenen bir workflow"
+  lessonId="tr/l3-advanced/m13-headless-ci/issue-to-pr"
+  repoTag="lesson/m13-03-start"
+  steps={[
+    "Lab klonunuzda `git checkout lesson/m13-03-start` yapın. Bu tag yalnızca süreç odaklıdır — `lesson/m13-03-solution`'la ve öncesindeki `lesson/m13-02-solution`'la aynıdır, çünkü ders GitHub hakkındadır, lab kodu hakkında değil.",
+    "Kavram bölümündeki interactive-mode workflow'uyla, üç tetikleyicinin ve üç maddeli `if:` korumasının hepsini içerecek şekilde, `.github/workflows/claude-issue.yml`'i yazın.",
+    "Doğrulayın: `npx --yes -p @action-validator/cli -p @action-validator/core action-validator .github/workflows/claude-issue.yml` ve `$?`'yi kontrol edin.",
+    'Lab deposunun BUGS.md\'sini okuyun ve bir taslak dosyaya, B5\'i düzeltmek için göndereceğiniz `@claude` yorumunu yazın — kararsız "becomes overdue" testi. Dosyayı, semptomu ve düzeltildiğini kanıtlayan kontrolü adlandırın.',
+    "Yorumunuzu `lesson/m13-02-solution`'daki `claude-review.yml` içindeki prompt'la karşılaştırın: ikisi de aynı agent'a verilen talimatlardır, biri bir yorumdan, diğeri bir workflow input'undan.",
+    "Workflow'u push ETMEYİN ya da gerçek bir API anahtarı olan bir depoya karşı yorumu göndermeyin. Gerçek bir çalıştırmayı yalnızca sahip olduğunuz ve ücretlendirilmesine razı olduğunuz bir depoda tetikleyin.",
+  ]}
+  expected="action-validator hiçbir çıktı vermeden 0 çıkar. @claude yorumunuz test/overdue.test.ts'i adlandırır, testin gerçek duvar saati zamanına bağlı olduğunu söyler ve enjekte edilebilir bir saat artı geçen bir `npm test`'i kanıt olarak ister."
+  checklist={[
+    'Workflow exit code 0 ile doğrulanıyor',
+    '`permissions:` contents: write, pull-requests: write, issues: write ve id-token: write içeriyor',
+    "`if:` koruması issue_comment, pull_request_review_comment ve issues'ı kapsıyor",
+    '`actions/checkout`, action adımından önce çalışıyor',
+    '@claude yorumunuz yalnızca bir semptom değil, bir hedef, bir kısıt ve bir kontrol ifade ediyor',
+    "Gerçek bir secret'ı olan bir depoya karşı hiçbir çalıştırma tetiklenmedi",
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/03-issue-to-pr/01-action-validator.txt"
+    range="2-3"
+  />
+</Lab>
+
+Doğrulayıcı başarıda sessizdir. Yerel bir kontrolün size söyleyebileceği her şey budur: dosya, geçerli olay adları, job anahtarları ve adım şekilleriyle geçerli YAML'dır. Bu dersin gerçekten hakkında olduğu her şey — tetikleyici ifadenin eşleşip eşleşmediği, yorumcunun write erişimi olup olmadığı, token'ın push edip edemeyeceği — yalnızca gerçek bir çalıştırmada gözlemlenebilir, bu yüzden laboratuvar burada durur ve bir sonraki bölüm bir [transcript](/tr/playbook/glossary/#transcript) (kaydedilmiş gerçek bir oturum dökümü) değil bir sorun giderme listesidir.
+
+### Hiçbir şey yapmamış bir çalıştırmayı okumak
+
+<CodeBlock title="sırayla teşhis">
+
+```bash
+gh run list --workflow claude-issue.yml --limit 5
+gh run view <run-id> --log
+gh api repos/:owner/:repo/collaborators/<user>/permission
+```
+
+</CodeBlock>
+
+Hiçbir çalıştırma görünmüyorsa, `if:` koruması olayı reddetmiştir ya da workflow dosyası varsayılan branch'te değildir. Bir çalıştırma görünüp hemen başarısız oluyorsa, bu neredeyse her zaman aktör kontrollerinden biridir. Başarılı oluyor ama Claude hiçbir şey göndermediyse, yorumun `@claude`'u — `/claude` değil, `@claude-bot` değil — tam bir sözcük olarak içerdiğini kontrol edin.
+
+## Anti-pattern'ler
+
+**Workflow'un aktörü kontrol etmeden önce kimlik doğrulamasına izin vermek.** Public bir depoda bu, yetkisiz bir yorumun reddedilmeden önce yine de bir uygulama token'ı üretmesi ve bulut sağlayıcınıza giriş yapması demektir. _Düzeltme:_ yorumcunun write erişimini kimlik bilgisi adımlarından önceki bir adımda doğrulayın.
+
+**Yalnızca review yapan bir job'a `contents: write` vermek.** Write erişimi, ele geçirilmiş bir prompt'u push edilmiş bir commit'e çeviren şeydir. _Düzeltme:_ `permissions:`'ı workflow başına kapsamlandırın — review job'ları okur, issue-to-PR job'ları yazar.
+
+**Claude'dan gelen açık bir pull request'i review edilmiş saymak.** Bu, staging ortamınızı çalıştıramayan bir şey tarafından hızlıca yazılmış bir taslaktır. _Düzeltme:_ branch protection ve zorunlu review'ları açık tutun; tüm model bir insanın diff'i okumasını varsayar.
+
+**Bir wiki'ye dönüşmüş bir `CLAUDE.md`.** Her çalıştırmada yeniden okunur, bu yüzden her paragraf tekrar eden bir maliyet ve önemli kısımların sulandırılmasıdır. _Düzeltme:_ onu bir review'cının gerçekten uygulayacağı kurallarla sınırlayın ve arka plan malzemesini başka yere taşıyın.
+
+**"Claude'un commit'lerinde CI çalışmıyor" sorununu CI'ı düzenleyerek gidermeye çalışmak.** Neden genelde varsayılan `GITHUB_TOKEN`'dır, CI tetikleyicileriniz değil. _Düzeltme:_ action'ın uygulama olarak kimlik doğrulaması için `github_token: ${{ secrets.GITHUB_TOKEN }}`'ı kaldırın, ya da özel bir uygulama token'ı geçirin.
+
+**Açık uçlu bir istekte tur tavanı olmaması.** Belirsiz bir issue'ya karşı "implement this feature", tam olarak yapacak daha çok şey bulmaya devam eden çalıştırmadır. _Düzeltme:_ `claude_args`'ta `--max-turns`, bir job `timeout-minutes`'ı ve tek bir issue'nun beş çalıştırma başlatamaması için bir eşzamanlılık grubu.
+
+<Callout variant="changed">
+  Workflow'unuz hâlâ `mode: tag` ve `direct_prompt` ile `anthropics/claude-code-action@beta`
+  kullanıyorsa, bunların hiçbiri v1'de yok: action, interactive ile automation mode'u `prompt`'un
+  ayarlanıp ayarlanmadığından tespit eder ve `max_turns` ile `model` gibi CLI seçenekleri
+  `claude_args`'a taşınır.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/issue-to-pr"
+  questionId="q1"
+  lang="tr"
+  prompt="Write erişimi olmayan bir kullanıcı bir issue'da `@claude fix this` yorumu yapıyor. Ne olur?"
+  options={[
+    {
+      text: 'Çalıştırma, Claude başlamadan önce write-access kontrolünde başarısız olur',
+      correct: true,
+      explanation:
+        "`allowed_non_write_users`'ı ayarlayıp kendi github_token'ınızı geçirmediğiniz sürece çalıştırma reddedilir.",
+    },
+    {
+      text: 'Claude cevap verir ama push etmeyi reddeder',
+      explanation: 'Kontrol, Claude başlamadan önce gerçekleşir; kısmi bir çalıştırma yoktur.',
+    },
+    {
+      text: 'Yorum sessizce yok sayılır ve hiçbir çalıştırma kaydedilmez',
+      explanation:
+        '`if:` koruması eşleşirse bir çalıştırma başlar; sonra kontrolde başarısız olur, bu da çalıştırma listesinde görünür.',
+    },
+    {
+      text: "Action bir maintainer'dan onay ister",
+      explanation: 'Bir onay adımı yoktur; çalıştırma başarısız olur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/issue-to-pr"
+  questionId="q2"
+  lang="tr"
+  prompt="Claude bir pull request açtı ama hiçbir CI workflow'unuz onun üzerinde çalışmadı. En olası neden?"
+  options={[
+    {
+      text: "Workflow github_token: ${{ secrets.GITHUB_TOKEN }} geçiriyor ve GitHub, varsayılan token ile yapılan commit'lerde workflow tetiklemiyor",
+      correct: true,
+      explanation:
+        "Action'ın Claude GitHub App olarak kimlik doğrulaması için satırı kaldırın, ya da özel bir uygulama token'ı geçirin.",
+    },
+    {
+      text: "Action interactive mode yerine automation mode'da çalıştı",
+      explanation:
+        "Mode, Claude'u neyin tetiklediğini değiştirir, CI'ınızın ateşlenip ateşlenmediğini değil.",
+    },
+    {
+      text: '`id-token: write` eksikti',
+      explanation: "Bu, aşağı akıştaki CI'ı değil, action'ın kendisini bozardı.",
+    },
+    {
+      text: "Claude, CI'ın yok saydığı bir branch'e push etti",
+      explanation:
+        "Mümkün ama varsayılan-token kuralından çok daha az yaygın; önce token'ı kontrol edin.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/issue-to-pr"
+  questionId="q3"
+  lang="tr"
+  prompt="Claude'un bir branch push edip bir issue yorumundan bir PR açtığı bir job için hangi permissions bloğu uyar?"
+  options={[
+    {
+      text: 'contents: write, pull-requests: write, issues: write, id-token: write',
+      correct: true,
+      explanation: "Push et, PR'ı aç, issue'ya geri yorum yap ve uygulama olarak kimlik doğrula.",
+    },
+    {
+      text: 'contents: read, pull-requests: read, issues: read, id-token: write',
+      explanation: 'Bu review şeklidir — push edemez ya da bir PR açamaz.',
+    },
+    {
+      text: 'Yalnızca contents: write',
+      explanation: "Push edebilir ama PR'ı açamaz ya da issue'ya cevap veremez.",
+    },
+    {
+      text: 'permissions: write-all',
+      explanation:
+        "Çalışır ama job'ın ihtiyaç duyduğundan çok daha fazlasını verir — en az yetki ilkesinin tam tersi.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/issue-to-pr"
+  questionId="q4"
+  lang="tr"
+  prompt="Action tetikleyici ifadeyi kendisi kontrol ederken workflow neden bir `if: contains(github.event.comment.body, '@claude')` koruması taşımaya devam eder?"
+  options={[
+    {
+      text: "Depodaki her yorumda bir runner'ın başlamasını engellemek için",
+      correct: true,
+      explanation: 'Action, runner ayağa kalktıktan sonra kontrol eder; koruma önce kontrol eder.',
+    },
+    {
+      text: "Çünkü action ifadeyi yalnızca automation mode'da kontrol eder",
+      explanation: "İfade kontrolü interactive mode'a aittir.",
+    },
+    {
+      text: "Çünkü `trigger_phrase`'in bir varsayılanı yoktur",
+      explanation: "Varsayılanı `@claude`'dur.",
+    },
+    {
+      text: "action-validator'ı memnun etmek için",
+      explanation: 'Doğrulayıcının `if:` ifadeleri hakkında bir görüşü yoktur.',
+    },
+  ]}
+/>
+
+**Sırada:** `04-gitlab-and-others`, aynı iki kalıbı GitHub dışında kapsar — GitLab CI/CD job'ları ve GitHub Enterprise Server.

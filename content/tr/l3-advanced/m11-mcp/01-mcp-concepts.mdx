@@ -6,10 +6,10 @@ module: 'm11-mcp'
 order: 1
 duration_min: 15
 difficulty: core
-tags: ['mcp', 'transports', 'protocol']
+tags: ['mcp', 'transport', 'protokol']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Connect Claude Code to tools via MCP'
@@ -27,7 +27,298 @@ lab:
   repo_tag: 'none'
 ---
 
-Bu ders MCP'nin ne olduğunu ve bir [MCP server](/tr/playbook/glossary/#mcp-server) — Claude Code'a dış araçlar ve veri kaynakları sunan program — bağlamanın oturuma yerleşik araçların yapamadığı neyi eklediğini anlatır: tools, resources ve prompts; stdio, HTTP ve WebSocket transport’ları (SSE artık deprecated); ve tool search’ün context penceresine etkisi. Laboratuvarda bir stdio server’a elle üç JSON-RPC satırı gönderip `initialize` ve `tools/list` yanıtlarını okursunuz.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l3-advanced/m11-mcp/01-mcp-concepts.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- MCP'nin ne olduğunu söylemek ve bir server'ın oturuma yerleşik araçların yapamadığı neyi eklediğini anlatmak.
+- Bir server'ın sunabileceği üç şeyi — tools, resources, prompts — adlandırmak ve her birinin oturumda size nasıl ulaştığını söylemek.
+- Belirli bir server için stdio, HTTP ve WebSocket transport'ları arasında seçim yapmak ve SSE'nin artık neden bu listede olmadığını açıklamak.
+- Ham bir MCP handshake'ini (el sıkışma: istemci ile server'ın protokol üzerinde anlaştığı ilk alışveriş) okumak: `initialize`, `notifications/initialized`, `tools/list`.
+- Birkaç server'a bağlandığınızda tool search'ün context penceresine ne yaptığını açıklamak.
+
+**Ön koşullar.** Çalışan bir Claude Code kurulumu (`claude --version` bu modüldeki her şey için `2.1.263` ya da daha yenisini yazdırmalı), PATH'inizde Node.js (laboratuvar deposu için Node 24 — `.nvmrc` dosyası bunu sabitler; 04 ve 05. derslerdeki `npx` ile başlatılan server'lar için Node 18 ya da üzeri yeterlidir) ve seviye 1 ile 2 malzemesi: yerleşik araçlar, [permission mode](/tr/playbook/glossary/#permission-mode)'lar (bir oturumun tool çağrılarını nasıl onaylayacağını belirleyen izin kipleri) ve [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) `claude -p` çalıştırmalarıyla rahat olmalısınız.
+
+<WhenNotToUse>
+  MCP, çalışma dizininizin dışındaki sistemlere ulaşmak içindir. Yerleşik araçların zaten yaptığı
+  bir şey için server eklemeyin: bir dosyayı okumak, depoda grep yapmak, bir betik çalıştırmak,
+  zaten kurulu bir CLI'ı çağırmak. Bir Bash [tool](/tr/playbook/glossary/#tool) (Claude'un dosya
+  okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) çağrısındaki
+  `gh` komutu, bir GitHub MCP server'ından daha ucuz ve denetlemesi daha kolaydır; tek bir sorgu
+  gerektiğinde de bir `psql` çağrısı bir veritabanı server'ını geride bırakır. Bağlı her server
+  ayrıca context'e mal olur ve bir tedarik zinciri bağımlılığı ekler — şu anda elle sohbete
+  kopyalayıp yapıştırdığınız somut şeyi adlandıramıyorsanız, henüz o server'a ihtiyacınız yok
+  demektir.
+</WhenNotToUse>
+
+## Kavram
+
+### MCP nedir
+
+**Model Context Protocol**, yapay zekâ-araç entegrasyonları için açık bir standarttır. Bir **[MCP server](/tr/playbook/glossary/#mcp-server)**'ı (Claude Code'a dış araçlar ve veri kaynakları sunan program), bu protokolü konuşan ve bir istemciye yetenekler sunan bir programdır; Claude Code buradaki istemcidir. Dokümantasyon, birine yönelmenin tetiğini açıkça koyar: bir [issue](/tr/playbook/glossary/#issue) (bir GitHub deposundaki takip edilen görev ya da hata kaydı) tracker ya da bir izleme panosu gibi başka bir araçtan sohbete veri kopyaladığınızı fark ettiğinizde bir server bağlayın. Bağlandıktan sonra Claude, elle yapıştırdığınız şeyden çalışmak yerine o sistemi doğrudan okuyup üzerinde işlem yapabilir.
+
+Server'lar Claude'a özel değildir. Bir meslektaşınızın başka bir MCP istemcisinden kullandığı aynı server burada da çalışır; bu yüzden bir server'ın kurulum talimatları çoğu zaman bir `claude mcp add` komutu değil, başka bir uygulama için bir JSON bloğu gösterir — 02. ders birini diğerine çevirmeyi ele alır.
+
+İşte bu dersin örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni): bir server bağlandığında bir görevin aldığı şekil budur.
+
+```text
+Check what our reporting database says about signups in the last 7 days,
+then open the corresponding dashboard page and tell me whether the two agree.
+```
+
+Bu prompt'ta hiçbir tool adlandırılmadığına dikkat edin. Hedefi siz tarif edersiniz; Claude, hangi server'lar bağlıysa onlardan tool seçer.
+
+### Bir server'ın sunduğu şeyler
+
+Bir server üç tür şey sunabilir ve her biri size farklı şekilde ulaşır:
+
+| Yetenek       | Ne olduğu                                        | Nasıl kullanılır                                                                       |
+| ------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| **Tools**     | Claude'un çağırabileceği fonksiyonlar            | Claude bunları kendisi çağırır; oturumda `mcp__<server>__<tool>` olarak görünürler     |
+| **Resources** | Server'ın elinize verebileceği okunabilir içerik | `@` ile anarsınız: `@github:issue://123`, dosyalarla birlikte otomatik tamamlamada     |
+| **Prompts**   | Hazır prompt şablonları                          | Argümanlarıyla birlikte `/` menüsünde `/servername:promptname (MCP)` olarak görünürler |
+
+Tools, her gün kullanacağınız kısımdır. Resources, anıldığında getirilip eklenir ve server'ın sağladığı her türlü içeriği taşıyabilir. Prompts, bağlı server'lardan dinamik olarak keşfedilir; yani bir server, siz hiçbir şeyi yeniden yapılandırmadan bir tane ekleyebilir.
+
+### Transport'lar
+
+Bir transport (taşıma katmanı: istemci ile server'ın nasıl konuştuğu), istemci ile server'ın konuşma biçimidir. Claude Code dört tanesini destekler ve akla gelen tek soru hep "bu server nerede çalışıyor?" olur.
+
+| Transport     | Server…                                                | Ekleme komutu                                   |
+| ------------- | ------------------------------------------------------ | ----------------------------------------------- |
+| **stdio**     | Claude Code'un sizin için başlattığı yerel bir process | `claude mcp add <name> -- <command> [args...]`  |
+| **HTTP**      | bir URL'deki bir servis (önerilen remote yol)          | `claude mcp add --transport http <name> <url>`  |
+| **WebSocket** | kalıcı bir bağlantı tutan bir remote                   | `claude mcp add-json <name> '{"type":"ws", …}'` |
+| **SSE**       | yalnızca bir SSE uç noktası sunan bir remote           | `claude mcp add --transport sse <name> <url>`   |
+
+Makinenize ihtiyaç duyan her şey için **stdio**'yu seçin: dosya sisteminiz, yerel bir veritabanı soketi, bir tarayıcı, yazdığınız bir betik. Claude Code process'i başlatır, standart girdi ve çıktısı üzerinden onunla konuşur ve oturumla birlikte kapatır. Ayrıca başlatılan server'ın ortamında `CLAUDE_PROJECT_DIR`'ı proje köküne ayarlar; böylece bir stdio server'ı, çalışma dizinine bağımlı olmadan projeye göreli yolları çözebilir.
+
+Barındırılan servisler için **HTTP**'yi seçin. Bulut tabanlı servisler için en yaygın desteklenen transport'tur ve OAuth ile oturum açmayı destekleyen tek transport'tur. JSON yapılandırmasında `type` alanı, `http` için bir takma ad olarak `streamable-http`'yi de kabul eder; böylece bir server'ın kendi dokümantasyonundan kopyalanan bir yapılandırma değiştirilmeden çalışır.
+
+**WebSocket**'i yalnızca server'ın Claude'a istenmeden olay göndermesi gerektiğinde seçin. Dokümanlar bu ödünleşmede açıktır: server yalnızca isteklere yanıt veriyorsa bunun yerine HTTP kullanın, çünkü HTTP OAuth'u ve `--transport` bayrağını destekler, WebSocket ise ikisini de desteklemez. WebSocket server'ları ayrıca `claude mcp list` içinde görünmez — bunları `claude mcp get <name>` ile ya da `/mcp` panelinden kontrol edin.
+
+### Protokol gerçekte neye benziyor
+
+MCP, transport üzerinden çalışan bir JSON-RPC 2.0'dır. Bir stdio server'ı, stdin'de satır başına bir JSON nesnesi okur ve stdout'a satır başına bir tane yazar. Bütün yüzey bu kadardır; bu da bir server'ı `printf` ile elle sürebileceğiniz anlamına gelir — istemci yok, Claude Code yok — ve Claude Code'un gördüğü tam olarak neyse onu görürsünüz.
+
+Alışveriş her zaman şöyledir: istemci `initialize` gönderir, server kendi protokol sürümü ve yetenekleriyle yanıt verir, istemci `notifications/initialized` bildirimini gönderir ve ardından istemci `tools/list`'i sorabilir.
+
+### Tool search ve context pencereniz
+
+Bağlı her server context'e mal olur, çünkü tool adları ve server talimatları her oturuma yüklenir. Claude Code bunu, varsayılan olarak açık olan **tool search** (araç arama) ile yumuşatır: oturum başında yalnızca tool adları ve server talimatları yüklenir, tam tool tanımları ise Claude ihtiyaç duyduğunda getirilir. Bu yüzden daha fazla server eklemek [context penceresi](/tr/playbook/glossary/#context-window)nizi (bir modelin tek bir istekte görebildiği toplam token miktarı) minimum düzeyde etkiler ve Claude Code sabit bir server-başına-tool sınırı koymaz — pratik sınır sizin context bütçenizdir.
+
+Şimdi akılda tutulmaya değer iki sonuç var. Birincisi, tool search açıkken bir MCP tool'u çağrılmadan önce bir `ToolSearch` adımı göreceksiniz; bu normaldir. İkincisi, bir server yazıyorsanız, **server talimatları** alanı Claude'a tool'larınızı ne zaman aramaya gideceğini söyleyen şeydir — Claude Code, tool açıklamalarını ve server talimatlarını her birini 2 KB'de keser; bu yüzden en kritik detayları en başa koyun.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Bu laboratuvarın bir lab-repo tag'i yok: yerel herhangi bir stdio MCP server'ına karşı çalışır.
+  Modülün kendi server'ını kullanmayı tercih ederseniz, `lesson/m11-06-start`'ın çözümündeki
+  server'ı kullanabilir, 06. derse atlayıp geri dönebilirsiniz — aşağıdaki handshake her iki durumda
+  da aynıdır.
+</Callout>
+
+<Lab
+  title="Laboratuvar · MCP'yi elle konuşun"
+  lessonId="tr/l3-advanced/m11-mcp/mcp-concepts"
+  repoTag="none"
+  steps={[
+    'Konuşacağınız yerel bir stdio MCP server’ı edinin. Aşağıda kaydedilen, bu modülün kendi server’ı, 06. dersten (`lesson/m11-06-solution` checkout’unda `node mcp/src/index.ts`). Claude Code da bir tane taşır: `claude mcp serve`, Claude Code’un kendisini stdio üzerinden bir MCP server’ı olarak çalıştırır — aynı üç satırı yanıtlar, ama `tools/list`’i bütün yerleşik tool kümesidir, ki bu okunacak çok şeydir.',
+    'Ona `printf` ile üç JSON-RPC satırı gönderin ve server process’ine pipe’layın. Satırlar sırasıyla `initialize`, `notifications/initialized` bildirimi ve `tools/list`’tir — bu sırayla, satır başına bir JSON nesnesi.',
+    'İlk yanıtı okuyun: `protocolVersion`, `capabilities` nesnesi ve server adı ile sürümünü taşıyan `serverInfo`.',
+    'İkinci yanıtı okuyun: `tools` dizisi. Her girdide bir `name`, bir `description` ve argümanları tarif eden bir JSON Schema nesnesi olan bir `inputSchema` bulunur.',
+    'Bu `inputSchema`’yı tool açıklamasıyla karşılaştırın. Açıklama, Claude’un tool’u çağırıp çağırmayacağına karar vermek için okuduğu şeydir; schema ise gönderdiği argümanları kısıtlayan şeydir.',
+  ]}
+  expected="stdout’a iki JSON satırı geri döner: protocolVersion, capabilities ve serverInfo taşıyan bir initialize sonucu, ardından her tool için adını, açıklamasını ve inputSchema’sını taşıyan bir tools/list sonucu."
+  checklist={[
+    'initialize yanıtı server’ı ve sürümünü adlandırıyor',
+    'capabilities nesnesi server’ın tools / resources / prompts’tan hangisini sunduğunu söylüyor',
+    'tools/list’teki her tool’un bir name, bir description ve bir inputSchema’sı var',
+    '`initialize` göndermeden önce hiçbir şey geri gelmedi — handshake zorunlu',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/01-mcp-concepts/01-handshake.txt"
+    range="3-4"
+  />
+</Lab>
+
+Yukarıdaki [transcript](/tr/playbook/glossary/#transcript) (gerçek bir Claude Code oturumunun kaydı), modülün kendi server'ının (06. ders) elle yazılmış üç satırı yanıtlamasıdır. Üzerinde durmaya değer iki ayrıntı var. Server `"capabilities":{"tools":{"listChanged":true}}` bildiriyor — tools sunuyor, resources ya da prompts sunmuyor ve tool listesi değiştiğinde `list_changed` bildirimleri göndereceğini taahhüt ediyor. Claude Code bu bildirimleri destekler ve yeniden bağlanmadan bir server'ın yeteneklerini yeniler. Ve tool'un `inputSchema`'sı düz bir JSON Schema'dır; bu örnekte server'ın kaynak kodundaki bir zod schema'sından üretilmiştir — Claude Code'un modele geçirdiği sözleşme budur.
+
+### İşletim sistemine göre bir stdio server'ını elle sürmek
+
+Aşağıdaki komutlar, transcript'in kaydedildiği 06. ders server'ı olan `node mcp/src/index.ts`'e pipe'lar. Bunun yerine Claude Code'un kendisini sürmek için son kısmı `claude mcp serve` ile değiştirin — handshake aynıdır, `tools/list` yanıtı ise tek bir girdi yerine bütün yerleşik tool kümesidir.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+printf '%s\n%s\n%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"by-hand","version":"0.0.0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+  | node mcp/src/index.ts
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+printf '%s\n%s\n%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"by-hand","version":"0.0.0"}}}' \
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+  | node mcp/src/index.ts
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$lines = @(
+  '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"by-hand","version":"0.0.0"}}}',
+  '{"jsonrpc":"2.0","method":"notifications/initialized"}',
+  '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+)
+$lines | node mcp/src/index.ts
+```
+
+  </Fragment>
+</OSTabs>
+
+## Anti-pattern'ler
+
+**Bir CLI'ın zaten yaptığı bir şey için server eklemek.** Yapılandırdığınız, güvendiğiniz, kimlik doğruladığınız ve context'te tuttuğunuz bir server, `gh pr view 456`'nın yerini almak için epey bir makine. _Düzeltme:_ alternatif iki pencere arasında elle veri kopyalamaksa MCP'ye başvurun, zaten bir komut varsa değil.
+
+**WebSocket'i daha modern göründüğü için seçmek.** WebSocket ne OAuth'u ne de `claude mcp add --transport`'u destekler ve server'ları `claude mcp list`'te görünmez. _Düzeltme:_ server gerçekten size olay itmiyorsa HTTP kullanın.
+
+**JSON'da `type` olmadan bir `url` girdisi yazmak.** Claude Code, `type`'ı olmayan bir girdiyi stdio server'ı olarak okur, atlar ve `MCP server "<name>" has a "url" but no "type"; add "type": "http" (or "sse" / "ws") to this entry` diye bildirir. _Düzeltme:_ elle bir remote girdi yazarken her zaman `type`'ı ayarlayın.
+
+**Bağlı bir server'ın kullanılan bir server olduğunu varsaymak.** Tools sunulur, dayatılmaz. Claude sizin server'ınız yerine kendi bilgisinden cevap veriyorsa, açıklama ya da server talimatları ona ne zaman bakması gerektiğini söylemiyor demektir. _Düzeltme:_ bağlantıyı doğrulamak için prompt'ta server'ı adlandırın, sonra açıklamayı düzeltin.
+
+**"Hazır olmak için" on tane server bağlamak.** Tool search ile bile adlar ve talimatlar her oturuma yüklenir ve her server artık güvenmeniz gereken bir koddur. _Düzeltme:_ bu proje neye ihtiyaç duyuyorsa onu bağlayın, gerisini kaldırın — 02. ders `claude mcp remove`'u ele alır.
+
+<Callout variant="changed">
+  SSE (Server-Sent Events) transport'u deprecated (kullanımdan kaldırılmış) durumda; mümkün olan
+  yerde HTTP server'ları kullanın. `--transport sse`, yalnızca bir SSE uç noktası sunan servisler
+  için hâlâ çalışır ve deprecated bir transport, çalışan bir yapılandırmayı yeniden yazmak için bir
+  sebep değildir — ama yeni bir şey için onu seçmeyin.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/mcp-concepts"
+  questionId="q1"
+  lang="tr"
+  prompt="Makinenizde yerel bir tarayıcı çalıştıran bir server bağlıyorsunuz. Hangi transport?"
+  options={[
+    {
+      text: 'stdio — Claude Code server’ı yerel bir process olarak başlatır',
+      correct: true,
+      explanation:
+        'Stdio server’ları, bir tarayıcı, dosya sisteminiz ya da bir veritabanı soketi gibi doğrudan sistem erişimi gereken araçlar için idealdir.',
+    },
+    {
+      text: 'HTTP, çünkü önerilen transport odur',
+      explanation:
+        'HTTP, uzaktaki, bulutta barındırılan server’lar için önerilir. Makinenizdeki bir tarayıcı yerel bir process’tir.',
+    },
+    {
+      text: 'WebSocket, çünkü bir tarayıcı oturumu uzun ömürlüdür',
+      explanation:
+        'WebSocket, istenmeden olay iten uzak server’lar içindir ve ne OAuth’u ne de --transport’u destekler.',
+    },
+    {
+      text: 'SSE, çünkü akış yapıyor',
+      explanation: 'SSE deprecated; bir remote server bunu sunuyorsa HTTP kullanın.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/mcp-concepts"
+  questionId="q2"
+  lang="tr"
+  prompt="stdio üzerinden doğru bir MCP oturumu hangi sıradır?"
+  options={[
+    {
+      text: 'tools/list, sonra initialize',
+      explanation: 'Handshake önce gelir; server henüz bir protokol sürümü üzerinde anlaşmamıştır.',
+    },
+    {
+      text: 'initialize, notifications/initialized, tools/list',
+      correct: true,
+      explanation:
+        'Laboratuvardaki üç satırın tam olarak kendisi: handshake, initialized bildirimi, sonra yetenek keşfi.',
+    },
+    {
+      text: 'connect, authenticate, tools/list',
+      explanation:
+        'Bunlar MCP metotları değildir; kimlik doğrulama bir transport meselesidir, bir JSON-RPC adımı değil.',
+    },
+    {
+      text: 'initialize, tools/call, tools/list',
+      explanation:
+        'Bir tool’u keşfetmeden çağıramazsınız ve burada initialized bildirimi atlanmış.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/mcp-concepts"
+  questionId="q3"
+  lang="tr"
+  prompt="Tool search açıkken (varsayılan), bir oturum başladığında context’e ne yüklenir?"
+  options={[
+    {
+      text: 'Bağlı her server’dan her tool tanımı',
+      explanation:
+        'Tool search’ün önlediği şey tam olarak bu — ENABLE_TOOL_SEARCH=false ile elde ettiğiniz davranış bu.',
+    },
+    {
+      text: 'Yalnızca tool adları ve server talimatları; tam tanımlar talep üzerine getirilir',
+      correct: true,
+      explanation:
+        'Bu yüzden daha fazla server eklemek context penceresini minimum düzeyde etkiler ve server talimatları bu yüzden önemlidir.',
+    },
+    {
+      text: 'Hiçbir şey — server’lara yalnızca adlarını yazdığınızda ulaşılır',
+      explanation:
+        'Claude Code, Claude’un varlıklarını bilmesi için başlangıçta server’ların tool adlarını keşfeder.',
+    },
+    {
+      text: 'Server’ın sunduğu her MCP resource’ının tam metni',
+      explanation: 'Resource’lar siz @ ile andığınızda getirilir, başlangıçta yüklenmez.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/mcp-concepts"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir server, pr_review adında bir MCP prompt’u sunuyor. Bunu nasıl çalıştırırsınız?"
+  options={[
+    {
+      text: 'Slash-komut menüsünden /servername:pr_review yazın',
+      correct: true,
+      explanation:
+        'MCP prompt’ları / menüsünde /servername:promptname (MCP) olarak görünür; /mcp__servername__pr_review de çalışır.',
+    },
+    {
+      text: 'Onu @servername:pr_review ile anın',
+      explanation: '@ ile anma MCP resource’ları içindir, prompt’lar için değil.',
+    },
+    {
+      text: 'claude mcp prompt servername pr_review çalıştırın',
+      explanation: 'Böyle bir alt komut yok.',
+    },
+    {
+      text: 'Claude’dan pr_review tool’unu çağırmasını isteyin',
+      explanation: 'Prompt’lar tool değildir; Claude bunları kendi başına çağıramaz.',
+    },
+  ]}
+/>
+
+**Sırada:** `02-add-list-remove-scopes`, teoriyi üç komut ve üç scope'a çevirir ve proje kapsamlı bir `.mcp.json`'ın deponuzu klonlayan bir takım arkadaşına ne yaptığını gösterir.

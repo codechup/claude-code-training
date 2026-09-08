@@ -1,5 +1,5 @@
 ---
-title: '.claude/agents/ içinde özel ajanlar'
+title: '.claude/agents/ içinde özel agent’lar'
 description: "Bir subagent dosyasının kabul ettiği bütün frontmatter alanları — tools, disallowedTools, model, permissionMode, maxTurns, skills, mcpServers, hooks, memory, effort, isolation, color ve diğerleri — ayrıca dosyaların nerede yaşadığı ve hangi scope'un kazandığı."
 level: 3
 module: 'm10-subagents'
@@ -9,7 +9,7 @@ difficulty: core
 tags: ['subagent', 'frontmatter', 'yapılandırma', 'agents-dizini']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Create custom subagents'
@@ -27,11 +27,325 @@ lab:
   repo_tag: 'lesson/m10-03-start'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Özel bir ajan, YAML frontmatter'lı bir Markdown dosyasıdır: frontmatter yapılandırma, gövde ise ajanın system prompt'udur. Ders, Claude Code 2.1.263'te geçerli olan bütün alanları ve aldıkları değerleri listeler; yalnızca `name` ve `description` zorunludur. `tools` (allowlist) ile `disallowedTools` (denylist) arasındaki seçimi, `mcp__*` ve `Agent(...)` desenlerini, beş scope'un öncelik sırasını (managed → `--agents` → proje → kullanıcı → plugin) ve bir dosyanın hiçbir hata vermeden sessizce atlanmasına yol açan beş kuralı açıklar. Laboratuvarda sıfırdan tek bir `scout` ajanı yazılır, Claude'un ona yönlendirdiği kanıtlanır ve ardından frontmatter'ın üstüne bir boş satır eklenerek sessiz atlanma bilerek tetiklenir.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur.
+- Bir `.claude/agents/<ad>.md` dosyasını ezberden yazmak: iki zorunlu alan, gövde ve gövdenin [agent](/tr/playbook/glossary/#agent)'ın (bir hedefi kendi başına adım adım yürüten, araç çağırabilen yapay zekâ süreci) system [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni) hâline geldiği gerçeği.
+- Her isteğe bağlı frontmatter alanını ve kabul ettiği değerleri adlandırmak.
+- Allowlist (`tools`) ile denylist (`disallowedTools`) arasında seçim yapmak, MCP joker karakteri ve `Agent(...)` biçimleri dâhil.
+- Aynı agent `name`'i birden fazla yerde varsa hangi beş scope'tan hangisinin kazandığını ve çalışma dizinine en yakın iç içe bir `.claude/agents/`'ın neden önceliği aldığını söylemek.
+- Bir dosyayı `agents/` içinde hatasız kaybolduran beş sessiz atlama kuralını açıklamak.
+
+**Ön koşullar.** Bu modülün 1. dersi ve dosya ekleyebileceğiniz bir depo. L2 `m06-skills`'i yaptıysanız, frontmatter-artı-gövde şekli tanıdık gelecek — bir [subagent](/tr/playbook/glossary/#subagent) (ana oturumun bir alt görevi devrettiği, kendi bağlam penceresi ve araç izinleri olan yardımcı agent) dosyası farklı bir iş birimi için aynı fikirdir.
+
+<WhenNotToUse>
+  Özel bir agent yeniden kullanılabilir bir roldür, tek seferlik bir talimat değildir. Görevi bir
+  kez çalıştıracaksanız bunu prompt'unuzda söyleyin — yazıp unuttuğunuz ve hiç silmediğiniz bir
+  dosya, Claude'un okumaya devam ettiği bayat bir bağlama dönüşür. `general-purpose`'tan tek farkı
+  [tool](/tr/playbook/glossary/#tool) (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi
+  işleri yapmak için çağırdığı yerleşik araç), model ya da izin değişikliği olmayan, sadece daha
+  uzun bir prompt taşıyan bir agent tanımlamayın: bu bir [skill](/tr/playbook/glossary/#skill)'dir —
+  `SKILL.md` ile tanımlanan, yeniden kullanılabilir bir talimat paketi (L2 `m06-skills`) — ve
+  skill'ler her şeyle bileşir. Ve önemsediğiniz bir güvenlik sınırını uygulamak için bir agent
+  kullanmayın: `tools` ve `permissionMode` tek bir devredilmiş işçiyi şekillendirir, ayarlarınızdaki
+  izin kuralları ise bütün oturum için geçerlidir.
+</WhenNotToUse>
+
+## Kavram
+
+### Dosya
+
+Bir subagent, YAML frontmatter'lı bir Markdown dosyasıdır. Frontmatter yapılandırmadır; gövde agent’ın system prompt'udur.
+
+<CodeBlock title=".claude/agents/code-reviewer.md">
+
+```markdown
+---
+name: code-reviewer
+description: Reviews code for quality and best practices
+tools: Read, Glob, Grep
+model: sonnet
+---
+
+You are a code reviewer. When invoked, analyze the code and provide
+specific, actionable feedback on quality, security, and best practices.
+```
+
+</CodeBlock>
+
+Yalnızca `name` ve `description` zorunludur. `name` küçük harfler ve tirelerden oluşur, benzersiz olmalı, `-` ile başlayamaz ve `:` içeremez — ve [hook](/tr/playbook/glossary/#hook)'larınızın (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan komutlarınızın) `agent_type` olarak aldığı değer de budur. `description`, Claude'un buraya devredip devretmeyeceğine karar verirken okuduğu şeydir, bu yüzden onu bir iş unvanı gibi değil bir tetikleyici gibi yazın ("Bir değişiklik yapıldıktan sonra, commit'lenmeden önce kullanın") — burada [commit](/tr/playbook/glossary/#commit) bir git deposundaki değişiklik kümesinin kalıcı, mesajlı kaydıdır.
+
+### Her alan
+
+| Alan              | Zorunlu | Değerler                                                                                        |
+| ----------------- | ------- | ----------------------------------------------------------------------------------------------- |
+| `name`            | evet    | küçük harfler, tireler                                                                          |
+| `description`     | evet    | dize — Claude'un buraya ne zaman devretmesi gerektiği                                           |
+| `tools`           | hayır   | tool adları, `Agent(type)`, `mcp__<server>` desenleri — allowlist; atlanırsa hepsini devralır   |
+| `disallowedTools` | hayır   | tool adları, `mcp__<server>` desenleri — devralınan ya da belirtilen listeye uygulanan denylist |
+| `model`           | hayır   | `sonnet`, `opus`, `haiku`, `fable`, `claude-opus-5` gibi tam bir ID, ya da `inherit`            |
+| `permissionMode`  | hayır   | `default`, `acceptEdits`, `auto`, `dontAsk`, `bypassPermissions`, `plan`, `manual`              |
+| `maxTurns`        | hayır   | pozitif tam sayı — agent kısmi çıktı döndürmeden önceki sınır                                   |
+| `skills`          | hayır   | başlangıçta context'e önceden yüklenen skill adları listesi                                     |
+| `mcpServers`      | hayır   | sunucu adları, ya da satır içi tanımlar                                                         |
+| `hooks`           | hayır   | bu subagent'a özel hook tanımları                                                               |
+| `memory`          | hayır   | `user`, `project`, `local` — oturumlar arası öğrenme için kalıcı memory                         |
+| `background`      | hayır   | `true` — Claude önplan istese bile agent’ı arka planda tutar                                    |
+| `effort`          | hayır   | `low`, `medium`, `high`, `xhigh`, `max`                                                         |
+| `isolation`       | hayır   | `worktree` — deponun kendi kopyasını taşıyan geçici bir git worktree'sinde çalıştır             |
+| `color`           | hayır   | `red`, `blue`, `green`, `yellow`, `purple`, `orange`, `pink`, `cyan` — görüntü rengi            |
+| `initialPrompt`   | hayır   | agent ana oturum agent’ı olarak çalıştığında ilk tur olarak otomatik gönderilen dize            |
+| `experimental`    | hayır   | `{cacheTtl: "5m" \| "1h"}`                                                                      |
+
+Bu, Claude Code 2.1.263 itibarıyla tam listedir. Bunlardan dördü bu modülde daha sonra kendi dersini alır: `model` (04. ders), `background` ve `isolation` (05. ders); `effort` ise model seçimiyle etkileşir.
+
+### Tool'lar: allowlist mi denylist mi
+
+`tools`'u atlarsanız agent bir subagent'ın kullanabileceği her şeyi devralır. Bunu daraltmanın iki yolu:
+
+```yaml
+tools: Read, Grep, Glob, Bash # allowlist — bu agent için başka hiçbir şey yok
+```
+
+```yaml
+disallowedTools: Write, Edit # denylist — geri kalan her şey duruyor
+```
+
+MCP sunucuları desen kabul eder: `disallowedTools: mcp__github` o sunucudaki her tool'u kaldırır, `mcp__*` ise bütün MCP tool'larını kaldırır. Bu agent’ın hangi subagent'ları başlatabileceğini de kısıtlayabilirsiniz:
+
+```yaml
+tools: Agent(worker, researcher), Read, Bash
+```
+
+Allowlist bir gözden geçiren ya da araştırmacı için dürüst varsayılandır: `Edit`, `Write` ya da `Bash`'i olmayan bir agent, tanımlaması istenen şeyi sessizce "düzeltemez". Denylist ise büyük ölçüde yetenekli bir işçiden bir tehlikeyi çıkarmak istediğinizde daha iyidir.
+
+`permissionMode`, agent içindeki kipi ayarlar ve varsayılan olarak ana konuşmanınkini alır. `plan` onu tamamen salt-okunur yapar; `bypassPermissions` her kontrolü atlar ve başka her yerde bu bayrağa davrandığınız gibi ona da davranılmalıdır.
+
+### Dosyalar nerede yaşar, kim kazanır
+
+| Konum                     | Kapsam                | Öncelik       |
+| ------------------------- | --------------------- | ------------- |
+| Yönetilen ayarlar         | Kuruluş çapında       | 1 (en yüksek) |
+| `--agents` CLI bayrağı    | Geçerli oturum        | 2             |
+| `.claude/agents/`         | Geçerli proje         | 3             |
+| `~/.claude/agents/`       | Tüm projeler          | 4             |
+| Bir plugin'in `agents/`'ı | Etkinleştirildiği yer | 5 (en düşük)  |
+
+Aynı `name` birden fazla scope'ta varsa yüksek öncelikli olan kazanır. Bir proje içindeki iç içe geçmiş `.claude/agents/` dizinleri için, **çalışma dizinine en yakın** tanım kazanır — path-scoped kuralların izlediği aynı kural.
+
+Oturum-scope'lu biçim, komut satırında JSON alır; bu, [CI](/tr/playbook/glossary/#ci)'ın (her push'ta ya da pull request'te otomatik olarak testleri ve kontrolleri çalıştıran hat) bir dosya commit'lemeden bir agent tanımlamasının yoludur:
+
+```bash
+claude --agents '{"code-reviewer":{"description":"Expert code reviewer","prompt":"You are a senior code reviewer...","tools":["Read","Grep","Glob","Bash"],"model":"sonnet"}}'
+```
+
+### Dosyanız neden yok sayılıyor
+
+Claude Code, aşağıdakilerden herhangi biri geçerliyse bir `agents/` dizinindeki bir dosyayı **bunu bildirmeden** atlar:
+
+1. Frontmatter'da `name` alanı yoktur.
+2. Açılış `---`'i dosyanın ilk satırında değildir.
+3. `name`, `-` ile başlıyor ya da `:` içeriyordur.
+4. `name` vardır ama `description` yoktur.
+5. YAML ayrıştırılamıyordur.
+
+[Plugin](/tr/playbook/glossary/#plugin) (Claude Code'a hook, skill, subagent ve MCP server gibi bileşenleri paket hâlinde ekleyen eklenti) subagent'ları tek istisnadır: `name` olmasa bile dosya adlarıyla yüklenirler. Yazdığınız bir agent hiç seçilmiyorsa her şeyden önce bu listeyi kontrol edin — frontmatter'ın üstünde bir boş satır en yaygın nedendir ve hiçbir hata üretmez.
+
+### Agent neyle başlar
+
+[Fork](/tr/playbook/glossary/#fork) (bir oturumu, konuşma geçmişinin bir kopyasında devam ettirmek) olmayan bir subagent; kendi system prompt'u artı ortam bilgileri, Claude'un devretme mesajı, tam `CLAUDE.md` hiyerarşiniz, bir git-durumu anlık görüntüsü, `skills`'te listelenen her şeyin tam metni ve `SendMessage` ile ulaşabileceği adlandırılmış kardeşlerinin bir listesiyle başlar. Konuşma geçmişini, çıktı stili tercihinizi, auto-memory'yi (`memory` ayarlanmadıkça) ya da önceki skill çağrılarını **almaz**.
+
+`memory`, bir agent’ın oturumlar arasında öğrenmesini sağlayan istisnadır. `memory: project` `.claude/agent-memory/<ad>/` altında (git'te paylaşılabilir), `user` `~/.claude/agent-memory/<ad>/` altında ve `local` `.claude/agent-memory-local/<ad>/` altında depolanır. Agent onu okuma ve yazma talimatını, artı `MEMORY.md`'sinin ilk 200 satırını ya da 25 KB'ını alır.
+
+İşte bu dersin işlenmiş prompt'u — dosyayı yazdıktan sonra, harness'ın onu görüp görmediğini kontrol etmek için yazacağınız prompt:
+
+```text
+Use the scout subagent to answer: which functions does src/store.ts export?
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · sıfırdan bir agent yazın ve Claude'un ona yönlendirdiğini izleyin"
+  lessonId="tr/l3-advanced/m10-subagents/custom-agents"
+  repoTag="lesson/m10-03-start"
+  steps={[
+    'Daha önce yapmadıysanız lab deposunu klonlayın, sonra `git checkout lesson/m10-03-start` ve `npm ci` çalıştırın.',
+    'Laboratuvarın altında gösterilen frontmatter ve gövdeyle `.claude/agents/scout.md` dosyasını oluşturun — iki zorunlu alan, salt-okunur bir tool allowlist’i ve bilerek hiç `model` yok.',
+    'Ona headless olarak devredin: `claude -p "Use the scout subagent to answer: which functions does src/store.ts export?" --model sonnet --max-turns 4 --output-format json`',
+    'Zarftaki `subagent_stats.by_type`\'ı kontrol edin: `{"scout": 1}` okumalı, bu da dosyanın bulunup ada göre yönlendirildiğini kanıtlar.',
+    "Şimdi bilerek bozun: `scout.md`'nin açılış `---`'inin üstüne bir boş satır ekleyin ve aynı komutu yeniden çalıştırın. Agent sessizce atlanır ve Claude kendi başına cevap verir — hiçbir hata, hiçbir uyarı yok.",
+    "Boş satırı geri alın ve `by_type`'ın yeniden `scout`'u adlandırdığını doğrulayın.",
+  ]}
+  expected="İyi biçimlendirilmiş bir dosyayla subagent_stats.by_type {'scout': 1} olur ve sonuç dışa aktarılan fonksiyonların kısa bir listesidir. Frontmatter'ın üstündeki boş satırla scout by_type'tan kaybolur — bizim kayıtta Claude yerleşik Explore agent’ına döndü — ve hiçbir yerde uyarı yazdırılmaz."
+  checklist={[
+    '`.claude/agents/scout.md` var ve ilk satırı `---`',
+    "`subagent_stats.by_type` `scout`'u adlandırıyor",
+    'Sonuç scout’un görev tanımının içinde kalıyor (bir cevap artı file:line kanıtı, inceleme yok)',
+    "Bilerek bozulan sürüm hiçbir yerde hata mesajı üretmiyor ve `by_type` artık `scout`'u adlandırmıyor",
+    'Çalışan sürüm geri yüklendi',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/02-custom-agents/01-scout-json.txt"
+    range="2-20"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/02-custom-agents/02-scout-skipped-json.txt"
+    range="2-14"
+  />
+</Lab>
+
+İkinci kayıt ilginç olandır. Frontmatter'ın üstündeki tek bir boş satır dosyayı görünmez yaptı: `by_type` artık `{"scout": 1}` yerine `{"Explore": 1}` okuyor, çalıştırma yine `subtype: success` bildiriyor ve stdout ya da stderr'de atlanan bir dosyadan bahseden hiçbir şey yok. Claude sessizce yerleşik bir agent’a döndü ve yine de cevap verdi — bu yüzden eksik bir agent’ı kaçırmak bu kadar kolaydır.
+
+O kayıtta kullanılan agent dosyası:
+
+<CodeBlock title=".claude/agents/scout.md">
+
+```markdown
+---
+name: scout
+description: Answers a one-line factual question about this repository. Read-only, no model pinned.
+tools: Read, Grep, Glob
+---
+
+You answer one narrow question about the `labtrack` repository and stop.
+Reply with at most three lines: the answer first, then the `file:line` evidence.
+Do not review, refactor or suggest improvements.
+```
+
+</CodeBlock>
+
+Kayıttan iki ayrıntı adlandırılmaya değer. `modelUsage` yalnızca `claude-sonnet-5`'i listeliyor, çünkü `scout` hiçbir `model` pinlemiyor ve bu yüzden ana konuşmanınkini devraldı — 04. ders bunu düzgünce ele alır. Ve sonuç, gövdenin inceleme yapmak yerine cevap verme talimatına uyuyor, ki tekrar tekrar kullandığınız bir role bir dosya harcamanın bütün nedeni de bu.
+
+## Anti-pattern'ler
+
+**Agent’ı değil tetikleyiciyi anlatan bir `description`.** "Bir kod gözden geçirici" Claude'a ne zaman devretmesi gerektiği hakkında hiçbir şey söylemez. _Düzeltme:_ koşulu yazın — "Bir değişiklik yapıldıktan sonra, commit'lenmeden önce kullanın."
+
+**Frontmatter'dan önce bir boş satır.** Açılış `---`'i 1. satırda olmalı, yoksa dosya hiçbir mesaj olmadan atlanır. _Düzeltme:_ bir agent yokmuş gibi göründüğünde önce 1. satırı kontrol edin.
+
+**Salt-okunur bir rol için her tool'u devralmak.** `tools`'u atlamak bir "gözden geçiricinin" `Edit`, `Write` ve `Bash`'e sahip olmasını sağlar ve er ya da geç onları kullanır. _Düzeltme:_ `Read, Grep, Glob`'ı allowlist'e alın ve gövde bir şeyi düzeltemeyeceğini açıkça söylesin.
+
+**Görevi gövdeye koymak.** Gövde her çağrı için sabit bir system prompt'tur; belirli dosya ya da [diff](/tr/playbook/glossary/#diff) (bir dosyadaki ya da commit'teki değişikliklerin satır satır gösterimi) devretme prompt'una aittir. _Düzeltme:_ gövde = rol ve yöntem, prompt = bu görev.
+
+**Agent’ın konuşmayı görebildiğini varsaymak.** `CLAUDE.md`'nizi alır, sohbetinizi almaz. _Düzeltme:_ görevi tam olarak belirtin, ya da bir fork kullanın (05. ders).
+
+**Bir agent’ı kullanıcı ve proje scope'unda tekrarlayıp hangisinin çalıştığını merak etmek.** Proje (`.claude/agents/`) kullanıcıyı (`~/.claude/agents/`) yener, çalışma dizinine daha yakın iç içe bir dizin ise ikisini de yener. _Düzeltme:_ tek bir tanım tutun, ya da adları farklılaştırın.
+
+<Callout variant="changed" label="Değişti">
+  v2.1.198 itibarıyla `/agents` artık bir panel açmıyor: subagent dosyalarının konumlarına işaret
+  eden bir bildirim yazdırıyor. Agent’ları Claude'a sorarak ya da `.claude/agents/` içindeki
+  dosyaları doğrudan düzenleyerek oluşturun ve düzenleyin. `/agents`, agent view'i açan `claude
+  agents`'tan da ayrı bir şeydir.
 </Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/custom-agents"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir .claude/agents/*.md dosyasında hangi iki frontmatter alanı zorunludur?"
+  options={[
+    {
+      text: '`name` ve `description`',
+      correct: true,
+      explanation: 'Geri kalan her şey isteğe bağlıdır; gövde system prompt hâline gelir.',
+    },
+    {
+      text: '`name` ve `tools`',
+      explanation:
+        "`tools`'u atlamak geçerlidir — agent o zaman subagent’lara açık her tool’u devralır.",
+    },
+    {
+      text: '`description` ve `model`',
+      explanation: '`model` isteğe bağlıdır; olmadan çözümleme sırası karar verir.',
+    },
+    {
+      text: '`name`, `description` ve `permissionMode`',
+      explanation: '`permissionMode` varsayılan olarak ana konuşmanın kipini alır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/custom-agents"
+  questionId="q2"
+  lang="tr"
+  prompt="Aynı agent adı hem .claude/agents/ hem de ~/.claude/agents/ içinde tanımlı. Hangisi çalışır?"
+  options={[
+    {
+      text: "`.claude/agents/`'deki proje olanı",
+      correct: true,
+      explanation: 'Proje scope’u (öncelik 3) kullanıcı scope’unu (öncelik 4) yener.',
+    },
+    {
+      text: 'Kullanıcı olanı, çünkü kişisel ayarlar daha özeldir',
+      explanation: 'Öncelik sırası: yönetilen → --agents → proje → kullanıcı → plugin.',
+    },
+    {
+      text: 'İkisi de, ve Claude göreve göre seçer',
+      explanation: 'Adlar çakıştığında yüksek öncelikli scope doğrudan kazanır.',
+    },
+    {
+      text: 'Hiçbiri — Claude Code bir ad çakışması bildirir ve ikisini de atlar',
+      explanation: 'Hiçbir hata yükseltilmez; daha yüksek öncelik sadece kazanır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/custom-agents"
+  questionId="q3"
+  lang="tr"
+  prompt="Dosya yazma dışında her şeyi yapabilen bir agent istiyorsunuz. En küçük doğru frontmatter değişikliği nedir?"
+  options={[
+    {
+      text: '`disallowedTools: Write, Edit`',
+      correct: true,
+      explanation: 'Denylist bu tool’ları devralınan kümeden çıkarır ve geri kalanını bırakır.',
+    },
+    {
+      text: '`tools: Write, Edit`',
+      explanation: 'Bu bir allowlist’tir — agent’a yalnızca bu iki tool’u verir.',
+    },
+    {
+      text: '`permissionMode: plan`',
+      explanation: 'Plan mode agent’ı tamamen salt-okunur yapar, "yazma dışında her şey" değil.',
+    },
+    {
+      text: '`disallowedTools: mcp__*`',
+      explanation: 'Bu MCP tool’larını kaldırır, dosya yazmayla bir ilgisi yoktur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/custom-agents"
+  questionId="q4"
+  lang="tr"
+  prompt="Yeni agent’ınız hiç kullanılmıyor ve Claude Code hiçbir hata bildirmiyor. Bu belirtiye hangi neden uyar?"
+  options={[
+    {
+      text: "Açılış `---`'i dosyanın ilk satırında değil",
+      correct: true,
+      explanation:
+        'Claude Code’un agents/ içindeki bir dosyayı bunu bildirmeden atladığı beş koşuldan biri.',
+    },
+    {
+      text: '`model` alanı erişiminiz olmayan bir modeli adlandırıyor',
+      explanation: 'Bu dosyanın sessizce atlanması değil bir model-çözümleme sorunudur.',
+    },
+    {
+      text: 'Gövde 200 satırdan uzun',
+      explanation: 'Gövde için bir uzunluk kuralı yoktur.',
+    },
+    {
+      text: "Dosya `~/.claude/agents/` yerine `.claude/agents/`'de",
+      explanation: 'Proje scope’u geçerlidir — ve kullanıcı scope’unu geride bırakır.',
+    },
+  ]}
+/>
+
+**Sırada:** `03-agent-lab`, bu kursun boyunca kullandığı dört agent’ı — code-reviewer, test-writer, docs-writer ve researcher — kurar ve her devretmeyi lab deposuna karşı kanıtlar.

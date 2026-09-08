@@ -6,10 +6,10 @@ module: 'm11-mcp'
 order: 2
 duration_min: 20
 difficulty: core
-tags: ['mcp', 'cli', 'scopes', 'oauth']
+tags: ['mcp', 'cli', 'scope', 'oauth']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Connect to MCP servers'
@@ -23,7 +23,301 @@ lab:
   repo_tag: 'lesson/m11-02-start'
 ---
 
-Bu ders [MCP server](/tr/playbook/glossary/#mcp-server) — Claude Code'a dış araçlar ve veri kaynakları sunan program — bağlantılarını dört komutla yönetmeyi öğretir ve `local`, `project`, `user` scope’larının hangi dosyaya yazdığını gösterir. Commit edilen bir `.mcp.json` için onay isteminin neden var olduğunu, `${VAR}` ve `${VAR:-default}` genişletmesiyle secret’ları dosyanın dışında nasıl tutacağınızı ve `/mcp` ya da `claude mcp login` ile OAuth oturumunu nasıl açacağınızı anlatır.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l3-advanced/m11-mcp/02-add-list-remove-scopes.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- `claude mcp add` ile stdio ya da HTTP üzerinden bir server eklemek ve yazdırdığı `Added …` satırını okumak.
+- `claude mcp list`'in bildirdiği sağlık durumunu okumak ve `claude mcp get <name>` ile hata detayını almak.
+- `local`, `project` ve `user` scope'ları (kapsamları) arasında seçim yapmak ve her birinin hangi dosyaya yazdığını söylemek.
+- Proje kapsamlı bir `.mcp.json`'ın tetiklediği onay istemini ve neden var olduğunu açıklamak.
+- `${VAR}` ve `${VAR:-default}` genişletmesiyle bir [secret](/tr/playbook/glossary/#secret)'ı (depoya commit'lenmemesi gereken hassas değer) [commit](/tr/playbook/glossary/#commit)'lenmiş (bir git deposundaki değişiklik kümesinin kalıcı, mesajlı kaydı) bir yapılandırmanın dışında tutmak.
+- Hosted (barındırılan) bir server'da `/mcp` ya da `claude mcp login` ile oturum açmak ve bir server'ı temiz şekilde kaldırmak.
+
+**Ön koşullar.** 01. ders. Laboratuvar deposunun `lesson/m11-02-start` etiketinden bir klonu ve Node.js (deponun `.nvmrc` dosyası Node 24'ü sabitler).
+
+<WhenNotToUse>
+  İçinde bir credential (kimlik bilgisi) olan ya da yalnızca sizin istediğiniz bir server için
+  `--scope project` kullanmayın: `.mcp.json` sürüm kontrolüne alınır ve depoyu klonlayan herkesten
+  onu çalıştırması istenir. Yalnızca tek bir depo içinde anlamlı olan bir server için `--scope user`
+  kullanmayın — açtığınız her projede yüklenir ve hepsinde context'e mal olur. Ve organizasyonunuz
+  bir `managed-mcp.json` dağıtıyorsa `claude mcp add`'e hiç başvurmayın: komut bir enterprise-policy
+  (kurumsal politika) hatasıyla başarısız olur, bunu 07. ders ele alır.
+</WhenNotToUse>
+
+## Kavram
+
+### Dört komut
+
+```text
+claude mcp add     # register a server
+claude mcp list    # every server for this project, with a health status
+claude mcp get     # one server: scope, status, failure detail, command or URL, headers
+claude mcp remove  # delete the entry (and, for remote servers, the stored OAuth tokens)
+```
+
+Oturum içinde eşdeğeri, ek olarak kimlik doğrulamanıza, yeniden bağlanmanıza, bir server'ı devre dışı bırakmanıza ve saklanan kimlik bilgilerini temizlemenize izin veren `/mcp` panelidir.
+
+`add` komutunun iki şekli vardır. Uzak bir server için bir transport ve bir URL geçersiniz. Yerel bir server için komutu bir `--` ayırıcısından sonra geçersiniz:
+
+<CodeBlock title="the two shapes of claude mcp add">
+
+```bash
+# remote, over HTTP
+claude mcp add --transport http notion https://mcp.notion.com/mcp
+
+# local, over stdio — everything after -- is the command Claude Code runs
+claude mcp add --env AIRTABLE_API_KEY=YOUR_KEY --transport stdio airtable -- npx -y airtable-mcp-server
+```
+
+</CodeBlock>
+
+`--` bir süsleme değildir. Claude'un kendi seçeneklerini — `--transport`, `--env`, `--scope` — server'ı çalıştıran komut ve argümanlardan ayırır; ondan sonraki her şey server'a dokunulmadan geçirilir. O olmasaydı Claude Code, `--port 8080` gibi server'ın kendi bayraklarını kendi bayrağıymış gibi ayrıştırmaya çalışırdı.
+
+Bir yerleşim kuralı daha: `--env`, birden çok `KEY=value` çiftini kabul eder; bu yüzden server adı doğrudan `--env`'den sonra gelirse CLI adı başka bir çift olarak okur ve reddeder. Yukarıdaki örneğin yaptığı gibi `--env` ile server adı arasına en az bir başka seçenek koyun.
+
+### Üç scope
+
+| Scope                | Nerede yüklenir       | Takımla paylaşılır       | Nerede saklanır           |
+| -------------------- | --------------------- | ------------------------ | ------------------------- |
+| `local` (varsayılan) | Yalnızca mevcut proje | Hayır                    | `~/.claude.json`          |
+| `project`            | Yalnızca mevcut proje | Evet, sürüm kontrolü ile | Proje kökünde `.mcp.json` |
+| `user`               | Tüm projeleriniz      | Hayır                    | `~/.claude.json`          |
+
+Local scope varsayılandır ve mevcut projenin yolu altında `~/.claude.json` içinde saklanır — bu yüzden bir depoda eklenen bir local server başka bir depoda görünmez. Dokümanların işaret ettiği adlandırma tuzağına dikkat edin: MCP "local scope"u ev dizininizdeki `~/.claude.json` içinde yaşar, projenin `.claude/settings.local.json` dosyasında değil.
+
+Bir server'ın scope'u, onu eklediğinizde sabitlenir. Scope değiştirmek, `claude mcp remove`'un ardından yeni scope'ta `claude mcp add` demektir.
+
+Aynı ad birden fazla yerde tanımlandığında Claude Code bir kez bağlanır, en yüksek önceliğe sahip tanımı kullanır ve o kaynaktan gelen girdinin **tamamı** kullanılır — alanlar birleştirilmez. Sıra local, sonra project, sonra user, sonra [plugin](/tr/playbook/glossary/#plugin)'in (Claude Code'a hook, skill, subagent ve MCP server gibi bileşenleri paket hâlinde ekleyen eklenti) sağladığı server'lar, sonra claude.ai bağlayıcılarıdır. Üç scope, tekrarları ada göre eşler; plugin'ler ve bağlayıcılar uç noktaya göre eşler.
+
+### Proje scope'u ve onay istemi
+
+`--scope project` ile eklemek, proje kökünde, elle de yazabileceğiniz standartlaştırılmış bir biçimde `.mcp.json` yazar. Onu commit'leyin ve takımdaki herkes aynı server'ları alır.
+
+Bu dosya bir takım arkadaşının makinesinde process başlatabildiğinden, Claude Code proje kapsamlı server'ları kullanmadan önce etkileşimli oturumlarda onay ister. Onaylanana kadar `claude mcp list`, server'ı ``⏸ Pending approval (run `claude` to approve)`` olarak gösterir — server'a bağlanmadan bildirilen bir yapılandırma kararı. Bu seçimleri `claude mcp reset-project-choices` ile sıfırlayın.
+
+Otomasyon için iki istisna önemlidir. `claude -p` çalıştırmalarında, Agent SDK oturumlarında ve bulut oturumlarında gösterilecek bir istem yoktur, bu yüzden proje kapsamlı server'lar sorulmadan yüklenir. Yine de birini dışarıda tutmak için onu `disabledMcpjsonServers`'a ekleyin, `--setting-sources` ile proje ayarlarını hariç tutun ya da yalnızca `--mcp-config` ile geçirilen server'ların yüklenmesi için oturumu `--strict-mcp-config` ile başlatın.
+
+### Secret'ları paylaşılan bir yapılandırmanın dışında tutmak
+
+`.mcp.json`, `command`, `args`, `env`, `url` ve `headers` içinde ortam değişkeni genişletmesini destekler:
+
+- `${VAR}`, `VAR`'ın değerine genişler.
+- `${VAR:-default}`, `VAR` ayarlıysa ona, değilse `default`'a genişler.
+
+Commit'lenmiş bir yapılandırmayı güvenli yapan şey budur: dosya değişkeni adlandırır, her geliştiricinin ortamı değeri sağlar. Referans verilen bir değişken ayarlı değilse ve varsayılanı yoksa, yapılandırma yine de yüklenir — Claude Code, `claude mcp list` çıktısında o server için eksik-değişken uyarısı bildirir ve genişletilmemiş `${VAR}` metnini olduğu gibi kullanır.
+
+### Hosted server'lar için OAuth
+
+Birçok hosted server'ın arkasında OAuth 2.0 vardır. URL'yi eklersiniz, sonra bir tarayıcı üzerinden oturum açarsınız. Claude Code, bir server `401 Unauthorized` ya da `403 Forbidden` yanıtı verdiğinde onu kimlik doğrulama gerektiriyor olarak işaretler ve `claude mcp list`, `! Needs authentication` gösterir.
+
+Bunu tamamlamanın iki yolu:
+
+<CodeBlock title="signing in to a hosted server">
+
+```bash
+claude mcp add --transport http sentry https://mcp.sentry.dev/mcp
+
+# either: start a session and open the MCP panel
+claude
+# then type /mcp, select sentry, choose Authenticate
+
+# or, from v2.1.186, straight from the shell
+claude mcp login sentry
+claude mcp logout sentry     # clears the stored credentials
+```
+
+</CodeBlock>
+
+Tarayıcısı olmayan bir makinede — bir SSH oturumu ya da görüntü sunucusu olmayan Linux — `claude mcp login` bir tarayıcı açmak yerine yetkilendirme URL'sini yazdırır ve yönlendirme URL'sini istem üzerine geri yapıştırırsınız; `--no-browser` bu yolu zorlar. Token'lar güvenli şekilde saklanır ve otomatik olarak yenilenir. Bunun yerine statik bir token kullanan server'lar bunu ekleme sırasında `--header "Authorization: Bearer <token>"` ile alır — 03. ders bu şekli işler.
+
+Uzak bir server'ı kaldırmak, onun için Claude Code'un sakladığı OAuth token'larını ve istemci kaydını da siler.
+
+İşte bu dersin örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni) — bütün bu kablolamanın amacı:
+
+```text
+Use the claude-code-docs server to look up what MCP_TIMEOUT does.
+```
+
+Server'ı adlandırmak normalde gerekli değildir; bu, ilk bağlantıda cevabın modelin kendi bilgisinden değil server üzerinden geldiğini kanıtlamanın yoludur.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · iki scope'ta server ekleyin, inceleyin ve kaldırın"
+  lessonId="tr/l3-advanced/m11-mcp/add-list-remove-scopes"
+  repoTag="lesson/m11-02-start"
+  steps={[
+    'Laboratuvar deposunun klonunda start tag’ini checkout edin: `git checkout lesson/m11-02-start`. Yalnızca bu checkout’un içinde çalışın ki eklediğiniz hiçbir şey diğer projelerinizi kirletmesin.',
+    'Varsayılan scope’ta yerel bir stdio server ekleyin. Claude Code zaten sahip olduğunuz bir tanesini taşır: `claude mcp add --scope local cc-tools -- claude mcp serve`.',
+    '`claude mcp list` çalıştırın. Sağlık kontrolünün `✔ Connected` bildirdiğini doğrulayın.',
+    '`claude mcp get cc-tools` çalıştırın ve size söylediği dört şeyi okuyun: scope, durum, transport ve argümanlarıyla birlikte komut.',
+    'Şimdi proje scope’unda uzak bir server ekleyin: `claude mcp add --scope project --transport http claude-code-docs https://code.claude.com/docs/mcp`. `File modified:` satırını okuyun — `~/.claude.json` değil, `.mcp.json`’ı yazdı.',
+    '`cat .mcp.json`, sonra tekrar `claude mcp list` çalıştırın. Proje kapsamlı server `⏸ Pending approval` bildiriyor, çünkü bunu bu klasörde etkileşimli olarak onaylamadınız.',
+    '`.mcp.json`’ı elle düzenleyerek literal değerler yerine ortam değişkenlerine referans verin: URL’yi `${DOCS_MCP_URL:-https://code.claude.com/docs/mcp}`’ın arkasına koyun ve bir `headers.Authorization` olarak `Bearer ${DOCS_MCP_TOKEN}` ekleyin. `DOCS_MCP_TOKEN`’ı ayarlamayın.',
+    '`claude mcp list` çalıştırın ve alttaki tanılama bloğunu okuyun.',
+    'Temizleyin: `claude mcp remove cc-tools` ve `claude mcp remove claude-code-docs`, sonra hiçbir şeyin kalmadığını doğrulamak için `claude mcp list`.',
+  ]}
+  expected="cc-tools local scope’ta bağlanır ve ~/.claude.json’a yazılır; claude-code-docs .mcp.json’a yazılır ve Pending approval’da bekler; elle düzenlemeden sonra claude mcp list URL’yi genişletilmemiş yazdırır ve `Missing environment variables: DOCS_MCP_TOKEN` uyarısı verir; her iki kaldırma da değiştirdiği dosyayı bildirir ve son listede hiçbir server yapılandırılmamıştır."
+  checklist={[
+    '`claude mcp add`, transport’u ve hedef yapılandırmayı adlandıran bir `Added …` satırı yazdırdı',
+    '`claude mcp get`, scope’u "Local config (private to you in this project)" olarak gösterdi',
+    'Proje kapsamlı server, ev dizini yerine depo kökünde `.mcp.json`’ı yazdı',
+    '`claude mcp list`, proje kapsamlı server için ⏸ Pending approval bildirdi',
+    'Eksik-değişken uyarısı hiçbir değer yazdırmadan `DOCS_MCP_TOKEN`’ı adlandırdı',
+    'Her iki kaldırmadan sonra `claude mcp list` hiçbir server yapılandırılmadığını bildiriyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/02-add-list-remove-scopes/01-add-list.txt"
+    range="2-20"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/02-add-list-remove-scopes/02-project-scope.txt"
+    range="2-19"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/02-add-list-remove-scopes/03-variable-expansion.txt"
+    range="14-27"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/02-add-list-remove-scopes/04-remove.txt"
+    range="2-11"
+  />
+</Lab>
+
+O kayıttaki üç şey ikinci bir bakışı hak ediyor.
+
+`claude mcp add`, her seferinde bir `File modified:` satırı yazdırır ve amaçladığınız scope'u elde ettiğinizi doğrulamanın en hızlı yoludur: local ekleme, köşeli parantez içinde proje yoluyla `~/.claude.json`'ı adlandırır, proje eklemesi ise depodaki `.mcp.json`'ı adlandırır.
+
+`⏸ Pending approval` durumu bir başarısızlık değildir. Claude Code bağlanmaya çalışmadı: durum, server'a bağlanmadan bildirilen bir yapılandırma kararıdır ve klasörde `claude` çalıştırıp server'ı onayladığınızda temizlenir.
+
+Son kayıt, eksik-değişken uyarısıdır. Neyi _yazdırmadığına_ dikkat edin — değeri. Alanı, `mcpServers.claude-code-docs`'u ve değişkeni, `DOCS_MCP_TOKEN`'ı adlandırır. `${VAR}`'ı commit'lemeyi güvenli yapan davranış budur.
+
+## Anti-pattern'ler
+
+**Bir stdio komutundan önce `--`'ı unutmak.** Claude Code o zaman server'ın bayraklarını kendi bayrağıymış gibi ayrıştırır ve girdi yanlış olur. Belirti, `claude mcp get` ile gösterilen komutu yazdığınızdan farklı olan bir `✘ Failed to connect`'tir. _Düzeltme:_ her zaman `claude mcp add <name> -- <command> [args...]`.
+
+**`.mcp.json`'a bir token commit'lemek.** Bu, sürüm kontrolünde paylaşılan bir dosyadır; içinde literal bir `Bearer sk-…` sızmış bir kimlik bilgisidir ve `claude mcp get` onu düz metin olarak geri yazdırır. _Düzeltme:_ `"Authorization": "Bearer ${SERVICE_TOKEN}"` ve her geliştiricinin değişkeni kendi ayarlamasına izin verin.
+
+**`Added …`'ı "çalışıyor" olarak okumak.** `add` komutu, kimlik bilgilerini doğrulamadan ya da server'a bağlanmadan yapılandırmayı kaydeder. _Düzeltme:_ her eklemenin ardından `claude mcp list` ya da `claude mcp get <name>` çalıştırıp durumu okuyun.
+
+**Kişisel bir server'ı proje scope'una koymak.** Depoyu klonlayan herkes artık ihtiyaç duymadığı bir server için bir onay istemi alır. _Düzeltme:_ kişisel server'lar için `--scope local`, her yerde istediğiniz server'lar için `--scope user`.
+
+**Bir server'ı tek bir dosyayı düzenleyerek scope'lar arasında "taşımaya" çalışmak.** Tanımlar ada göre eşleşir ve en yüksek öncelikli olan tamamen kazanır; sonuçta iki tane ve bir scope-conflict uyarısıyla kalırsınız. _Düzeltme:_ önce `claude mcp remove <name> --scope <old>`, sonra yeni scope'ta ekleyin.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/add-list-remove-scopes"
+  questionId="q1"
+  lang="tr"
+  prompt="`claude mcp add --scope local` server girdisini nereye yazar?"
+  options={[
+    {
+      text: 'Mevcut proje için girdinin altında `~/.claude.json`',
+      correct: true,
+      explanation:
+        'Local scope, proje yoluna göre anahtarlanmış ev dizini yapılandırmasında saklanır — bu yüzden server diğer projelerinizde görünmez.',
+    },
+    {
+      text: 'Projede `.claude/settings.local.json`',
+      explanation:
+        'Genel local *ayarların* yaşadığı yer orasıdır. MCP local scope’u farklı bir dosyadır; dokümanlar bu adlandırma çakışmasını açıkça belirtir.',
+    },
+    {
+      text: 'Proje kökünde `.mcp.json`',
+      explanation: 'O, commit’lediğiniz project scope’udur.',
+    },
+    {
+      text: 'Ev dizininizin dışında yönetilen bir sistem yolu',
+      explanation: 'O, bir yönetici tarafından dağıtılan `managed-mcp.json`’dır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/add-list-remove-scopes"
+  questionId="q2"
+  lang="tr"
+  prompt="`claude mcp list`, bir proje server’ını ⏸ Pending approval olarak gösteriyor. Ne oldu?"
+  options={[
+    {
+      text: 'Server sağlık kontrolünde başarısız oldu',
+      explanation:
+        'Hiçbir bağlantı denenmedi. Pending approval, server’a temas edilmeden yazdırılan bir yapılandırma durumudur.',
+    },
+    {
+      text: 'Bu klasörde .mcp.json server’ını henüz etkileşimli olarak onaylamadınız',
+      correct: true,
+      explanation:
+        'Projede `claude` çalıştırıp onaylayın. İstem, klonlanmış bir deponun sizin rızanız olmadan process başlatamaması için vardır.',
+    },
+    {
+      text: 'Server OAuth ile oturum açmayı gerektiriyor',
+      explanation: 'O durum `! Needs authentication`’dır.',
+    },
+    {
+      text: 'Bir yönetici server’ı engelledi',
+      explanation:
+        'Bir politika reddi `✘ Rejected (see disabledMcpjsonServers in settings)` olarak görünür.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/add-list-remove-scopes"
+  questionId="q3"
+  lang="tr"
+  prompt="Commit’lenmiş bir .mcp.json, ${API_KEY}’e referans veriyor ve değişken makinenizde ayarlı değil. Ne olur?"
+  options={[
+    {
+      text: 'Claude Code başlamayı reddeder',
+      explanation: 'Eksik bir değişken bir uyarıdır, ölümcül bir hata değil.',
+    },
+    {
+      text: 'Bütün .mcp.json yok sayılır',
+      explanation: 'Yalnızca o server etkilenir ve yine de yüklenir.',
+    },
+    {
+      text: 'Server literal ${API_KEY} metniyle yüklenir ve claude mcp list hangi değişkenin eksik olduğunu uyarır',
+      correct: true,
+      explanation:
+        'Laboratuvarın yakaladığı tam olarak bu. Değişkeni ayarlayın ya da ona bir `${API_KEY:-default}` yedeği verin.',
+    },
+    {
+      text: 'Claude Code değeri sizden ister',
+      explanation: 'Değişken genişletmesi için etkileşimli bir istem yoktur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/add-list-remove-scopes"
+  questionId="q4"
+  lang="tr"
+  prompt="Etkileşimli bir oturum başlatmadan OAuth korumalı bir HTTP server’ında oturum açmak istiyorsunuz. Hangi komut?"
+  options={[
+    {
+      text: 'claude mcp login sentry',
+      correct: true,
+      explanation:
+        'v2.1.186’dan itibaren mevcut; OAuth akışını kabuktan çalıştırır ve tarayıcı yoksa açmak yerine URL’yi yazdırır.',
+    },
+    {
+      text: 'claude mcp auth sentry',
+      explanation: 'Böyle bir komut yok.',
+    },
+    {
+      text: 'claude mcp add --oauth sentry',
+      explanation: '--oauth bayrağı yok; HTTP server’ları için OAuth keşfi otomatiktir.',
+    },
+    {
+      text: 'claude -p "/mcp"',
+      explanation:
+        'Etkileşimsiz modda /mcp paneli yoktur, bu yüzden sizin için OAuth akışını çalıştıramaz.',
+    },
+  ]}
+/>
+
+**Sırada:** `03-github-mcp`, ilk gerçek servisi bağlar — kişisel bir erişim token'ıyla HTTP üzerinden GitHub — ve token yanlış olduğunda `claude mcp list`'in ne söylediğini okur.

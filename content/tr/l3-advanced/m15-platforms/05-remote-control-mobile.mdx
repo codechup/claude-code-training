@@ -9,7 +9,7 @@ difficulty: core
 tags: ['platformlar', 'remote-control', 'mobil']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Continue local sessions from any device with Remote Control'
@@ -27,8 +27,285 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m15-platforms/05-remote-control-mobile.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders Remote Control’ü anlatır: `claude.ai/code` veya Claude mobil uygulamasını **sizin makinenizde çalışan** bir Claude Code oturumuna bağlar; dosya sisteminiz, MCP server’larınız, tool’larınız ve proje yapılandırmanız erişilebilir kalır. Üç başlatma yolunu — `claude remote-control` (server mode, `--spawn worktree` ve `--capacity` gibi flag’lerle), `claude --remote-control` (interaktif) ve çalışan bir oturumda `/remote-control` — ve QR kod, oturum URL’si ya da oturum listesinden bağlanmayı kapsar. Auto-connect ayarının proje kapsamındaki bir `true` değerini yok sayıp `false` değerini onurlandırdığını; push bildirimleri için iki `/config` anahtarını; ve `/plugin` ile `/resume` gibi yalnızca terminalde çalışan komutları açıklar. Yerel süreç durursa oturumun saniyeler içinde çevrimdışı olduğunu, bu yüzden SSH üzerinde `tmux` kullanmanın önerildiğini vurgular.
+- Remote Control'ü üç yoldan başlatmak — `claude remote-control` (server mode), `claude --remote-control` (interaktif), çalışan bir oturumda `/remote-control` — ve doğrusunu seçmek.
+- URL, QR kod ya da oturum listesiyle bir telefondan ya da tarayıcıdan bağlanmak ve oturumu adlandıran dört adımlı kuralı okumak.
+- Her oturum için auto-connect'i açmak ve proje düzeyindeki bir `true` değerinin neden yok sayılırken bir `false` değerinin neden onurlandırıldığını söylemek.
+- Mobil push bildirimlerini etkinleştirmek ve iki `/config` anahtarını adlandırmak.
+- Yalnızca yerelde çalışan komutları listelemek ve `/model`, `/effort` ([effort](/tr/playbook/glossary/#effort): modelin harcadığı düşünme çabası seviyesi) ve `/config`'in bir cihazdan nasıl davrandığını söylemek.
+
+**Ön koşullar.** Bir Pro, Max, Team veya Enterprise planı (Team ve Enterprise'da önce bir Owner'ın Claude Code admin ayarlarında Remote Control anahtarını etkinleştirmesi gerekir), bir claude.ai oturum açışı — API anahtarları desteklenmez — ve telefon tarafını istiyorsanız iOS ya da Android için Claude uygulaması. Önce `04-web-and-cloud-sessions` dersi: iki özellik sürekli karıştırılır ve bu kontrast bunu düzeltmenin en hızlı yoludur.
+
+<WhenNotToUse>
+  Remote Control işi makinenizde tutar, bu yüzden makineniz kapalı, uykuda ya da kapatılmış
+  olduğunda yanlış araçtır — bunun için bir cloud oturumu kullanın. `ANTHROPIC_BASE_URL`i
+  `api.anthropic.com` dışında bir şeye yöneltirseniz, Amazon Bedrock, Google Cloud'un Agent
+  Platform'u ya da Microsoft Foundry kullanıyorsanız, bir kurumsal Claude apps gateway'i üzerinden
+  oturum açıyorsanız ya da `DISABLE_TELEMETRY`, `DO_NOT_TRACK`,
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` veya `DISABLE_GROWTHBOOK` ayarlıysa hiç başlamaz, çünkü
+  her biri özelliğin dayandığı feature-flag değerlendirmesini devre dışı bırakır. Ve telefonunuzdan,
+  hiçbir oturum çalışmıyorken bütün bir görevi devretmek için de yanlış şekildir: bu, Dispatch (Pro
+  ve Max) ya da bir cloud oturumudur.
+</WhenNotToUse>
+
+## Kavram
+
+### Gerçekte ne olduğu
+
+Remote Control, `claude.ai/code`i ya da Claude mobil uygulamasını, **makinenizde çalışan** bir Claude Code oturumuna bağlar. Claude bütün süre boyunca yerelde çalışmaya devam eder, bu yüzden kod çalıştırma ve dosya sistemi erişimi makinenizde kalır: dosyalarınız, [MCP server](/tr/playbook/glossary/#mcp-server)'larınız (Claude'a dış araç ve veri sağlayan sunucular), [tool](/tr/playbook/glossary/#tool)'larınız (Claude'un çağırdığı araçlar), proje yapılandırmanız ve `@`in yerel projenizden dosya yollarını otomatik tamamlaması. Konuşma ve [subagent](/tr/playbook/glossary/#subagent)'ların (ana oturumun görev devrettiği yardımcı agent'ların) ile dynamic [workflow](/tr/playbook/glossary/#workflow)'ların (çok adımlı otomatik iş akışlarının) ilerlemesi, bağlı her cihazda senkron kalır, böylece mesajları terminalden, tarayıcıdan ve telefondan birbirinin yerine geçecek şekilde gönderebilirsiniz.
+
+Önceki derse karşı koyarsak: **Claude Code on the web cloud'da çalışır; Remote Control makinenizde çalışır.** İkisi de aynı claude.ai/code arayüzünü kullanır, karıştırılmalarının sebebi de tam olarak budur.
+
+### Başlatmanın üç yolu
+
+<CodeBlock title="server mode: bir süreç, birçok oturum">
+
+```bash
+claude remote-control
+```
+
+</CodeBlock>
+
+Süreç, bağlantı beklerken terminalinizde çalışmaya devam eder, bir oturum URL'si yazdırır ve boşluk tuşuna bastığınızda bir QR kod açıp kapatır. Flag'leri gerçek ve incelenebilir:
+
+<Transcript
+  src="content/_shared/transcripts/m15-platforms/05-remote-control-mobile/02-remote-control-help.txt"
+  range="2-33"
+/>
+
+Bunlardan üçü server mode'u nasıl kullandığınızı belirler. `--spawn <mode>`, sunucunun oturumları nasıl oluşturacağına karar verir — `same-dir` (varsayılan; tüm oturumlar çalışma dizinini paylaşır ve çakışabilir), `worktree` (talep üzerine oluşan her oturum kendi git worktree'sini alır) ya da `session` (tam olarak birini sunar ve bittiğinde çıkar). Çalışma zamanında `same-dir` ile `worktree` arasında geçiş için `w`ye basın. `--capacity <N>`, eşzamanlı oturumları varsayılan olarak 32 ile sınırlar. Ve `--create-session-in-dir`, varsayılan olarak açıktır, böylece bir oturum önceden oluşturulur ve hemen yazacak bir yeriniz olur.
+
+<CodeBlock title="interaktif oturum, ya da bir oturumun içinden">
+
+```bash
+claude --remote-control
+claude --remote-control "My Project"
+```
+
+</CodeBlock>
+
+```text
+/remote-control
+/rc
+```
+
+İnteraktif biçim (`--rc` alias'ıdır) size, _ayrıca_ uzaktan sürebileceğiniz normal bir terminal oturumu verir — server mode'un aksine yerelde de yazabilirsiniz. Bir oturumun içinden `/remote-control`, mevcut konuşma geçmişinizi taşır. VS Code eklentisinde `/remote-control` de çalışır, ama bir isim argümanı almaz ve QR kod göstermez.
+
+İnteraktif flag ve onunla giden adlandırma öneki, bu sürümün yardımında bulunur (`/remote-control`
+komutu bir slash komutu olduğu için `claude --help`te görünemez):
+
+<Transcript
+  src="content/_shared/transcripts/m15-platforms/05-remote-control-mobile/01-help-remote-control.txt"
+  range="2-6"
+/>
+
+### Başka bir cihazdan bağlanmak
+
+Üç yol: **oturum URL**'sini herhangi bir tarayıcıda açın; onu Claude uygulamasında açmak için **QR kodu tarayın**; ya da claude.ai/code'u veya Claude uygulamasını açıp adına göre bulun — mobil uygulamada **Code**a dokunun. Remote Control oturumları, çevrimiçiyken yeşil bir durum noktasıyla bir bilgisayar ikonu gösterir. Henüz Claude uygulamanız yok mu? İndirme QR kodunu göstermek için `/mobile` (alias'ları `/ios`, `/android`) çalıştırın.
+
+Oturum başlığı şu sırayla seçilir: `--name`e, `--remote-control`a ya da `/remote-control`a verdiğiniz ad; sonra `/rename` ile ayarlanan bir başlık; sonra konuşmadaki son anlamlı mesaj; sonra otomatik oluşturulan bir `myhost-graceful-unicorn`, burada `myhost` makinenizin hostname'i ya da `--remote-control-session-name-prefix` değeridir.
+
+Bağlı bir cihaz konuşmayı gerçekleştikçe görür, artı bilinmeye değer birkaç şey:
+
+- **Compaction ve `/clear`**, cihazda yansıtılır; `/clear`, konuşmayı orada da sıfırlar.
+- **`/resume`**, geçilen konuşmanın başlığını ya da önceki geçmişini cihaza göndermez, ama her iki yöndeki yeni mesajlar terminalinizde açık olan konuşmayı izler.
+- **[Diff](/tr/playbook/glossary/#diff) paneli** (değişikliklerin satır satır gösterimi), [commit](/tr/playbook/glossary/#commit)'lenmemiş (kalıcı kaydedilmemiş) değişikliklerinizi gösterir; cihaz bunu talep eder ve _makineniz onu hesaplar_. Temiz bir ağaçla, [branch](/tr/playbook/glossary/#branch)'in (bağımsız geliştirme hattının) varsayılan branch'ten ayrıldığından beri olan değişikliklerini gösterir.
+- **Model ve effort**, bir cihazdan seçilirse makinenizdeki oturuma uygulanır. Cihazın model kontrolünden bir seçim yalnızca mevcut oturum için geçerlidir; metin olarak gönderilen `/model <name>` yeni oturumlar için de varsayılanınızı ayarlar.
+
+Ekler de iki yönlü çalışır. Claude uygulamasında eklenen fotoğraflar doğrudan görülür _ve_ `~/.claude/uploads/` altına, Claude'a verilen yolla kaydedilir, böylece Claude görseli oluşturduğu dosyaların içine kopyalayabilir. Diğer dosyalar makinenize indirilir ve `@` dosya referansları olarak geçirilir.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni), Remote Control'ü kurmaya değer kılan şeydir — uzaklaşmak istediğiniz uzun bir yerel iş:
+
+```text
+Run the full test suite, fix whatever fails, and notify me when the tests finish.
+```
+
+### Auto-connect
+
+Remote Control yalnızca siz istediğinizde etkinleşir, auto-connect açık olmadıkça. Bunu `/config` → **Enable Remote Control for all sessions** ile, Desktop'ta **Settings > Claude Code > Enable remote control by default** altında, VS Code eklentisinin komut menüsünün Settings bölümünde ya da settings'te `remoteControlAtStartup` ile açın.
+
+Öncelik kuralı iki kez okunmaya değer: proje ya da yerel ayarlarda (`.claude/settings.json`, `.claude/settings.local.json`) Claude Code **bir `false`ı onurlandırır ve bir `true`u yok sayar** — böylece commit'lenmiş bir dosya, Remote Control'ü bir depo için kapatabilir ama onu klonlayan herkes için asla açamaz. Proje ya da yerel ayarlardaki bir `false`, yönetilen bir `true`a karşı da kazanır.
+
+Auto-connect açıkken, her interaktif süreç bir uzak oturum kaydeder. Bir süreçten birkaç eşzamanlı oturum için server mode kullanın.
+
+### Push bildirimleri
+
+Remote Control etkinken, Claude telefonunuza push yapabilir. **Ne zaman olacağına Claude karar verir** — genellikle uzun bir görev bittiğinde ya da bir karar gerektiğinde — ve bunu prompt'ta da isteyebilirsiniz (`notify me when the tests finish`). İki anahtarın ötesinde olay bazlı bir yapılandırma yoktur. Uygulamayı kurun, aynı hesap ve kuruluşla oturum açın, işletim sistemi bildirim istemini kabul edin, sonra `/config`te **Push when Claude decides**, **Push when actions required** ya da ikisini de etkinleştirin.
+
+Hiçbir şey gelmiyorsa: `/config`in **No mobile registered** göstermesi, push token'ını yenilemesi için Claude uygulamasını açmanız gerektiği anlamına gelir; iOS'ta Focus mode'larını ve bildirim özetlerini kontrol edin; Android'de Claude'u pil optimizasyonundan muaf tutun. Claude Code, ayrıca, bağlı terminale yazarken ya da odaklanmışken push'ları bilinçli olarak atlar — ve `CLAUDE_CLIENT_PRESENCE_FILE`, bunu ekranınızın kilidi açıldığında oluşturduğunuz bir işaretçi dosyasına genişletir.
+
+### Karşılaşacağınız sınırlar
+
+- **Yerel süreç çalışmaya devam etmelidir.** Terminali kapatın ya da VS Code'dan çıkın, oturum saniyeler içinde çevrimdışı olur. SSH'dan bağlantınızı kestikten sonra uzak bir makinede bir tanesini canlı tutmak için onu `tmux` ya da `screen` içinde başlatın — `08-tmux-multi-session`in konusu.
+- **Server mode dışında, interaktif süreç başına bir uzak oturum.**
+- **Bazı komutlar yalnızca yereldir.** `/plugin` ve `/resume` yalnızca yerel CLI'dan çalışır. Mobil ve web'den metin-çıktılı komutları (`/compact`, `/clear`, `/context`, `/usage`, `/exit`, `/recap`, …) ve seçicilerin argüman biçimlerini (`/model sonnet`, `/effort high`) alırsınız. Mobilden `/config`, `key=value` alır; web'de ayarlar bölümünü açar ve sonrasındaki metni yok sayar.
+- **Bir cihazdan [permission mode](/tr/playbook/glossary/#permission-mode)'lar** (tool çağrılarının nasıl onaylanacağını belirleyen kipler): Remote Control oturumları Manual, Accept edits ve Plan sunar. Bir Remote Control oturumu için Auto seçemezsiniz ve uygulamadan Bypass permissions'ı hiç seçemezsiniz.
+- **Sunucuyu durdurmak oturumları arşivlemez** ve onları `claude remote-control` (hepsini), `--continue` (başlattığı olanı) ya da `--session-id <id>` ile kabaca dört saat içinde geri getirebilirsiniz.
+
+### Hangi terminal-dışı araç?
+
+| Özellik            | Claude nerede çalışır   | Tetikleyici                                        | En uygunu                                     |
+| ------------------ | ----------------------- | -------------------------------------------------- | --------------------------------------------- |
+| **Remote Control** | Makineniz (CLI/VS Code) | Web ya da telefondan çalışan bir oturumu sürmek    | Devam eden yerel işi yönlendirmek             |
+| **Cloud oturumu**  | Cloud VM                | Web, telefon ya da `--cloud`tan bir görev gönderme | Dizüstünüz kapalıyken devam etmesi gereken iş |
+| **Dispatch**       | Makineniz (Desktop)     | Claude uygulamasında bir görev mesajlaşmak         | Uzaktayken devretmek; yalnızca Pro ve Max     |
+
+## Uygulamalı laboratuvar
+
+Bu laboratuvarın yarısı telefonda, bu yüzden açık bir beklenen sonuçla bir adım listesi. Tek yakalamalar, yukarıda zaten gömülü olan gerçek iki `--help` çıktısıdır; burada hiçbir şey bir ekran görüntüsü gibi davranmaz.
+
+<Lab
+  title="Laboratuvar · telefonunuzdan yerel bir oturumu sürün"
+  lessonId="tr/l3-advanced/m15-platforms/remote-control-mobile"
+  repoTag="none"
+  steps={[
+    'Bir proje dizininde bir kez `claude` çalıştırın ve workspace trust diyaloğunu kabul edin. (Trust diyaloğu ev dizininiz için güveni asla kaydetmez, bu yüzden bir projeden başlayın.)',
+    'Bir API anahtarıyla değil bir claude.ai hesabıyla oturum açtığınızı doğrulayın: `/status` çalıştırın ve bildirdiği login method’u okuyun, bir claude.ai hesabı değilse `/login` çalıştırın.',
+    'iOS veya Android için Claude uygulamasını kurun. Bir oturumdan `/mobile` çalıştırın ve henüz yoksa indirme QR kodunu tarayın.',
+    'Server mode’u başlatın: `claude remote-control --name "cc-lab"`. QR kodu göstermek için boşluk tuşuna basın ve telefonunuzla tarayın.',
+    'Telefondan, yerel dosya sisteminize dokunması gereken bir prompt gönderin, örneğin `list the top-level files in this repo and tell me what the project does`. Cevabın taze bir klonu değil makinenizi yansıttığını doğrulayın.',
+    'Makinenizde `/config` çalıştırın ve **Push when Claude decides** ile **Push when actions required**i etkinleştirin. Sonra telefondan gönderin: `Run the full test suite, fix whatever fails, and notify me when the tests finish.` Telefonu kilitleyin ve push’u bekleyin.',
+    'Telefondan `/model sonnet` gönderin ve terminalin `/status`ünün aynı modeli gösterdiğini doğrulayın. Sonra `/resume` gönderin ve yalnızca-yerel bir komut olarak reddedildiğini doğrulayın.',
+    'Sunucuyu durdurmak için `Ctrl+C`ye basın. Dört saat içinde, aynı dizinde `claude remote-control --continue` çalıştırın ve yeni bir tane başlamak yerine oturumun geri geldiğini doğrulayın.',
+  ]}
+  expected="Telefon, cevapları yerel dosya sisteminizi yansıtan bir oturumu sürer; test çalıştırması bittiğinde bir push bildirimi gelir; telefondan /model sonnet, terminalin bildirdiği modeli değiştirir; /resume cihazdan reddedilir; Ctrl+C sonrası claude remote-control --continue aynı oturumu geri getirir."
+  checklist={[
+    'Workspace trust diyaloğu bir proje dizininden kabul edildi',
+    '`/status` bir claude.ai login method gösteriyor',
+    'Bir telefon QR kod üzerinden bağlandı ve oturum yeşil bir durum noktasıyla göründü',
+    'Telefondan bir cevap yerel dosya sistemini yansıttı',
+    'Uzun süren bir görev bittikten sonra bir push bildirimi geldi',
+    'Telefondan /model sonnet, makinedeki oturum modelini değiştirdi',
+    '`claude remote-control --continue`, Ctrl+C sonrası oturumu geri getirdi',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m15-platforms/05-remote-control-mobile/02-remote-control-help.txt"
+    range="2-9"
+  />
+</Lab>
+
+## Anti-pattern'ler
+
+**Dizüstünüzü kapatıp oturumun devam etmesini beklemek.** Remote Control yerel bir süreç olarak çalışır; süreç çıktıktan saniyeler sonra oturum çevrimdışı olur. _Düzeltme:_ kapalı bir kapağı atlatması gereken iş için bir cloud oturumu kullanın, ya da açık kalan bir makinede yerel oturumu `tmux` içinde çalıştırın.
+
+**`remoteControlAtStartup: true`ı bir depoya commit'lemek.** Proje ve yerel ayarlar bir `true`u bilinçli olarak yok sayar. _Düzeltme:_ auto-connect'i _kendi_ kullanıcı ayarlarınızda açın; proje dosyasını yalnızca kapatmak için kullanın.
+
+**Makinenin başındayken push bildirimlerini suçlamak.** Claude Code, bağlı terminale odaklanmışken push'ları atlar. _Düzeltme:_ kilitli bir telefondan test edin ya da `CLAUDE_CLIENT_PRESENCE_FILE`i ayarlayıp işaretçi dosyasının durumunu kontrol edin.
+
+**`DISABLE_TELEMETRY`i (ya da `DO_NOT_TRACK`) ayarlayıp sonra Remote Control'ün neden başlamadığını hata ayıklamak.** Her biri, Remote Control'ün kullanılabilirliğinin dayandığı feature-flag değerlendirmesini devre dışı bırakır. _Düzeltme:_ hem kabuğunuzda hem de herhangi bir `settings.json`ın `env` bloğunda unset edin.
+
+**`--cloud` isterken `--remote-control` kullanmak.** Biri yerel bir oturumu açığa çıkarır; diğeri bir cloud oturumu oluşturur. _Düzeltme:_ kodun nerede çalışmasını istediğinizi sorun ve oradan seçin.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/remote-control-mobile"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir terminal sürecinden, her biri kendi git worktree'sinde olacak şekilde birkaç eşzamanlı Remote Control oturumu istiyorsunuz. Ne çalıştırırsınız?"
+  options={[
+    {
+      text: '`claude remote-control --spawn worktree`',
+      correct: true,
+      explanation:
+        'Server mode birçok oturuma hizmet eder; --spawn worktree, talep üzerine oluşan her oturuma kendi worktree’sini verir.',
+    },
+    {
+      text: '`claude --remote-control --worktree`',
+      explanation: 'İnteraktif biçim, süreç başına bir uzak oturumu destekler.',
+    },
+    {
+      text: 'Bir oturumda birkaç kez `/remote-control`.',
+      explanation: 'Bu, içinde bulunduğunuz tek oturumda Remote Control’ü açıp kapatır.',
+    },
+    {
+      text: '`claude --cloud` üç kez.',
+      explanation: 'Bunlar Remote Control değil cloud oturumlarıdır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/remote-control-mobile"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir takım arkadaşı, deponun `.claude/settings.json`ında `remoteControlAtStartup`ı true'ya ayarlıyor. Depoyu açtığınızda ne olur?"
+  options={[
+    {
+      text: 'Hiçbir şey — proje ve yerel ayarlar bu ayar için bir `true`u yok sayar.',
+      correct: true,
+      explanation:
+        'Commit’lenmiş bir dosya, Remote Control’ü herkes için açamaz; oradaki bir `false` ise, yönetilen bir `true`a karşı bile onurlandırılır.',
+    },
+    {
+      text: 'Başlattığınız her oturum Remote Control’e otomatik bağlanır.',
+      explanation: 'Yalnızca kullanıcı ya da yönetilen ayarlar onu açabilir.',
+    },
+    {
+      text: 'Claude Code, siz kaldırana kadar başlamayı reddeder.',
+      explanation: 'Yok sayılır, ölümcül değil.',
+    },
+    {
+      text: 'Uygulanır ama yalnızca bir yeniden başlatmadan sonra başlayan oturumlara.',
+      explanation: 'Proje kapsamından hiç uygulanmaz.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/remote-control-mobile"
+  questionId="q3"
+  lang="tr"
+  prompt="Remote Control ile Claude Code on the web hakkında hangi ifade doğrudur?"
+  options={[
+    {
+      text: 'İkisi de claude.ai/code arayüzünü kullanır; Remote Control makinenizde, web cloud’da çalışır.',
+      correct: true,
+      explanation: 'Aynı arayüz, farklı çalıştırma konumu — karıştırılmalarının sebebi de bu.',
+    },
+    {
+      text: 'Remote Control, cloud oturumlarının yalnızca-mobil sürümüdür.',
+      explanation: 'Herhangi bir tarayıcıdan da çalışır ve kod yerelde çalışır.',
+    },
+    {
+      text: 'Remote Control bir GitHub bağlantısı gerektirir.',
+      explanation: 'Bu cloud oturumlarıdır; Remote Control GitHub gerektirmez.',
+    },
+    {
+      text: 'Cloud oturumları yerel MCP server’larınızı kullanılabilir tutar.',
+      explanation: 'Tutmaz — VM yalnızca ortamın sağladığına sahiptir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/remote-control-mobile"
+  questionId="q4"
+  lang="tr"
+  prompt="Claude uygulamasından `/resume` gönderiyorsunuz. Ne olur?"
+  options={[
+    {
+      text: 'Çalışmaz — `/resume`, yalnızca-terminal komutlarından biridir.',
+      correct: true,
+      explanation: '`/plugin` diğer klasik örnektir.',
+    },
+    {
+      text: 'Telefonunuzda oturum seçiciyi açar.',
+      explanation: 'Seçici terminal arayüzüdür ve iletilmez.',
+    },
+    {
+      text: 'En son yerel oturumu sessizce devam ettirir.',
+      explanation: 'Komut, argüman olsun olmasın yalnızca yereldir.',
+    },
+    {
+      text: '`/mcp`nin yaptığı gibi metin bir oturum listesi döndürür.',
+      explanation: '`/mcp`nin mobilden bir metin biçimi vardır; `/resume`ün yoktur.',
+    },
+  ]}
+/>
+
+**Sırada:** `06-chrome`, Claude'a tarayıcınızı verir — hem gücü hem de tehlikesi bu olan, oturum açmış hesaplarınızla birlikte.

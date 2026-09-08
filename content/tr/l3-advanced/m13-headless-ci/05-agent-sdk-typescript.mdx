@@ -9,7 +9,7 @@ difficulty: advanced
 tags: ['agent-sdk', 'typescript', 'otomasyon']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Agent SDK overview'
@@ -23,6 +23,10 @@ sources:
     title: 'Run Claude Code programmatically'
     url: 'https://code.claude.com/docs/en/headless.md'
     verified_at: 2026-09-07
+  - type: official
+    title: 'Migrate to Claude Agent SDK'
+    url: 'https://code.claude.com/docs/en/agent-sdk/migration-guide.md'
+    verified_at: 2026-09-07
   - type: repo
     title: 'anthropics/claude-agent-sdk-typescript'
     url: 'https://github.com/anthropics/claude-agent-sdk-typescript'
@@ -31,8 +35,330 @@ lab:
   repo_tag: 'lesson/m13-05-start'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders `@anthropic-ai/claude-agent-sdk` ile kendi programınızın içinde çalışan bir agent yazmayı anlatır: tek giriş noktası olan `query()` bir async iterator döndürür ve `for await` ile tüketilir; `cwd` agent'ı istediğiniz dizine yöneltir; `allowedTools`, `permissionMode`, `maxTurns` ve `model` çalıştırmayı sınırlar; `settingSources: []` ise `~/.claude` ve proje ayarlarını hiç yüklemeyerek çalıştırmayı her makinede tekrarlanabilir kılar. Laboratuvarda salt-okunur bir review agent'ı yazılır ve lab deposuna karşı gerçekten çalıştırılır; depoda hiçbir dosya değişmez.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.
+- `@anthropic-ai/claude-agent-sdk` ile bir TypeScript projesi kurmak ve bir [agent](/tr/playbook/glossary/#agent)'ı (bir hedefi kendi başına adım adım yürüten yapay zekâ sürecini) seçtiğiniz bir dizine karşı çalıştırmak.
+- `query()`'nin ne döndürdüğünü ve döngünün neden bir `async for` olduğunu tarif etmek.
+- Bir agent'ı `cwd`, `allowedTools`, `permissionMode`, `maxTurns` ve `model` ile sınırlamak.
+- Bir host makinenin ayarlarının ve `CLAUDE.md`'sinin bir çalıştırmaya sızmasını durdurmak için `settingSources: []` kullanmak — ve bunun hâlâ neyi dışlamadığını adlandırmak.
+- Mesaj akışını bir insanın — ya da bir günlüğün — görmesi gereken kısımlara süzmek.
+
+**Ön koşullar.** Node.js 18 ya da üzeri (bu ders 24.18.0'da doğrulanmıştır) ve ders 01: Agent SDK'nın seçenekleri, JavaScript adları altında `-p` bayraklarıyla aynı kavramlardır.
+
+<WhenNotToUse>
+  SDK'ya, içinde bir agent'a ihtiyaç duyan bir uygulama — kendi input'ları, kendi arayüzü, kendi
+  hata yönetimi olan bir şey — kuruyorsanız başvurun. Yalnızca tek bir görev çalıştırıp cevabı
+  okumanız gerekiyorsa, `claude -p --output-format json` bunu zaten herhangi bir dilden yapar ve bu
+  bir bağımlılık yerine tek bir süreçtir. Kendi oturum altyapınız olmadan yönetilen bir
+  [sandbox](/tr/playbook/glossary/#sandbox)'a (bir sürecin dosya sistemi ve ağ erişimini kısıtlayan
+  izole çalışma ortamına) sahip barındırılan bir agent istiyorsanız, bu Managed Agents'tır, farklı
+  bir üründür. Ve API'yi çağırıp [tool](/tr/playbook/glossary/#tool) (Claude'un dosya okuma, komut
+  çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) döngüsünü kendiniz yazıyorsanız,
+  istediğiniz Client SDK'dır, bu değil.
+</WhenNotToUse>
+
+## Kavram
+
+### SDK nedir
+
+Agent SDK, Claude Code'u güçlendiren aynı tool'ları, agent döngüsünü ve bağlam yönetimini, kendi sürecinizde çalışan bir kütüphane olarak size verir. Yalnızca Python ve TypeScript için mevcuttur; aynı döngüyü başka bir dilden sürmek için CLI'yi `-p` ve `--output-format json` ile bir alt süreç olarak çalıştırın.
+
+Her iki SDK da yerel bir Claude Code ikili dosyasını paketler, bu yüzden çoğu kurulumun başka hiçbir şeye ihtiyacı yoktur. TypeScript SDK'sı ikili dosyasını npm opsiyonel bağımlılıkları üzerinden kurar — bunları atlayan bir kurulum (`npm ci --omit=optional`), desteklenen bir platformda bile hiçbir ikili dosya almaz, ve o zaman ya onları atlamadan yeniden kurarsınız ya da Claude Code'u yerel olarak kurup `pathToClaudeCodeExecutable`'ı ona yöneltirsiniz.
+
+### `query()` bir async iterator'dır
+
+Tek bir giriş noktası vardır. `query({ prompt, options })` bir async iterator döndürür, bu yüzden onu `for await` ile tüketirsiniz. Her iterasyon bir mesaj verir: Claude'un akıl yürütmesi, bir tool çağrısı, bir tool sonucu ya da son sonuç. SDK, orkestrasyonu, tool çalıştırmayı, bağlam yönetimini ve tekrar denemeleri halleder. Döngü, Claude bittiğinde ya da bir hatayla karşılaştığında biter.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni), salt-okunur olarak cevaplanabilecek şekilde yazılmıştır:
+
+```text
+Read BUGS.md and src/store.ts. Name the one function that holds the off-by-one
+pagination bug, and quote the single line that is wrong. Do not edit anything.
+```
+
+### Bir çalıştırmayı sınırlayan seçenekler
+
+| Seçenek          | Ne yapar                                                                      | `-p` eşdeğeri       |
+| ---------------- | ----------------------------------------------------------------------------- | ------------------- |
+| `cwd`            | Oturum için çalışma dizini. Varsayılan `process.cwd()`'dir                    | kabuğun cwd'si      |
+| `allowedTools`   | Sormadan çalışan tool'lar                                                     | `--allowedTools`    |
+| `permissionMode` | `default`, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions`      | `--permission-mode` |
+| `maxTurns`       | Agentic tur tavanı                                                            | `--max-turns`       |
+| `model`          | Takma ad (`sonnet`, `opus`, `haiku`, `fable`) ya da tam bir model adı         | `--model`           |
+| `systemPrompt`   | Sistem prompt'unu değiştirir ya da genişletir                                 | `--system-prompt`   |
+| `settingSources` | Hangi dosya sistemi ayarlarının yükleneceği: `'user'`, `'project'`, `'local'` | (`--bare`'a yakın)  |
+
+`cwd`, bayrak şeklinde bir benzeri olmayan seçenektir ve SDK'yı yararlı kılan da odur: programınız herhangi bir yerde yaşayabilir ve agent'ı farklı bir dizine yönlendirebilir, böylece agent script'inizin bulunduğu klasörü değil, adlandırdığınız projeyi okur ve düzenler.
+
+`settingSources` kendi paragrafını hak ediyor. Onu atlarsanız tüm kaynaklar yüklenir, CLI'nin varsayılanlarıyla eşleşir — `~/.claude/settings.json`'ınız, projenin `.claude/settings.json` ve `.claude/settings.local.json`'ı ve (`'project'` üzerinden) herhangi bir `CLAUDE.md`. _Projenin_ `CLAUDE.md`'sinin yüklenmesi için `'project'` dâhil edilmelidir; kullanıcı düzeyinde bir `~/.claude/CLAUDE.md`, `'user'` ile gelir ve bir `CLAUDE.local.md`, `'local'` ile gelir, bu yüzden üç kapsam tek bir anahtar yerine ayrı anahtarlardır. `[]` geçirin ve SDK izolasyon modunu alırsınız: bu dosyaların hiçbiri yüklenmez.
+
+`[]` tam bir izolasyon değildir ve dokümanlar bu boşluk konusunda açıktır. Ne olursa olsun okunan ayarlar arasında managed ve server-managed politika, genel `~/.claude.json`, claude.ai MCP bağlayıcıları ve — sizi şaşırtması en muhtemel olanı — `~/.claude/projects/<project>/memory/` altında yaşayan ve oturum başında sistem prompt'una yüklenen **auto memory** vardır. Onu da dışlamak için `settingSources: []`'in yanına `autoMemoryEnabled: false`'u ya da `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` ortam değişkenini ayarlayın. `[]`'i bir sandbox olarak değil, "bu makinenin ayar dosyalarından ya da memory dosyalarından hiçbiri geçerli değildir" olarak ele alın.
+
+### Kimlik doğrulama
+
+SDK, agent'ınızı çalıştıran sürecin ortamından `ANTHROPIC_API_KEY`'i okur ve `.env` dosyalarını otomatik olarak yüklemez — bunları SDK'yı çağırmadan önce `dotenv` gibi bir şeyle kendiniz yükleyin. Üçüncü taraf sağlayıcılar kendi ortam değişkenleri üzerinden çalışır: `CLAUDE_CODE_USE_BEDROCK=1`, `CLAUDE_CODE_USE_VERTEX=1`, `CLAUDE_CODE_USE_FOUNDRY=1`.
+
+Kaçırılması kolay ama teknik bir ayrıntı olmayan bir kural şu: önceden onaylanmadıkça, Anthropic üçüncü taraf geliştiricilerin, Agent SDK üzerine kurulanlar dâhil ürünleri için claude.ai girişini ya da abonelik hız sınırlarını sunmasına izin vermez. Bir "Claude ile giriş yap" yolu değil, bir API anahtarı yolu sunun.
+
+### Akışı okumak
+
+Süzmeden, sistem başlatma ve dahili durum dâhil ham mesaj nesnelerini görürsünüz — hata ayıklama için yararlı, başka türlü gürültülü. Küçük bir filtre çoğu durumu kapsar: oturum meta verisi için `init` sistem mesajını çekin, `assistant` mesajlarından metin bloklarını ve tool adlarını yazdırın, ve son `result` mesajının `subtype`'ını yazdırın.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · lab deposuna yönelik, salt-okunur bir review agent'ı"
+  lessonId="tr/l3-advanced/m13-headless-ci/agent-sdk-typescript"
+  repoTag="lesson/m13-05-start"
+  steps={[
+    "Lab klonunuzda `git checkout lesson/m13-05-start` yapın. Bu tag yalnızca süreç odaklıdır — `-start` ve `-solution` aynı commit'i işaret eder, çünkü kuracağınız agent kendi projesinde yaşar ve yalnızca lab deposunu okur.",
+    'Başka bir yerde bir taslak klasörde: `npm init -y`, `npm pkg set type=module`, `npm install @anthropic-ai/claude-agent-sdk`, `npm install --save-dev tsx`.',
+    'Aşağıdaki kodla `agent.ts`\'i yazın: bir ortam değişkeninden ayarlanan `cwd`, salt-okunur tool\'lar, `permissionMode: "dontAsk"`, `maxTurns: 8` ve `settingSources: []` ile `query()`.',
+    'Hedef olarak lab klonuyla çalıştırın: `LAB_DIR=../claude-code-lab npx tsx agent.ts`.',
+    "Çıktıyı okuyun: `init` satırı çözümlenen modeli ve cwd'yi bildirir, sonra tool çağrılarını, sonra cevabı, sonra `Done: success`'i.",
+    'Hiçbir şeyin değişmediğini doğrulayın: lab klonunda `git status` temiz.',
+    "Şimdi script'i kopyalayın, kopyadan `settingSources: []`'i silin ve çalıştırın. Aşağıdaki iki kaydı karşılaştırın — kendi `~/.claude`'ınızdaki cevapları şekillendiren her şey artık geçerlidir.",
+  ]}
+  expected="Agent `init: model=claude-sonnet-5 cwd=<lab klonunuz>` yazdırır, iki `Tool: Read` satırı, src/store.ts'te paginate()'i adlandıran ve yanlış satır olarak `const start = page * pageSize;`'i alıntılayan bir cevap, sonra `Done: success (turns=3)`, 0 ile çıkar. Lab klonu temiz kalır."
+  checklist={[
+    '`npx tsx agent.ts` 0 ile çıkıyor',
+    'init satırı taslak proje yolunuzu değil, lab klonu yolunu gösteriyor',
+    'Agent yalnızca Read kullandı — Edit yok, Bash yok',
+    'Lab klonunda `git status` hiçbir değişiklik bildirmiyor',
+    '`settingSources: []` ile cevap tekrarlanabilir; onsuz kendi ayarlarınız sızıyor',
+    "`settingSources: []`'in hâlâ neyi dışlamadığını söyleyebiliyorsunuz",
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/05-agent-sdk-typescript/01-agent-ts.txt"
+    range="3-19"
+  />
+</Lab>
+
+<CodeBlock title="agent.ts">
+
+```typescript
+import { query } from '@anthropic-ai/claude-agent-sdk';
+
+const LAB = process.env.LAB_DIR!;
+
+for await (const message of query({
+  prompt:
+    'Read BUGS.md and src/store.ts. Name the one function that holds the off-by-one ' +
+    'pagination bug, and quote the single line that is wrong. Do not edit anything.',
+  options: {
+    cwd: LAB,
+    allowedTools: ['Read', 'Glob', 'Grep'],
+    permissionMode: 'dontAsk',
+    maxTurns: 8,
+    model: 'sonnet',
+    settingSources: [], // no settings.json or CLAUDE.md from ~/.claude or .claude/ (auto memory still loads)
+  },
+})) {
+  if (message.type === 'system' && message.subtype === 'init') {
+    console.log(`init: model=${message.model} cwd=${message.cwd}`);
+  } else if (message.type === 'assistant' && message.message?.content) {
+    for (const block of message.message.content) {
+      if ('text' in block) console.log(block.text);
+      else if ('name' in block) console.log(`Tool: ${block.name}`);
+    }
+  } else if (message.type === 'result') {
+    console.log(`Done: ${message.subtype} (turns=${message.num_turns})`);
+  }
+}
+```
+
+</CodeBlock>
+
+Bu kayıtta durup düşünmeye değer üç şey var.
+
+**`cwd` agent'ı gerçekten yeniden konumlandırır.** `init` satırı, script'in yaşadığı taslak projeyi değil, lab klonunu bildirir — `Read`'in `BUGS.md`'yi bulmasının nedeni de budur. `cwd`'yi bir dizine yöneltin ve o dizin (artı alt dizinleri), agent'ın varsayılan olarak erişebildiği şey olur.
+
+**`dontAsk` artı üç salt-okunur tool, bir ipucu değil sert bir sınırdır.** O mode ile, allow kurallarınızda ya da salt-okunur komut kümesinde olmayan her şey reddedilir. Prompt istemiş olsa bile agent dosyayı düzenleyemezdi.
+
+**Cevap, lab tag'inin durumunu fark etti ve bunu söyledi.** Bu tag'de `src/store.ts`, temiz temel çizgidir, bu yüzden agent orada _olan_ doğru satırı bildirdi ve `BUGS.md`'nin `lesson/m02-02-start`'ta tarif ettiği hatalı satırı alıntıladı. Bu gerçekten iyi bir agent cevabıdır ve bir review agent'ının çıktısının, onu yönelttiğiniz checkout kadar iyi olduğunun bir hatırlatmasıdır.
+
+İşte o tek satırın kaldırıldığı aynı agent, aynı makinede dakikalar sonra kaydedilmiş. Makinenin kendi Claude Code ayarları Türkçe cevap istiyor, bu yüzden agent Türkçe cevap verir:
+
+<Transcript
+  src="content/_shared/transcripts/m13-headless-ci/05-agent-sdk-typescript/02-agent-ts-no-isolation.txt"
+  range="4-24"
+/>
+
+Aynı kod, aynı prompt, aynı tool'lar, aynı sonuç — farklı dil, çünkü SDK bu makinenin ayarlarını tam olarak belgelendiği gibi yükledi. Hiçbir şey bozulmadı; çalıştırma yalnızca tekrarlanabilir değildi.
+
+### İşletim sistemine göre kurulum
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+npm init -y && npm pkg set type=module
+npm install @anthropic-ai/claude-agent-sdk
+npm install --save-dev tsx
+export ANTHROPIC_API_KEY=your-api-key
+LAB_DIR=../claude-code-lab npx tsx agent.ts
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+npm init -y && npm pkg set type=module
+npm install @anthropic-ai/claude-agent-sdk
+npm install --save-dev tsx
+export ANTHROPIC_API_KEY=your-api-key
+LAB_DIR=../claude-code-lab npx tsx agent.ts
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+npm init -y; npm pkg set type=module
+npm install @anthropic-ai/claude-agent-sdk
+npm install --save-dev tsx
+$env:ANTHROPIC_API_KEY = "your-api-key"
+$env:LAB_DIR = "..\claude-code-lab"; npx tsx agent.ts
+```
+
+  </Fragment>
+</OSTabs>
+
+`"type": "module"`'ı ayarlamak, script'in üst düzey `await` kullanmasını sağlayan şeydir. Mevcut bir CommonJS projesinde, dosyayı bunun yerine `agent.mts` olarak adlandırın ve `npx tsx agent.mts` çalıştırın — `.mts` uzantısı, tsx'in projenizin geri kalanını dönüştürmeden onu bir ES modülü olarak ele almasını sağlar.
+
+## Anti-pattern'ler
+
+**Gönderilen bir agent'ta `settingSources`'ı ayarsız bırakmak.** Varsayılan olarak tüm kaynaklar yüklenir, bu yüzden agent'ınız host makinenin `~/.claude`'unun söylediği her şeyi devralır. _Düzeltme:_ `settingSources: []`, sonra tam olarak ihtiyacınız olanı geri ekleyin (hedef deponun `CLAUDE.md`'sini istiyorsanız `['project']`) — ve auto memory de geçerli olmamalıysa `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`'i ekleyin.
+
+**`process.cwd()`'ye güvenmek.** Agent o zaman programınızın başlatıldığı hangi dizinse onu okur, bu da geliştirmede, testlerde ve üretimde farklı bir klasördür. _Düzeltme:_ `cwd`'yi açıkça ayarlayın.
+
+**Bir agent'a "ihtiyacı olabilir" diye `Bash` vermek.** Eklediğiniz her tool, agent'ın okuduğu bir dosyaya enjekte edilmiş bir talimatın uzanabileceği bir yetenektir. _Düzeltme:_ `Read`, `Glob`, `Grep` ile başlayın, agent yazması gerektiğinde `Edit`'i ekleyin, ve `Bash`'i en son, kapsamlı kurallarla ekleyin.
+
+**`maxTurns` olmaması.** Varsayılan bir tavan yoktur ve kontrol edecek bir dosya daha bulmaya devam eden bir agent harcamaya devam eder. _Düzeltme:_ görevin sığdığını gördüğünüz bir sınır koyun.
+
+**`.env`'in kendiliğinden yükleneceğini beklemek.** SDK ortamı okur, `.env` dosyanızı değil. _Düzeltme:_ `query()`'yi çağırmadan önce onu kendiniz yükleyin.
+
+**Her mesajı yazdırmak.** Ham mesaj nesneleri sistem başlatmayı ve dahili durumu içerir ve yararlı satırlar boğulur. _Düzeltme:_ `init`, metin ve tool adı bloklarına, ve son `result`'a süzün.
+
+<Callout variant="changed">
+  Paket `@anthropic-ai/claude-agent-sdk`'dir; `@anthropic-ai/claude-code`'dan yeniden adlandırıldı.
+  Onunla birlikte bir davranış değişti: v0.1.0'dan beri SDK, varsayılan olarak artık Claude Code'un
+  sistem prompt'unu kullanmıyor. Onu açıkça `systemPrompt: { type: 'preset', preset: 'claude_code' }`
+  ile isteyin.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/agent-sdk-typescript"
+  questionId="q1"
+  lang="tr"
+  prompt="`query()` ne döndürür?"
+  options={[
+    {
+      text: '`for await` ile tükettiğiniz, her adımda bir mesaj veren bir async iterator',
+      correct: true,
+      explanation:
+        'Akıl yürütme, tool çağrıları, tool sonuçları ve son sonuç, hepsi akış mesajları olarak gelir.',
+    },
+    {
+      text: "Son cevap string'ine çözülen bir Promise",
+      explanation: 'Bu döngüyü gizlerdi; SDK bunun yerine onu akış olarak sunar.',
+    },
+    {
+      text: 'Bir alt süreç tanıtıcısı',
+      explanation:
+        "Bir ikili dosya paketlenir, ama kullandığınız API bir süreç tanıtıcısı değil, iterator'dır.",
+    },
+    {
+      text: 'Bir EventEmitter',
+      explanation: 'SDK olaylar değil, async iterasyon kullanır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/agent-sdk-typescript"
+  questionId="q2"
+  lang="tr"
+  prompt="Agent'ınız aynı kodla sizin makinenizde ve bir takım arkadaşınızınkinde farklı cevaplar veriyor. En olası neden nedir?"
+  options={[
+    {
+      text: "`settingSources` ayarlanmamış, bu yüzden her makine kendi ~/.claude ayarlarını ve memory'sini yüklüyor",
+      correct: true,
+      explanation:
+        "Hiçbir ayar dosyasının ya da CLAUDE.md'nin yüklenmemesi için `[]` geçirin — bu dersteki ikinci transcript tam olarak bu sızıntıdır. Auto memory de CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 gerektirir.",
+    },
+    {
+      text: 'Paketlenmiş Claude Code ikili dosyası farklı',
+      explanation: 'İlke olarak mümkün, ama ayar sızıntısı belgelenmiş varsayılandır.',
+    },
+    {
+      text: '`maxTurns` çok düşük',
+      explanation: 'Bu çalıştırmaları keserdi, sesini ya da sonuçlarını değiştirmezdi.',
+    },
+    {
+      text: '`cwd` varsayılanları farklı',
+      explanation:
+        'Bu, neyin okunduğunu değiştirir ve kontrol etmeye değer — ama buradaki cevap ayarlardır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/agent-sdk-typescript"
+  questionId="q3"
+  lang="tr"
+  prompt="Kodu analiz edip değiştirebilen ama hiçbir zaman kabuk komutu çalıştırmayan bir agent istiyorsunuz. Hangi `allowedTools` kümesi uyar?"
+  options={[
+    {
+      text: "['Read', 'Edit', 'Glob']",
+      correct: true,
+      explanation: 'Anlamak için Read ve arama, değiştirmek için Edit, çalıştırma yok.',
+    },
+    {
+      text: "['Read', 'Glob', 'Grep']",
+      explanation: 'Bu salt-okunur analizdir — hiçbir şeyi değiştiremez.',
+    },
+    {
+      text: "['Read', 'Edit', 'Bash', 'Glob', 'Grep']",
+      explanation: 'Bu, dışlanmasını istediğiniz kabuğu da içeren tam otomasyon kümesidir.',
+    },
+    {
+      text: "['*']",
+      explanation: 'Her şeye izin vermek, gereksinimin tam tersidir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/agent-sdk-typescript"
+  questionId="q4"
+  lang="tr"
+  prompt="Ürününüz, kullanıcıların bir API anahtarı sağlamak yerine Claude abonelikleriyle giriş yapmasını istiyor. Buna izin var mı?"
+  options={[
+    {
+      text: 'Hayır — önceden onaylanmadıkça, Anthropic üçüncü taraf geliştiricilerin Agent SDK üzerine kurulu ürünler için claude.ai girişini ya da hız sınırlarını sunmasına izin vermez',
+      correct: true,
+      explanation:
+        "Quickstart'ın tarif ettiği API anahtarı kimlik doğrulama yöntemlerini kullanın.",
+    },
+    {
+      text: 'Evet, SDK bunun için bir OAuth akışı sunuyor',
+      explanation: 'Sunmuyor ve politika, önceden onay olmadan bunu yasaklıyor.',
+    },
+    {
+      text: 'Evet, her kullanıcının makinesinde `claude setup-token` çalıştırarak',
+      explanation: "O token kendi CI'niz içindir, abonelik erişimini yeniden satmak için değil.",
+    },
+    {
+      text: 'Yalnızca Team ve Enterprise planlarında',
+      explanation: 'Kısıtlama plana bağlı değildir.',
+    },
+  ]}
+/>
+
+**Sırada:** `06-agent-sdk-python`, aynı agent'ı Python'da yeniden kurar; aynı kavramlar orada snake_case adlar giyer.

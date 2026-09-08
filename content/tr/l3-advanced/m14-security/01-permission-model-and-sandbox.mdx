@@ -9,7 +9,7 @@ difficulty: core
 tags: ['güvenlik', 'permissions', 'sandbox', 'permission-modes']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Choose a permission mode'
@@ -39,6 +39,386 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders, İngilizce aslından henüz çevrilmedi (taslak). Konusu: Claude Code'un iki ayrı güvenlik katmanı. Permission mode'lar ve permission kuralları, bir tool çağrısı çalışmadan **önce** Claude Code tarafından değerlendirilir; sandbox ise komut çalışmaya başladıktan sonra işletim sistemi tarafından uygulanır ve yalnızca Bash komutlarını ve alt süreçlerini kapsar. Ders altı modu (`default`/Manual, `acceptEdits`, `plan`, `auto`, `dontAsk`, `bypassPermissions`), kuralların deny → ask → allow sırasıyla değerlendirilmesini, hiçbir modun otomatik onaylamadığı korumalı yolları (`.git`, `.claude`, shell başlangıç dosyaları) ve kritik yolları (kök dizin, home dizini, çalışma dizini ve üstleri) anlatır. Sandbox tarafında dosya sistemi ve ağ izolasyonu ayrı iki katmandır: varsayılan olarak hiçbir alan adı önceden izinli değildir ve okuma erişimi `~/.ssh` dâhil tüm makineyi kapsar. Sandbox macOS, Linux ve WSL2'de çalışır; native Windows desteklenmez. Laboratuvarda aynı görev dört farklı permission mode ile headless olarak çalıştırılır ve yalnızca `acceptEdits` çalıştırmasının dosyayı değiştirdiği gerçek kayıtlarla gösterilir.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Altı [permission mode](/tr/playbook/glossary/#permission-mode)'u (bir oturumun [tool](/tr/playbook/glossary/#tool) (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) çağrılarını nasıl onaylayacağını belirleyen kip) adlandırmak, her birinin sormadan neyi çalıştırdığını söylemek ve verilen bir iş için doğrusunu seçmek.
+- Permission kurallarının ve permission mode'ların neden farklı katmanlar olduğunu açıklamak ve aralarında çelişki olduğunda hangisinin kazandığını söylemek.
+- Bir **korumalı yol** (protected path) ile **kritik yol**'un (critical path) ne olduğunu ve hiçbir allow kuralının ya da [hook](/tr/playbook/glossary/#hook) (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan komut) olan `PreToolUse`'un bunlardan birine dokunan bir yazma ya da silme işlemini onaylayamayacağını söylemek.
+- Bash [sandbox](/tr/playbook/glossary/#sandbox)'ının (bir sürecin dosya sistemi ve ağ erişimini işletim sistemi düzeyinde kısıtlayan izole çalışma ortamı) neyi zorunlu kıldığını — dosya sistemi izolasyonu, ağ izolasyonu — ve nerede çalıştığını tarif etmek.
+- `bypassPermissions`'ın sizi gerçekte neye karşı koruyup neye karşı korumadığını dürüstçe ifade etmek.
+
+**Ön koşullar.** Çalışan bir Claude Code kurulumu (`claude --version`) ve 1. seviyedeki daha önceki permissions materyali. Bu ders, aynı mekanizmanın güvenlik odaklı görünümüdür: "sorulmaktan nasıl kurtulurum" değil, "bir şeyler ters giderse bu oturum nereye erişebilir".
+
+<WhenNotToUse>
+  Bu dersin denetimlerini izolasyonun yerine koymayın. Bir permission mode, bir tool çağrısının
+  çalışıp çalışmayacağına karar verir; sandbox ise bir Bash komutunun çalıştıktan sonra neye
+  dokunabileceğine karar verir. İkisi de düşman bir depoya, düşman bir [MCP
+  server](/tr/playbook/glossary/#mcp-server)'a (Model Context Protocol ile Claude'a dış araç ve veri
+  sağlayan sunucu) ya da ilk kez çalıştıracağınız bir koda karşı bir sınır değildir — bunun için bir
+  container, bir VM ya da tek kullanımlık bir makine istersiniz; `sandbox-environments` sayfası
+  bunları karşılaştırır. Ve permission'ları sıkılaştırma nedeniniz Claude'un önerdiği değişikliğe
+  güvenmemenizse, çözüm bir kural eklemek değil, [diff](/tr/playbook/glossary/#diff)'i (bir
+  dosyadaki değişikliklerin satır satır gösterimi) okumaktır.
+</WhenNotToUse>
+
+## Kavram
+
+### İki katman, iki farklı yerde uygulanır
+
+Claude Code'un iki bağımsız güvenlik katmanı vardır ve bunları birbirine karıştırmak en yaygın kafa karışıklığı kaynağıdır.
+
+**Permission kuralları ve permission mode'lar**, bir tool çalışmadan _önce_ Claude Code tarafından, tool adına ve argümanlarına bakılarak değerlendirilir. Her tool için geçerlidirler — `Bash`, `Read`, `Edit`, `WebFetch`, MCP tool'ları.
+
+**Sandbox** ise _çalışmakta olan_ süreç üzerinde işletim sistemi tarafından uygulanır. Yalnızca Bash komutlarını ve onların alt süreçlerini kapsar ve modelin ne çalıştırmayı seçtiğinden bağımsız olarak geçerlidir — izin verilen bir komutun adının ima ettiğinden fazlasını yaptığı ortaya çıksa bile.
+
+Dokümantasyon bunu açıkça koyuyor: permission kararları komut dizesinden verilir; sandbox sınırını ise işletim sistemi süreç üzerinde uygular. İkisini birlikte bulundurmanın değeri de tam olarak burada.
+
+### Altı mod
+
+| Mod                             | Sormadan ne çalışır                                                                                                                          | En uygun kullanım                          |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `default` (**Manual** etiketli) | Yalnızca okumalar                                                                                                                            | Her eylemi kendiniz gözden geçirmek        |
+| `acceptEdits`                   | Okumalar, dosya düzenlemeleri ve çalışma dizini içindeki yaygın dosya sistemi komutları (`mkdir`, `touch`, `mv`, `cp`, `rm`, `rmdir`, `sed`) | Gözden geçirdiğiniz kod üzerinde ilerlemek |
+| `plan`                          | Okumalar, artı auto mode kullanılabilirse classifier'ın onayladığı komutlar                                                                  | Bir şeyi değiştirmeden önce keşfetmek      |
+| `auto`                          | Her şey, arka planda eylemleri gözden geçiren bir classifier ile                                                                             | Uzun görevler, daha az uyarı               |
+| `dontAsk`                       | Yalnızca önceden onaylı tool'lar                                                                                                             | Kilitli CI ve betikler                     |
+| `bypassPermissions`             | Her şey                                                                                                                                      | Yalnızca izole container ve VM'ler         |
+
+Kafa karıştıran iki adlandırma ayrıntısı var. Her eylemi gözden geçiren mod; CLI'da, IDE eklentilerinde ve masaüstü uygulamasında **Manual** olarak görünür, ama config değeri `default`'tur; `manual` da v2.1.200'den itibaren bir takma ad olarak kabul edilir. Pro, Max ve Team planlarında bir terminalde ya da VS Code eklentisinde yerleşik _başlangıç_ modu Manual değil `auto`'dur — `claude -p` ve Agent SDK ise hâlâ `default` ile başlar.
+
+Oturum sırasında `Shift+Tab` ile geçiş yapın. `auto`'dan ilk basış `default`'a gider, ardından döngü `default` → `acceptEdits` → `plan` → başa şeklinde işler. `bypassPermissions` yalnızca onunla başlatıldıysanız döngüye katılır; `dontAsk` ise hiçbir zaman döngüye katılmaz ve bayrakla ayarlanmalıdır.
+
+### Kurallar mod'ları geçersiz kılar
+
+Mod'lar bir taban çizgisi belirler. `permissions.allow`, `permissions.ask` ve `permissions.deny` bunun üzerine oturur ve **önce deny, sonra ask, sonra allow** sırasıyla değerlendirilir — ilk eşleşen kazanır ve özgüllük bu sırayı değiştirmez. Geniş bir `Bash(aws *)` deny kuralı, daha dar bir `Bash(aws s3 ls)` allow kuralıyla eşleşen bir çağrıyı bile engeller; yani bir deny kuralı allowlist istisnaları taşıyamaz.
+
+Deny kuralları, `bypassPermissions` dâhil her modda engeller. Allow kurallarının `bypassPermissions`'ta hiçbir etkisi yoktur. Ve bir deny kuralındaki çıplak bir tool adı — `Bash` — tool'u Claude'un bağlamından tamamen kaldırır, yani Claude onu hiç görmez; `Bash(rm *)` gibi kapsamlı bir kural ise tool'u kullanılabilir bırakır ve yalnızca eşleşen çağrıları engeller.
+
+<Callout>
+  Permission kuralları model tarafından değil Claude Code tarafından uygulanır.
+  [Prompt](/tr/playbook/glossary/#prompt)'unuzdaki (Claude'a verdiğiniz istek metni) ya da
+  `CLAUDE.md`'nizdeki bir talimat, Claude'un *denediği* şeyi şekillendirir; Claude Code'un *izin
+  verdiği* şeyi değiştirmez. Erişim vermek ya da geri almak için `/permissions`, bir settings
+  kuralı, bir permission mode ya da bir `PreToolUse` hook'u kullanın.
+</Callout>
+
+Bu dersin işlenmiş örnek prompt'u — bir dilek yerine bir kural olarak ifade edilen bir sınır:
+
+```text
+Add an ask rule so I am prompted before any push, and a deny rule for reads of .env,
+then show me the resolved rules from /permissions.
+```
+
+### Hiçbir modun otomatik onaylamadığı yollar
+
+Aksi hâlde sorguyu atlayacak bir modda bile hayatta kalmak için özel olarak var olan iki liste bulunur.
+
+**Korumalı yollar** (protected paths), `bypassPermissions` dışında (ve bypass permissions'ın kullanılabilir olduğu planlama oturumları dışında) hiçbir zaman otomatik onaylanmaz. Bunlar; Claude Code'un kendi konfigürasyonunu ve kodunu yüklediği dizinleri, artı deponuzu ve kabuğunuzu tanımlayan dizinleri kapsar: `.git`, `.config/git`, `.vscode`, `.idea`, `.husky`, `.cargo`, `.devcontainer`, `.yarn`, `.mvn` ve (`.claude/worktrees` hariç) `.claude`; dosyalar arasında ise `.gitconfig`, `.gitmodules`, kabuk başlangıç dosyaları (`.bashrc`, `.zshrc`, `.profile`, `.envrc`, …), `.npmrc`, `.yarnrc`, `.pre-commit-config.yaml`, `.mcp.json` ve `.claude.json` bulunur. Önemli olan şu: `Edit(.claude/**)` gibi bir `permissions.allow` girdisi bunları **önceden onaylamaz** — güvenlik kontrolü allow kuralları değerlendirilmeden önce çalışır.
+
+**Kritik yollar** (critical paths) silme ile ilgilidir. Claude Code, hiçbir allow kuralının ya da `"allow"` döndüren bir `PreToolUse` hook'unun; dosya sistemi kökünü, üst düzey bir dizini, home dizininizi, bir Windows sürücü kökünü ya da çalışma dizininizi ve onun üstlerini hedefleyen bir `rm` ya da `rmdir`'i onaylamasına izin vermez. Bunu `$(...)`, ters tırnak ya da `<(...)` içine gizlemek kontrolü atlatmaz ve bir kabuk değişkeninin altındaki bir glob — `rm -rf "$DIR"/*` — de sayılır, çünkü boş bir değişken bunu kökten bir silme işlemine çevirir.
+
+### Sandbox
+
+Sandbox'lı Bash tool'u iki bağımsız katmandır.
+
+**Dosya sistemi izolasyonu.** Varsayılan olarak sandbox'lı komutlar; çalışma dizinine, oturum geçici dizinine ve `--add-dir` / `permissions.additionalDirectories` ile eklenen her şeye yazabilir. _Okuma_ erişimleri ise reddedilen dizinler dışında bilgisayarın tamamını kapsar — dokümantasyonun açıkça belirttiği gibi, aksini söylemediğiniz sürece buna `~/.aws/credentials` ve `~/.ssh/` de dâhildir. Yazılabilir bölge içinde bile sandbox, kendi korumalı listesine (`.claude` ayar ve hook dizinleri, `.mcp.json`, kabuk başlangıç dosyaları, `.git/hooks` ve `.git/config`) yazmayı reddeder, çünkü bunları düzenleyebilen bir komut, bir sonraki çalıştırmada kendine izin tanıyabilir.
+
+**Ağ izolasyonu.** Trafik, sandbox'ın dışındaki bir proxy üzerinden geçer. **Hiçbir alan adı önceden izinli değildir.** Bir komut yeni bir alan adına ilk kez ihtiyaç duyduğunda size sorulur, ya da auto modda classifier karar verir; `sandbox.network.allowedDomains` önceden izin verir, `strictAllowlist` ise listenin dışındaki her şeyi sormak yerine reddeder.
+
+Uygulama işletim sistemi düzeyindedir: macOS'ta Seatbelt, Linux ve WSL2'de [bubblewrap](https://github.com/containers/bubblewrap). **Native Windows desteklenmez** — Windows'ta Claude Code'u bir WSL2 dağıtımı içinde çalıştırırsınız. WSL1 de desteklenmez, çünkü bubblewrap, WSL2'nin sahip olduğu ama WSL1'in sahip olmadığı çekirdek özelliklerine ihtiyaç duyar.
+
+Sandbox'ın **auto-allow modu**, permission sisteminin **auto mode**'uyla aynı şey değildir: auto-allow, Bash komutlarını sınır onları zaten çevrelediği için onaylar; auto mode ise eylemleri gözden geçirmek için bir classifier kullanır. İkisi bağımsız çalışır ve birlikte kullanılabilir — [plan mode](/tr/playbook/glossary/#plan-mode) (Claude'un değişiklik yapmadan önce yalnızca okuyup bir plan sunduğu mod) hariç, çünkü orada auto-allow onayları genişletmez.
+
+Auto-allow modunda bile açık deny kuralları hâlâ geçerlidir, bir kritik yola karşı `rm`/`rmdir` hâlâ olağan akıştan geçer ve `Bash(git push *)` gibi içerik-kapsamlı bir ask kuralı hâlâ sorar.
+
+### `bypassPermissions` gerçekte nedir
+
+Permission uyarılarını ve güvenlik kontrollerini devre dışı bırakır, böylece tool çağrıları — korumalı yollara yazmalar dâhil — hemen çalışır. Dokümantasyon sınırı açıkça söylüyor: **prompt injection'a ya da istenmeyen eylemlere karşı hiçbir koruma sunmaz**. Yine de birkaç şey onu durdurur — açık bir ask kuralı, bir kritik-yol `rm`'i, `AskUserQuestion` ve oturumlar arası mesajlaşma korumaları — ve Linux ile macOS'ta Claude Code, root olarak ya da `sudo` altında bu modda başlamayı reddeder. Bu moda, onunla başlamamış bir oturumdan sonradan giremezsiniz ve bir yönetici bunu `permissions.disableBypassPermissionsMode: "disable"` ile tamamen kaldırabilir.
+
+Gerçekte istediğiniz şey "çok daha az uyarı" ise, dürüst cevap bu değil, auto mode artı sandbox'tır.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Bu laboratuvar bir kum havuzu klasöründe çalışır, kursun laboratuvar deposuna karşı değil — burada
+  bir `lesson/m14-01-*` tag'i yoktur, çünkü sınadığınız şey bir projedeki bir kusur değil, Claude
+  Code'un kendi davranışıdır.
+</Callout>
+
+<Lab
+  title="Laboratuvar · dört permission mode'un aynı görevi farklı şekilde nasıl kararlaştırdığını izleyin"
+  lessonId="tr/l3-advanced/m14-security/permission-model-and-sandbox"
+  repoTag="none"
+  steps={[
+    'Önemsediğiniz hiçbir deponun dışında bir kum havuzu klasörü açın ve içine hatalı tek bir dosya yazın: `add()` fonksiyonu `a - b` döndüren, hatayı itiraf eden bir yorum taşıyan bir `math.js`.',
+    'Aynı düzeltme isteğini dört kez çalıştırın, her çalıştırma arasında `math.js`\'i sıfırlayın, yalnızca modu değiştirin: `claude -p "Fix the bug in math.js so add() returns a + b, then tell me in one sentence what you did." --permission-mode default --model sonnet --max-turns 4 --output-format text`',
+    '`--permission-mode acceptEdits`, ardından `--permission-mode plan`, ardından `--permission-mode dontAsk --allowedTools Read` ile tekrarlayın.',
+    'Her çalıştırmadan sonra `cat math.js` yapın ve dosyanın değişip değişmediğini kaydedin.',
+    'Normal bir etkileşimli oturum açın ve `/permissions` çalıştırın. **Ask** altına `Bash(git push *)`, **Deny** altına `Read(./.env)` ekleyin, ardından her kuralın hangi settings dosyasına yazıldığına bakın.',
+    "`/sandbox` çalıştırın. macOS, Linux ya da WSL2'de panel Mode, Overrides ve Config sekmeleriyle açılır; native Windows'ta yapılandırılacak bir sandbox yoktur — elinizdeyse Config sekmesindeki izin verilen alan içinde reddedilen yolların listesini okuyun.",
+  ]}
+  expected="Yalnızca acceptEdits çalıştırması math.js'i düzenler. default çalıştırması durur ve headless bir çalıştırmada asla alamayacağı bir izin ister; plan ve dontAsk çalıştırmaları dosyaya dokunulmadan tur sınırında biter."
+  checklist={[
+    "`default` çalıştırması `math.js`'i değiştirmeden bıraktı ve onay beklediğini söyledi",
+    "`acceptEdits` çalıştırması `a - b`'yi `a + b`'ye çevirdi",
+    '`plan` çalıştırması dosyayı değiştirmeden bıraktı',
+    'Yalnızca `Read` izinli `dontAsk` çalıştırması dosyayı değiştirmeden bıraktı',
+    "Ask ve deny kurallarınız, geldikleri dosyayla birlikte `/permissions`'ta görünüyor",
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m14-security/01-permission-model-and-sandbox/01-default.txt"
+    range="2-8"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m14-security/01-permission-model-and-sandbox/02-accept-edits.txt"
+    range="2-8"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m14-security/01-permission-model-and-sandbox/03-plan.txt"
+    range="2-7"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m14-security/01-permission-model-and-sandbox/04-dontask.txt"
+    range="2-7"
+  />
+</Lab>
+
+Bu dört kayıtta durup düşünmeye değer üç şey var.
+
+Bunları üreten makinenin genel Claude Code tercihleri Türkçe cevap istiyor, bu yüzden prompt İngilizce olsa da model Türkçe cevap verdi. Bu bir kayıt hatası değil: standing tercihleriniz ve memory dosyalarınız her oturumu, [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) olanlar dâhil, şekillendirir. İlk cevap şöyle okunur: "Dosyayı düzenlemek için izin bekliyorum; `add()`'i `a + b` döndürecek şekilde düzeltebilmem için lütfen onaylayın" — Manual moddaki reddin başka bir dilde hâli.
+
+İkincisi: headless bir `-p` çalıştırmasında `--permission-mode default`'un soracak kimsesi yoktur. İstek basitçe gerçekleşmez. Bu, otomasyonda Manual modun dürüst hâlidir ve [CI](/tr/playbook/glossary/#ci) (her push'ta ya da pull request'te otomatik olarak testleri ve kontrolleri çalıştıran hat) için `dontAsk`'ın var olma nedenidir: beklemek yerine otomatik olarak reddeder.
+
+Üçüncüsü: `plan` ve `dontAsk`, dosyaya dokunulmadan ikisi de `Error: Reached max turns (4)` ile bitti, ama farklı nedenlerle — plan mode bir planı onaylayana kadar düzenlemeleri engeller, `dontAsk` ise aksi hâlde soracak her çağrıyı otomatik reddetti. O modda Claude yalnızca allow kurallarınızın kapsadığını çalıştırır — burada `--allowedTools` bayrağının önceden onayladığı tek `Read` — artı yerleşik salt-okunur Bash komutları ve bir `PreToolUse` hook'unun onayladığı her şey.
+
+### Sandbox'ı açmak
+
+`/sandbox` paneli seçiminizi projenin `.claude/settings.local.json` dosyasına yazar. Her yerde açmak için bunu `~/.claude/settings.json`'a koyun:
+
+<CodeBlock title="~/.claude/settings.json">
+
+```json
+{
+  "sandbox": {
+    "enabled": true,
+    "filesystem": {
+      "allowWrite": ["~/.kube", "/tmp/build"]
+    },
+    "network": {
+      "allowedDomains": ["github.com", "*.npmjs.org"]
+    },
+    "credentials": {
+      "files": [
+        { "path": "~/.aws/credentials", "mode": "deny" },
+        { "path": "~/.ssh", "mode": "deny" }
+      ],
+      "envVars": [
+        { "name": "GITHUB_TOKEN", "mode": "deny" },
+        { "name": "NPM_TOKEN", "mode": "deny" }
+      ]
+    }
+  }
+}
+```
+
+</CodeBlock>
+
+Yerleşik bir credential deny listesi yoktur: yalnızca adını verdiğiniz dosyalar ve değişkenler kısıtlanır.
+
+Okumaları çitle çevirmek, _proje_ ayarlarına gitmesi gereken tek kuraldır, çünkü çıplak bir `.` ayarların kaynağına göre çözümlenir — `.claude/settings.json`'da proje köküne, kullanıcı dosyasında ise `~/.claude`'a:
+
+<CodeBlock title=".claude/settings.json — home dizinini engelle, projeyi okunabilir bırak">
+
+```json
+{
+  "sandbox": {
+    "enabled": true,
+    "filesystem": {
+      "denyRead": ["~/"],
+      "allowRead": ["."]
+    }
+  }
+}
+```
+
+</CodeBlock>
+
+Okuma kuralları çakıştığında daha spesifik yol kazanır: dar bir `allowRead`, reddedilen bir bölgenin bir kısmını yeniden açar; daha geniş bir allow içinde de bir `denyRead` geçerliliğini korur — böylece geniş bir allow, bir sırrı sessizce yeniden açığa çıkaramaz.
+
+### Sandbox bağımlılıklarını kurmak
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+# Nothing to install: the sandbox uses the built-in Seatbelt framework.
+claude
+# then, in the session:
+# /sandbox
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+sudo apt-get install bubblewrap socat
+# optional seccomp filter (adds Unix domain socket blocking)
+npm install -g @anthropic-ai/sandbox-runtime
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+# The sandbox does not run on native Windows. Check your WSL version first:
+wsl -l -v
+# then run Claude Code inside a WSL2 distribution and install the Linux dependencies there.
+```
+
+  </Fragment>
+</OSTabs>
+
+Bu dersin kayıt makinesi native Windows çalıştırıyor, bu yüzden burada bir sandbox [transcript](/tr/playbook/glossary/#transcript)'i (gerçek bir Claude Code oturumunun kaydı) yok: sandbox tam olarak dokümantasyonun söylediği gibi o platformda kullanılamaz. Sandbox başlatılamazsa — eksik bağımlılıklar ya da desteklenmeyen bir platform — Claude Code uyarır ve komutları varsayılan olarak **sandbox'sız** çalıştırır. Sandboxing bir kolaylık değil bir zorunluluk olduğunda `sandbox.failIfUnavailable`'ı `true` yapın.
+
+## Anti-pattern'ler
+
+**`bypassPermissions`'ı "güvenilir mod" olarak görmek.** Bu bir güven ayarı değildir; kontrollerin yokluğudur ve dokümantasyon prompt injection'a karşı hiçbir koruma sunmadığını söyler. _Düzeltme:_ daha az uyarı için auto mode kullanın, `bypassPermissions`'ı yalnızca kaybetmeyi göze aldığınız bir container ya da VM için saklayın.
+
+**Korumalı-yol uyarısını susturmak için bir allow kuralı yazmak.** Ayarlarınızdaki `Edit(.claude/**)`, `.claude` yazmalarını önceden onaylamaz — korumalı-yol kontrolü önce çalışır. _Düzeltme:_ gerçekten öyle istediğinizde uyarıyı **Evet, ve Claude'un bu oturum için kendi ayarlarını düzenlemesine izin ver** diyerek yanıtlayın ve kontrolü olduğu gibi bırakın.
+
+**Geniş bir deny ile dar bir allow'un size bir istisna verdiğine inanmak.** Deny önce değerlendirilir ve ilk eşleşen kazanır, bu yüzden `Bash(aws *)`, allow listeniz ne derse desin `aws s3 ls`'yi reddeder. _Düzeltme:_ deny'ı dar yazın ya da istisnayı bir ask kuralı olarak ifade edin.
+
+**Sandbox'ın credential'larınızı varsayılan olarak koruduğunu varsaymak.** Varsayılan okuma erişimi, `~/.aws/credentials` ve `~/.ssh/` dâhil, tüm bilgisayarı kapsar. _Düzeltme:_ bunları `sandbox.credentials` ya da `filesystem.denyRead` altında listeleyin.
+
+**Bir tool'u çalıştırmak için `sandbox.filesystem.disabled`'ı açmak.** Dosya sistemi katmanı kapalıyken, sandbox'lı bir komut kabuk başlangıç dosyalarınızı ya da `~/.claude/settings.json`'ı düzenleyip bir sonraki çalıştırmada kendi erişimini genişletebilir. _Düzeltme:_ bunun yerine tek bir yola `sandbox.filesystem.allowWrite` ile izin verin.
+
+**Bir sınırı yalnızca konuşmada ifade etmek.** "Ben gözden geçirene kadar push yapma" auto-mode classifier'ını yönlendirir, ama bu her kontrolde transcript'ten yeniden okunur ve context sıkıştırmasında kaybolabilir. _Düzeltme:_ kesin bir garanti için bir ask ya da deny kuralı yazın.
+
+<Callout variant="changed">
+  Bir projenin `.claude/settings.json` ya da `.claude/settings.local.json` dosyasında
+  `permissions.defaultMode`'un `auto` ya da `bypassPermissions`'a ayarlanması sessizce yok sayılır —
+  `auto` yerleşik varsayılana döner, `bypassPermissions` ise oturumu Manual'da başlatır. Her iki
+  değer de yalnızca kullanıcı, `--settings` ya da yönetilen (managed) ayarlardan etkili olur. Claude
+  Code 2.1.263 için `permission-modes.md` üzerinden doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m14-security/permission-model-and-sandbox"
+  questionId="q1"
+  lang="tr"
+  prompt="Ayarlarınızda `Bash(aws *)` deny kuralı ve `Bash(aws s3 ls)` allow kuralı var. Claude `aws s3 ls` çalıştırmayı denediğinde ne olur?"
+  options={[
+    {
+      text: 'Çalışır, çünkü allow kuralı daha spesifiktir.',
+      explanation:
+        'Kural özgüllüğü değerlendirme sırasını değiştirmez. Deny önce kontrol edilir ve kazanır.',
+    },
+    {
+      text: 'Deny kuralı tarafından engellenir.',
+      correct: true,
+      explanation:
+        'Kurallar önce deny, sonra ask, sonra allow sırasıyla değerlendirilir; ilk eşleşen kazanır, bu yüzden bir deny kuralı allowlist istisnaları taşıyamaz.',
+    },
+    {
+      text: 'Size sorulur, çünkü kurallar çelişiyor.',
+      explanation: 'Uyarıyla çözülen bir çelişki yoktur — deny yalnızca önce eşleşir.',
+    },
+    {
+      text: "Permission mode'a bağlıdır.",
+      explanation: 'Deny kuralları, bypassPermissions dâhil her modda engeller.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m14-security/permission-model-and-sandbox"
+  questionId="q2"
+  lang="tr"
+  prompt="Bash sandbox'ı hakkında hangi ifade doğrudur?"
+  options={[
+    {
+      text: "macOS, Linux ve WSL2'de çalışır ve varsayılan olarak hiçbir ağ alan adına önceden izin vermez.",
+      correct: true,
+      explanation:
+        "macOS'ta Seatbelt, Linux ve WSL2'de bubblewrap; native Windows desteklenmez ve yeni bir alan adına ihtiyaç duyan ilk komut sorar ya da classifier'a gider.",
+    },
+    {
+      text: "Claude Code'un sahip olduğu her tool için geçerlidir.",
+      explanation: 'Yalnızca Bash komutları ve onların alt süreçleri için geçerlidir.',
+    },
+    {
+      text: 'Varsayılan olarak ~/.ssh okumalarını engeller.',
+      explanation:
+        'Varsayılan okuma erişimi, reddedilen dizinler dışında tüm bilgisayarı kapsar — siz listelemedikçe credential dosyaları dâhil.',
+    },
+    {
+      text: "Shift+Tab ile seçtiğiniz bir permission mode'dur.",
+      explanation:
+        '/sandbox bir permission mode değildir; bir komutun çalıştıktan sonra neye erişebileceğini kısıtlar.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m14-security/permission-model-and-sandbox"
+  questionId="q3"
+  lang="tr"
+  prompt="Claude'un CI'da, ne yapabileceğinin tam bir listesiyle gözetimsiz çalışması gerekiyor ve oturum asla girdi beklememeli. Hangi mod?"
+  options={[
+    {
+      text: '--permission-mode default',
+      explanation:
+        'Manual mode sorar, headless bir çalıştırmada ise cevaplayacak kimse yoktur — eylem basitçe hiç gerçekleşmez.',
+    },
+    {
+      text: '--allowedTools ile --permission-mode dontAsk',
+      correct: true,
+      explanation:
+        "dontAsk, soracak her şeyi otomatik reddeder; yalnızca allow kurallarınızı, salt-okunur Bash komutlarını ve bir PreToolUse hook'unun onayladığı çağrıları çalıştırır.",
+    },
+    {
+      text: '--dangerously-skip-permissions',
+      explanation:
+        "Bu, neyin izinli olduğunu önceden tanımlamak yerine kontrolleri tamamen atlar; bir allowlist'in yerine değil, bir container'ın içine aittir.",
+    },
+    {
+      text: '--permission-mode acceptEdits',
+      explanation:
+        'Bu, düzenlemeleri ve birkaç dosya sistemi komutunu otomatik onaylar, ama geri kalan her şey hâlâ sorar.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m14-security/permission-model-and-sandbox"
+  questionId="q4"
+  lang="tr"
+  prompt="bypassPermissions dâhil hiçbir permission mode'da aşağıdakilerden hangisi otomatik onaylanmaz?"
+  options={[
+    {
+      text: 'Çalışma dizini içinde bir dosya düzenlemesi',
+      explanation: "Bu, acceptEdits'ten itibaren otomatik onaylanır.",
+    },
+    {
+      text: 'Hedefi home dizininiz gibi bir kritik yol olan bir `rm -rf`',
+      correct: true,
+      explanation:
+        'Hiçbir allow kuralı ve "allow" döndüren hiçbir PreToolUse hook\'u kritik-yol silmesini onaylayamaz; her mod ya sorar, ya sınıflandırır ya da reddeder.',
+    },
+    {
+      text: 'Proje içindeki bir dosyanın okunması',
+      explanation: 'Çalışma dizini içindeki okumalar her modda sormadan çalışır.',
+    },
+    {
+      text: "Önceden onaylı bir dokümantasyon alan adının `WebFetch`'i",
+      explanation: 'Bunlar yerleşik önceden onaylı bir listededir.',
+    },
+  ]}
+/>
+
+**Sırada:** `02-prompt-injection` — güvenilmeyen metin onayladığınız bir komut değil de Claude'un okuduğu bir dosya olduğunda ne olur.

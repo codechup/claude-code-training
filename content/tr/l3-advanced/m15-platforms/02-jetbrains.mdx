@@ -9,7 +9,7 @@ difficulty: core
 tags: ['platformlar', 'jetbrains', 'ide']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'JetBrains IDEs'
@@ -27,8 +27,284 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m15-platforms/02-jetbrains.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders JetBrains IDE’leri için Claude Code eklentisini anlatır. VS Code eklentisinden en önemli farkı şudur: JetBrains eklentisi kendi CLI kopyasını içermez — `claude` komutunu IDE’nin entegre terminalinde çalıştırıp ona bağlanır, bu yüzden CLI’yı ayrıca kurmanız gerekir. Ders hızlı başlatmayı (`Cmd+Esc` / `Ctrl+Esc`), IDE diff görüntüleyicisini, otomatik seçim paylaşımını, `Cmd+Option+K` / `Alt+Ctrl+K` ile dosya referansı eklemeyi ve `getDiagnostics` üzerinden inspection sonuçlarının okunmasını kapsar. `/config` içindeki **Diff tool** girdisinin yalnızca IDE’ye bağlıyken göründüğünü; transcript’teki `⧉ Selected N lines from <file>` satırının ne anlama geldiğini; `ide` MCP server’ının şifresiz `ws://` üzerinden dinlediğini ve token’ını `~/.claude/ide/<port>.lock` dosyasına yazdığını açıklar. Son olarak ESC tuşunun Claude’u kesmemesi ve WSL2’de “No available IDEs detected” hatası için resmî düzeltmeleri verir.
+- JetBrains eklentisini bağımsız bir CLI kurulumunun yanına kurmak ve neden ikisine de ihtiyaç olduğunu açıklamak.
+- Bir oturumu IDE'ye bağlamak — entegre terminalden otomatik olarak, ya da dışarıdan bir terminalden `/ide` ile.
+- `/config`'te **Diff tool**'u ayarlayarak [diff](/tr/playbook/glossary/#diff)'leri (değişikliklerin satır satır gösterimi) IDE'nin kendi görüntüleyicisine yönlendirmek ve bu girdinin bazen neden orada olmadığını bilmek.
+- `Cmd+Option+K` / `Alt+Ctrl+K` ile bir dosya referansı eklemek ve [transcript](/tr/playbook/glossary/#transcript)'teki (gerçek bir oturumun kaydı) `⧉ Selected N lines from <file>` satırının ne anlama geldiğini okumak.
+- İki klasik bozulmayı düzeltmek: ESC'nin Claude'u kesmemesi ve WSL2 altında "No available IDEs detected".
+
+**Ön koşullar.** Bir JetBrains IDE'si (IntelliJ IDEA, PyCharm, WebStorm, PhpStorm, GoLand veya Android Studio), `PATH`'inizde bir Claude Code CLI kurulumu ve ücretli bir Claude aboneliği ya da Console hesabı. Önce `01-vs-code` dersi: iki IDE yüzeyi bilinçli olarak farklıdır ve bu kontrast asıl mesele.
+
+<WhenNotToUse>
+  JetBrains eklentisi ince bir köprüdür, bir sohbet paneli değil. Editörün içinde satır içi diff’ler
+  ve oturum sekmeleri olan grafik bir konuşma yüzeyi istiyorsanız, bu VS Code eklentisidir, bu
+  değil. Terminalde mutluysanız eklentiyi tamamen atlayın — tam donanımlı yüzey CLI'dır ve eklenti
+  bunun üzerine yalnızca IDE diff'leri, seçim paylaşımı ve tanılama ekler. JetBrains Remote
+  Development'ta da, eklentiyi uzak host'a kuramıyorsanız atlayın, çünkü onu yerel istemciye
+  kurmanın hiçbir etkisi yoktur.
+</WhenNotToUse>
+
+## Kavram
+
+### Bir değil iki parça
+
+Bu, VS Code'dan tek ve en önemli farktır. **JetBrains eklentisi, `claude` komutunu IDE'nizin entegre terminalinde çalıştırır ve ona bağlanır. Kendi CLI kopyasını paketlemez.** Yani iki şey kurarsınız:
+
+1. Claude Code CLI'ı (normal hızlı başlangıç kurulumu).
+2. Claude Code eklentisini JetBrains Marketplace'ten, sonra IDE'yi yeniden başlatın.
+
+`claude`, IDE'nizin görebildiği `PATH`'te değilse, eklenti bir "Cannot launch Claude Code" bildirimi gösterir. Düzeltme, eklentinin **Claude command** ayarıdır — `/usr/local/bin/claude` gibi mutlak bir yol, `npx @anthropic-ai/claude-code`, ya da WSL kullanıcıları için tam `wsl -d Ubuntu -- bash -lic "claude"` biçimi.
+
+### Eklentinin eklediği şeyler
+
+| Özellik                     | Ne yapar                                                                                                               |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Hızlı başlatma              | `Cmd+Esc` (macOS) / `Ctrl+Esc` (Windows, Linux) editörden Claude Code'u açar, ya da Claude butonuna tıklayın.          |
+| Diff görüntüleme            | Değişiklikler terminal yerine IDE'nin diff görüntüleyicisinde açılır. `/config`'teki **Diff tool** ile kontrol edilir. |
+| Seçim bağlamı               | Mevcut seçim ya da sekme Claude Code'a otomatik olarak paylaşılır.                                                     |
+| Dosya referansı kısayolları | `Cmd+Option+K` / `Alt+Ctrl+K`, `@src/auth.ts#L1-99` gibi bir referans ekler.                                           |
+| Tanılama paylaşımı          | Claude, `getDiagnostics` çağırarak IDE'nin inspection tanılamalarını okur.                                             |
+
+İnsanları şaşırttığı için tam olarak söylenmeye değer bir davranış: **Claude Code, düzenlemelerden sonra tanılamaları eklentiden kendiliğinden istemez.** Tanılamalar kullanılabilir ama otomatik değildir. IDE'nin inspection sonuçlarının dikkate alınmasını istiyorsanız, isteyin.
+
+### Bağlanmak
+
+`claude`'u IDE'nin entegre terminalinden çalıştırın; her entegrasyon özelliği ekstra bir adım olmadan etkin olur. _Dışarıdan_ bir terminalden, `claude`'u çalıştırın, sonra:
+
+<CodeBlock title="dışarıdan bir oturumu IDE'ye bağlayın">
+
+```text
+/ide
+```
+
+</CodeBlock>
+
+Başarılı olunca `Connected to IntelliJ IDEA.` gibi bir mesaj alırsınız. Claude Code, eklentisi olmayan çalışan bir IDE bulursa, `/ide` eklentiyi sizin için kurar ve yeniden başlatmanızı ister.
+
+Claude'un IDE'nin gördüğü aynı dosyaları görmesini istiyorsanız Claude Code'u IDE proje kökünüzle aynı dizinden başlatın.
+
+### IDE'de diff'ler
+
+<CodeBlock title="diff'leri IDE görüntüleyicisine yönlendirin">
+
+```text
+/config
+```
+
+</CodeBlock>
+
+IDE diff'leri için **Diff tool**'u `auto`'ya, terminalde tutmak için `terminal`'e ayarlayın. Yakalanacak nokta: **Diff tool girdisi `/config`'te yalnızca Claude Code IDE'ye bağlıyken görünür.** Görmüyorsanız `claude`'u IDE terminali dışında başlatmışsınız ve henüz `/ide` çalıştırmamışsınızdır. Altta yatan ayar `diffTool`'dur.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni), eklentinin gerçek ayırt edici özelliği olan seçim paylaşımına dayanır:
+
+```text
+Read the diagnostics the IDE reports for the file I have open and tell me
+which of them are real bugs and which are style noise. Change nothing.
+```
+
+### Seçim, deny kuralları ve `ide` server'ı
+
+Bağlıyken CLI, her prompt'a mevcut editör seçiminizi ve aktif dosyanın yolunu ekler. Transcript, bu olduğunda bir `⧉ Selected N lines from <file>` satırı gösterir — bu satır, bağlamın eklendiğine dair makbuzunuzdur. Hassas bir dosyayı hariç tutmak için, o dosyanın yoluna bir `Read` **deny** kuralı ekleyin; eşleşen bir kural hem seçili metni hem de açık-dosya bildirimini engeller.
+
+Eklenti, `/mcp`den gizli, `ide` adında yerel bir [MCP server](/tr/playbook/glossary/#mcp-server) (Claude'a dış araç ve veri sağlayan sunucu) çalıştırır. İşletim sisteminin atadığı geçici bir port üzerinden şifresiz `ws://` ile dinler ve her IDE başlatımı, CLI'ın `X-Claude-Code-Ide-Authorization` olarak sunması gereken taze, rastgele bir auth token'ı `~/.claude/ide/<port>.lock`e (ya da `$CLAUDE_CONFIG_DIR/ide/`ye) yazar. Modele ulaşan tam olarak bir [tool](/tr/playbook/glossary/#tool) (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı araç) vardır — salt okunur `mcp__ide__getDiagnostics`. **JetBrains eklentisi modele bir kod-çalıştırma tool'u sunmaz.**
+
+**Settings → Tools → Claude Code \[Beta] → Networking (Advanced)** altında **Accept connections from all network interfaces** adlı bir ağ ayarı vardır. Kapalıyken sunucu yalnızca `127.0.0.1`e bağlanır. Açıkken port, yerel ağınızdan erişilebilir olur — ve taşıma şifresiz olduğu için hem trafik hem de token ağdan açık metin olarak geçer. Bunu yalnızca loopback gerçekten işe yaramadığında açın.
+
+### Bozulan iki şey
+
+**ESC, Claude'u kesmiyor.** JetBrains terminalleri Escape'i "odağı editöre taşı"ya bağlar. **Settings → Tools → Terminal**'e gidin ve ya "Move focus to the editor with Escape"i işaretten kaldırın ya da "Configure terminal keybindings" altındaki "Switch focus to Editor" kısayolunu silin.
+
+**WSL2'de "No available IDEs detected".** WSL2'nin NAT ağı ya da Windows Firewall, WSL2 VM'i ile Windows host'taki IDE arasındaki bağlantıyı engeller. (WSL1, host ağını doğrudan kullanır ve etkilenmez.) Öncelik sırasına göre iki düzeltme:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+Uygulanamaz — bu hata, Windows'ta yalnızca WSL2'ye özgüdür. macOS'ta eklenti, CLI ile loopback üzerinden ekstra bir yapılandırma olmadan konuşur.
+
+  </Fragment>
+  <Fragment slot="linux">
+
+Yerel Linux'ta uygulanamaz — IDE ve CLI aynı loopback arayüzünü paylaşır.
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+# Tercih edilen: mirrored networking (Windows 11 22H2+). Windows kullanıcı
+# dizininizdeki .wslconfig'e ekleyin, sonra çalıştırın: wsl --shutdown
+# [wsl2]
+# networkingMode=mirrored
+
+# Windows 10 için yedek: WSL2 trafiğine güvenlik duvarından izin verin.
+# Önce alt ağınızı bulun: WSL içinde `hostname -I` çalıştırın, adresin ilk iki
+# bölümünü alın ve .0.0/16 ile devam edin. Sonra, Yönetici olarak, aşağıdaki
+# $Subnet için o değeri yerine koyun:
+$Subnet = '<first-two-segments>.0.0/16'
+New-NetFirewallRule -DisplayName "Allow WSL2 Internal Traffic" -Direction Inbound -Protocol TCP -Action Allow -RemoteAddress $Subnet -LocalAddress $Subnet
+```
+
+  </Fragment>
+</OSTabs>
+
+Mirrored networking tercih edilir çünkü Windows loopback arayüzünü Linux VM ile paylaştırır; böylece soket, all-interfaces ayarını açmak yerine loopback'te kalabilir.
+
+### `acceptEdits` üzerine bir not
+
+Bir JetBrains IDE'si içinde `acceptEdits` mode'unda, Claude, IDE'nin kendiliğinden çalıştırdığı IDE yapılandırma dosyalarını değiştirebilir — bu, bash çalıştırma için izin isteklerini atlayabilir. Dokümanların kendi tavsiyesi, JetBrains'te düzenlemeler için Manual mode'u tercih etmektir, çünkü `acceptEdits` ve auto mode ikisi de korunan yollar dışında sormadan çalışma dizininizdeki düzenlemeleri onaylar.
+
+## Uygulamalı laboratuvar
+
+Bu laboratuvar tamamen IDE odaklıdır: yakalanacak [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) bir şey yoktur, bu yüzden bir adım listesi artı bir kontrol listesidir. Burada bir transcript beklemeyin — bu kurs bir tane uydurmaz.
+
+<Lab
+  title="Laboratuvar · bir JetBrains IDE'sini bağlayın ve her entegrasyon noktasını kanıtlayın"
+  lessonId="tr/l3-advanced/m15-platforms/jetbrains"
+  repoTag="none"
+  steps={[
+    'CLI’ın kurulu ve kabuğunuza görünür olduğunu doğrulayın: `claude --version`, bir sürümün ardından `(Claude Code)` yazdırmalı.',
+    'Claude Code eklentisini JetBrains Marketplace’ten kurun ve IDE’yi tamamen yeniden başlatın.',
+    'Sahip olduğunuz bir proje açın. IDE’nin entegre terminalinde `claude` çalıştırın, sonra `/config` çalıştırın ve bir **Diff tool** girdisinin bulunduğunu doğrulayın. `auto`ya ayarlayın.',
+    'O oturumdan çıkın. IDE *dışında* bir terminal açın, aynı proje köküne `cd` yapın, `claude` çalıştırın, sonra `/ide` çalıştırın. Bağlantı mesajının IDE’nizi adlandırdığını doğrulayın.',
+    'Editörde birkaç satır seçin ve dosya adı vermeyen bir prompt gönderin. Transcript’te `⧉ Selected N lines from <file>` satırını arayın.',
+    '`Cmd+Option+K` / `Alt+Ctrl+K`ye basın ve bir `@path#L…-…` referansının eklendiğini doğrulayın.',
+    'Claude’dan küçük bir düzenleme yapmasını isteyin ve diff’in terminalde değil IDE görüntüleyicisinde açıldığını doğrulayın.',
+    'Claude çalışırken `Esc`ye basın. Odak, kesmek yerine editöre atlarsa, Settings → Tools → Terminal’de terminal-keybinding düzeltmesini uygulayın, sonra tekrar deneyin.',
+  ]}
+  expected="`/config`, Diff tool'u yalnızca bağlıyken gösterir; dışarıdan bir terminalden `/ide`, `Connected to <IDE'niz>.` bildirir; transcript bir `⧉ Selected N lines` satırı gösterir; bir düzenleme IDE diff görüntüleyicisinde açılır; Esc, odağı taşımak yerine Claude'u keser."
+  checklist={[
+    '`claude --version` bir sürüm yazdırdı (eklenti bir CLI paketlemiyor)',
+    '**Diff tool** girdisi bağlıyken `/config`te görünüyor',
+    'Dış bir terminalden `/ide`, başarı mesajında IDE’yi adlandırdı',
+    'Seçim tabanlı bir prompt’tan sonra bir `⧉ Selected N lines from <file>` satırı belirdi',
+    'Önerilen bir düzenleme IDE diff görüntüleyicisinde açıldı',
+    'Esc, odağı editöre taşımak yerine Claude’u kesiyor',
+  ]}
+/>
+
+## Anti-pattern'ler
+
+**Yalnızca eklentiyi kurmak.** Eklentinin paketlenmiş bir CLI'ı yoktur. _Düzeltme:_ CLI'ı kurun ve IDE onu bulamıyorsa eklentinin **Claude command**'ını mutlak bir yola ayarlayın.
+
+**Remote Development altında eklentiyi yerel istemciye kurmak.** Orada hiçbir işe yaramaz. _Düzeltme:_ **Settings → Plugin (Host)** üzerinden uzak host'a kurun.
+
+**Bir WSL2 sorununu çözmek için "Accept connections from all network interfaces"i açmak.** Bu, şifresiz bir `ws://` portunu ve auth token'ını yerel ağınıza açar. _Düzeltme:_ WSL2'yi mirrored networking'e geçirin ya da güvenlik duvarı kuralını ekleyin ve ayarı kapalı bırakın.
+
+**Claude'un her düzenlemeden sonra IDE tanılamalarını yeniden kontrol etmesini beklemek.** Onları kendiliğinden istemez. _Düzeltme:_ isteyin ya da kendi type-check'inizi çalıştırın.
+
+**IDE güvenli hissettiriyor diye `acceptEdits`te çalıştırmak.** IDE, tam olarak otomatik onaylı düzenlemelerin en tehlikeli olduğu yerdir, çünkü IDE yapılandırma dosyaları çalıştırılabilir. _Düzeltme:_ JetBrains'te düzenlemeler için Manual mode kullanın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/jetbrains"
+  questionId="q1"
+  lang="tr"
+  prompt="VS Code eklentisi gerektirmezken JetBrains eklentisi neden ayrı bir CLI kurulumuna ihtiyaç duyar?"
+  options={[
+    {
+      text: 'Eklenti, `claude` komutunu IDE’nin entegre terminalinde çalıştırır ve ona bağlanır; kendi CLI’ını taşımaz.',
+      correct: true,
+      explanation:
+        'Tam olarak bu — eksik bir PATH girdisinin "Cannot launch Claude Code" üretmesinin sebebi de budur.',
+    },
+    {
+      text: 'JetBrains lisanslaması ikili dosyaları paketlemeyi yasaklar.',
+      explanation: 'Belgelenen sebep bu değil.',
+    },
+    {
+      text: 'Değil — ikisi de bir CLI paketler.',
+      explanation:
+        'VS Code eklentisi sohbet paneli için bir tane paketler; JetBrains eklentisi paketlemez.',
+    },
+    {
+      text: 'CLI yalnızca headless mode için gereklidir.',
+      explanation: 'Burada eklentinin sürdüğü her oturum için gereklidir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/jetbrains"
+  questionId="q2"
+  lang="tr"
+  prompt="`/config` çalıştırıyorsunuz ve bir **Diff tool** girdisi yok. En olası sebep nedir?"
+  options={[
+    {
+      text: 'Claude Code IDE’ye bağlı değil — onu IDE terminali dışında başlattınız ve henüz `/ide` çalıştırmadınız.',
+      correct: true,
+      explanation: 'Girdi yalnızca bağlıyken görünür.',
+    },
+    {
+      text: 'Planınız IDE diff’lerini içermiyor.',
+      explanation: 'Diff yönlendirme plana bağlı değildir.',
+    },
+    {
+      text: '`diffTool` ayarı kaldırılmış.',
+      explanation: '`diffTool` altta yatan ayardır ve hâlâ mevcuttur.',
+    },
+    {
+      text: 'IDE’yi üç kez yeniden başlatmanız gerekir.',
+      explanation: 'Yeniden başlatmak eklenti algılamaya yardımcı olur, bu girdiye değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/jetbrains"
+  questionId="q3"
+  lang="tr"
+  prompt="Eklentinin `ide` MCP server’ı modele hangi tool’u sunar?"
+  options={[
+    {
+      text: '`mcp__ide__getDiagnostics`, ve salt okunurdur.',
+      correct: true,
+      explanation:
+        'O sunucudaki diğer tool’lar, model onları görmeden önce filtrelenen dahili RPC’dir.',
+    },
+    {
+      text: 'Bir kod-çalıştırma tool’u, böylece Claude IDE’nin run configuration’larını çalıştırabilir.',
+      explanation: 'JetBrains eklentisi modele bir kod-çalıştırma tool’u sunmaz.',
+    },
+    {
+      text: 'Hiçbiri — tamamen dahilidir.',
+      explanation: 'Modele görünen tam olarak bir tool vardır.',
+    },
+    {
+      text: 'Modelin görüntüleyiciyi açmak için çağırdığı bir diff tool’u.',
+      explanation: 'Diff açmak, CLI’ın kullandığı dahili RPC’dir, modele görünen bir tool değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/jetbrains"
+  questionId="q4"
+  lang="tr"
+  prompt="`/ide`, bir WSL2 kabuğundan “No available IDEs detected” bildiriyor. Tercih edilen düzeltme nedir?"
+  options={[
+    {
+      text: 'Soketin loopback’te kalması için WSL2’yi mirrored networking’e geçirmek.',
+      correct: true,
+      explanation: 'Tercih edilir çünkü şifresiz IDE portunu yerel ağa açmaktan kaçınır.',
+    },
+    {
+      text: '“Accept connections from all network interfaces”i etkinleştirmek.',
+      explanation:
+        'İşe yarar ama şifresiz trafiği ve auth token’ını yerel ağınıza koyar — son çare.',
+    },
+    {
+      text: 'WSL1’e geri dönmek.',
+      explanation: 'WSL1 etkilenmez, ama geri dönmek belgelenen düzeltme değildir.',
+    },
+    {
+      text: 'Eklentiyi Windows host’a yeniden kurmak.',
+      explanation: 'Eklenti zaten host’tadır; sorun VM ile onun arasındaki ağdır.',
+    },
+  ]}
+/>
+
+**Sırada:** `03-desktop-app`, editörü tamamen bırakıp bağımsız Desktop uygulamasına geçer — git worktree'lerde paralel oturumlar, diff ve tarayıcı panelleri, iOS Simulator ve kendi makinenizde tetiklenen zamanlanmış görevler.

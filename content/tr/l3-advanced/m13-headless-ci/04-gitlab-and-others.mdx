@@ -9,7 +9,7 @@ difficulty: advanced
 tags: ['ci', 'gitlab', 'enterprise', 'oidc']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Claude Code GitLab CI/CD'
@@ -27,8 +27,220 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders Claude Code'u github.com dışında çalıştırmanın haritasını çıkarır: GitLab'de ayrı bir action yoktur — job, Claude Code'u kurup doğrudan `claude -p` çağırır; `AI_FLOW_INPUT`, `AI_FLOW_CONTEXT` ve `AI_FLOW_EVENT` GitLab'in değil, sizin pipeline trigger API'sine geçirdiğiniz değişkenlerdir; GitHub Actions'ta sağlayıcı seçimi `use_bedrock`, `use_vertex` ve `use_foundry` input'larıyla yapılır ve üçünde de kimlik doğrulama statik anahtar yerine OIDC federasyonuyla olur. GitHub Enterprise Server'da `/install-github-app` ve GitHub MCP server desteklenmez; her ikisinin de belgelenmiş bir alternatifi vardır. Bu dersin laboratuvarı yoktur.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.
+- Bir pipeline'da `claude -p` çalıştıran GitLab CI/CD job'ını okumak ve uyarlamak.
+- `AI_FLOW_*` değişkenlerinin ne olduğunu ve nereden geldiğini açıklamak.
+- Maskelenmiş bir API anahtarı değişkeni ile OIDC/Workload Identity Federation arasında seçim yapmak ve ikincisinin neden tercih edildiğini söylemek.
+- GitHub Action'ı Bedrock, Agent Platform ya da Foundry'ye çeviren tek input'u adlandırmak.
+- GitHub Enterprise Server'da nelerin çalışmadığını ve her biri için geçici çözümü listelemek.
+
+**Ön koşullar.** Ders 01–03: `--allowedTools` ve `--permission-mode` ile `claude -p`, ve GitHub Actions [workflow](/tr/playbook/glossary/#workflow) (birden çok adımdan oluşan otomatik iş akışı) şekli.
+
+<WhenNotToUse>
+  Bu ders bir tarif değil bir haritadır. Claude API ile github.com'daysanız tamamen atlayın — ders
+  02 ve 03 sizi zaten kapsıyor. Bir bulut sağlayıcısına yalnızca kuruluşunuz orada zaten Claude
+  model erişimine sahipse ve bunu kullanmak için bir veri yerleşimi (data-residency) ya da satın
+  alma nedeniniz varsa başvurun; Bedrock, Agent Platform ya da Foundry üzerinden yönlendirmek,
+  sonsuza dek sahip olacağınız bir kimlik federasyonu kurulumu ekler ve Claude API zaten
+  onaylanmışsa hiçbir şey kazandırmaz. Ve GitLab entegrasyonunun beta durumunu gerçek olarak ele
+  alın: Anthropic değil GitLab tarafından bakımı yapılır ve şekli değişebilir.
+</WhenNotToUse>
+
+## Kavram
+
+### GitLab: bir job, bir maskelenmiş değişken
+
+`claude-code-action`'ın bir GitLab eşdeğeri yoktur. Entegrasyon CLI'nin kendisidir: bir job'da Claude Code'u kurar ve `claude -p`'yi çağırırsınız. Şu anda beta aşamasındadır ve GitLab tarafından bakımı yapılır.
+
+Hızlı kurulum iki şeyden oluşur — **Settings → CI/CD → Variables** altına maskelenmiş bir değişken olarak eklenen bir `ANTHROPIC_API_KEY` ve bir job:
+
+<CodeBlock title=".gitlab-ci.yml">
+
+```yaml
+stages:
+  - ai
+
+claude:
+  stage: ai
+  image: node:24-alpine3.21
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  variables:
+    GIT_STRATEGY: fetch
+  before_script:
+    - apk update
+    - apk add --no-cache git curl bash
+    - curl -fsSL https://claude.ai/install.sh | bash
+    # The installer places claude in ~/.local/bin, which isn't on PATH in this image
+    - export PATH="$HOME/.local/bin:$PATH"
+  script:
+    # Optional: start a GitLab MCP server if your setup provides one
+    - /bin/gitlab-mcp-server || true
+    # Use AI_FLOW_* variables when invoking via web/API triggers with context payloads
+    - echo "$AI_FLOW_INPUT for $AI_FLOW_CONTEXT on $AI_FLOW_EVENT"
+    - >
+      claude
+      -p "${AI_FLOW_INPUT:-'Review this MR and implement the requested changes'}"
+      --permission-mode acceptEdits
+      --allowedTools "Bash Read Edit Write mcp__gitlab"
+      --debug
+```
+
+</CodeBlock>
+
+Ders 01'de öğrendiğiniz her şey değişmeden geçerlidir: [prompt](/tr/playbook/glossary/#prompt) (Claude'a verilen istek metni) için `-p`, job dosya düzenlediği için `--permission-mode acceptEdits`, yüzeyi adlandıran `--allowedTools`, ve onu sınırlamak için `--max-turns` ile job düzeyindeki `timeout` anahtar sözcüğü (`timeout: 30m`).
+
+### `AI_FLOW_*` kendi tesisatınızdır
+
+`AI_FLOW_INPUT`, `AI_FLOW_CONTEXT` ve `AI_FLOW_EVENT`, sihirle beliren GitLab yerleşikleri değildir. Bunlar _sizin_ pipeline trigger API'sine geçirdiğiniz değişkenlerdir. Mention tarafından tetiklenen akış şöyle çalışır: "Comments (notes)" için bir proje webhook'u (bir olay gerçekleştiğinde harici bir adrese otomatik istek gönderen bağlantı) eklersiniz, onu çalıştırdığınız bir olay dinleyicisine yöneltirsiniz ve o dinleyicinin, bir yorum `@claude` içerdiğinde yorumdan ayarlanan `AI_FLOW_INPUT` ve `AI_FLOW_CONTEXT` ile trigger API'sini çağırmasını sağlarsınız. Job içindeki `${AI_FLOW_INPUT:-'…'}` varsayılanı, aynı job'ı **CI/CD → Pipelines**'tan elle çalıştırdığınızda da işe yaramasını sağlayan şeydir.
+
+GitLab API tarafı için — yorum göndermek, MR açmak — job varsayılan olarak `CI_JOB_TOKEN`'ı ya da maskelenmiş bir `GITLAB_ACCESS_TOKEN` olarak saklanan, `api` kapsamına sahip bir Project Access Token'ı kullanır.
+
+### Sağlayıcıyı tek bir input değiştirir
+
+GitHub Actions'ta, çıkarımı kendi bulut hesabınız üzerinden yönlendirmek tek bir `with:` input'udur:
+
+| Sağlayıcı                        | Input                 | Depo [secret](/tr/playbook/glossary/#secret)'ları (commit'lenmemesi gereken hassas değerler) |
+| -------------------------------- | --------------------- | -------------------------------------------------------------------------------------------- |
+| Amazon Bedrock                   | `use_bedrock: "true"` | `AWS_ROLE_TO_ASSUME`                                                                         |
+| Google Cloud'un Agent Platform'u | `use_vertex: "true"`  | `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT`                                      |
+| Microsoft Foundry                | `use_foundry: "true"` | `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`                                |
+
+Üçünde de bir Claude API anahtarı yerine OIDC kimlik federasyonuyla kimlik doğrularsınız, böylece depoda hiçbir statik bulut kimlik bilgisi yaşamaz. Workflow'un, GitHub'ın bulutunuzun kimlik bilgileriyle değiştireceği token'ı vermesi için `id-token: write`'a ihtiyacı vardır — burada bir kimlik doğrulama başarısızlığının en yaygın nedeni tam olarak budur, tam eşleşmeyen bir güven politikası depo koşuluyla birlikte.
+
+GitLab, `id_tokens:` üzerinden desteklediği aynı iki sağlayıcıyı sunar: Bedrock için bir `aws sts assume-role-with-web-identity` değişimi (`CLAUDE_CODE_USE_BEDROCK: "1"` ile), ya da Agent Platform için `GOOGLE_APPLICATION_CREDENTIALS` üzerinden açığa çıkan bir Workload Identity Federation kimlik bilgisi dosyası (`CLAUDE_CODE_USE_VERTEX: "1"` ile). Bedrock model ID'leri `us.` gibi bir bölgeler arası çıkarım profili öneki taşır ve o bölge grubunun her bölgesinde model erişimine izin verilmiş olması gerekir.
+
+### GitHub Enterprise Server
+
+GHES desteği Team ve Enterprise planlarında mevcuttur ve bir Owner, instance'ı Claude Code admin ayarlarından bir kez bağlar; bundan sonra geliştiricilerin depo başına bir yapılandırmaya ihtiyacı yoktur — Claude Code, GHES ana bilgisayar adını git remote'unuzdan tespit eder.
+
+github.com'a göre değişenler:
+
+| Özellik                                                                                                                                          | GHES'te                                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------- |
+| Web üzerinde Claude Code                                                                                                                         | Destekleniyor — `claude --cloud` ve bir terminale geri `--teleport` |
+| Code Review                                                                                                                                      | Destekleniyor                                                       |
+| [Plugin](/tr/playbook/glossary/#plugin) marketplace'leri (hook, skill, subagent ve MCP server gibi bileşenleri paket hâlinde ekleyen eklentiler) | Destekleniyor, yüzeye göre değişen kimlik bilgisi gereksinimleriyle |
+| GitHub Actions                                                                                                                                   | Destekleniyor, ama **yalnızca manuel workflow kurulumu**            |
+| `/install-github-app`                                                                                                                            | **Yalnızca github.com**                                             |
+| GitHub [MCP server](/tr/playbook/glossary/#mcp-server) (Claude'a dış araç ve veri sağlayan sunucu)                                               | **Desteklenmiyor**                                                  |
+
+Her iki eksikliğin de belgelenmiş bir çözümü vardır. Workflow'lar için, `/install-github-app`'i çalıştırmak yerine action deposunun `examples/claude.yml`'ini elle uyarlayın. MCP server için, host'unuz için yapılandırılmış `gh` CLI'yi kullanın — `gh auth login --hostname github.example.com` — ve Claude'un `gh` komutlarını çağırmasına izin verin. Ekipleri şaşırtan bir ayrıntı daha: `owner/repo` marketplace kısaltması her zaman github.com'a çözülür, bu yüzden GHES üzerinde barındırılan bir plugin marketplace'i tam bir git URL'sine ihtiyaç duyar, ve HTTPS önerilir çünkü Claude Code git'i etkileşimsiz çalıştırır ve `known_hosts`'ta olmayan SSH host'larını reddeder.
+
+Anthropic tarafından barındırılan oturumlar ya da review'lar zaman aşımına uğrarsa, neden genelde erişilebilirliktir: GHES instance'ınızın Anthropic altyapısından erişilebilir olması gerekir, bu yüzden güvenlik duvarı arkasındaki bir instance'ın Anthropic'in giden IP adreslerini izin listesine alması gerekir.
+
+## Uygulamalı laboratuvar
+
+Bu dersin bir laboratuvarı yoktur — bir lab repo tag'i yoktur (`repo_tag: 'none'`) ve içindeki her yol, bu kursun size sağlayamayacağı bir altyapı gerektirir: bir runner'a sahip bir GitLab projesi, ya da Claude model erişimine sahip bir AWS/GCP/Azure hesabı, ya da kendi barındırdığınız bir GHES instance'ı. Yukarıdaki `.gitlab-ci.yml`, yanınıza alacağınız eserdir; onu kontrol ettiğiniz bir projeye bırakın, maskelenmiş `ANTHROPIC_API_KEY` değişkenini ekleyin ve dokümanın tarif ettiği gibi job'ı **CI/CD → Pipelines**'tan elle çalıştırın. Ders 01'in laboratuvarı, bu job'ın kullandığı her `claude -p` bayrağını zaten uyguladı.
+
+## Anti-pattern'ler
+
+**OIDC mevcutken bir bulut anahtarını bir [CI](/tr/playbook/glossary/#ci) (her push'ta ya da merge request'te otomatik olarak testleri ve kontrolleri çalıştıran hat) değişkeni olarak saklamak.** Maskelenmiş bir değişken, birçok kişinin okuyabildiği bir sistemde yine de uzun ömürlü bir kimlik bilgisidir. _Düzeltme:_ GitLab'de `id_tokens:`'i ya da GitHub Actions'ta `id-token: write`'ı kullanın ve workflow'un OIDC token'ını kısa ömürlü kimlik bilgileriyle değiştirin.
+
+**`AI_FLOW_INPUT`'un kendiliğinden belireceğini varsaymak.** Bunu yapan webhook dinleyicisini siz kurmadıkça hiçbir şey onu ayarlamaz. _Düzeltme:_ `${AI_FLOW_INPUT:-'…'}` varsayılanını koruyun, böylece job elle de yararlı olur, ve dinleyiciyi ayrı bir iş parçası olarak ele alın.
+
+**GitLab job'ını `--max-turns` ya da `timeout` olmadan kopyalamak.** Yayımlanan örnekte ikisi de yoktur; bu bir başlangıç noktasıdır, bir üretim job'ı değil. _Düzeltme:_ job bir zamanlamada ya da bir trigger'da çalışmadan önce ikisini de ekleyin.
+
+**`/install-github-app`'in GHES'e karşı çalışmasını beklemek.** Yalnızca github.com içindir ve başarısızlık açık değil kafa karıştırıcıdır. _Düzeltme:_ admin kurulumunu claude.ai'de tamamlayın, sonra örnek workflow'u elle uyarlayın.
+
+**GHES'te GitHub MCP server'a başvurmak.** GHES instance'larıyla çalışmaz. _Düzeltme:_ `gh auth login --hostname <host'unuz>` yapın ve `gh` komutlarını kullanın.
+
+**Bir Bedrock model ID'sine bölge öneki olmadan güvenmek.** Bölgeler arası çıkarım profilleri `us.` tarzı öneki ve o grubun her bölgesinde model erişimini gerektirir. _Düzeltme:_ tam profil ID'sini `claude_args --model`'de geçirin.
+
+<Callout>
+  GitLab CI/CD için Claude Code beta aşamasındadır ve Anthropic değil GitLab tarafından bakımı
+  yapılır — destek GitLab'in kendi [issue](/tr/playbook/glossary/#issue) (bir depodaki takip edilen
+  görev ya da hata kaydı) izleyicisi üzerinden gerçekleşir. Dokümanlar ayrıca tam bayrakların kurulu
+  paketin sürümüne göre değişebileceğini de belirtir; imajınızın gerçekte neyi desteklediğini görmek
+  için job içinde `claude --help` çalıştırın.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/gitlab-and-others"
+  questionId="q1"
+  lang="tr"
+  prompt="`anthropics/claude-code-action@v1`'in GitLab eşdeğeri nedir?"
+  options={[
+    {
+      text: "Yoktur — job Claude Code'u kurar ve doğrudan `claude -p`'yi çağırır",
+      correct: true,
+      explanation:
+        "GitLab entegrasyonu bir job içindeki CLI'dır, bu yüzden ders 01'deki her bayrak değişmeden geçerlidir.",
+    },
+    {
+      text: 'Anthropic tarafından yayımlanan bir GitLab CI/CD bileşeni',
+      explanation: "Belgelenmiş kurulum elle yazılmış bir job'dır, bir bileşen değil.",
+    },
+    {
+      text: "`mcp__gitlab` tool'u",
+      explanation:
+        "Bu, Claude'un job içinde çağırabileceği bir tool'dur, entegrasyonun kendisi değil.",
+    },
+    {
+      text: '`claude --gitlab`',
+      explanation: 'Böyle bir bayrak yoktur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/gitlab-and-others"
+  questionId="q2"
+  lang="tr"
+  prompt="`AI_FLOW_INPUT` nereden gelir?"
+  options={[
+    {
+      text: "Genelde çalıştırdığınız bir webhook dinleyicisinden, pipeline trigger API'sine geçirdiğiniz değişkenlerden",
+      correct: true,
+      explanation:
+        "Örnek job'ın manuel çalıştırmalar için `${AI_FLOW_INPUT:-…}` ile bir varsayılan sağlamasının nedeni budur.",
+    },
+    {
+      text: 'GitLab onu merge request olaylarında otomatik olarak ayarlar',
+      explanation: 'GitLab `CI_*` değişkenlerini ayarlar; `AI_FLOW_*` sizindir.',
+    },
+    {
+      text: "Claude Code onu MR'ı okuduktan sonra export eder",
+      explanation: 'Job tarafından okunur, Claude Code tarafından yazılmaz.',
+    },
+    {
+      text: '`CI_COMMIT_MESSAGE` için bir takma addır',
+      explanation: 'Böyle bir takma adlandırma yoktur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/gitlab-and-others"
+  questionId="q3"
+  lang="tr"
+  prompt="GitHub Enterprise Server'da hangi iki şey KULLANILAMAZ?"
+  options={[
+    {
+      text: '`/install-github-app` ve GitHub MCP server',
+      correct: true,
+      explanation:
+        "Workflow'u elle kurun ve MCP server yerine host'unuza yönelen `gh` CLI'yi kullanın.",
+    },
+    {
+      text: 'Code Review ve web üzerinde Claude Code',
+      explanation: "İkisi de GHES'te destekleniyor.",
+    },
+    {
+      text: "GitHub Actions ve plugin marketplace'leri",
+      explanation: 'İkisi de destekleniyor; Actions yalnızca manuel workflow kurulumu istiyor.',
+    },
+    {
+      text: 'Teleport oturumları ve katkı metrikleri',
+      explanation: 'İkisi de destekleniyor.',
+    },
+  ]}
+/>
+
+**Sırada:** `05-agent-sdk-typescript`, CI sarmalayıcısını tamamen bırakır ve [agent](/tr/playbook/glossary/#agent) (bir hedefi kendi başına adım adım yürüten yapay zekâ süreci) döngüsünü kendi programınızın içine kurar.

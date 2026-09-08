@@ -6,10 +6,10 @@ module: 'm11-mcp'
 order: 7
 duration_min: 15
 difficulty: advanced
-tags: ['mcp', 'security', 'supply-chain', 'managed-settings', 'prompt-injection']
+tags: ['mcp', 'güvenlik', 'tedarik-zinciri', 'yönetilen-ayarlar', 'prompt-enjeksiyonu']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Security'
@@ -27,7 +27,288 @@ lab:
   repo_tag: 'none'
 ---
 
-Bu ders bağlanan bir [MCP server](/tr/playbook/glossary/#mcp-server)’ın — Claude Code'a dış araçlar ve veri kaynakları sunan program — getirdiği dört riski — kod çalıştırma, tool sonuçları üzerinden prompt injection, credential sızıntısı ve context sızıntısı — ve bunlara karşı kontrolleri anlatır. Yönetici tarafında `managed-mcp.json`, `allowedMcpServers`, `deniedMcpServers` ve `allowManagedMcpServersOnly` ile bir server engellendiğinde kullanıcının ne gördüğünü kapsar.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l3-advanced/m11-mcp/07-mcp-security.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Anthropic'in bağladığınız [MCP server](/tr/playbook/glossary/#mcp-server)'ları (Model Context Protocol ile Claude'a dış araç ve veri sağlayan sunucular) hakkında tam olarak ne yapıp ne yapmadığını belirtmek.
+- Bağlı bir server'ın getirdiği dört riski adlandırmak: kod çalıştırma, [tool](/tr/playbook/glossary/#tool) (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) sonuçları üzerinden prompt injection, kimlik bilgisi maruziyeti ve context sızıntısı.
+- Bir kimlik bilgisini paylaşılan bir yapılandırmanın dışında tutmak ve bunu `claude mcp get` ile kanıtlamak.
+- Bir server'ın tool'larını permission kurallarıyla ve `--allowedTools` ile sınırlamak ve trust doğrulamasının ne zaman gerçekleşmediğini açıklamak.
+- Yönetici tarafını okumak: `managed-mcp.json`, `allowedMcpServers`/`deniedMcpServers`, `allowManagedMcpServersOnly` ve engellenmiş bir server'ın bir kullanıcıya nasıl göründüğü.
+
+**Ön koşullar.** Bu modülün geri kalanı. Seviye 2'nin permission (izin) malzemesi yardımcı olur.
+
+<WhenNotToUse>
+  Bu ders, organizasyonunuzun gözden geçirme sürecinin yerine geçmez ve bu kontrollerin hiçbiri
+  güvenilmeyen bir server'ı çalıştırmak için güvenli hâle getirmez. Bir server'ı kimin yazdığını,
+  neyle konuştuğunu ve ele geçirildiğinde ne olacağını söyleyemiyorsanız, cevap "onu dar bir
+  allowlist ile ekle" değildir — "ekleme"dir. Aşağıdaki kontroller patlama yarıçapını azaltır; güven
+  kurmazlar.
+</WhenNotToUse>
+
+## Kavram
+
+### Neye güveniyorsunuz
+
+Her şeyin geri kalanını şekillendirmesi gereken cümleyle başlayın. Güvenlik dokümanlarından, MCP hakkında:
+
+> We encourage either writing your own MCP servers or using MCP servers from providers that you trust. […] Anthropic reviews connectors against its listing criteria before adding them to the Anthropic Directory, but does not security-audit or manage any MCP server.
+
+Directory'de listelenmek bir denetim değil bir incelemedir ve npm'de bulduğunuz bir server hakkında hiçbir şey söylemez. Bir stdio server'ı, makinenizde, ortamınızla, her oturum başında çalıştırmayı kabul ettiğiniz bir programdır. Uzak bir server ise sorgular — ve bazen kimlik bilgileri — teslim ettiğiniz üçüncü bir taraftır.
+
+### Dört risk
+
+**Kod çalıştırma.** `claude mcp add … -- npx -y some-package`, o paketin şu anda ve her gelecek başlangıçta çözümlediği her şeyi, kullanıcınızın ayrıcalıklarıyla çalıştırır. `@latest`, "sonraki yayımladıkları her şey" demektir.
+
+**Tool sonuçları üzerinden prompt injection.** Bir server'ın döndürdüğü her şey konuşmaya girer. Kötü niyetli ya da ele geçirilmiş bir server — ya da saldırganın kontrolündeki bir [issue](/tr/playbook/glossary/#issue) (bir GitHub deposundaki takip edilen görev ya da hata kaydı) başlığını, sayfayı ya da satırı ileten iyi niyetli bir server — modele yönelik talimatlar taşıyabilir. Dokümanlar, dış içerik getiren server'ların sizi prompt injection riskine maruz bırakabileceği konusunda açıktır. Claude Code'un buradaki savunmaları gerçek ama kısmidir: permission sistemi, tam isteğin context'e duyarlı analizi, web fetch'leri için ayrı bir context penceresi ve komut-enjeksiyonu tespiti. Dokümanların kendi özeti doğru duruştur — bu korumalar riski önemli ölçüde azaltırken, hiçbir sistem tamamen bağışık değildir.
+
+**Kimlik bilgisi maruziyeti.** `.mcp.json` içindeki bir token, sürüm kontrolündeki bir token'dır. `claude mcp get`, yapılandırılmış header'ları düz metin olarak geri yazdırır. Komut satırındaki bir DSN, `~/.claude.json`'a ve kabuk geçmişinize düşer.
+
+**Context sızıntısı.** Bir tool'un döndürdüğü her şey [transcript](/tr/playbook/glossary/#transcript)'tedir (gerçek bir Claude Code oturumunun kaydı): bir veritabanından satırlar, bir dahili wiki'nin bir sayfası, bir müşterinin e-posta adresi. Bu teknik değil, bir veri işleme kararıdır.
+
+### En ucuzdan en güçlüye kontroller
+
+**Trust doğrulaması.** İlk kez kod tabanı çalıştırmaları ve yeni MCP server'ları trust doğrulaması gerektirir ve proje kapsamlı bir `.mcp.json`, server'ları kullanılmadan önce onay ister — istem, klonladığınız bir deponun rızanız olmadan makinenizde process başlatamaması için vardır. Ezbere bilinmesi gereken iki boşluk: trust doğrulaması **`-p` bayrağıyla etkileşimsiz çalıştırırken devre dışıdır** ve `claude -p`, Agent SDK ve bulut oturumlarında proje kapsamlı server'lar sorulmadan yüklenir. Otomasyon, bu kontrolün yokluğunun tam olarak en çok önemli olacağı yerdir. Bir server'ı `disabledMcpjsonServers`, `--setting-sources` ya da `--strict-mcp-config` ile dışarıda tutun.
+
+**Referans yoluyla [secret](/tr/playbook/glossary/#secret)'lar.** (Depoya commit'lenmemesi gereken hassas değerler.) Asla bir literal değil. `${VAR}` ve `${VAR:-default}`, `command`, `args`, `env`, `url` ve `headers` içinde genişler; eksik bir değişken, çıktıda değer olmadan adlandırılmış bir uyarı üretir.
+
+**Her katmanda en az yetki.** Klasik bir token yerine fine-grained bir token (03. ders). Salt okunur bir veritabanı kullanıcısı _ve_ salt okunur bir server yapılandırması (05. ders). Ve Claude Code tarafında, tool düzeyinde kurallar: MCP tool'ları `mcp__<server>__<tool>` olarak adlandırılır, bu yüzden `permissions` içinde ya da [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) bir çalıştırmada `--allowedTools` ile diğer her tool gibi izin verilebilir ya da reddedilebilirler.
+
+**Kaldırma.** Bağlı her server, tool adları ve server talimatları her oturuma yüklendiği için context penceresinde yer kaplar — ve her biri bir bağımlılıktır. Artık kullanmadığınız server'ları kaldırmak o alanı boş tutar ve saldırı yüzeyini karşılıksız küçültür.
+
+### Bir server yazıyorsanız
+
+Bilinmeye değer iki açıklama var. Bir tool üzerinde `_meta["anthropic/requiresUserInteraction"]: true`, Claude Code'a `acceptEdits`, `auto` ve `bypassPermissions` modlarında bile o tool'un permission istemini **her** çağrıda göstertir, "bir daha sorma" seçeneği olmadan ve allow kuralları onu atlamaz; `dontAsk` modunda ise çağrı bunun yerine reddedilir. Bunu, istemin asıl mesele olduğu yerde kullanın — bir rıza ya da erişim-verme adımı, otomatik onayın hiç kimsenin hiçbir zaman onay vermediği anlamına geleceği yerlerde. Ve `_meta["anthropic/maxResultSizeChars"]`, çıktısı gerçekten büyük olan tool'lar için belirli bir tool'un sonuç eşiğini, 500.000 karakterlik sabit bir tavana kadar yükseltir.
+
+### Yönetici tarafı
+
+Organizasyonlar bireysel yargıya güvenmek zorunda değildir. Claude Code, yönetilen ayarlar üzerinden dağıtılan bir yelpaze sunar:
+
+| Desen                   | Ne yapar                                                              | Yapılandırma                                             |
+| ----------------------- | --------------------------------------------------------------------- | -------------------------------------------------------- |
+| MCP'yi devre dışı bırak | Hiçbir server hiç yüklenmez                                           | Boş bir server haritasıyla `managed-mcp.json`            |
+| Sabit dağıtım           | Herkes aynı server'ları alır ve hiçbirini ekleyemez                   | İstediğiniz server'larla `managed-mcp.json`              |
+| Onaylı katalog          | Kullanıcılar yayımlanmış bir listeden ekler; başka her şey engellenir | `allowedMcpServers` + `allowManagedMcpServersOnly: true` |
+| Yumuşak allowlist       | Kullanıcıların kendi ayarlarında genişletebileceği bir allowlist      | Tek başına `allowedMcpServers`                           |
+| Yalnızca denylist       | Bilinen kötü server'ları engelle, gerisine izin ver                   | `deniedMcpServers`                                       |
+
+`managed-mcp.json`, sistem yolunda bağımsız bir dosyadır — macOS'ta `/Library/Application Support/ClaudeCode/managed-mcp.json`, Linux ve WSL'de `/etc/claude-code/managed-mcp.json`, Windows'ta `C:\Program Files\ClaudeCode\managed-mcp.json` — MDM, Group Policy ya da eşdeğeri ile dağıtılır ve server-managed ayarlar üzerinden teslim edilemez. O mevcut olduğunda Claude Code yalnızca tanımladığı server'ları yükler ve `claude mcp add`, `Cannot add MCP server: enterprise MCP configuration is active and has exclusive control over MCP servers` ile başarısız olur.
+
+Bir politikanın gerçekten tutup tutmadığına karar veren üç ayrıntı:
+
+- Eşleştirme `serverUrl` (tam ya da `*` joker karakterleriyle), `serverCommand` (sırayla, tam olarak her argüman) ya da `serverName` iledir. **`serverName` bir güvenlik kontrolü değildir** — ad, kullanıcının seçtiği bir etikettir; bu yüzden herkes kendi server'ını `github` diye adlandırabilir. `serverCommand` ya da `serverUrl` ile uygulayın.
+- Denylist her zaman kazanır ve her ayar kapsamından her zaman birleşir. Allowlist de her kapsamdan birleşir — bu yüzden bir kullanıcı onu genişletebilir — yönetilen bir kaynakta `allowManagedMcpServersOnly: true` ayarlı olmadıkça.
+- `allowedMcpServers` **ayarlanmamış** olması tüm server'lara izin verildiği, boş bir `[]` dizisine ayarlanması ise hiçbirine izin verilmediği anlamına gelir. Bunlar farklı durumlardır.
+
+Son olarak, bir kullanıcının ne gördüğünü bilin, çünkü bunlardan ikisi sessizdir. Engellenmiş bir `claude mcp add`, `Cannot add MCP server "<name>": server is explicitly blocked by enterprise policy` ya da `… not allowed by enterprise policy` bildirir. Ama daha önce yapılandırılmış, sonradan engellenen bir server, hiçbir uyarı olmadan `/mcp` ve `claude mcp list`'ten **sessizce kaybolur**. Bir kısıtlama devreye aldığınızda etkilenen kullanıcılara hangi server'ların engellendiğini söyleyin. Organizasyonunuzun gerçekte neyi kullandığını görmek için OpenTelemetry export'unu yapılandırın ve tool olaylarına MCP server ve tool adlarını dahil etmek için `OTEL_LOG_TOOL_DETAILS=1`'i ayarlayın.
+
+Bu dersin örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni) bir görev değil, bir denetimdir:
+
+```text
+Read .mcp.json and list every server it defines: transport, what it connects to,
+which credentials it needs, and whether any value is a literal secret rather than
+a ${VAR} reference. Do not connect to anything.
+```
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Bu laboratuvarın bir lab-repo tag'i yok. Bunu geçici bir dizinde çalıştırın: kasıtlı olarak kötü
+  bir yapılandırma yazıp ona bakıyorsunuz ve bunu bir depoda istemezsiniz.
+</Callout>
+
+<Lab
+  title="Laboratuvar · bir yapılandırmayı denetleyin, sonra kimlik bilgisini düzeltin"
+  lessonId="tr/l3-advanced/m11-mcp/mcp-security"
+  repoTag="none"
+  steps={[
+    'Boş bir geçici dizin oluşturun ve içine, `https://mcp.example.com/mcp`’a işaret eden, bir `headers.Authorization`’ı `Bearer EXAMPLE-TOKEN-DO-NOT-COMMIT` olan `reporting` adında bir HTTP server’ı tanımlayan bir `.mcp.json` yazın. Bu, kasıtlı olarak yazılmış hatadır.',
+    '`claude mcp get reporting` çalıştırın ve her satırı okuyun. Scope’a, duruma ve — egzersizin amacı olan — `Headers:` bloğunun ne yazdırdığına dikkat edin.',
+    'Bu girdi için kendinize üç denetim sorusunu sorun: kodu kim çalıştırıyor, hangi kimlik bilgisini taşıyor ve dosya commit’lendikten sonra o kimlik bilgisini kim okuyabilir?',
+    'Düzeltin. URL’yi `${REPORTING_MCP_URL:-https://mcp.example.com/mcp}` ile ve header’ı `Bearer ${REPORTING_MCP_TOKEN}` ile değiştirin. `REPORTING_MCP_TOKEN`’ı ayarlamayın.',
+    'Tekrar `claude mcp get reporting`, sonra `claude mcp list` çalıştırın. Alttaki tanılama bloğunu okuyun.',
+    'Şimdi Kavram bölümündeki denetim prompt’unu düzeltilmiş dosyaya karşı, hiçbir şeyin bağlanmaması için `claude -p "<denetim prompt’u>" --model sonnet --max-turns 5 --output-format text --allowedTools "Read"` ile çalıştırın. `${VAR:-default}` yedeği hakkında ne bildirdiğini okuyun.',
+    'Son olarak, her iki kaydın da bildirdiği duruma bakın: `⏸ Pending approval`. Bir `.mcp.json` server’ının siz onu etkileşimli olarak onaylayana kadar neden canlı olmadığını yüksek sesle söyleyin — ve bunun, isteminin gösterilemeyeceği bir `claude -p` çalıştırması için ne anlama geldiğini.',
+  ]}
+  expected="Düzeltmeden önce claude mcp get, literal token’ı tam olarak yazdırır. Sonrasında hem URL hem header, genişletilmemiş ${VAR} referansları olarak görünür ve claude mcp list, değişkeni adlandırıp değeri asla adlandırmayan `Missing environment variables: REPORTING_MCP_TOKEN` uyaran bir tanılama bloğu ekler."
+  checklist={[
+    '`claude mcp get`, literal secret’ı yazdırdı; sızıntıyı ilk elden gördünüz',
+    'Düzeltmeden sonra hiçbir komut çıktısında secret görünmüyor',
+    'Eksik-değişken uyarısı değeri değil, değişkeni adlandırıyor',
+    'Her iki çalıştırma da ⏸ Pending approval gösteriyor — denetim sırasında hiçbir şeye bağlanılmadı',
+    'claude -p’nin onay istemini neden atladığını ve bunun yerine ne kullanılacağını (disabledMcpjsonServers, --setting-sources, --strict-mcp-config) söyleyebiliyorsunuz',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/07-mcp-security/01-secret-in-config.txt"
+    range="2-11"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/07-mcp-security/02-variable-reference.txt"
+    range="2-24"
+  />
+  <Transcript src="content/_shared/transcripts/m11-mcp/07-mcp-security/03-audit.txt" range="4-12" />
+</Lab>
+
+İki kaydı yan yana koyun. Dosyadaki tek fark, `EXAMPLE-TOKEN-DO-NOT-COMMIT`'in `${REPORTING_MCP_TOKEN}`'a dönüşmesidir. Bir terminalin, bir ekran paylaşımının, bir hata raporunun ve bir git geçmişinin artık içerdiği şeydeki fark ise toplamdır.
+
+Ve ikinci kaydın uyarısının _söylemediği_ şeye dikkat edin. Alanı ve değişkeni adlandırır — `[reporting] mcpServers.reporting: Missing environment variables: REPORTING_MCP_TOKEN` — ve hiçbir değer yazdırmaz. Claude Code aynı disiplini başka yerlerde de uygular: hata detaylarından kimlik bilgisi gibi görünen metni redakte eder, onlara asla genişletilmiş server URL'sini dahil etmez ve scope-conflict uç noktalarını `${VAR}` referanslarıyla, genişletilmemiş olarak alıntılar.
+
+Üçüncü kayıt denetimin kendisidir ve çalınmaya değer bir ayrım yapar: `${REPORTING_MCP_URL:-https://mcp.example.com/mcp}`'teki yedek bir literaldir, ama o bir **uç nokta** literalidir, bir kimlik bilgisi literali değil. Paylaşılan bir yapılandırmada varsayılan bir URL iyidir ve genellikle kullanışlıdır. Varsayılan bir token ise asla değildir — bu yüzden düzeltilmiş dosyadaki token'ın hiç `:-default`'u yoktur ve eksik-değişken uyarısı bir sıkıntı değil doğru sonuçtur.
+
+## Anti-pattern'ler
+
+**"Directory'de, o yüzden denetlenmiş."** Anthropic, connector'ları Directory'ye eklemeden önce listeleme kriterlerine göre inceler, ama hiçbir MCP server'ını güvenlik denetiminden geçirmez ya da yönetmez. _Düzeltme:_ kendi incelemenizi yapın ve sizin ya da organizasyonunuzun yazdığı server'ları tercih edin.
+
+**Hiçbir şeyi sabitlememek.** `npx -y package@latest`, her oturum başlangıcında, yapılandırmanız olan her makinede, yayımcının bir sonraki yayımladığı her şeyi çalıştırır. _Düzeltme:_ gözden geçirdiğiniz bir sürümü sabitleyin ve bilinçli olarak güncelleyin. (Dokümanların kendi örnekleri kolaylık için `@latest` kullanır; kolaylık burada optimize ettiğiniz kısıt değildir.)
+
+**Otomasyonda trust istemine güvenmek.** Trust doğrulaması `-p` ile devre dışıdır ve proje kapsamlı server'lar headless, SDK ve bulut oturumlarında sorulmadan yüklenir. _Düzeltme:_ gözetimsiz çalışan her şeyde, açık bir `--mcp-config` ile `--strict-mcp-config` ya da `disabledMcpjsonServers`.
+
+**Bir `serverName` allowlist'i.** Ad, kullanıcının seçtiği bir etikettir; herkes kendi server'ını `github` diye adlandırabilir. _Düzeltme:_ uygulama için güvendiğiniz her şey için `serverCommand` ya da `serverUrl` girdileri.
+
+**Tool çıktısına güvenilir muamelesi yapmak.** Bir server üzerinden getirilen bir satır, bir issue başlığı ya da bir sayfa, modelinizin context'ine gelen saldırgan-etkileyebilir bir metindir. _Düzeltme:_ onaydan önce komutları gözden geçirin, güvenilmeyen içeriği doğrudan Claude'a aktarmayın, salt okunur scope'ları tercih edin ve riskli işi bir [sandbox](/tr/playbook/glossary/#sandbox) (bir sürecin dosya sistemi ve ağ erişimini işletim sistemi düzeyinde kısıtlayan izole çalışma ortamı) ya da VM'de tutun.
+
+**Kullanmayı bıraktığınız server'ları saklamak.** Her biri context'e mal olur ve güvenmeniz gereken bir bağımlılık olarak kalır. _Düzeltme:_ `claude mcp remove`, bir sonraki ihtiyacınızda yeniden ekleyin.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/mcp-security"
+  questionId="q1"
+  lang="tr"
+  prompt="Anthropic Directory'de listelenmek, bir MCP server'ı hakkında size ne söyler?"
+  options={[
+    {
+      text: 'Listeleme kriterlerine göre incelendi, ama Anthropic onu güvenlik denetiminden geçirmez ya da yönetmez',
+      correct: true,
+      explanation: 'Güvenlik dokümanları tam olarak bunu söylüyor. İnceleme sizde kalır.',
+    },
+    {
+      text: 'Anthropic tarafından bir güvenlik denetiminden geçti',
+      explanation: 'Açıkça durum bu değil.',
+    },
+    {
+      text: 'Çalışma zamanında Claude Code tarafından sandbox’lanır',
+      explanation:
+        'Bir stdio server’ı, sizin ayrıcalıklarınıza sahip sıradan bir yerel process’tir.',
+    },
+    {
+      text: 'Tool sonuçları güvenilir girdi olarak ele alınır',
+      explanation: 'Tam tersi: server’ın getirdiği içerik bir prompt-injection vektörüdür.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/mcp-security"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir CI işi, commit’lenmiş .mcp.json’ı çalıştırmak istemediğiniz bir server tanımlayan bir depoda `claude -p` çalıştırıyor. Bunu gerçekte ne durdurur?"
+  options={[
+    {
+      text: 'Etkileşimli onay istemi',
+      explanation:
+        'Hiçbiri yok: `claude -p`, Agent SDK ve bulut oturumlarında proje kapsamlı server’lar sorulmadan yüklenir ve trust doğrulaması -p ile devre dışıdır.',
+    },
+    {
+      text: 'Açık bir --mcp-config ile --strict-mcp-config, ya da bir disabledMcpjsonServers girdisi',
+      correct: true,
+      explanation:
+        'İkisi de server’ı dışarıda tutmanın dokümante edilmiş yollarıdır; proje ayarlarını hariç tutan --setting-sources de işe yarar.',
+    },
+    {
+      text: '--permission-mode plan ile çalıştırmak',
+      explanation: 'Permission mode’lar eylemleri yönetir, hangi server’ların yükleneceğini değil.',
+    },
+    {
+      text: 'Hiçbir şey — commit’lenmiş bir .mcp.json her zaman her yerde yüklenir',
+      explanation: 'Yüklenmez: üç dokümante edilmiş mekanizma bir server’ı dışarıda tutar.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/mcp-security"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir yönetici, yönetilen ayarlarda allowedMcpServers’ı boş bir [] dizisine ayarlıyor. Ne olur?"
+  options={[
+    {
+      text: 'Hiçbir server’a izin verilmez',
+      correct: true,
+      explanation:
+        'Ayarlanmamış olmak tüm server’lara izin verildiği, boş bir dizi ise hiçbirine izin verilmediği anlamına gelir. İki durum kasıtlı olarak farklıdır.',
+    },
+    {
+      text: 'Hiçbir şey listelenmediği için tüm server’lara izin verilir',
+      explanation: 'Bu, *ayarlanmamış* davranıştır.',
+    },
+    {
+      text: 'Yalnızca plugin’in sağladığı server’lar yüklenir',
+      explanation: 'Bu, strictPluginOnlyCustomization desenidir.',
+    },
+    {
+      text: 'Ayar geçersiz olarak yok sayılır',
+      explanation: 'Geçerli, anlamlı bir yapılandırmadır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/mcp-security"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir serverName girdisi neden bir MCP allowlist’i için zayıf bir temeldir?"
+  options={[
+    {
+      text: 'Çünkü ad, kullanıcının atadığı bir etikettir; bu yüzden herhangi bir server `github` diye adlandırılabilir',
+      correct: true,
+      explanation:
+        'Dokümanlar bunun bir güvenlik kontrolü olmadığı konusunda uyarır; bunun yerine serverCommand ya da serverUrl ile uygulayın.',
+    },
+    {
+      text: 'Çünkü adlar büyük/küçük harfe duyarlıdır',
+      explanation: 'Mesele bu değil; allowlist adları harfiyen eşleşir ve asla genişlemez.',
+    },
+    {
+      text: 'Çünkü adlar her oturumda değişir',
+      explanation: 'Değişmezler; yapılandırmada ne varsa odur.',
+    },
+    {
+      text: 'Çünkü Claude Code serverName girdilerini tamamen yok sayar',
+      explanation:
+        'Onlara uyar — bir allowlist’te, eşleşen türden komut/URL girdisi olmadığında bir ad eşleşmesi sayılır — bu da onlara güvenmenin neden riskli olduğunun tam nedenidir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/mcp-security"
+  questionId="q5"
+  lang="tr"
+  prompt="Bir kullanıcının daha önce çalışan bir MCP server'ı, bir politika dağıtımından sonra `claude mcp list`'te görünmemeye başlıyor. Ne gördüler?"
+  options={[
+    {
+      text: 'Hiçbir şey — politika tarafından engellenen bir server, /mcp ve claude mcp list’ten sessizce kaybolur',
+      correct: true,
+      explanation:
+        'Bu yüzden dokümanlar yöneticilere yeni bir kısıtlamanın hangi server’ları engellediğini duyurmalarını söyler.',
+    },
+    {
+      text: 'Politikayı adlandıran bir başlangıç hatası',
+      explanation:
+        'O mesaj, `claude mcp add` denediklerinde ya da /mcp’de Reconnect’e bastıklarında görünür.',
+    },
+    {
+      text: 'Bir ⏸ Pending approval durumu',
+      explanation: 'Bu, onaylanmamış .mcp.json durumudur, bir politika engeli değil.',
+    },
+    {
+      text: 'Bir istisna talep etmelerini isteyen bir istem',
+      explanation: 'Böyle bir akış yok.',
+    },
+  ]}
+/>
+
+**Sırada:** `m12-plugins`, son üç modüldeki [skill](/tr/playbook/glossary/#skill)'leri (`SKILL.md` ile tanımlanan, yeniden kullanılabilir talimat paketleri), [hook](/tr/playbook/glossary/#hook)'ları (Claude Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan komutlar), [agent](/tr/playbook/glossary/#agent)'ları (bir hedefi kendi başına adım adım yürüten yapay zekâ süreçleri) ve `.mcp.json`'ı bir takımın tek bir komutla kurabileceği bir şeye paketler.

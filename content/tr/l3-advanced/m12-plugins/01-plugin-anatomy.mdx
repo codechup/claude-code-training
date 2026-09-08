@@ -6,10 +6,10 @@ module: 'm12-plugins'
 order: 1
 duration_min: 15
 difficulty: core
-tags: ['plugins', 'plugin.json', 'packaging']
+tags: ['pluginler', 'plugin.json', 'paketleme']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Create plugins'
@@ -27,8 +27,379 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m12-plugins/01-plugin-anatomy.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bir plugin (Claude Code'u skill, agent ve hook'larla genişleten paylaşılabilir paket), skill'leri, agent'ları, hook'ları veya MCP server'ları bir arada tutan, kendi kendine yeten bir dizindir. `.claude-plugin/plugin.json` manifest dosyası isteğe bağlıdır; yazdığınızda yalnızca `name` alanı zorunludur ve bu ad aynı zamanda skill'lerin namespace'i olur — `hello/` klasörü `/my-first-plugin:hello` hâline gelir. En sık yapılan hata yerleşimle ilgilidir: `.claude-plugin/` dizinine yalnızca `plugin.json` girer; `skills/`, `agents/`, `hooks/`, `.mcp.json`, `.lsp.json`, `monitors/`, `bin/` ve `settings.json` plugin kökünde durur. Bileşenler yanlış yere konduğunda manifest yine de geçerli sayılır, plugin yüklenir ve hiçbir bileşeni görünmez. Ders ayrıca manifest alanlarını, özel yol kurallarını (`skills` varsayılana eklenir, `commands` ve `agents` varsayılanın yerine geçer) ve kurulumdan sonra da çalışan `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}`, `${CLAUDE_PROJECT_DIR}` değişkenlerini anlatır; laboratuvarda en küçük plugin'i kurup `claude plugin validate` ile hem geçen hem başarısız olan bir çalıştırma görürsünüz.
+- Bir [plugin](/tr/playbook/glossary/#plugin)'in (Claude Code'a [hook](/tr/playbook/glossary/#hook) (yaşam döngüsünde belirli anlarda otomatik çalışan komut), [skill](/tr/playbook/glossary/#skill) (yeniden kullanılabilir talimat paketi), [subagent](/tr/playbook/glossary/#subagent) (bir alt görevi devralan yardımcı agent) ve [MCP server](/tr/playbook/glossary/#mcp-server) (Claude'a dış araç ve veri sağlayan sunucu) gibi bileşenleri paket hâlinde ekleyen eklenti) ne olduğunu tek cümlede söylemek ve düz bir `.claude/` dizinine göre size ne kazandırdığını anlatmak.
+- Bir `.claude-plugin/plugin.json` manifest dosyası yazmak ve Claude Code'un gerçekten okuduğu her alanı sıralamak.
+- `skills/`, `agents/`, `hooks/`, `.mcp.json`, `.lsp.json`, `monitors/`, `bin/` ve `settings.json`'ı doğru yere koymak ve neden yalnızca `plugin.json`'ın — bunların hiçbirinin değil — `.claude-plugin/` içinde durduğunu açıklamak.
+- Manifest'in `name` alanından bir plugin skill'inin çağırma adını tahmin etmek.
+- Bir dizinde `claude plugin validate` çalıştırmak ve hem geçen hem başarısız olan bir çıktıyı okumak.
+
+**Ön koşullar.** Bir skill (`m06-skills`) ve bir hook (`m07-hooks`) yazmışsınız ve `.claude/settings.json`'ın nerede durduğunu biliyorsunuz (`m03-memory`). Claude Code 2.1.263 veya sonrası, ve önemsediğiniz herhangi bir deponun dışında bir geçici klasör.
+
+<WhenNotToUse>
+  Sırf yapabiliyorsunuz diye bir şeyi plugin olarak paketlemeyin. Yalnızca sizin, yalnızca tek bir
+  projede kullandığınız bir [workflow](/tr/playbook/glossary/#workflow) (birden çok adımdan oluşan
+  otomatik iş akışı), o projenin `.claude/` dizinine aittir: tek bir dosyadır, ne manifest'e, ne
+  sürüme, ne de namespace'e ihtiyaç duyar ve hiçbir şeyi yeniden yayınlamadan değiştirebilirsiniz.
+  Resmî tavsiye, `.claude/` içinde bağımsız başlamak ve paylaşmaya hazır olduğunuzda plugin'e
+  dönüştürmektir. Bir plugin, kendi ek yükünü ancak aynı skill, hook ya da
+  [agent](/tr/playbook/glossary/#agent)'ın (bir hedefi kendi başına yürüten yapay zekâ süreci) başka
+  insanlara, başka depolara ya da sürümlü bir yayın döngüsüne ulaşması gerektiğinde hak eder — ve
+  karşılığında her skill adına bir namespace ön eki ile bakımı gereken bir dağıtım kanalı ister.
+</WhenNotToUse>
+
+## Kavram
+
+### Plugin nedir
+
+Bir plugin, skill, agent, hook ya da MCP server'ları barındıran, isteğe bağlı olarak yanında bir
+`.claude-plugin/plugin.json` manifest dosyası bulunan **kendi kendine yeten bir dizindir**. Claude
+Code onu etkinleştirilebilen, devre dışı bırakılabilen, sürümlenebilen ve paylaşılabilen tek bir
+birim olarak yükler.
+
+Dokümantasyon, Claude Code'u genişletmenin iki yolu arasındaki seçimi şöyle koyuyor:
+
+| Yaklaşım                                      | Skill adları         | En uygun olduğu yer                                                  |
+| --------------------------------------------- | -------------------- | -------------------------------------------------------------------- |
+| **Bağımsız** (`.claude/` dizini)              | `/hello`             | Kişisel iş akışları, projeye özgü özelleştirmeler, hızlı denemeler   |
+| **Plugin'ler** (kendi kendine yeten dizinler) | `/plugin-name:hello` | Takım arkadaşlarıyla paylaşmak, topluluğa dağıtmak, sürümlü yayınlar |
+
+O ikinci sütun, görünür fark. Plugin skill'leri **her zaman** plugin'in `name`'iyle
+namespace'lenir, böylece iki plugin de birbirine çarpmadan bir `commit` skill'i sunabilir.
+Namespace'i değiştirmek için `plugin.json`'daki `name`'i değiştirin — ayrı bir namespace alanı
+yoktur.
+
+### Manifest
+
+`.claude-plugin/plugin.json` **isteğe bağlıdır**. Manifest olmadan Claude Code bileşenleri
+varsayılan konumlarında kendiliğinden bulur ve plugin adını dizin adından türetir. Meta veri ya da
+özel bileşen yolları istediğinizde bir manifest eklersiniz. Bir tane eklediğinizde, zorunlu tek alan
+`name`'dir.
+
+<CodeBlock title="my-first-plugin/.claude-plugin/plugin.json">
+
+```json
+{
+  "name": "my-first-plugin",
+  "description": "A greeting plugin to learn the basics",
+  "version": "1.0.0",
+  "author": {
+    "name": "Your Name"
+  }
+}
+```
+
+</CodeBlock>
+
+İlkini yazmadan önce bilmeye değer alanlar:
+
+| Alan                                            | Ne yapar                                                                                                                                             |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`                                          | Zorunlu (manifest'iniz varsa). Kebab-case, boşluksuz. Skill namespace'i: `hello/` `/my-first-plugin:hello` olur.                                     |
+| `displayName`                                   | `/plugin` seçicisinde gösterilen, insan tarafından okunabilir ad. Varsayılan olarak `name`'e döner. Namespace'lemede ya da aramada asla kullanılmaz. |
+| `description`                                   | Göz atarken ya da kurarken plugin yöneticisinde gösterilir.                                                                                          |
+| `version`                                       | İsteğe bağlı semantik sürüm. Ayarlanması plugin'i sabitler: kullanıcılar yalnızca siz alanı yükselttiğinizde güncelleme alır.                        |
+| `author`                                        | İsteğe bağlı; `name` zorunlu, `email` ve `url` isteğe bağlı. Atıf için yararlı.                                                                      |
+| `homepage`, `repository`, `license`, `keywords` | Keşif ve atıf meta verisi.                                                                                                                           |
+| `defaultEnabled`                                | Varsayılan `true`'dur. Kullanıcı devreye almadan devre dışı kurulan bir plugin sunmak için `false` yapın.                                            |
+| `metadata`                                      | Kendi verileriniz için serbest biçimli bir nesne. Claude Code onu okumaz, dolayısıyla içindeki hiçbir şey davranışı etkilemez.                       |
+| `dependencies`                                  | Bu plugin'in gerektirdiği diğer plugin'ler, isteğe bağlı bir semver aralığıyla.                                                                      |
+
+Claude Code **tanımadığı üst düzey alanları yok sayar**, böylece tek bir `plugin.json` başka bir
+ekosistemin manifest'i olarak da işlev görebilir. `claude plugin validate`, tanınmayan alanları hata
+değil uyarı olarak bildirir ve bir alan bir iki karakter yanlışsa muhtemel doğru adı önerir.
+
+Ama türler konusunda hoşgörülü değildir. Çoğu alan için yanlış tür bir **uyarı değil, yükleme
+hatasıdır**: bir dizi beklenirken `"keywords": "git"` verilmesi plugin'in yüklenmesini durdurur.
+İstisnalar `experimental` ve `metadata`'dır; buralarda nesne olmayan bir değer bir uyarıyla
+görmezden gelinir.
+
+### Dizin yerleşimi
+
+Plugin'lerin en sık yanlış yapıldığı yer burasıdır, bu yüzden dokümantasyon bunu bir uyarı olarak
+belirtir:
+
+<Callout>
+  Yalnızca `plugin.json`, `.claude-plugin/` içine girer. Diğer her dizin — `skills/`, `agents/`,
+  `commands/`, `hooks/`, `workflows/` — bir düzey yukarıda, **plugin kökünde** olmalıdır. Plugin
+  kökü, plugin'in kendi dizinidir: `--plugin-dir`'e verdiğiniz ya da `.claude-plugin/plugin.json`'ı
+  içeren dizin. Bu asla `~/.claude/` değildir.
+</Callout>
+
+| Dizin / dosya     | Konum       | Amaç                                                                                                |
+| ----------------- | ----------- | --------------------------------------------------------------------------------------------------- |
+| `.claude-plugin/` | Plugin kökü | `plugin.json`'ı içerir (bileşenler varsayılan konumları kullanıyorsa isteğe bağlıdır)               |
+| `skills/`         | Plugin kökü | `<ad>/SKILL.md` dizinleri olarak skill'ler                                                          |
+| `commands/`       | Plugin kökü | Düz Markdown dosyaları olarak skill'ler. Yeni plugin'ler için `skills/` kullanın                    |
+| `agents/`         | Plugin kökü | Özel agent tanımları                                                                                |
+| `hooks/`          | Plugin kökü | `hooks.json` içindeki olay işleyicileri                                                             |
+| `.mcp.json`       | Plugin kökü | MCP server yapılandırmaları                                                                         |
+| `.lsp.json`       | Plugin kökü | Kod zekâsı için LSP server yapılandırmaları                                                         |
+| `monitors/`       | Plugin kökü | `monitors.json` içindeki arka plan monitor yapılandırmaları                                         |
+| `bin/`            | Plugin kökü | Plugin etkinken Bash tool'unun `PATH`'ine eklenen çalıştırılabilir dosyalar                         |
+| `settings.json`   | Plugin kökü | Plugin etkinleştirildiğinde uygulanan varsayılan ayarlar (yalnızca `agent` ve `subagentStatusLine`) |
+
+Akılda tutmaya değer iki kısayol var. **Tam olarak bir skill** sunan bir plugin, `skills/` dizini ve
+`skills` manifest alanı olmadan `SKILL.md`'yi plugin kökünde tutabilir — Claude Code bunu tek
+skill'li bir plugin olarak yükler ve çağırma adını frontmatter'daki `name`'den alır. Ve plugin
+kökündeki bir `CLAUDE.md`, proje bağlamı olarak **yüklenmez**: plugin'ler bağlama skill, agent ve
+hook'lar üzerinden katkıda bulunur, bu yüzden Claude'un bağlamında olmasını istediğiniz talimatlar
+bir skill'e girer.
+
+### Özel yollar ve üç değişken
+
+Varsayılanlar size uymuyorsa, manifest'in bileşen-yolu alanları `./` ile başlaması gereken göreli
+yollar alır. Hepsi aynı şekilde davranmaz:
+
+- **Varsayılanın yerine geçer**: `commands`, `agents`, `workflows`, `outputStyles`,
+  `experimental.themes`, `experimental.monitors`. `commands`'ı bildirmek, varsayılan `commands/`
+  klasörünün artık taranmadığı anlamına gelir. İkisini de tutmak için listeleyin:
+  `"commands": ["./commands/", "./extras/"]`.
+- **Varsayılana eklenir**: `skills`. Varsayılan `skills/` dizini her zaman taranır ve ek
+  dizinleriniz onunla birlikte yüklenir.
+- **Kendi birleştirme kuralları var**: `hooks`, `mcpServers`, `lspServers`.
+
+Bu bileşenlerin içinde, kurulumdan sonra da hayatta kalan yollar veren üç değişken vardır — çünkü
+Claude Code bir kullanıcı kurduğunda plugin'i bir önbellek dizinine kopyalar:
+
+| Değişken                | Neye çözümlenir                                      |
+| ----------------------- | ---------------------------------------------------- |
+| `${CLAUDE_PLUGIN_ROOT}` | Plugin'in kurulum dizininin mutlak yolu              |
+| `${CLAUDE_PLUGIN_DATA}` | Plugin güncellemelerinden sağ çıkan kalıcı bir dizin |
+| `${CLAUDE_PROJECT_DIR}` | Proje kökü                                           |
+
+Üçü de hook süreçlerine ve MCP ile LSP alt süreçlerine ortam değişkeni olarak aktarılır.
+`${CLAUDE_PLUGIN_ROOT}`, sürekli başvuracağınız değişkendir: paket içindeki bir betiğe kabuktan
+çağrı yapan bir hook, ona her zaman bu değişken üzerinden, asla göreli bir yolla değil, adres
+vermelidir — çünkü plugin'in konumu yazım anında bilinemez.
+
+Bu dersin örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni) şudur — Claude'un yerleşim hakkında tahmin yürütmek yerine akıl yürütmek
+zorunda kalacağı şekilde kurulmuş bir istek:
+
+```text
+I have a skill in .claude/skills/changelog/ and a PostToolUse hook wired in
+.claude/settings.json. Package both as a plugin named release-tools under
+./plugins/, and tell me which files moved where and why.
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · mümkün olan en küçük plugin'i oluşturun, sonra bozun"
+  lessonId="tr/l3-advanced/m12-plugins/plugin-anatomy"
+  repoTag="none"
+  steps={[
+    'Önemsediğiniz hiçbir deponun dışında bir geçici klasör oluşturun ve içine girin.',
+    'Plugin dizinini ve manifest dizinini oluşturun: `mkdir -p hello-plugin/.claude-plugin hello-plugin/skills/hello`.',
+    'Kavram bölümündeki dört alanla (name, description, version, author) `hello-plugin/.claude-plugin/plugin.json` dosyasını yazın.',
+    'Bir `description` frontmatter alanı, `disable-model-invocation: true` ve bir satır talimatla `hello-plugin/skills/hello/SKILL.md` dosyasını yazın.',
+    "`claude plugin validate ./hello-plugin` çalıştırın ve bastırdığı yolu okuyun — kastettiğiniz manifest'i bulduğunu böyle doğrularsınız.",
+    'Şimdi bilerek yanlış bir kopya oluşturun: skill\'i plugin kökü yerine `.claude-plugin/skills/hello/` altına koyan `broken-plugin/` ve bir dizinin ait olduğu yerde bir dize olan `"keywords": "git"`.',
+    '`claude plugin validate ./broken-plugin` çalıştırın. İki hatadan hangisini yakaladığına, hangisini yakalamadığına dikkat edin.',
+  ]}
+  expected="hello-plugin, `✔ Validation passed` ile ve 0 çıkış koduyla doğrulanır. broken-plugin, `keywords: Invalid input` ile ve 1 çıkış koduyla başarısız olur — yanlış tür yakalanır, ama yanlış yerleştirilmiş skills/ dizininden hiç söz edilmez."
+  checklist={[
+    "plugin.json `.claude-plugin/plugin.json`'da duruyor, başka hiçbir şey durmuyor",
+    '`claude plugin validate ./hello-plugin` 0 ile çıkıyor',
+    "Doğrulayıcı okuduğu manifest'in mutlak yolunu yazdırıyor",
+    '`claude plugin validate ./broken-plugin` 1 ile çıkıyor ve `keywords` alanını adlandırıyor',
+    "validate'in yanlış yerleştirilmiş `skills/` dizini hakkında hiçbir şey söylemediğini fark ettiniz",
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/01-plugin-anatomy/01-validate-minimal.txt"
+    range="2-6"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/01-plugin-anatomy/02-validate-broken.txt"
+    range="2-10"
+  />
+</Lab>
+
+İkinci kayıt önemli olandır. `claude plugin validate` **manifest'i** kontrol eder: bir dizinin ait
+olduğu yerde bir dize olan `keywords`'ü yakaladı ve 1 ile çıktı. `.claude-plugin/` içinde oturan
+`skills/` hakkında hiçbir şey söylemedi, çünkü manifest'in bakış açısından yanlış bir şey yok —
+plugin'in basitçe hiç skill'i yok. Bir plugin tertemiz doğrulanabilir ve yine de yazdığınızı
+sandığınız bileşenlerin hiçbirini sunmayabilir. Bunun kontrolü, onu yükleyip bakmaktır; bu da `03`
+numaralı dersin konusudur.
+
+### İşletim sistemine göre dizin oluşturma
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+mkdir -p hello-plugin/.claude-plugin hello-plugin/skills/hello
+claude plugin validate ./hello-plugin
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+mkdir -p hello-plugin/.claude-plugin hello-plugin/skills/hello
+claude plugin validate ./hello-plugin
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+New-Item -ItemType Directory -Force hello-plugin/.claude-plugin, hello-plugin/skills/hello
+claude plugin validate ./hello-plugin
+```
+
+  </Fragment>
+</OSTabs>
+
+## Anti-pattern'ler
+
+**Bileşenleri `.claude-plugin/` içine koymak.** En yaygın plugin hatası: plugin yüklenir, manifest
+doğrulanır ve skill'lerinizden, agent'larınızdan ya da hook'larınızdan hiçbiri yoktur. _Düzeltme:_
+`.claude-plugin/`'e yalnızca `plugin.json` girer; geri kalan her şey plugin kökünde durur.
+
+**Paket içindeki betiklere göreli yoldan başvurmak.** Bir plugin'i kurmak onu bir önbellek dizinine
+kopyalar, bu yüzden bir `hooks.json` içindeki `node ./hooks/format.mjs`, sizin plugin'inize değil
+kullanıcının projesine göre çözümlenir. _Düzeltme:_ paket içi dosyalara
+`${CLAUDE_PLUGIN_ROOT}/hooks/format.mjs` olarak adres verin.
+
+**Proje kökünü betiğin kendi konumundan hesaplamak.** `.claude/hooks/`'tan kopyalanan bir hook,
+depoyu bulmak için genellikle iki dizin yukarı çıkar. Bir plugin içindeyse bu yürüyüş kullanıcının
+projesine değil plugin'in önbellek dizinine iner. _Düzeltme:_ proje kökünü hook payload'ının
+`cwd`'sinden alın — `03` numaralı dersin tam olarak yaptığı şey budur.
+
+**Plugin dizininin dışına uzanmak.** `../shared-utils` kurulumdan sağ çıkmaz, çünkü o dosyalar asla
+kopyalanmaz. _Düzeltme:_ plugin'in ihtiyaç duyduğu her şeyi içinde tutun ya da bir marketplace
+içinde dosyaları symlink'lerle paylaşın.
+
+**Bir `CLAUDE.md` sunup yükleneceğini beklemek.** Plugin kökündeki bir `CLAUDE.md`, proje bağlamı
+olarak yüklenmez. _Düzeltme:_ talimatları bir skill'e koyun.
+
+**`claude plugin validate`'i plugin'in çalıştığının kanıtı saymak.** O manifest'leri doğrular.
+Hook'unuzun tetiklendiğini, agent'ınızın keşfedilebilir olduğunu ya da skill'inizin kullanılabilir
+bir açıklaması olduğunu doğrulamaz. _Düzeltme:_ plugin'i `--plugin-dir` ile yükleyin ve her bileşeni
+deneyin.
+
+<Callout variant="changed">
+  `commands/` — düz Markdown dosyaları olarak skill'ler — hâlâ yükleniyor, ama plugin referansı artık
+  yeni plugin'ler için `skills/` kullanılmasını söylüyor. Bağımsız karşılığı olan
+  `.claude/commands/*.md`, 2.1.3'te skill'lere birleşti; plugin dizini adını korudu.
+  `skills/<ad>/SKILL.md` yazın ve `commands/`'ı yalnızca onu zaten sunan bir plugin için tutun.
+  Claude Code 2.1.263 için `plugins-reference.md` üzerinden doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/plugin-anatomy"
+  questionId="q1"
+  lang="tr"
+  prompt="Plugin'inizin adı `release-tools` ve `skills/changelog/SKILL.md`'yi içeriyor. Skill'i ne çağırır?"
+  options={[
+    {
+      text: '/changelog',
+      explanation:
+        "Bu, bağımsız `.claude/skills/` biçimidir. Plugin skill'leri her zaman namespace'lenir.",
+    },
+    {
+      text: '/release-tools:changelog',
+      correct: true,
+      explanation: "Doğru — namespace manifest'in `name`'inden, skill adı ise klasörden gelir.",
+    },
+    {
+      text: '/skills:changelog',
+      explanation: "Ön ek plugin adıdır, skill'in içinde oturduğu dizin asla değil.",
+    },
+    {
+      text: '/release-tools/changelog',
+      explanation: 'Ayırıcı bir eğik çizgi değil, iki noktadır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/plugin-anatomy"
+  questionId="q2"
+  lang="tr"
+  prompt="Plugin'in `.claude-plugin/` dizininin içine hangi dosya girer?"
+  options={[
+    {
+      text: "Plugin'in sunduğu her şey — o plugin meta veri dizinidir.",
+      explanation: 'Tam tersi: oradaki bileşenler sessizce yüklenmez, manifest yine de doğrulanır.',
+    },
+    {
+      text: 'Yalnızca `plugin.json`.',
+      correct: true,
+      explanation: 'Diğer her dizin — skills/, agents/, hooks/, commands/ — plugin kökünde durur.',
+    },
+    {
+      text: '`plugin.json` ve `hooks/hooks.json`.',
+      explanation: "Hook'lar `<plugin kökü>/hooks/hooks.json`'da yaşar.",
+    },
+    {
+      text: "Hiçbiri — `.claude-plugin/`'i kurucu oluşturur.",
+      explanation: "Onu siz oluşturursunuz; bir tane yazdığınızda manifest'in gittiği yerdir.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/plugin-anatomy"
+  questionId="q3"
+  lang="tr"
+  prompt="Plugin'inizdeki bir hook, paket içine konmuş bir Node betiği çalıştırıyor. Gerçek bir kurulumdan hangi komut dizesi sağ çıkar?"
+  options={[
+    {
+      text: 'node ./hooks/format.mjs',
+      explanation:
+        "Kurulum plugin'i bir önbellek dizinine kopyalar, bu yüzden göreli bir yol kullanıcının projesine göre çözümlenir.",
+    },
+    {
+      text: 'node "${CLAUDE_PLUGIN_ROOT}/hooks/format.mjs"',
+      correct: true,
+      explanation: "O değişken, nereye indiyse plugin'in kurulum dizinine çözümlenir.",
+    },
+    {
+      text: 'node "${CLAUDE_PROJECT_DIR}/hooks/format.mjs"',
+      explanation: "Bu, sizin plugin'inize değil kullanıcının proje köküne işaret eder.",
+    },
+    {
+      text: 'node ~/.claude/plugins/my-plugin/hooks/format.mjs',
+      explanation:
+        'Sabit kodlanmış bir önbellek yolu bir sözleşme değildir ve platforma ve kapsama göre değişir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/plugin-anatomy"
+  questionId="q4"
+  lang="tr"
+  prompt="`claude plugin validate ./my-plugin`, `✔ Validation passed` yazdırıyor. Ne kanıtlamış oldunuz?"
+  options={[
+    {
+      text: 'Plugin yükleniyor ve her bileşen çalışıyor.',
+      explanation: "Doğrulama manifest'i okur. Plugin'i asla yüklemez ya da bir bileşeni denemez.",
+    },
+    {
+      text: 'Manifest ayrıştırılıyor ve alanları beklenen biçime sahip.',
+      correct: true,
+      explanation: 'Tam olarak — ve bileşenleri yanlış dizinde oturan bir plugin yine de geçer.',
+    },
+    {
+      text: "Her skill'in kullanılabilir bir açıklaması var.",
+      explanation: "Manifest'te skill'lerinizin kalitesini anlatan hiçbir şey yok.",
+    },
+    {
+      text: "Plugin resmî marketplace'e yayınlanmaya hazır.",
+      explanation:
+        'Doğrulama, gönderim hattının çalıştırdığı kontrollerden biridir, incelemenin tamamı değil.',
+    },
+  ]}
+/>
+
+**Sırada:** `02-marketplaces`, diğer yarısını ele alır — bir plugin'in `/plugin` üzerinden başka
+birinin makinesine nasıl ulaştığını ve kurmadan önce plugin yöneticisinin size neler gösterdiğini.

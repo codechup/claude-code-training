@@ -6,10 +6,10 @@ module: 'm12-plugins'
 order: 4
 duration_min: 20
 difficulty: advanced
-tags: ['plugins', 'validation', 'ci', 'eval']
+tags: ['pluginler', 'doğrulama', 'ci', 'eval']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Plugins reference'
@@ -27,8 +27,404 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m12-plugins/04-validate-and-eval.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-`claude plugin validate <path>` bir plugin'i ya da bir marketplace'i yayımlamadan önce sözdizimi ve şema hatalarına karşı denetler: 0 geçti, 1 başarısız, 2 çalıştırmanın kendisi başarısız (bu durumda stdout boştur, hata stderr'e gider). Hata ile uyarı ayrımı gerçek bir davranışa karşılık gelir — tanınan bir alanın yanlış tipte olması plugin'in yüklenmesini engeller ve hata sayılır; tanınmayan alanlar çalışma zamanında yok sayıldığı için uyarı sayılır ve yazım hatası varsa doğru alan adı önerilir. `--strict` bu ayrımı kaldırıp uyarıları da başarısızlığa çevirir; CI için doğru, günlük geliştirme döngüsü için yanlış olan davranış budur. `--json` (v2.1.259+) raporu `success`, `strict`, `target`, `manifest` ve `contents` alanlarıyla tek bir JSON nesnesi olarak verir. Doğrulamanın **yapmadığı** şey de en az bu kadar önemlidir: plugin'i yüklemez, hook'unuzu çalıştırmaz, yanlış dizindeki bileşenleri fark etmez. `claude plugin eval` ise farklı bir soru sorar — plugin Claude'un davranışını gerçekten değiştiriyor mu? Bu komut kuruluş bazında **erken erişimdedir** ve herkese açık bir dokümantasyon sayfası yoktur; bu dersteki her ayrıntı komutun kendi `--help` çıktısından okunmuştur ve dersin yazıldığı makinede komut `` `plugin eval` is currently in early access `` mesajıyla durmuştur.
+- Bir `claude plugin validate` raporunu okumak ve bir hatayı bir uyarıdan bir notdan ayırt etmek.
+- Hangi çıkış kodunun tam olarak ne anlama geldiğini söylemek ve komutu `--strict` ile CI'a bağlamak.
+- `--json` zarfını ayrıştırmak ve bir build betiğinin önemsediği alanları seçmek.
+- Doğrulamanın **kontrol etmediği** şeyi ve onun yerine ne yapmanız gerektiğini söylemek.
+- `claude plugin eval`'in ne için olduğunu ve seçeneklerinin neyi kontrol ettiğini tarif etmek — ve
+  sizin için etkin olup olmadığını kontrol etmek.
+
+**Ön koşullar.** `03-build-a-plugin` dersi, ya da kendi herhangi bir plugin dizininiz. Claude Code
+2.1.263 veya sonrası; `--json` için v2.1.259 veya sonrası gerekir.
+
+<WhenNotToUse>
+  `claude plugin validate` bir test paketi değildir ve öyleymiş gibi sunulmamalıdır. Manifest'leri
+  okur. Bir [skill](/tr/playbook/glossary/#skill)'in (yeniden kullanılabilir talimat paketinin)
+  açıklamasının Claude'un onu seçemeyecek kadar belirsiz olduğunu, bir
+  [hook](/tr/playbook/glossary/#hook)'un (belirli anlarda otomatik çalışan komutun)
+  [matcher](/tr/playbook/glossary/#matcher)'ının (hangi tool ya da event üzerinde ateşleneceğini
+  daraltan alanın) hiç ateşlenmediğini, bir [MCP server](/tr/playbook/glossary/#mcp-server)'ın
+  (Claude'a dış araç ve veri sağlayan sunucunun) başlamadığını ya da bileşenlerinizin Claude Code'un
+  taramadığı bir dizinde oturduğunu söylemez. Bir yayını yalnızca doğrulamaya dayandırmayın, ve
+  değeri bir skill ya da bir [agent](/tr/playbook/glossary/#agent) (kendi başına iş yürüten yapay
+  zekâ süreci) değil de bir hook ya da paket içine konmuş bir ikili dosya olan bir
+  [plugin](/tr/playbook/glossary/#plugin) için `claude plugin eval`'e başvurmayın — eval,
+  plugin'iniz yüklüyken modelin ne yaptığını puanlar, bu yüzden modelin bağlamına hiçbir şey
+  katmayan bir plugin'in ölçecek hiçbir şeyi yoktur.
+</WhenNotToUse>
+
+## Kavram
+
+### validate ne kontrol eder
+
+`claude plugin validate <path>`, yayımlamadan önce bir plugin'i ya da bir marketplace'i sözdizimi
+ve şema hataları için kontrol eder. Bir plugin dizininin ya da bir marketplace dizininin yolunu
+alır ve şöyle çıkar:
+
+| Çıkış | Anlamı                                                                    |
+| ----- | ------------------------------------------------------------------------- |
+| 0     | Doğrulama geçti (uyarılarla birlikte olabilir)                            |
+| 1     | Doğrulama başarısız oldu                                                  |
+| 2     | Doğrulama çalıştırmasının kendisi başarısız oldu — örneğin yol okunamıyor |
+
+Çıkış 2'de komut stdout'a hiçbir şey yazmaz; hata stderr'e gider. Bir oturum içinde,
+`/plugin validate <path>` aynı kontrolleri satır içinde çalıştırır.
+
+Seçenekleri azdır:
+
+| Seçenek    | Etkisi                                                                                  |
+| ---------- | --------------------------------------------------------------------------------------- |
+| `--strict` | Uyarıları hata sayar ve bunlarda 1 ile çıkar                                            |
+| `--json`   | Doğrulama raporunu, aynı çıkış kodlarıyla tek bir JSON nesnesi olarak verir (v2.1.259+) |
+
+### Hatalar ile uyarılar
+
+Bu ayrım kozmetik değildir — plugin'in çalışma zamanında yüklenip yüklenmediğine karşılık gelir.
+
+Bir **hata**, plugin'in yüklenmesini durduran bir şeydir. Tanınan bir alanın yanlış tipte olması
+olağan durumdur: bir dizi beklenirken `"keywords": "git"` yüklenemez, ve doğrulama bunu hata olarak
+bildirir.
+
+Bir **uyarı**, çalışma zamanının hoşgörüyle karşıladığı bir şeydir. Tanınmayan üst düzey alanlar
+başlıca örnektir: Claude Code tanımadığı alanları yok sayar, böylece tek bir `plugin.json` bir npm
+`package.json`'ı, bir VS Code eklenti manifest'i ya da bir MCPB paket manifest'i olarak da işlev
+görebilir. Doğrulama yine de bunları işaretler, ve bir alan tanınan bir alandan bir iki karakter
+farklıysa muhtemel kastedilen alanı adlandırır. Eksik author meta verisi de bir uyarıdır. Yalnızca
+uyarıları olan bir plugin geçer ve yüklenir.
+
+İki alan bilerek hoşgörülüdür: `experimental` ve `metadata`, değerleri bir nesne olmadığında
+**yok sayılır** ve doğrulama bir hata değil bir uyarı bildirir.
+
+`--strict`, bu ayrımı ortadan kaldırır, böylece plugin gayet iyi yüklenecek olsa bile yanlış
+yazılmış bir alan adı ya da başka bir aracın manifest'inden kalan bir anahtar CI'ı başarısız kılar.
+
+### `--json` zarfı
+
+`--json` ile rapor, stdout'ta tek bir JSON nesnesidir:
+
+- `success` — çıkış kodunun verdiği aynı karar
+- `strict` — çalıştırmanın uyarıları hata saydırıp saydırmadığı
+- `target` — doğrulanan çözümlenmiş yol
+- `manifest` — manifest'in kendi sonucu, ya da manifest'siz bir çalıştırma için `null`
+- `contents` — dosya başına sonuçlar, her biri `file`'ını adlandırır ve `errors`, `warnings` ve
+  `notes` dizileri taşır
+
+Bu beş alan, plugin referansının belgelediği şeydir. Tek bir bulgunun biçimi belgelenmemiştir, ama
+laboratuvarın kaydettiği çalıştırma, `errors` / `warnings` / `notes`'taki her girdinin bir `path`
+(ilgilendiği alan), bir `message` ve bir `code` taşıdığını gösteriyor — bunu bir sözleşme
+saymaktansa aşağıdaki [transcript](/tr/playbook/glossary/#transcript)'ten (kaydedilmiş gerçek oturum dökümünden) okuyun.
+
+### validate bir yayında nereye oturur
+
+Anthropic'in kendi gönderim hattı, topluluk marketplace'ine gönderilen her plugin üzerinde otomatik
+güvenlik taramasıyla birlikte aynı kontrolü çalıştırır — bu yüzden onu önce yerel olarak
+çalıştırmak boşa zaman harcamak değildir, kapı sizi çalıştırmadan önce kapıyı çalıştırmaktır.
+Geçtiğinde Claude Code `✔ Validation passed` yazdırır, ya da uyarı varsa
+`✔ Validation passed with warnings`.
+
+İki komşu komut yayın resmini tamamlar. `claude plugin details <name>`, bir plugin'in bileşen
+envanterini ve öngörülen token maliyetini yazdırır — doğrulamanın yapamadığı kontrol, çünkü bunun
+için plugin'in yüklü olması gerekir. Ve `claude plugin tag [path]`, bir yayın için `{name}--v{version}`
+biçiminde bir git tag'i oluşturur, `plugin.json`'ın ve onu kapsayan herhangi bir marketplace
+girdisinin uyuştuğunu doğrulayarak; `--push`, `--dry-run`, `--force`, `--message` ve `--remote`
+alır.
+
+### `claude plugin eval` nedir
+
+Doğrulama "bu manifest doğru biçimlendirilmiş mi?" diye sorar. Eval farklı bir soru sorar:
+**plugin, Claude'un yaptığını gerçekten değiştiriyor mu?**
+
+`claude plugin eval`, **erken erişim** bir komuttur. Kuruluş bazında etkinleştirilir, ve onun için
+herkese açık bir dokümantasyon sayfası yoktur — Anthropic'in dokümantasyon dizini bir eval sayfası
+listelemez ve plugin referansının bir eval bölümü yoktur. Aşağıdaki her şey, bu dersin sahip olduğu
+tek kaynak olan, Claude Code 2.1.263'te komutun kendi `--help`'inden okunmuştur.
+
+<Callout>
+  Bu dersin yazıldığı makinede `claude plugin eval`, `` `plugin eval` is currently in early access
+  `` yazdırır ve durur. Aynı mesajı alırsanız, komut hesabınız için etkinleştirilmemiştir —
+  aşağıdaki laboratuvar bunun aksini iddia etmek yerine bu sonucu kaydeder.
+</Callout>
+
+`--help`'ten, özelliğin yapısı şöyledir:
+
+- **Case'ler**, `<eval dizini>/**/case.yaml`'de, ya da `prompt.md` artı `graders/*.md` olarak
+  yaşar. Eval dizini, `--eval-dir` ya da manifest aksini söylemedikçe `evals/`'dir (manifest anahtarı
+  `experimental.evals`'tir).
+- **Target**, bir yol, bir plugin adı ya da bir `plugin@marketplace` kimliğidir. Hem kurulu hem de
+  skills dizini plugin'leri çözümlenir.
+- **Ablation** (`--ablation none | with-without`), plugin'siz bir referans kolu çalıştırır ve puan
+  farkını bildirir. Bir plugin çözümlendiğinde varsayılan `with-without`'tur, hiçbiri
+  çözümlenmediğinde `none`'dır. `with-without` altında, `tool_used: Skill` dâhil `with-only` olarak
+  işaretlenen grader'lar, puanın bir parçası değil plugin'in ateşlendiğine dair bir _gösterge_
+  olarak ele alınır.
+- **Mock'lar** (`--mocks record | off`), `<eval dizini>/mocks/`'tan MCP server'lar için yerine
+  geçenler sağlar. Varsayılan `record`'dur; `off`, her zamanki gibi `--allow-tools` ile
+  kapılandırılmış gerçek server'ları başlatır.
+- **[Tool](/tr/playbook/glossary/#tool) erişimi** (Claude'un çağırabildiği yerleşik araçlara erişim) kapalı değildir: `--allow-tools <tools...>`, kapılı tool'lar (`Bash`, `Write`,
+  `Edit`, `WebFetch`, `mcp__*`) için bir operatör izni verir ve `Tool(pattern:*)` sözdizimini
+  destekler. `--scaffold`, her case'in yazar tarafından sağlanan ve sizin adınıza çalıştırılan bash
+  olan `scaffold_script`'ini çalıştırır ve bu nedenle varsayılan olarak kapalıdır.
+- **Seçim ve tekrar**: `--case <glob>`, `--tag <tag...>` (tekrarlanabilir), `--runs <n>` (varsayılan:
+  case'in `runs`'ı, yoksa 3).
+- **Modeller**: `--model`, tüm case'ler için modeli geçersiz kılar; `--judge-model`, varsayılanı
+  `haiku` olan LLM-grader modelini geçersiz kılar.
+- **Bütçe**: çalıştırmalar zaten `max_turns` ve `timeout_seconds` ile sınırlıdır; `--max-cost-usd`,
+  kısmi sonuçlarla ve 2 çıkış koduyla durduran sert bir tavan ekler.
+- **Çıktı**: `--json [path]`, tam çalıştırma sonucunu ([prompt](/tr/playbook/glossary/#prompt)'lar (Claude'a verilen istek metinleri), grader'lar, çalıştırma başına
+  puanlar) yazdırır ya da yazar; `--report <path>`, puanların, prompt'ların ve grader kararlarının
+  kendi kendine yeten bir HTML raporunu yazar; `--output-dir`, `aggregate-result.json`'ın nereye
+  düşeceğini ayarlar, varsayılan `./<eval dizini>/results/<timestamp>/`'dir. Raporlar, hesap
+  destekliyorsa varsayılan olarak claude.ai'a yayımlanır, ve `--no-publish` onları yerel tutar.
+- **CI**: `--threshold <0..1>`, herhangi bir case ondan düşük puan alırsa 1 ile çıkar, varsayılan
+  `1.0`'dır.
+- **Yazma**: `claude plugin eval init [name]`, girdileri kaynaklandıran ve grader'lar tasarlayan bir
+  görüşme çalıştırır; `--bare <name>`, boş, tek case'li bir şablon üretir.
+
+Komuta sahip olsanız da olmasanız da akılda kalması gereken ortak nokta: bir plugin'in değeri
+davranışa dair bir iddiadır, ve davranış onu plugin'le ve plugin'siz çalıştırıp karşılaştırarak
+ölçülür. Ablation kolu, bütün fikrin tek bir bayrakta toplanmış hâlidir.
+
+Bu dersin örnek prompt'u, gerçekten isteyeceğiniz CI kapısıdır:
+
+```text
+Add a GitHub Actions step to .github/workflows/ that runs
+`claude plugin validate ./plugins/labtrack-tools --strict --json`,
+fails the job on a non-zero exit, and prints the warnings array so a
+reviewer can see what tripped it.
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · doğrulamayı bilerek başarısız kılın, sonra JSON'ı okuyun"
+  lessonId="tr/l3-advanced/m12-plugins/validate-and-eval"
+  repoTag="none"
+  steps={[
+    "`03` numaralı dersteki plugin'inizden çalışın (bitmiş hâli istiyorsanız `git checkout lesson/m12-03-solution`), ya da kendi herhangi bir plugin dizininizden.",
+    "Onu bozabileceğiniz bir geçici dizine kopyalayın ve `.claude-plugin/plugin.json`'ını açın.",
+    'İki yanlış yazılmış alan tanıtın — `license` yerine `licence`, `homepage` yerine `homepag` — ve `author` bloğunu kaldırın.',
+    "`claude plugin validate ./warn-plugin` çalıştırın ve üç uyarıyı okuyun. Çıkış kodunu kontrol edin: macOS/Linux'ta `echo $?`, PowerShell'de `$LASTEXITCODE`.",
+    'Aynı komutu `--strict` ile çalıştırın ve çıkış kodunu tekrar kontrol edin. Aynı bulgular, farklı karar.',
+    "Onu `--json` ile çalıştırın ve `success`, `strict`, `target`, `manifest.warnings[]` ve `contents`'i bulun.",
+    'Şimdi `claude plugin eval ./hello-plugin --no-publish` deneyin ve ne yazdırdığını kaydedin. Kuruluşunuzun erken erişimi yoksa, dürüst sonuç aşağıdaki mesajdır — komutun ne yapacağını tahmin etmek yerine bunu yazın.',
+  ]}
+  expected="--strict olmadan: üç uyarı, `✔ Validation passed with warnings`, çıkış 0. --strict ile: aynı üç uyarı, `✘ Validation failed (--strict treats warnings as errors)`, çıkış 1. --json çalıştırması `success: true` ve `strict: false`'ı, `manifest.warnings`'te üç girdiyle bildirir. Kuruluşunuzda etkin değilse `claude plugin eval` erken erişim bildirir."
+  checklist={[
+    'İki yanlış yazılmış alan, her biri önerilen bir düzeltmeyle uyarı olarak bildirildi',
+    'Eksik author bloğu bir hata değil üçüncü bir uyarı üretti',
+    'Aynı bulgulardan çıkış kodu --strict olmadan 0, --strict ile 1 oldu',
+    "`success`, `strict`, `target` ve `manifest.warnings[]`'i JSON'da buldunuz",
+    "`claude plugin eval`'in makinenizde gerçekte ne yazdırdığını kaydettiniz",
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/04-validate-and-eval/01-validate-strict.txt"
+    range="2-24"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/04-validate-and-eval/02-validate-json.txt"
+    range="2-31"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/04-validate-and-eval/03-eval-early-access.txt"
+    range="2-4"
+  />
+</Lab>
+
+İki validate çalıştırmasının ortak noktasına dikkat edin: **aynı bulgular, farklı karar**.
+`--strict`, manifest'te yanlış olan şey hakkında hiçbir şeyi değiştirmez, yalnızca neyin
+başarısızlık sayılacağına karar vermenizi değiştirir. Bu, CI'a koymak için tam olarak doğru şey ve
+bir geliştiricinin iç döngüsüne koymak için tam olarak yanlış şeydir.
+
+Üçüncü kayıt bu dersin dürüst sınırıdır. `claude plugin eval` erken erişimdedir; bu transcript'leri
+üreten makinede etkin değildir, bu yüzden hiçbir eval paketi çalıştırılmadı ve hiçbiri gösterilmiyor.
+Kavram bölümünde tarif edilen yüzey, komutun kendi help çıktısından gelir, burada tam olarak
+yeniden üretilmiştir:
+
+<Transcript
+  src="content/_shared/transcripts/m12-plugins/04-validate-and-eval/04-eval-help.txt"
+  range="2-72"
+/>
+
+### CI'da doğrulama, işletim sistemine göre
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+claude plugin validate ./plugins/labtrack-tools --strict --json > report.json
+echo "exit: $?"
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+claude plugin validate ./plugins/labtrack-tools --strict --json > report.json
+echo "exit: $?"
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+claude plugin validate ./plugins/labtrack-tools --strict --json > report.json
+Write-Output "exit: $LASTEXITCODE"
+```
+
+  </Fragment>
+</OSTabs>
+
+## Anti-pattern'ler
+
+**Doğrulama geçti diye bir plugin'i yayımlamak.** O, manifest'inizi okudu. Plugin'inizi
+yüklemedi, hook'unuzu çalıştırmadı, ya da `skills/` dizininizin yanlış yerde olduğunu fark etmedi.
+_Düzeltme:_ onu `--plugin-dir` ile yükleyin, her bileşeni çağırın ve envanter için
+`claude plugin details`'i okuyun.
+
+**İç döngünüzde `--strict` çalıştırmak.** Zaten bildiğiniz bir uyarıda yerel bir çalıştırmayı
+başarısız kılmak, sizi çıktıyı görmezden gelmeye alıştırır. _Düzeltme:_ çalışırken düz `validate`,
+CI'da `--strict`.
+
+**İnsan çıktısını bir betikte ayrıştırmak.** Geçti/başarısız satırı ve uyarı maddeleri insanlar
+içindir; değişirler. _Düzeltme:_ belgelenmiş sözleşme olan `--json` artı çıkış kodu.
+
+**Çıkış 2'yi bir doğrulama başarısızlığı saymak.** Çıkış 2, çalıştırmanın kendisinin başarısız
+olduğu anlamına gelir — genellikle okunamayan bir yol — ve stdout boştur. Bunu "geçersiz plugin"e
+katlayan bir betik, yazım hatalı bir yolu bozuk bir manifest olarak bildirir. _Düzeltme:_ 0, 1 ve
+2'yi ayrı ayrı dallandırın.
+
+**`claude plugin eval`'i çalıştırmışsınız gibi anlatmak.** Erken erişimdedir, kuruluş bazında
+kapılıdır, ve herkese açık bir dokümantasyon sayfası yoktur. _Düzeltme:_ ona sahip olup olmadığınızı
+kontrol edin ve her iki durumda da bunu söyleyin — sahip olmadığınızda yazdırdığı mesaj kendisi
+işe yarar bir kanıttır.
+
+**Eval'i okumadığınız, yazar tarafından sağlanan bir iskeleye yöneltmek.** `--scaffold`, her
+case'in `scaffold_script`'ini çalıştırır, ki bu sizin adınıza çalıştırılan bash'tir. Bu nedenle
+varsayılan olarak kapalıdır. _Düzeltme:_ onu yalnızca kendi yazdığınız case dosyaları için geçirin.
+
+<Callout variant="changed">
+  `claude plugin validate --json`, Claude Code v2.1.259 veya sonrasını gerektirir; önceki sürümlerde
+  komut var ama bayrak yok. `claude plugin eval` yakın zamanda eklenmiştir ve 2.1.263'te hâlâ erken
+  erişimdedir — `--help`'inin ötesindeki herhangi bir davranışı, Anthropic belgeleyene kadar
+  doğrulanmamış sayın.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/validate-and-eval"
+  questionId="q1"
+  lang="tr"
+  prompt="`claude plugin validate ./my-plugin`, 2 ile çıkıyor. Ne oldu?"
+  options={[
+    {
+      text: "Manifest'te iki hata var.",
+      explanation: 'Çıkış kodu bulguların sayısı değildir.',
+    },
+    {
+      text: 'Doğrulama çalıştırmasının kendisi başarısız oldu — örneğin yol okunamıyor — ve stdout boş.',
+      correct: true,
+      explanation: "Hata mesajı stderr'e gider. Betiklerde 0, 1 ve 2'yi ayrı ayrı dallandırın.",
+    },
+    {
+      text: 'Doğrulama uyarılarla geçti.',
+      explanation: "Bu çıkış 0'dır, `✔ Validation passed with warnings` ile birlikte.",
+    },
+    {
+      text: '`--strict` ima edildi ve uyarılar hataya döndü.',
+      explanation: "`--strict` başarısızlıkları çıkış 1'dir, ve yine de raporu yazdırırlar.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/validate-and-eval"
+  questionId="q2"
+  lang="tr"
+  prompt="Manifest'iniz keywords'ü bir dizi yerine düz bir dize yapıyor ve license'ı licence olarak yanlış yazıyor. validate her birini nasıl ele alır?"
+  options={[
+    {
+      text: 'İkisi de hata — plugin yüklenmeyecek.',
+      explanation:
+        'Tanınmayan alan çalışma zamanında hoşgörülür; yalnızca yanlış tip yüklemeyi durdurur.',
+    },
+    {
+      text: 'İkisi de uyarı — plugin her iki durumda da yüklenir.',
+      explanation:
+        'Yanlış tipte tanınan bir alan, `keywords` dâhil çoğu alan için bir yükleme hatasıdır.',
+    },
+    {
+      text: '`keywords` bir hatadır (yanlış tip yüklemeyi durdurur); `licence` önerilen bir düzeltmeyle bir uyarıdır.',
+      correct: true,
+      explanation:
+        'Tanınmayan alanlar yükleme zamanında yok sayılır, bu yüzden bir manifest başka bir ekosistemin de olabilir.',
+    },
+    {
+      text: '`keywords` bir uyarıdır; `licence` alan var olmadığı için bir hatadır.',
+      explanation: 'Tam tersi.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/validate-and-eval"
+  questionId="q3"
+  lang="tr"
+  prompt="`--ablation with-without`, bir eval çalıştırmasına ne ekler?"
+  options={[
+    {
+      text: "Her case'i farklı modellerde iki kez çalıştırır ve puanları ortalar.",
+      explanation:
+        "Model geçersiz kılmaları `--model` ve `--judge-model`'dir; ablation plugin'le ilgilidir.",
+    },
+    {
+      text: "Plugin'siz bir referans kolu ekler ve puan farkını bildirir.",
+      correct: true,
+      explanation:
+        "Bir plugin çözümlendiğinde varsayılandır — amaç plugin'in neyi değiştirdiğini ölçmektir.",
+    },
+    {
+      text: "Tool erişimi gerektiren grader'ları devre dışı bırakır.",
+      explanation: 'Tool erişimi `--allow-tools` ile verilir.',
+    },
+    {
+      text: "`scaffold_script`'i olmayan case'leri atlar.",
+      explanation: 'Case seçimi `--case` ve `--tag` iledir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/validate-and-eval"
+  questionId="q4"
+  lang="tr"
+  prompt="`claude plugin validate` bunlardan hangisini doğrular?"
+  options={[
+    {
+      text: "`skills/` dizininizin Claude Code'un tarayacağı bir yerde olduğunu.",
+      explanation:
+        'Bileşenleri `.claude-plugin/` içinde olan bir plugin yine de tertemiz doğrulanır — 01 numaralı derse bakın.',
+    },
+    {
+      text: "Manifest'in ayrıştığını ve alanlarının beklenen biçime sahip olduğunu.",
+      correct: true,
+      explanation: "Kapsamın tamamı bu. Geri kalan her şey plugin'in yüklü olmasını gerektirir.",
+    },
+    {
+      text: "Her hook'un komutunun hedef makinede çalıştırılabilir olduğunu.",
+      explanation: 'Doğrulama hook komutlarınızı asla çalıştırmaz.',
+    },
+    {
+      text: "Plugin'in Claude'un davranışını iyileştirdiğini.",
+      explanation: "Bu, `claude plugin eval`'in var olma sebebi olan sorudur.",
+    },
+  ]}
+/>
+
+**Sırada:** `05-team-marketplace`, doğrulanmış plugin'i takımınızın tek bir komutla ekleyebileceği
+bir kataloga koyar.

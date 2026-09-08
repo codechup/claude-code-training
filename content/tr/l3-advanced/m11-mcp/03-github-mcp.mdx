@@ -6,10 +6,10 @@ module: 'm11-mcp'
 order: 3
 duration_min: 20
 difficulty: core
-tags: ['mcp', 'github', 'tokens', 'oauth']
+tags: ['mcp', 'github', 'token', 'oauth']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Connect Claude Code to tools via MCP'
@@ -23,7 +23,230 @@ lab:
   repo_tag: 'lesson/m11-03-start'
 ---
 
-Bu ders GitHub’ın remote [MCP server](/tr/playbook/glossary/#mcp-server)’ını — Claude Code'a dış araçlar ve veri kaynakları sunan program — dokümanların gösterdiği şekilde ekler ve üç uzak server durumunu — `✔ Connected`, `! Needs authentication`, `✘ Failed to connect` — ayırt etmeyi öğretir. Laboratuvar hiçbir gerçek hesapta kimlik doğrulaması yapmaz: geçersiz bir token ile server eklenir ve `claude mcp get` çıktısındaki gerçek hata detayı okunur.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l3-advanced/m11-mcp/03-github-mcp.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- GitHub'ın uzak [MCP server](/tr/playbook/glossary/#mcp-server)'ını (Model Context Protocol ile Claude'a dış araç ve veri sağlayan sunucu), bir header olarak geçirilen fine-grained (ince taneli) bir kişisel erişim token'ıyla eklemek.
+- Üç uzak-server durumunu — `✔ Connected`, `! Needs authentication`, `✘ Failed to connect` — birbirinden ayırmak ve hata detayını `claude mcp get`'ten almak.
+- Bir GitHub MCP server'ının bir Bash çağrısındaki `gh` komutuna karşı ne zaman değerini kanıtladığına karar vermek.
+- Token'ı [commit](/tr/playbook/glossary/#commit)'lediğiniz (bir git deposundaki değişiklik kümesinin kalıcı, mesajlı kaydı) her şeyin dışında tutmak.
+
+**Ön koşullar.** 01. ve 02. dersler. Laboratuvar deposunun `lesson/m11-03-start` etiketinden bir klonu.
+
+<Callout>
+  Bu laboratuvar, kasıtlı olarak gerçek bir GitHub hesabına karşı kimlik doğrulaması **yapmaz** ve
+  GitHub'da hiçbir şey oluşturmaz. Server'ı dokümanların tarif ettiği gibi, bir token yer
+  tutucusuyla ekleyecek ve Claude Code'un bildirdiği gerçek durumu okuyacaksınız. Sonrasında
+  gerçekten kullanmak için kendi token'ınızı geçirin — komutlar değişmez.
+</Callout>
+
+<WhenNotToUse>
+  Zaten bir GitHub istemciniz var: `gh`. İş "bu PR'ı oku", "bir
+  [issue](/tr/playbook/glossary/#issue) (bir GitHub deposundaki takip edilen görev ya da hata kaydı)
+  aç", "inceleme isteklerimi listele" ise, bir Bash çağrısıyla `gh` daha hızlıdır, context'te ekstra
+  bir server gerektirmez ve [transcript](/tr/playbook/glossary/#transcript)'te (gerçek bir Claude
+  Code oturumunun kaydı) bir bakışta denetleyebileceğiniz bir komut bırakır. MCP server'ı, görev
+  GitHub'ı başka sistemlerle iç içe geçirdiğinde değerini kanıtlar — issue'yu oku, tarif ettiği
+  veritabanını sorgula, sonra PR'ı aç — çünkü Claude her adımı sizin aracılık etmenize gerek
+  kalmadan bunlar arasında gezinebilir. Token'ınızın görevden daha geniş olması gerektiğinde de
+  yanlış araçtır: her depoya yazma erişimi olan bir server, onayladığınız tek bir `gh` çağrısından
+  daha büyük bir patlama yarıçapına sahiptir.
+</WhenNotToUse>
+
+## Kavram
+
+### Server ve kimlik bilgisi
+
+GitHub'ın uzak MCP server'ı, bir header olarak geçirilen bir GitHub kişisel erişim token'ıyla kimlik doğrulayan bir HTTP server'ıdır. GitHub token ayarlarınızdan bir tane alın — Claude'un çalışmasını istediğiniz depolara erişimi olan **fine-grained** bir token üretin — sonra server'ı ekleyin:
+
+<CodeBlock title="add the GitHub MCP server">
+
+```bash
+claude mcp add --transport http github https://api.githubcopilot.com/mcp/ \
+  --header "Authorization: Bearer YOUR_GITHUB_PAT"
+```
+
+</CodeBlock>
+
+`YOUR_GITHUB_PAT`'ı token ile değiştirin. Bu komutun iki özelliği, göründüklerinden daha önemli:
+
+`claude mcp add`, kimlik bilgilerini doğrulamadan yapılandırmayı kaydeder. Ekleme sırasında bir yer tutucu kabul edilir ve server daha sonra bağlanmayı başaramaz. Yani `Added …` satırı yalnızca "diske yazıldı" demektir, asla "kimliği doğrulandı" değil.
+
+Header saklanır ve `claude mcp get` onu tam olarak geri yazdırır. `add` komutu kendi çıktısında onu maskeler — aşağıdaki kayıt `"Authorization": "[REDACTED]"` gösterir — ama `get` göstermez. Yapılandırma dosyasını bir kimlik bilgisi deposu olarak görün ve commit'lediğiniz bir `.mcp.json`'a asla literal bir token koymayın; `${GITHUB_TOKEN}` kullanın ve ortamın sağlamasına izin verin (02. ders).
+
+### Durumu okumak
+
+Eklendikten sonra `claude mcp list` her server'ı sağlık kontrolünden geçirir. Uzak bir server için sürekli karşılaşacağınız üç cevap var:
+
+| Durum                    | Ne anlama gelir                                                                                                                                                                   | Ne yapmalı                                                         |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `✔ Connected`            | Server yanıt verdi ve [tool](/tr/playbook/glossary/#tool)'ları (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araçlar) listelendi | Hiçbir şey                                                         |
+| `! Needs authentication` | Erişilebilir, ama yapmadığınız bir tarayıcı oturum açması istiyor                                                                                                                 | `/mcp` → Authenticate, ya da `claude mcp login <name>`             |
+| `✘ Failed to connect`    | Bir hatayla yanıt verdi ya da hiç yanıt vermedi                                                                                                                                   | Durum satırındaki ya da `claude mcp get`'teki hata detayını okuyun |
+
+Son ikisi arasındaki ayrım kesindir ve içselleştirmeye değer. Oturum açmadığınız bir server, OAuth için işaretlenir. Ama **sizin** yapılandırdığınız bir `Authorization` header'ına sahip bir server için bağlanırken alınan bir `401` ya da `403`, onu oturum açmaya işaretlemez: düzeltilecek kimlik bilgisi sizin yapılandırdığınızdır, bu yüzden Claude Code bağlantıyı başarısız olarak bildirir. Bir header yapılandırdıysanız ve server onu reddediyorsa, Claude Code sessizce OAuth'a geri dönmez.
+
+v2.1.219'dan itibaren `claude mcp list`, hata detayını durum satırına ekler ve `claude mcp get <name>` bunu bir `Issue:` satırında gösterir — HTTP durumu ya da hata kodu, artı server'ın döndürdüğü hata metni. Claude Code, o detaydan kimlik bilgisi gibi görünen metni redakte eder ve [secret](/tr/playbook/glossary/#secret) (depoya commit'lenmemesi gereken hassas değer) taşıyabilecek genişletilmiş server URL'sini asla içermez.
+
+### İşi yürütmek
+
+Server bağlıyken GitHub işi tarif edilir, betiklenmez. Bu dersin örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni):
+
+```text
+Review PR #456 and suggest improvements
+```
+
+Dokümanlardan başka şekiller: `Create a new issue for the bug we just found`, `Show me all open PRs assigned to me`. Tool çağrıları, Claude'un çıktısında server adıyla etiketlenmiş olarak görünür; cevabın server üzerinden geldiğini böyle doğrularsınız.
+
+Claude Code ayrıca server'ın yayımladığı her şeyi `@` ile anmalar üzerinden **resources** olarak sunar — `Can you analyze @github:issue://123 and suggest a fix?` — ve yayımladığı her **prompts**'u `/` menüsünde, örneğin `/mcp__github__pr_review 456`.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · GitHub'ı bağlayın ve bağlantı durumunu okuyun"
+  lessonId="tr/l3-advanced/m11-mcp/github-mcp"
+  repoTag="lesson/m11-03-start"
+  steps={[
+    '`lesson/m11-03-start`’ı checkout edin. Token’ı `${GITHUB_TOKEN}`’dan gelen bir `github` girdisiyle bir `.mcp.json` taşır — önce onu okuyun; o girdi, paylaşılan, commit’lenmiş bir yapılandırmanın nasıl göründüğünü gösterir.',
+    'Dokümante edilen uzak server’ı local scope’ta, kasıtlı olarak geçersiz bir token’la ekleyin ki hiçbir şey gerçek bir hesaba karşı kimlik doğrulamasın: `claude mcp add --transport http github https://api.githubcopilot.com/mcp/ --header "Authorization: Bearer NOT_A_REAL_TOKEN"`.',
+    '`add` çıktısının header için ne gösterdiğine ve `File modified:` satırının neyi adlandırdığına dikkat edin.',
+    '`claude mcp list` çalıştırın ve durum satırına eklenen hata detayını okuyun.',
+    '`claude mcp get github` çalıştırın. `Issue:` satırını list çıktısıyla karşılaştırın ve `Headers:` bloğunun ne yazdırdığına bakın.',
+    'Karşılaştırma için, header yerine OAuth kullanan bir server ekleyin: `claude mcp add --transport http sentry https://mcp.sentry.dev/mcp`, sonra tekrar `claude mcp list`. Oturum açmayın.',
+    'Temizleyin: `claude mcp remove github` ve `claude mcp remove sentry`.',
+    'Sonrasında server’ı gerçekten kullanmak için 2. adımı, Claude’un ulaşmasını istediğiniz depolarla sınırlı fine-grained bir kişisel erişim token’ıyla tekrarlayın, sonra prompt vermeden önce `✔ Connected` olduğunu doğrulayın.',
+  ]}
+  expected="github server’ı header [REDACTED] olarak maskelenmiş şekilde eklenir ve hem list hem get, server’ın döndürdüğü HTTP 400 detayıyla ✘ Failed to connect bildirir; claude mcp get yapılandırılmış header’ı düz metin olarak yazdırır. OAuth kullanan ve yapılandırılmış bir header’ı olmayan sentry server’ı ise ! Needs authentication bildirir."
+  checklist={[
+    '`claude mcp add`, Authorization header’ını kendi çıktısında maskeledi',
+    'Durum satırı, çıplak bir başarısızlık değil server’ın kendi hata metnini taşıyordu',
+    '`claude mcp get` aynı detayı bir `Issue:` satırında gösterdi',
+    '`claude mcp get`, yapılandırılan token’ı tam olarak yazdırdı — commit’lenmiş bir literal’ın neden bir sızıntı olduğunu gördünüz',
+    'OAuth server’ı `✘ Failed to connect` değil `! Needs authentication` bildirdi',
+    'Her iki server da kaldırıldı ve `claude mcp list` temiz',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/03-github-mcp/01-add-and-status.txt"
+    range="2-24"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/03-github-mcp/02-oauth-status.txt"
+    range="2-10"
+  />
+</Lab>
+
+O kayıttan iki gözlem.
+
+Hata metni Claude Code'un değil, _server'ın_ kendisidir: `HTTP 400: Error POSTing to endpoint: bad request: Authorization header is badly formatted`. GitHub, token'ın var olup olmadığını kontrol etmeden önce şeklini reddetti. Bu tam olarak eskiden görünmez olan türden bir detaydır — v2.1.219'dan önce her iki komut da yalnızca çıplak başarısızlık durumunu gösteriyordu.
+
+Ve son kayıttaki iki server yalnızca bir şeyde farklılaşıyor: bir header'ın yapılandırılıp yapılandırılmadığı. `github`'ın bir tanesi var, bu yüzden reddi yapılandırmada düzeltmeniz gereken başarısız bir bağlantı. `sentry`'nin hiç yok, bu yüzden `401`'i oturum açmaya bir davete dönüşüyor.
+
+## Anti-pattern'ler
+
+**Token'ı commit'lemek.** `.mcp.json` içinde literal bir `Bearer ghp_…`, git geçmişinizde bir kimlik bilgisidir ve `claude mcp get`, terminaldeki herkese onu geri yazdırır. _Düzeltme:_ dosyada `Bearer ${GITHUB_TOKEN}`, gerçek değer ortamınızda.
+
+**Her scope'a sahip klasik bir kişisel erişim token'ı.** Server, token'ın erişebildiği her depoda, token'ın yapabildiği her şeyi yapabilir. _Düzeltme:_ görevin ihtiyaç duyduğu depolarla sınırlı, fine-grained bir token.
+
+**`Added …`'ı "bağlandı" olarak okumak.** Yapılandırma yazıldı; hiçbir şey doğrulanmadı. _Düzeltme:_ her zaman `claude mcp list` ile takip edin ve durumu okuyun.
+
+**Bir header hatası için OAuth akışının peşine düşmek.** `headers.Authorization`'ı yapılandırdıysanız ve server onu reddediyorsa, Claude Code OAuth'a geri dönmez ve oturum açmayı yeniden çalıştırmak hiçbir şeyi değiştirmez. _Düzeltme:_ token'ın MCP uç noktası için geçerli olup olmadığını kontrol edin ya da bunun yerine OAuth akışını kullanmak için header'ı kaldırın.
+
+**Server'ı daha yavaş bir `gh` olarak kullanmak.** Tek adımlık GitHub okumaları, bağlı bir server'a ve onun context maliyetine ihtiyaç duymaz. _Düzeltme:_ onu sistemler arası geçen görevler için saklayın.
+
+<Callout variant="changed">
+  Eski yapılandırmaların stdio üzerinden başlattığı `@modelcontextprotocol/server-github` npm
+  paketi, npm'de deprecated olarak işaretlenmiş: `npm view @modelcontextprotocol/server-github`,
+  `2025.4.8` sürümünü ve `deprecated = 'Package no longer supported.'` bildiriyor (2026-09-07'de
+  kontrol edildi). Güncel dokümante edilmiş yol, kişisel bir erişim token'ıyla
+  `https://api.githubcopilot.com/mcp/` adresindeki uzak HTTP server'ıdır — Claude Code 2.1.263 için
+  `mcp.md`'ye karşı doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/github-mcp"
+  questionId="q1"
+  lang="tr"
+  prompt="`claude mcp add`, `Added HTTP MCP server github …` yazdırdı. Ne kanıtlanmış oldu?"
+  options={[
+    {
+      text: 'Token geçerli ve server erişilebilir',
+      explanation: 'Komut, kimlik bilgilerini doğrulamadan yapılandırmayı kaydeder.',
+    },
+    {
+      text: 'Yalnızca yapılandırmanın bir dosyaya yazıldığı',
+      correct: true,
+      explanation:
+        'Bu yüzden ekleme sırasında bir yer tutucu token kabul edilir ve başarısızlık yalnızca `claude mcp list`’te ortaya çıkar.',
+    },
+    {
+      text: 'Server’ın tool’ları context’inize yüklendi',
+      explanation:
+        'Hiçbir şeyle temas edilmedi; tool search ile zaten adlar oturum başında yüklenir.',
+    },
+    {
+      text: 'Server proje scope’u için onaylandı',
+      explanation: 'Onay, `.mcp.json` server’ları için geçerlidir ve bu, local scope’ta eklendi.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/github-mcp"
+  questionId="q2"
+  lang="tr"
+  prompt="Uzak bir server için headers.Authorization’ı yapılandırdınız ve 401 dönüyor. Claude Code ne gösterir?"
+  options={[
+    {
+      text: '! Needs authentication, böylece bir OAuth oturum açmayı tamamlayabilirsiniz',
+      explanation:
+        'Bu, oturum açmadığınız server’lar içindir. Yapılandırdığınız reddedilmiş bir header, oturum açarak düzelmez.',
+    },
+    {
+      text: '✘ Failed to connect — düzeltilecek kimlik bilgisi yapılandırdığınız olan',
+      correct: true,
+      explanation: 'Claude Code, OAuth’a geri dönmek yerine bağlantıyı başarısız olarak bildirir.',
+    },
+    {
+      text: '⏸ Pending approval',
+      explanation: 'O durum yalnızca onaylanmamış proje kapsamlı server’lar içindir.',
+    },
+    {
+      text: 'Server otomatik olarak kaldırılır',
+      explanation: 'Hiçbir şey kaldırılmaz; girdi kalır ve başarısız olmaya devam eder.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/github-mcp"
+  questionId="q3"
+  lang="tr"
+  prompt="Takımınızın bir yapılandırmayı paylaştığı bir GitHub MCP server’ı için doğru token hangisidir?"
+  options={[
+    {
+      text: 'Claude’un ulaşması gereken depolarla sınırlı, her geliştiriciye ${GITHUB_TOKEN} üzerinden sağlanan fine-grained bir token',
+      correct: true,
+      explanation:
+        'En az yetki ve commit’lenmiş dosyada kimlik bilgisi yok — gerçek bir takımla temas ettikten sonra ayakta kalan iki kural.',
+    },
+    {
+      text: 'Tam repo scope’una sahip, .mcp.json’a yazılmış tek bir paylaşılan klasik token',
+      explanation:
+        'Maksimum patlama yarıçapıyla commit’lenmiş bir kimlik bilgisi: iki başarısızlık modu birden.',
+    },
+    {
+      text: 'Hiç token yok — server gh CLI oturumunuzu keşfeder',
+      explanation: 'Bunu yapmaz; uzak server, geçirdiğiniz header ile kimlik doğrular.',
+    },
+    {
+      text: 'Authorization header’ında GitHub şifreniz',
+      explanation: 'Bu uç nokta için desteklenen bir kimlik bilgisi değil.',
+    },
+  ]}
+/>
+
+**Sırada:** `04-browser-mcp`, gerçek bir tarayıcı süren bir server bağlar ve onu az önce değiştirdiğiniz bir sayfayı kontrol etmek için kullanır.

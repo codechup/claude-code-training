@@ -6,10 +6,10 @@ module: 'm12-plugins'
 order: 2
 duration_min: 15
 difficulty: core
-tags: ['plugins', 'marketplace', 'install']
+tags: ['pluginler', 'marketplace', 'kurulum']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Discover and install prebuilt plugins through marketplaces'
@@ -39,8 +39,377 @@ lab:
   repo_tag: 'lesson/m12-02-start'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m12-plugins/02-marketplaces.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bir marketplace (plugin kataloğu) kullanmak bilerek iki adımdır: önce katalogu eklersiniz — bu hiçbir şey kurmaz — sonra istediğiniz plugin'leri tek tek kurarsınız. Katalog kaynağı bir GitHub deposu (`owner/repo`), bir git URL'i, yerel bir dizin ya da uzaktaki bir `marketplace.json` olabilir; `.git` son ekinin gerekip gerekmediği host'a göre değişir ve `https://` öneki zorunludur. `/plugin` paneli beş sekme sunar (Discover, Installed, Marketplaces, Errors, Stats) ve kurmadan önce bir plugin'in bağlam maliyetini, son güncelleme tarihini ve kuracağı bileşenleri gösterir. Kurulum `user`, `project` ya da `local` scope'una yapılır; bunlar sırasıyla `~/.claude/settings.json`, `.claude/settings.json` ve `.claude/settings.local.json` dosyalarına yazar. Kurulum özeti `Plugin is now active.` demiyorsa `/reload-plugins` çalıştırmanız gerekir. Ders son olarak bir plugin'in size nasıl önerilebileceğinin üç yolunu ayırır: dependency'ler, bir CLI'ın stderr'e yazdığı `<claude-code-hint />` işareti ve marketplace girdisindeki `relevance` bloğu — sonuncusu tamamen yerel eşleşir ve hiçbir veri Anthropic'e ya da marketplace sahibine gitmez.
+- Bir marketplace ([plugin](/tr/playbook/glossary/#plugin)'lerin toplandığı, başka birinin bakımını yaptığı katalog) kullanmanın iki
+  adımını açıklamak — önce katalogu eklemek, sonra tek tek plugin kurmak — ve bir tanesini eklemenin
+  neden hiçbir şey kurmadığını anlatmak.
+- Bir GitHub deposundan, bir git URL'inden, yerel bir yoldan ya da uzak bir URL'den marketplace
+  eklemek ve her host için doğru biçimi seçmek.
+- Bir plugin'i user, project ya da local scope'unda kurmak ve her birinin hangi ayar dosyasına
+  yazdığını söylemek.
+- `/plugin` ya da `claude plugin details` ile kurmadan önce bir plugin'in bağlam maliyetini ve
+  bileşen envanterini okumak.
+- Plugin önerilerinin nereden geldiğini tanımak: bildirilen dependency'ler, bir CLI'ın
+  `<claude-code-hint />` işareti ve bir marketplace `relevance` bloğu.
+
+**Ön koşullar.** `01-plugin-anatomy` dersi ve laboratuvar deposunun bir klonu. Claude Code 2.1.263
+veya sonrası.
+
+<WhenNotToUse>
+  Okumadığınız bir marketplace eklemeyin. Plugin'ler ve marketplace'ler, makinenizde kullanıcı
+  ayrıcalıklarınızla keyfi kod çalıştıran, yüksek güven gerektiren bileşenlerdir ve Anthropic üçüncü
+  taraf bir plugin'in hangi [MCP server](/tr/playbook/glossary/#mcp-server)'ları (Claude'a dış araç
+  ve veri sağlayan sunucular), dosyaları ya da başka yazılımları içerdiğini kontrol etmez. Yalnızca
+  bir projenin sorununu çözmek için bir plugin kurmayın — projeye özgü bir
+  [skill](/tr/playbook/glossary/#skill)'i (yeniden kullanılabilir talimat paketi) oluşturmak da
+  kaldırmak da hiçbir şeye mal olmaz. Ve `/plugin`'in bulunmadığı bir ortamda ona başvurmayın: cloud
+  oturumları plugin'leri bunun yerine `.claude/settings.json` içinde `enabledPlugins` altında
+  bildirir, ve Claude masaüstü uygulamasının kendi plugin tarayıcısı vardır.
+</WhenNotToUse>
+
+## Kavram
+
+### Bir değil, iki adım
+
+Bir marketplace, başka birinin bakımını yaptığı bir kataloktur. Bir tanesini kullanmak bilerek iki
+adımdır:
+
+1. **Marketplace'i ekleyin.** Bu, katalogu göz atabilmeniz için kaydeder. **Henüz hiçbir plugin
+   kurulmaz.**
+2. **Tek tek plugin kurun.** Katalogdan ne istediğinizi siz seçersiniz.
+
+Bu ayrım önemlidir çünkü iki eylem farklı güven düzeyleri taşır. Bir katalog eklemek "bu listeyi
+görmek istiyorum" demektir; kurmak ise "bu kodu çalıştıracağım" demektir.
+
+### Marketplace'ler nereden gelir
+
+`/plugin marketplace add` (ya da kabukta `claude plugin marketplace add`) dört kaynak biçimi kabul
+eder:
+
+| Kaynak        | Biçim                                          | Örnek                                    |
+| ------------- | ---------------------------------------------- | ---------------------------------------- |
+| GitHub deposu | `owner/repo`                                   | `anthropics/claude-code`                 |
+| Git URL'i     | herhangi bir git deposu URL'i                  | `https://gitlab.com/company/plugins.git` |
+| Yerel yol     | bir dizin ya da bir `marketplace.json` dosyası | `./my-marketplace`                       |
+| Uzak URL      | barındırılan bir `marketplace.json`            | `https://example.com/marketplace.json`   |
+
+`.git` eklenip eklenmeyeceği host'a bağlıdır ve bunu yanlış yapmak "neden klonlamıyor" hatasının en
+sık nedenidir:
+
+- **github.com ve gitlab.com**: sonek olsa da olmasa da tanınır.
+- **Azure DevOps**: soneki atlayın. Claude Code, yolunda `/_git/` bulunan her URL'i klonlar; `.git`
+  eklemek klonlamayı başarısız kılar.
+- **Kendi kendine barındırılan GitLab dâhil diğer her host**: `.git`'i ekleyin, yoksa Claude Code
+  URL'i barındırılan bir `marketplace.json`'a doğrudan bağlantı sayar.
+
+Her zaman `https://` önekini ekleyin. v2.1.196'dan beri, önek olmadan yazılan bir host —
+`gitlab.com/company/plugins.git` — geçersiz bir GitHub `owner/repo` kısayolu olarak reddedilir. Bir
+[branch](/tr/playbook/glossary/#branch) (bağımsız bir geliştirme hattı) ya da tag'i sabitlemek için `#<ref>` ekleyin: `https://gitlab.com/company/plugins.git#v1.0.0`.
+
+Topluluk listeleri, plugin'lerin size ulaşmasının dördüncü yoludur ve bir marketplace değildirler:
+[`hesreallyhim/awesome-claude-code`](https://github.com/hesreallyhim/awesome-claude-code), arkalarındaki
+depolara işaret eden, plugin, skill ve [hook](/tr/playbook/glossary/#hook)'lardan (belirli anlarda
+otomatik çalışan komutlardan) oluşan derlenmiş bir dizindir. Onu kurulacak bir
+yer değil, okumaya başlanacak bir yer olarak görün — marketplace'i yine de siz eklersiniz ve girdiyi
+kendiniz okursunuz.
+
+Bilinmeye değer iki Anthropic marketplace'i var. **`claude-plugins-official`**, Anthropic tarafından
+derlenir ve Claude Code'u ilk kez etkileşimli başlattığınızda otomatik olarak kaydedilir; bu
+başarısız olduysa `claude plugin marketplace add anthropics/claude-plugins-official` ile ekleyin.
+**`claude-community`**, herkese açık üçüncü taraf kataloğudur: `anthropics/claude-plugins-community`
+olarak ekleyin ve ondan `<ad>@claude-community` olarak kurun.
+
+### `/plugin` yöneticisi
+
+`/plugin`, terminal CLI'sında sekmeli bir panel açar; **Tab** ileri, **Shift+Tab** geri döngüler:
+
+- **Discover** — tüm marketplace'lerinizdeki plugin'lere göz atın
+- **Installed** — sahip olduklarınızı görün ve yönetin
+- **Marketplaces** — katalog ekleyin, kaldırın ya da güncelleyin
+- **Errors** — başlatılamayan bir dil sunucusu dâhil plugin yükleme hataları
+- **Stats** — `/skill-doctor`'ın kullanılabildiği oturumlarda her skill'in bağlamda ne kadara mal
+  olduğu ve ne sıklıkla kullanıldığı
+
+**Discover**'da bir plugin seçmek, kurmadan önce her zaman sormanız gereken soruyu yanıtlayan bir
+ayrıntı bölmesi açar: bunun maliyeti ne, ve neyi ekliyor? Tur başına token cinsinden bir **Context
+cost** tahmini, bir **Last updated** tarihi ve plugin'in komutlarının,
+[agent](/tr/playbook/glossary/#agent)'larının (kendi başına iş yürüten yapay zekâ süreçlerinin),
+skill'lerinin, hook'larının ve MCP ile LSP server'larının bir **Will install** listesini görürsünüz. Her plugin bu
+veriyi sağlamaz — yerel ya da özel marketplace'lerden gelen plugin'ler bunun yerine **Components
+will be discovered at installation** gösterebilir.
+
+### Scope'lar
+
+Kurulum, plugin'in nerede yaşayacağını sorar. Üç scope, Claude Code'daki her şeyle aynı ayar
+dosyalarına eşlenir:
+
+| Scope     | Ayar dosyası                  | Anlamı                                                |
+| --------- | ----------------------------- | ----------------------------------------------------- |
+| `user`    | `~/.claude/settings.json`     | Sizin için, her projede (varsayılan)                  |
+| `project` | `.claude/settings.json`       | Bu depoyu klonlayan herkes için                       |
+| `local`   | `.claude/settings.local.json` | Sizin için, yalnızca bu depoda, takımla paylaşılmadan |
+
+**managed** scope'unu da görebilirsiniz: yöneticiler tarafından yönetilen ayarlar aracılığıyla
+kurulur, sizin için salt okunurdur.
+
+Kabuktaki `claude plugin install`, etkileşimli adımı atlar ve `--scope` vermediğiniz sürece user
+scope'una kurar. Bir oturum içinde çalışmadığından, plugin bir sonraki başlatmanızda — ya da açık
+bir oturumda `/reload-plugins` çalıştırırsanız hemen — yüklenir.
+
+### Etkinleşme ve yeniden yükleme
+
+v2.1.221'den beri bir kurulum geçerli oturumda etkinleşebilir. Kurulum özetini okuyun:
+
+- `Plugin is now active.` — Claude Code onu kurulumun bir parçası olarak etkinleştirdi; başka bir
+  şey yapmanıza gerek yok.
+- `Run /reload-plugins to activate.` — etkinleştirme [prompt](/tr/playbook/glossary/#prompt) (Claude'a verilen istek metni) önbelleğini geçersiz kılardı, ya da
+  başarısız oldu. Komutu çalıştırın. Yeniden yüklemenin konuşmayı yeniden okuyacağı konusunda
+  uyarırsa, `/reload-plugins --force` ile tekrar çalıştırın.
+
+Yeniden yükleme bedavaya gelmez: yeni yüklenen bileşenler kendilerini konuşmaya eklenen içerikle
+duyurur, ve MCP server sunan bir plugin daha pahalıya mal olur çünkü önbellek geçersizleşmesi bir
+sonraki isteğin tüm konuşmayı yeniden okumasına neden olur.
+
+### Bir plugin'in size önerilmesinin üç yolu
+
+Claude Code **asla bir plugin'i otomatik olarak kurmaz** — her zaman siz onaylarsınız — ama üç
+mekanizma önünüze bir tane koyabilir, ve hangisinin hangisi olduğunu bilmeye değer:
+
+- **Dependency'ler.** Bir plugin, `dependencies` dizisinde başka plugin'leri listeleyebilir, isteğe
+  bağlı olarak `{ "name": "secrets-vault", "version": "~2.1.0" }` gibi bir semver aralığıyla. Onu
+  kurmak bunları da çözer ve kurar, ve kurulum çıktısı hangilerinin otomatik kurulduğunu listeler.
+  _Farklı_ bir marketplace'teki bir dependency, kök marketplace'in `marketplace.json`'ı o
+  marketplace'i `allowCrossMarketplaceDependenciesOn` içinde adlandırmadıkça engellenir.
+- **CLI hint'leri.** Resmî Anthropic marketplace'inde bir plugin'i olan üçüncü taraf bir CLI,
+  `CLAUDECODE=1` algıladığında stderr'e tek satırlık bir `<claude-code-hint />` işareti yazabilir.
+  Claude Code satırı model görmeden önce çıkarır, plugin'in resmî ve henüz kurulu olmadığını
+  kontrol eder ve size tek seferlik bir kurulum istemi gösterir.
+- **Relevance.** Bir marketplace girdisi, Claude Code'un **yerel olarak**, hiçbir ağ trafiği olmadan
+  ve Anthropic'e ya da marketplace işletmecisine hiçbir şey bildirmeden eşleştirdiği sinyaller
+  taşıyan bir `relevance` bloğu içerebilir — `cwd`, `cli`, `hosts`, `filesRead`, `manifestDeps`. Bir
+  eşleşme, plugin'i **Discover**'ın en üstüne "bu dizin için önerildi" etiketiyle sabitler. Bu
+  öneriler marketplace başına opt-in'dir: resmî marketplace dâhil, önce bir yöneticinin bunu
+  yönetilen ayarlarda izin listesine alması gerekir.
+
+Bu dersin örnek prompt'u, Claude'dan aksi hâlde atlayacağınız okumayı yapmasını ister:
+
+```text
+Read the details of every plugin currently listed under my Installed tab
+(claude plugin list, then claude plugin details for each). Tell me which ones
+add always-on context cost, and which I have not invoked recently.
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · yerel bir marketplace'ten keşfedin, kurun ve maliyeti okuyun"
+  lessonId="tr/l3-advanced/m12-plugins/marketplaces"
+  repoTag="lesson/m12-02-start"
+  steps={[
+    "Laboratuvar deposunun klonunuzda yukarıdaki tag'i checkout edin ve `npm ci` çalıştırın.",
+    "Kabukta `claude plugin --help` çalıştırın ve alt komut listesini okuyun — her `/plugin` eyleminin burada etkileşimli olmayan bir ikizi var, plugin'leri betiklenebilir yapan da bu.",
+    'Zaten sahip olduklarınızı görmek için `claude plugin marketplace list` çalıştırın. Yeni bir kurulum `claude-plugins-official` gösterir.',
+    "Laboratuvar klonunuzun yanında tek plugin'li yerel bir marketplace kurun: `.claude-plugin/marketplace.json` ve `plugins/` altında bir plugin'in kopyasını içeren bir `labtrack-marketplace/` dizini. Herhangi bir plugin dizini işe yarar — sırayla ilerliyorsanız `01` numaralı dersteki `hello-plugin`'i kullanın ve adını aşağıda yerine koyun. Kayıtta `03` numaralı dersin oluşturduğu `labtrack-tools` kullanıldı; `05` numaralı ders marketplace dosyasını alan alan ele alır.",
+    '`claude plugin marketplace add ../labtrack-marketplace` ile ekleyin ve onayı okuyun — "kuruldu" değil "kullanıcı ayarlarında bildirildi" dediğine dikkat edin.',
+    "Ondan en az müdahaleci scope'ta bir plugin kurun: `claude plugin install <plugin>@<marketplace> --scope local`. Kayıtta bu, `claude plugin install labtrack-tools@labtrack-internal --scope local`.",
+    "Sürümü, scope'u ve etkin durumu doğrulamak için `claude plugin list` çalıştırın.",
+    '`claude plugin details labtrack-tools` çalıştırın ve bileşen envanterini ve öngörülen token maliyetini okuyun.',
+    'Bir oturum içinde `/plugin` çalıştırın ve aynı veriyi etkileşimli biçiminde görmek için **Tab** ile sekmeler arasında dönün — Discover, Installed, Marketplaces, Errors.',
+    'İşiniz bittiğinde temizleyin: `claude plugin uninstall labtrack-tools@labtrack-internal --scope local` ve `claude plugin marketplace remove labtrack-internal`.',
+  ]}
+  expected="`claude plugin marketplace add`, marketplace'in hiçbir şey kurmadan eklendiğini ve kullanıcı ayarlarında bildirildiğini raporlar; kurulum `local` scope'unu raporlar; `claude plugin list`, `labtrack-tools@labtrack-internal` sürüm 1.0.0'ı, etkin, gösterir; `claude plugin details` 1 skill, 0 agent, 1 PostToolUse hook ve yaklaşık 110 token'lık her zaman açık bir maliyet yazdırır."
+  checklist={[
+    'Marketplace eklemek yalnızca kullanıcı ayarlarında bildirildiğini raporladı — o adımda hiçbir plugin kurulmadı',
+    "Kurulum bir scope adlandırdı, ve `local`'i bilerek seçtiniz",
+    "`claude plugin details`, plugin'e güvenmeden önce bileşen envanterini gösterdi",
+    'Hook\'un "harness-only — no model context cost" olarak listelendiğini gördünüz',
+    'Marketplace ve plugin sonunda ikisi de yeniden kaldırıldı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/02-marketplaces/01-plugin-help.txt"
+    range="2-8"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/02-marketplaces/02-add-and-install.txt"
+    range="2-22"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/02-marketplaces/03-plugin-details.txt"
+    range="2-22"
+  />
+</Lab>
+
+Üçüncü kayıttaki iki ayrıntı ikinci bir bakışı hak ediyor. Hook, **harness-only — no model context
+cost** olarak listeleniyor: hook'lar harness içinde çalışır, bu yüzden asla token harcamazlar,
+oysa bir skill hem her zaman açık (Claude'un varlığını bilmesi için açıklaması) hem de çağrıldığında
+(gövdesi) token'a mal olur. Ve iki sayı bileşen başına ayrıştırılmış, bu da bir plugin'in bağlam
+penceresinden kalıcı payına değip değmediğine karar vermenizi sağlayan şey.
+
+`/plugin`'in kendisi etkileşimli bir paneldir ve dürüst bir [transcript](/tr/playbook/glossary/#transcript) (kaydedilmiş gerçek bir oturum dökümü) biçimi yoktur. İşte onun tam
+olarak etkileşimli olmayan karşılıkları:
+
+<CodeBlock title="the /plugin panel, as shell commands">
+
+```bash
+claude plugin marketplace list
+claude plugin list --enabled
+claude plugin details <name>
+claude plugin disable <name>@<marketplace>
+claude plugin enable  <name>@<marketplace>
+claude plugin uninstall <name>@<marketplace> --scope local
+```
+
+</CodeBlock>
+
+## Anti-pattern'ler
+
+**Okumadığınız bir marketplace eklemek.** Bir marketplace, girdilerini herhangi bir git deposuna,
+arşive ya da komuta işaret edebilir. _Düzeltme:_ katalogu eklemeden önce `.claude-plugin/marketplace.json`'ı
+açın ve her `source`'u takip edin.
+
+**Her şeyi user scope'unda kurmak.** User scope, her proje, her oturum, o plugin'in her zaman açık
+bağlam maliyetini sonsuza dek ödemek demektir. _Düzeltme:_ değerlendirirken varsayılan olarak
+`local`'i kullanın; ekip ihtiyaç duyduğunda `project`'e yükseltin.
+
+**"Not used recently" listesini yok saymak.** Claude Code, en az on oturum boyunca en az iki
+haftadır kullanmadığınız, kendinizin kurduğu marketplace plugin'lerini, her plugin için bir **Last
+used** satırıyla listeler. Bunlar hâlâ başlangıç süresine ve bağlama mal olur. _Düzeltme:_ listeyi
+ayda bir okuyun ve artık kullanmadığınızı kaldırın.
+
+**`/plugin marketplace remove`'un zararsız olduğunu varsaymak.** Bir marketplace'i kaldırmak
+**ondan kurduğunuz her plugin'i kaldırır**. _Düzeltme:_ bir katalogu bırakmadan önce ondan neyi
+kurduğunuzu bilin.
+
+**Bir kurulumun hemen canlı olmasını beklemek.** Kurulum özetini okuyun. `Run /reload-plugins to
+activate.` bileşenlerin henüz yüklenmediği anlamına gelir. _Düzeltme:_ komutu çalıştırın, ve
+konuşmayı yeniden okuma konusunda uyarırsa `--force` ile tekrar çalıştırın.
+
+**Bir spinner-tip önerisini bir onay sanmak.** Bir `relevance` eşleşmesi, bir marketplace
+işletmecisinin bu plugin'i dizininiz ya da komutlarınız için ilgili ilan ettiği anlamına gelir. Bir
+güvenlik incelemesi değildir. _Düzeltme:_ önce ayrıntı bölmesini açın ve **Will install**'ı okuyun.
+
+<Callout variant="changed">
+  v2.1.221'den beri bir kurulum geçerli oturumda etkinleşebilir ve özet size hangisinin olduğunu
+  söyler; ondan önce, `/reload-plugins` çalıştırana ya da yeniden başlatana kadar hiçbir kurulum
+  etkili olmuyordu. Ve v2.1.246'dan beri `/reload-plugins`, bir plugin'in `commands/` girdilerinin
+  yanı sıra `SKILL.md` skill'lerini de sayıyor — önceki sürümler bir plugin'in skill'lerini yeniden
+  yükleyip yine de `0 skills` bildirebiliyordu.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/marketplaces"
+  questionId="q1"
+  lang="tr"
+  prompt="`/plugin marketplace add anthropics/claude-code` çalıştırıyorsunuz. Şimdi ne kuruldu?"
+  options={[
+    {
+      text: "O marketplace'teki her plugin.",
+      explanation: 'Bir katalog eklemek asla hiçbir şey kurmaz — iki adımın amacı da bu.',
+    },
+    {
+      text: 'Hiçbiri. Katalog, göz atabilmeniz için kaydedildi.',
+      correct: true,
+      explanation: 'Doğru — tek tek plugin kurmak ayrı, açık bir ikinci adımdır.',
+    },
+    {
+      text: "Yalnızca marketplace'in varsayılan plugin'i.",
+      explanation: "Böyle bir kavram yok; bir marketplace'in varsayılan plugin'i olmaz.",
+    },
+    {
+      text: 'Projenizin `enabledPlugins` alanının adlandırdığı her şey.',
+      explanation:
+        "`enabledPlugins`, kurulu plugin'lerin etkinliğini kontrol eder, ve dışarıdan kaynaklanan bir plugin'in adı orada geçse bile önce kurulması gerekir.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/marketplaces"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir plugin'i tek bir depoda, takım arkadaşlarınız fark etmeden denemek istiyorsunuz. Hangi scope?"
+  options={[
+    {
+      text: "user — ~/.claude/settings.json'a yazar",
+      explanation: 'Bu, onu açtığınız her projede etkinleştirir; istediğinizden daha geniş.',
+    },
+    {
+      text: "project — .claude/settings.json'a yazar",
+      explanation: "O dosya commit'lenir, bu yüzden depoyu klonlayan herkes plugin'i alır.",
+    },
+    {
+      text: "local — .claude/settings.local.json'a yazar",
+      correct: true,
+      explanation: 'Yalnızca bu depoda, yalnızca sizin için, ve iş birlikçilerle paylaşılmadan.',
+    },
+    {
+      text: 'managed — yönetilen ayarlara yazar',
+      explanation: 'Managed scope yöneticiler tarafından kurulur ve sizin için salt okunurdur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/marketplaces"
+  questionId="q3"
+  lang="tr"
+  prompt="Discover sekmenizin en üstünde 'bu dizin için önerildi' etiketli bir plugin görünüyor. Neden?"
+  options={[
+    {
+      text: 'Anthropic onu inceledi ve proje türünüz için öneriyor.',
+      explanation:
+        'Resmî marketplace derlenmiştir, ama sabitleme proje başına bir incelemeden değil, marketplace tarafından bildirilen bir relevance sinyalinden gelir.',
+    },
+    {
+      text: "Marketplace girdisindeki bir `relevance` sinyali oturumunuzla yerel olarak eşleşti, ve bir yönetici o marketplace'i izin listesine aldı.",
+      correct: true,
+      explanation:
+        "Eşleşme makinenizde gerçekleşir; eşleşmeyle ilgili hiçbir şey Anthropic'e ya da işletmeciye bildirilmez.",
+    },
+    {
+      text: 'Claude Code çalışma dizininizi marketplace işletmecisine gönderdi, o da bir eşleşme döndürdü.',
+      explanation:
+        'Dokümantasyon açık: sinyal eşleştirme hiçbir ağ trafiği eklemez ve hiçbir şey bildirmez.',
+    },
+    {
+      text: 'Plugin otomatik olarak kuruldu ve bir yeniden yükleme gerekiyor.',
+      explanation: "Claude Code bir plugin'i asla otomatik kurmaz; her zaman siz onaylarsınız.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/marketplaces"
+  questionId="q4"
+  lang="tr"
+  prompt="`/plugin marketplace remove` hakkında hangi ifade doğrudur?"
+  options={[
+    {
+      text: "Katalogu kaldırır ve kurulu plugin'lere dokunmaz.",
+      explanation: "O marketplace'ten kurduğunuz plugin'leri kaldırır.",
+    },
+    {
+      text: "Katalogu kaldırır ve ondan kurduğunuz her plugin'i kaldırır.",
+      correct: true,
+      explanation:
+        'Dokümantasyon bunu açık bir uyarı olarak taşır — kaldırmadan önce kontrol edin.',
+    },
+    {
+      text: "Marketplace'ten herhangi bir plugin etkinken engellenir.",
+      explanation: 'Engellenmez; onları kaldırır.',
+    },
+    {
+      text: "Yalnızca yerel bir yoldan eklenen marketplace'lerde çalışır.",
+      explanation: 'Kayıtlı herhangi bir marketplace üzerinde çalışır.',
+    },
+  ]}
+/>
+
+**Sırada:** `03-build-a-plugin`, `m06`'daki skill'i ve `m07`'deki hook'u az önce kurduğunuz
+plugin'e dönüştürür.

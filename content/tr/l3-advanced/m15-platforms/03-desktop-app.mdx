@@ -9,7 +9,7 @@ difficulty: core
 tags: ['platformlar', 'desktop', 'zamanlanmış-görevler']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Desktop application'
@@ -31,8 +31,269 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m15-platforms/03-desktop-app.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders Claude Desktop uygulamasının **Code** sekmesini anlatır. Desktop, Claude Code’u içerir; ayrıca Node.js ya da CLI kurmanız gerekmez ve CLI ile aynı `CLAUDE.md`, MCP server, hook, skill ve setting’leri paylaşır. Ders Local / Cloud / SSH / WSL ortam seçimini, permission mode’ları, her oturuma kendi git worktree’sini veren paralel oturumları (varsayılan konum `<project-root>/.claude/worktrees/`), sürükle-bırak panel düzenini, entegre terminali ve Browser panelinde çalışan uygulamanın önizlenmesini kapsar. macOS’ta iOS Simulator panelinin computer use gerektirmediğini ve ekranınızı devralmadığını açıklar. Yerel zamanlanmış görevlerin yalnızca uygulama açıkken ve bilgisayar uyanıkken çalıştığını, kaçırılan çalıştırmalar için tek bir telafi çalıştırması yapıldığını ve bu yüzden prompt’a zaman koruması yazmak gerektiğini gösterir; cloud routine, Desktop görevi ve `/loop` arasındaki seçimi tabloyla karşılaştırır.
+- Desktop uygulamasının **Code** sekmesini açmak, bir ortam seçmek (Local, Cloud, SSH veya WSL) ve bir oturum başlatmak.
+- Her biri kendi git worktree'sinde olacak şekilde birkaç oturumu paralel çalıştırmak ve o worktree'lerin nerede yaşadığını söylemek.
+- [Diff](/tr/playbook/glossary/#diff) (değişikliklerin satır satır gösterimi), terminal, dosya ve Browser panellerini düzenlemek ve çalışan bir uygulamayı önizlemek için Browser panelini kullanmak.
+- Bir **yerel** zamanlanmış görev oluşturmak, zamanlamasını seçmek ve çalışmayacağı üç durumu açıklamak.
+- Üç zamanlama yüzeyinden — cloud routine'ler, Desktop görevleri, `/loop` — hangisinin belirli bir işe uyduğunu söylemek.
+- macOS'ta iOS Simulator panelinin ne yaptığını ve neden computer use olmadığını tarif etmek.
+
+**Ön koşullar.** Bir Pro, Max, Team veya Enterprise aboneliği. Windows'ta Git for Windows kurulu olmalı ve uygulama sonrasında yeniden başlatılmalıdır, yoksa yerel oturumlar çalışmaz. Yüzeyleri karşılaştırabilmeniz için önce `01-vs-code` ve `02-jetbrains` dersleri.
+
+<WhenNotToUse>
+  Desktop, yalnızca CLI'a özgü özellikleri görsel inceleme karşılığında bırakır; bu yüzden Claude
+  Code'u betiklemeniz ya da Agent SDK kullanmanız gerektiğinde,
+  [agent](/tr/playbook/glossary/#agent) (bir hedefi kendi başına adım adım yürüten yapay zekâ
+  süreci) team'leri istediğinizde (bir CLI özelliği; Desktop bunun yerine dynamic
+  [workflow](/tr/playbook/glossary/#workflow)'lara (çok adımlı otomatik iş akışlarına) sahiptir) ya
+  da Desktop'ın sunmadığı satır içi otomatik tamamlama tarzı kod önerileri istediğinizde yanlış
+  seçimdir. Varsayılan olarak Anthropic'in API'sine bağlanır: Code sekmesini Amazon Bedrock, Google
+  Cloud'un Agent Platform'u, Microsoft Foundry ya da kendi barındırdığınız bir gateway üzerinde
+  çalıştırmak mümkündür, ama bu uygulama içinde yapılandırdığınız bir şey değil, ayrı bir "3P
+  üzerinde Claude Desktop" kurulumudur. Yerel zamanlanmış görevler, makineniz kapalı ya da
+  uykudayken çalışması gereken hiçbir şey için doğru araç değildir: bunun yerine bir cloud routine
+  kullanın. Ve iOS Simulator paneli yalnızca macOS'ta ve yalnızca yerel oturumlarda çalışır — bir
+  cloud ya da SSH oturumu, Mac'inizdeki simülatörlere ulaşamayan bir makinede çalışır.
+</WhenNotToUse>
+
+## Kavram
+
+### Üç sekme, biri bizim
+
+Claude Desktop uygulamasının üç sekmesi vardır: **Chat** (konuşma, dosya erişimi yok), **Cowork** ([sandbox](/tr/playbook/glossary/#sandbox)'lı, yani dosya sistemi ve ağ erişimi kısıtlanmış izole bir VM'de otonom bir background agent) ve **Code** (yerel dosyalarınıza doğrudan erişimi olan kodlama asistanı). Bu dersteki her şey **Code** sekmesidir.
+
+Desktop, Claude Code'u _içerir_ — bunun için Node.js'e ya da ayrı bir CLI kurulumuna ihtiyacınız yoktur. Bir terminalde de `claude` yazmak istiyorsanız, CLI'ı ayrıca kurun. Desktop ve CLI aynı motoru çalıştırır, aynı projede aynı anda çalışabilir ve yapılandırmayı paylaşır: `CLAUDE.md` dosyaları, [MCP server](/tr/playbook/glossary/#mcp-server)'lar (Claude'a dış araç ve veri sağlayan sunucular), [hook](/tr/playbook/glossary/#hook)'lar (yaşam döngüsünde belirli anlarda otomatik çalışan komutlar), [skill](/tr/playbook/glossary/#skill)'ler (`/ad` ile çağrılan yeniden kullanılabilir talimat paketleri) ve ayarlar.
+
+### Bir oturum başlatmak
+
+Önce bir ortam seçin:
+
+| Ortam     | Kod nerede çalışır                                                                                                                                                                                                   |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Local** | Makinenizde, doğrudan dosyalarınızda. Windows'ta Git kurulu olmalı.                                                                                                                                                  |
+| **Cloud** | Web'deki Claude Code ile aynı altyapı; uygulamayı kapatsanız da devam eder.                                                                                                                                          |
+| **SSH**   | Uzak bir makine. Desktop, ilk bağlantıda Claude Code'u orada otomatik olarak kurar.                                                                                                                                  |
+| **WSL**   | Yalnızca Windows — bir WSL 2 dağıtımının içinde, Claude Code, [tool](/tr/playbook/glossary/#tool)'lar (Claude'un dosya okuma, komut çalıştırma gibi işleri yapmak için çağırdığı araçlar) ve git Linux tarafındadır. |
+
+Sonra gönder butonunun yanındaki açılır menüden bir model, sonra bir [permission mode](/tr/playbook/glossary/#permission-mode) (tool çağrılarının nasıl onaylanacağını belirleyen kip): **Auto** (bir sınıflandırıcı eylemleri arka planda inceler ve riskli olanları engeller), **Manual** (her değişikliği onaylayın), **Accept edits** (düzenlemeler otomatik uygulanır), **Plan** (düzenlemeden öner).
+
+### Paralel oturumlar ve worktree'ler
+
+**+ New session** (`Cmd+N` / `Ctrl+N`) bir tane daha başlatır. Git depoları için **her oturum, git worktree'ler kullanarak projenin kendi izole kopyasını alır**, böylece birinde yapılan değişiklikler siz [commit](/tr/playbook/glossary/#commit)'lemeden (değişiklik kümesini kalıcı olarak kaydetmeden) diğerini etkilemez. `Ctrl+Tab` / `Ctrl+Shift+Tab` oturumlar arasında döngü yapar; kenar çubuğundaki bir oturuma `Cmd` / `Ctrl` basılı tutarak tıklamak, onu mevcut olanın yanında ikinci bir panelde açar.
+
+Worktree'ler varsayılan olarak `<project-root>/.claude/worktrees/`de yaşar — **Settings → Claude Code → "Worktree location"**ta, her worktree [branch](/tr/playbook/glossary/#branch)'i (bağımsız bir geliştirme hattı) için bir branch prefix'iyle birlikte değiştirilebilir. `.env` gibi gitignore'lu dosyaları dahil etmek için proje kökünüze bir `.worktreeinclude` dosyası ekleyin.
+
+### Paneller
+
+Code sekmesi, panellerden oluşan sürükle-bırak bir düzendir: sohbet, diff, tarayıcı, terminal, dosya, plan, görevler, [subagent](/tr/playbook/glossary/#subagent) (ana oturumun bir alt görevi devrettiği, kendi bağlamı olan yardımcı agent), artı macOS'ta iOS Simulator. Taşımak için başlıktan sürükleyin, boyutlandırmak için bir kenarı sürükleyin, odaklanan paneli kapatmak için `Cmd+\` / `Ctrl+\`, daha fazlasını açmak için oturum araç çubuğundaki **Views**.
+
+- **Terminal** (her iki platformda da Ctrl ve backtick tuşu) oturumun çalışma dizininde açılır ve Claude'un ortamını paylaşır, bu yüzden `npm test`, Claude'un düzenlediği aynı dosyaları görür. Yalnızca yerel oturumlar.
+- **File** paneli: sohbette ya da diff'te bir yola tıklayarak açın, nokta düzenlemeler yapın, **Save**. Yalnızca yerel ve SSH oturumları; cloud oturumları için değişikliği Claude'dan isteyin.
+- **Browser** paneli: dev sunucunuzu çalıştırın, uygulama burada açılır. Claude çalışan uygulamayı görebilir, endpoint'leri test edebilir, logları inceleyebilir ve gördüğü şey üzerinde yineleyebilir. Dış siteleri de açabilir.
+- **Diff** paneli: düzenlemelerden sonra bir `+12 -1` göstergesi belirir; dosya dosya incelemek ve belirli satırlara yorum bırakmak için tıklayın. Claude yorumlarınızı okur ve revize eder. **Review code**, Claude'un kendi diff'lerini değerlendirmesini ve satır içi öneriler bırakmasını sağlar.
+
+Klavye kısayolu sayfası `Cmd+/` / `Ctrl+/`dir. Terminal etkileşimli-mode kısayollarının (örneğin permission mode'lar arasında döngü yapan `Shift+Tab`) **Desktop'ta geçerli olmadığını** unutmayın.
+
+### iOS Simulator paneli (macOS)
+
+Claude bir simülatörde uygulamanızı derlediğinde, kurduğunda, başlattığında ya da kontrol ettiğinde, **iOS Simulator** paneli otomatik olarak açılır ve cihaz ekranını canlı olarak akıtır. Simülatörü doğrudan sürer, bu yüzden — ve insanların en çok yanlış anladığı kısım budur — **computer use'a ihtiyaç duymaz ve ekranınızı asla devralmaz**. CLI'dan, Claude simülatöre bunun yerine ekranınızı gerçekten kontrol eden computer use üzerinden ulaşır.
+
+Pro, Max, Team ve Enterprise'da macOS üzerinde herkese açık beta'dadır (HIPAA yapılandırmalı Enterprise kuruluşları hariç), Claude Desktop v1.24012.0 veya üzeri ile iOS platformu kurulu Xcode 26.x gerektirir ve yalnızca yerel oturumlarda çalışır. Her cihaz, onu başlatan oturuma aittir, oturum başına en fazla 4 panel. Claude bir cihazı ilk kullandığında sizden izin vermeniz istenir, cihaz başına bir kez. Cihazın ekran görüntüleri normal saklama ayarlarınız altında Anthropic'e gönderilir — bu yüzden Claude'un kullandığı bir cihazda gerçek hesaplara oturum açmayın.
+
+### Zamanlanmış görevler
+
+Desktop'ın **Routines** sayfası iki farklı şey oluşturur. Bir **yerel zamanlanmış görev**, makinenizde dosyalarınıza ve tool'larınıza erişimle çalışır, ama yalnızca uygulama açıkken ve bilgisayar uyanıkken tetiklenir. Bir **remote routine**, bilgisayarınız kapalıyken bile cloud'da çalışır ve ayrıca API çağrılarında ya da GitHub olaylarında da tetiklenebilir. Bilinçli seçin:
+
+|                               | Cloud routine                                | Desktop görevi                 | `/loop`            |
+| :---------------------------- | :------------------------------------------- | :----------------------------- | :----------------- |
+| Çalıştığı yer                 | Cloud, varsayılan olarak Anthropic yönetimli | Makineniz                      | Makineniz          |
+| Makinenin açık olması gerekir | Hayır                                        | Evet                           | Evet               |
+| Açık oturum gerekir           | Hayır                                        | Hayır                          | Evet               |
+| Yerel dosyalara erişim        | Hayır (temiz klon)                           | Evet                           | Evet               |
+| İzin istemleri                | Hayır (otonom çalışır)                       | Göreve göre yapılandırılabilir | Oturumdan devralır |
+| Minimum aralık                | 1 saat                                       | 1 dakika                       | 1 dakika           |
+
+Bir tane oluşturmak için: **Code** sekmesinde **Routines**e, sonra **New routine**a, sonra **Local**a tıklayın. Name'i doldurun (kebab-case'e küçültülür ve diskteki klasör adı olarak kullanılır), Description, Instructions'ı (permission mode ve model için seçicilerle, ayrıca çalışma klasörü ve izole-worktree anahtarıyla) ve Schedule'ı. Kaydetmeden önce bir klasör gerekir ve Desktop önce ona güvenmenizi ister. Schedule ön ayarları **Manual**, **Hourly**, **Daily**, **Weekdays** ve **Weekly**'dir; başka her şey için — her 15 dakikada bir, ayın biri, tek seferlik gelecekteki bir çalıştırma — herhangi bir Desktop oturumunda Claude'a sorun.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni) ve gerçek bir özelliktir, bir mecaz değil:
+
+```text
+Set up a local scheduled task that runs every weekday at 9am, reviews the
+commits pushed to this repo since the previous weekday, and writes a short
+summary. Run it in an isolated worktree.
+```
+
+Nasıl çalıştıklarına dair, hepsi eninde sonunda sizi ısıran üç şey:
+
+- **Zamanlama sapması.** Desktop, uygulama açıkken her dakika kontrol eder ve API trafiğini dağıtmak için birkaç dakikalık küçük, belirlenimli bir gecikme ekler.
+- **Atlanan çalıştırmalar.** Bilgisayar zamanlanmış bir saat boyunca uyursa, çalıştırma atlanır. **Settings → Desktop app → General**teki **Keep computer awake**, boşta uykuyu önler; kapağı kapatmak yine de uyutur.
+- **Telafi çalıştırmaları.** Uygulama başlarken ya da uyandığında, Desktop, son yedi gündeki en son kaçırılan zaman için tam olarak bir telafi çalıştırması başlatır ve daha eskisini atar. Yani 9'daki bir görev gece 11'de çalışabilir. Prompt'a koruma yazın: _"Only review today's commits. If it's after 5pm, skip the review and just post a summary of what was missed."_
+
+İzinler görev başınadır. `~/.claude/settings.json`daki allow kuralları da uygulanır. Onaylanmamış bir tool'a ihtiyaç duyan Manual-mode bir görev, kenar çubuğunda oturum beklerken **siz onaylayana kadar durur**. Pratik düzeltme, görevi oluşturduktan sonra **Run now**a tıklamak, istemleri izlemek ve her biri için "always allow" seçmektir. `requiresUserInteraction` olarak işaretli MCP tool'ları her çağrıda ister ve hiçbir zaman always-allow sunmaz, bu yüzden o çalıştırmalar her seferinde durur.
+
+Her görevin prompt'u `~/.claude/scheduled-tasks/<task-name>/SKILL.md`de (ya da `CLAUDE_CONFIG_DIR` altında) yaşar; `name` ve `description` için YAML frontmatter ve gövde olarak prompt ile. Düzenlemeler bir sonraki çalıştırmada etkili olur. Schedule, klasör, model ve etkin durum o dosyada _değildir_. Çalışan bir görev, `update_scheduled_task` MCP tool'uyla kendi zamanlamasını bile yeniden ayarlayabilir.
+
+### İşi Desktop dışına taşımak
+
+**Continue in** (oturum araç çubuğundaki VS Code ikonu), bir oturumu **Claude Code on the Web**e gönderir — Desktop branch'inizi push eder, konuşmayı özetler ve tam bağlamla bir cloud oturumu oluşturur; bu, temiz bir çalışma ağacı gerektirir ve SSH oturumları için kullanılamaz — ya da projeyi **Your IDE**de açar. Oturum başında **Local** yerine **Cloud** seçmek, önceden uzun süreceğini bildiğiniz işler için aynısını yapar.
+
+**Dispatch** ters yönde çalışır: Claude mobil uygulamasından bir görev mesajlaşırsınız ve Dispatch nasıl ele alınacağına karar verir. Geliştirmeye benzeyen görevler, Desktop'ın kenar çubuğunda bir **Dispatch** rozetiyle bir Code oturumu doğurur ve bittiğinde ya da onay gerektiğinde bir push bildirimi alırsınız. Dispatch, bir Pro ya da Max planı gerektirir ve Team ya da Enterprise'da kullanılamaz.
+
+## Uygulamalı laboratuvar
+
+Desktop bir GUI'dir. Onu [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla) olarak yakalamanın dürüst bir yolu yok, bu yüzden bu laboratuvar açık bir beklenen sonuç ve bir kontrol listesiyle bir adım listesidir — uydurulmuş ekran görüntüsü yok, uydurulmuş [transcript](/tr/playbook/glossary/#transcript) (gerçek bir oturumun kaydı) yok.
+
+<Lab
+  title="Laboratuvar · Desktop'ta paralel oturumlar ve yerel bir zamanlanmış görev"
+  lessonId="tr/l3-advanced/m15-platforms/desktop-app"
+  repoTag="none"
+  steps={[
+    'İşletim sisteminiz için Desktop uygulamasını kurun ve oturum açın. Windows’ta önce Git for Windows’u kurun ve uygulamayı yeniden başlatın.',
+    '**Code** sekmesini açın, **Local**ı seçin ve klasör olarak sahip olduğunuz bir git deposunu seçin. Permission mode olarak **Manual**ı seçin.',
+    'Claude’a küçük bir görev verin, sonra `+N -M` göstergesi belirdiğinde tıklayıp diff’i dosya dosya inceleyin. Bir satıra satır içi yorum bırakın ve bir sonraki mesajınızla gönderin.',
+    'Aynı proje üzerinde ikinci bir oturum başlatmak için `Cmd+N` / `Ctrl+N`e basın. Entegre terminalde (Ctrl ve backtick tuşu) `git worktree list` çalıştırın ve `.claude/worktrees/` altında bir worktree olduğunu doğrulayın.',
+    'İkisini de görmek için `Cmd` / `Ctrl` tutarak kenar çubuğunda ilk oturuma tıklayın. Odaklanan paneli `Cmd+\\` / `Ctrl+\\` ile kapatın.',
+    'Entegre terminalde projenizin dev sunucusunu başlatın ve uygulamanın Browser panelinde göründüğünü doğrulayın. Claude’a sayfada ne gördüğünü sorun.',
+    'Kenar çubuğunda **Routines**a, sonra **New routine**a, sonra **Local**a tıklayın. `lab-daily-review` adını verin, klasörü deponuza ayarlayın, izole-worktree anahtarını açın, zamanlamayı **Daily**e ayarlayın ve içinde bir zaman koruması olan bir talimat verin.',
+    '**Run now**a tıklayın, izin istemlerini izleyin ve ihtiyaç duyduğu her tool için “always allow” seçin. Sonra görevin ayrıntı sayfasını açın ve çalıştırmanın geçmişinde göründüğünü doğrulayın.',
+    '**Status**u Paused’a ayarlayın, sonra görevi silin ve `SKILL.md`sinin `~/.claude/scheduled-tasks/`den kaldırılması için **Also delete files on disk**i işaretleyin.',
+  ]}
+  expected="İki oturum, .claude/worktrees/ altında ayrı worktree'lerle yan yana çalışır; diff paneli, Claude'un yanıt verdiği satır içi bir yorumu kabul eder; Browser paneli dev sunucunuzu gösterir; Run now zamanlanmış görevi hemen çalıştırır, çalıştırma görev geçmişinde görünür ve görevi disk üzerindeki kutuyla silmek ~/.claude/scheduled-tasks/lab-daily-review/'i kaldırır."
+  checklist={[
+    'İki Desktop oturumu açık, her birinin kendi git worktree’si var',
+    'Satır içi bir diff yorumu bir sonraki mesajla Claude’a ulaştı',
+    'Browser paneli yerel dev sunucusunu render etti',
+    'İzole bir worktree ve prompt’unda bir zaman koruması olan yerel bir zamanlanmış görev oluşturuldu',
+    '**Run now** onu çalıştırdı ve çalıştırma görev geçmişinde görünüyor',
+    'Görevi “Also delete files on disk” ile silmek SKILL.md’sini kaldırdı',
+  ]}
+/>
+
+## Anti-pattern'ler
+
+**Olması gereken bir şey için yerel bir zamanlanmış görev kullanmak.** Yalnızca uygulama açıkken ve makine uyanıkken tetiklenir ve kaçırılan bir gün, tek bir telafi çalıştırmasına düşer. _Düzeltme:_ güvenilir çalışması gereken her şey için bir cloud routine kullanın; Desktop görevlerini gerçekten yerel dosyalara ihtiyaç duyan iş için saklayın.
+
+**Zaman duygusu olmayan bir zamanlanmış prompt yazmak.** "Review today's commits", gece 11'de bir telafi olarak çalıştığında 9'da olduğundan farklı bir iştir. _Düzeltme:_ korumayı prompt'a koyun — geç kalınırsa ne yapılacağını, hangi pencereye bakılacağını.
+
+**Manual-mode bir görevi gözetimsiz çalışmaya bırakmak.** Onaylanmamış ilk tool'da durur ve orada kalır. _Düzeltme:_ bir kez **Run now**, "always allow" ile onaylayın ve sonrasında görevin **Always allowed** panelini kontrol edin.
+
+**Terminal kısayollarının işe yarayacağını varsaymak.** `Shift+Tab`, Desktop'ta permission mode'lar arasında döngü yapmaz. _Düzeltme:_ gerçek liste için `Cmd+/` / `Ctrl+/`; permission-mode menüsünü `Cmd+Shift+M` açar.
+
+**iOS Simulator panelini bir cloud ya da SSH oturumunda beklemek.** Yalnızca macOS'ta yerel oturumlar — uzak makine Mac'inizin simülatörlerine ulaşamaz. _Düzeltme:_ o oturumları yerel çalıştırın.
+
+**Claude'un sürdüğü bir simülatörde gerçek hesaplara oturum açmak.** Ekran görüntüleri normal saklama ayarlarınız altında Anthropic'e gider. _Düzeltme:_ test hesapları kullanın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/desktop-app"
+  questionId="q1"
+  lang="tr"
+  prompt="Dizüstünüz bütün gün uyudu ve Daily 9'daki bir Desktop görevi hiç tetiklenmedi. Gece 11'de uyandırdığınızda ne olur?"
+  options={[
+    {
+      text: 'Hiçbir şey — kaçırılan çalıştırmalar düşürülür.',
+      explanation: 'Desktop gerçekten bir telafi çalıştırması başlatır.',
+    },
+    {
+      text: 'En son kaçırılan zaman için tam olarak bir telafi çalıştırması; daha eskisi atılır.',
+      correct: true,
+      explanation:
+        'Desktop yedi gün geriye bakar, en son kaçırılanı bir kez çalıştırır ve bir telafinin başladığını bildirir.',
+    },
+    {
+      text: 'Kaçırılan her gün için sırayla bir çalıştırma.',
+      explanation: 'Altı günü kaçıran günlük bir görev yine de bir kez çalışır.',
+    },
+    {
+      text: 'Siz yeniden etkinleştirene kadar görev devre dışı kalır.',
+      explanation: 'Görev Active kalır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/desktop-app"
+  questionId="q2"
+  lang="tr"
+  prompt="Hangi iş bir Desktop zamanlanmış görevi yerine bir cloud routine'e aittir?"
+  options={[
+    {
+      text: 'Dizüstünüz açık olsa da olmasa da çalışması gereken gecelik bir bağımlılık denetimi.',
+      correct: true,
+      explanation: 'Cloud routine’ler makinenizi gerektirmez; Desktop görevleri gerektirir.',
+    },
+    {
+      text: 'Çalışma dizininizdeki commit’lenmemiş değişiklikleri okuyan bir görev.',
+      explanation: 'Bir cloud routine temiz bir klon alır ve yerel dosyaları göremez.',
+    },
+    {
+      text: 'Yapılandırma dosyalarınızdan yerel olarak yapılandırılmış bir MCP server kullanması gereken bir görev.',
+      explanation:
+        'Cloud routine’ler bağlayıcıları göreve göre yapılandırır, yerel yapılandırmanızı okumaz.',
+    },
+    {
+      text: 'Yalnızca bu oturum açıkken istediğiniz hızlı bir yoklama.',
+      explanation: 'Bu `/loop`tur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/desktop-app"
+  questionId="q3"
+  lang="tr"
+  prompt="Aynı git deposunda iki Desktop oturumu açık. Onları birbirinin ayağına basmaktan ne alıkoyar?"
+  options={[
+    {
+      text: 'Her oturum, varsayılan olarak `<project-root>/.claude/worktrees/` altında kendi git worktree’sini alır.',
+      correct: true,
+      explanation: 'Siz commit’lemeden değişiklikler izole kalır.',
+    },
+    {
+      text: 'İlk düzenleyen oturumun tuttuğu bir dosya kilidi.',
+      explanation: 'İzolasyon kilitleme değil worktree ile sağlanır.',
+    },
+    {
+      text: 'Hiçbir şey — bunları kendiniz ayrı klonlarda açmalısınız.',
+      explanation: 'Desktop worktree’leri sizin için oluşturur.',
+    },
+    {
+      text: 'Bir çalışma ağacını paylaşırlar ama düzenlemelerini sıraya koyarlar.',
+      explanation: 'Bir çalışma ağacını paylaşmazlar.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/desktop-app"
+  questionId="q4"
+  lang="tr"
+  prompt="Desktop'ın iOS Simulator paneli, bir simülatöre CLI'dan ulaşmaktan nasıl farklıdır?"
+  options={[
+    {
+      text: 'Panel simülatörü doğrudan sürer, bu yüzden computer use’a ihtiyaç duymaz ve ekranınızı asla devralmaz; CLI’dan Claude bunun yerine computer use kullanır.',
+      correct: true,
+      explanation:
+        'Panelin macOS Erişilebilirlik ve Ekran Kaydı izinlerine ihtiyaç duymamasının sebebi de budur.',
+    },
+    {
+      text: 'Panel fiziksel bir iPhone’u sürebilir; CLI süremez.',
+      explanation: 'İkisi de fiziksel donanımı kontrol edemez — yalnızca simüle edilmiş cihazlar.',
+    },
+    {
+      text: 'Panel cloud oturumlarında çalışır; CLI çalışmaz.',
+      explanation: 'Panel yalnızca yerel oturumlarda çalışır.',
+    },
+    {
+      text: 'Hiçbir fark yok; panel bir computer-use görüntüleyicisidir.',
+      explanation: 'Açıkça değildir.',
+    },
+  ]}
+/>
+
+**Sırada:** `04-web-and-cloud-sessions`, çalıştırmayı tamamen makinenizin dışına taşır — claude.ai/code, cloud ortamları, `--cloud`, `--teleport` ve ultrareview.

@@ -9,7 +9,7 @@ difficulty: core
 tags: ['ci', 'github-actions', 'code-review', 'otomasyon']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Claude Code GitHub Actions'
@@ -27,8 +27,358 @@ lab:
   repo_tag: 'lesson/m13-02-start'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders `anthropics/claude-code-action@v1` ile bir pull request review workflow'u yazmayı anlatır: `prompt` input'unun varlığına göre seçilen interactive/automation mode; `claude_args`, `anthropic_api_key`, `claude_code_oauth_token` ve `plugins` gibi input'lar; `id-token: write` içeren `permissions` bloğu; resmi dokümandaki `code-review` plugin'li workflow ile lab deposunun SHA'ya sabitlenmiş, secret'ı `env` üzerinden koruyan workflow'unun karşılaştırılması. Laboratuvarda workflow dosyaları `action-validator` ile yerel olarak doğrulanır; gerçek bir API anahtarıyla hiçbir çalıştırma tetiklenmez.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.
+- Interactive mode'u automation mode'dan ayırt etmek ve hangi input'un bunu belirlediğini söylemek.
+- [Pull request](/tr/playbook/glossary/#pull-request)'lerde (bir branch'teki değişikliklerin ana koda alınması için açılan isteklerde) `anthropics/claude-code-action@v1`'i çalıştıran bir `.github/workflows/` dosyası yazmak.
+- Doğru `permissions:` bloğunu seçmek ve `id-token: write`'ın orada neden olduğunu açıklamak.
+- CLI bayraklarını `claude_args` üzerinden geçirmek ve çalıştırmanın ihtiyaç duyduğu [tool](/tr/playbook/glossary/#tool)'ları (Claude'un dosya okuma, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araçları) önceden onaylamak.
+- Bir [workflow](/tr/playbook/glossary/#workflow) (birden çok adımdan oluşan, otomatik olarak yürütülen iş akışı) dosyasını push etmeden önce yerel olarak doğrulamak.
+
+**Ön koşullar.** Ders 01 (`claude -p`, `--allowedTools`, `--max-turns`). Uygulamayı gerçekten kurmak isterseniz admin erişiminiz olan bir GitHub deposu — laboratuvarın kendisi workflow dosyalarını yerel olarak doğrular ve hiçbir zaman ücretlendirilen bir çalıştırma tetiklemez.
+
+<WhenNotToUse>
+  İstediğiniz tek şey her pull request'te otomatik bir review ise, hiç bir workflow dosyasına
+  ihtiyacınız yok — Code Review bunu dosyasız yapar, ve bu dersin workflow'u
+  [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metnini), modeli ve
+  tetikleyicileri kendiniz kontrol etmek istediğinizde seçtiğiniz seçenektir. Review kriterleriniz
+  mekanikse (biçimlendirme, import sırası, lockfile kayması) action'ı tamamen atlayın: bir linter
+  daha ucuz, daha hızlı ve deterministiktir. Ve bunu, işe yarayacağını bekleyerek public bir depoda
+  fork pull request'lerine bağlamayın — GitHub tasarım gereği bu çalıştırmalardan
+  [secret](/tr/playbook/glossary/#secret)'ları (depoya commit'lenmemesi gereken API anahtarı gibi
+  hassas değerleri) esirger.
+</WhenNotToUse>
+
+## Kavram
+
+### Bir action, iki mode
+
+`anthropics/claude-code-action@v1`, workflow yapılandırmanıza göre nasıl çalışacağına karar verir:
+
+- **Interactive mode** — workflow bir `prompt` input'u sağlamaz. Claude, bir [issue](/tr/playbook/glossary/#issue) (bir GitHub deposundaki takip edilen görev ya da hata kaydı) ya da pull request yorumunda, bir PR review'ında ya da yeni açılan bir issue'nun gövdesinde veya başlığında tetikleyici ifadeyi (varsayılan olarak `@claude`) bekler, sonra cevap verir. İlerleme ve sonuçlar, tetikleyen issue ya da PR'a bir yorum olarak görünür.
+- **Automation mode** — workflow bir `prompt` input'u sağlar. Claude, bir bahisten bahsedilmesini beklemeden, `schedule` dâhil herhangi bir GitHub olayında çalışır. Varsayılan olarak sonuçlar workflow çalıştırma günlüğüne gider; Claude, prompt buna yönlendirdiğinde ve gönderebilecek bir tool'u olduğunda issue ya da PR'a gönderir.
+
+Her iki mode da Claude başlamadan önce tetikleyen aktör üzerinde iki kontrol çalıştırır ve ikisinden biri onu reddettiğinde çalıştırma başarısız olur. Kullanıcının issue ve pull request olaylarında **write erişimine** ihtiyacı vardır (`allowed_non_write_users` artı kendi `github_token`'ınız bunun istisnasıdır) ve aktör `allowed_bots`'ta listelenmediği sürece bir **bot** olmamalıdır — iki otomasyonun birbirini bir döngü içinde tetiklemesini önleyen şey de budur.
+
+### Önemli input'lar
+
+| Input                     | Ne yapar                                                                                                                                                                                                                |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `prompt`                  | Düz metin ya da bir [skill](/tr/playbook/glossary/#skill) (`SKILL.md` ile tanımlanan yeniden kullanılabilir talimat paketi) çağrısı olarak talimatlar. Bunu atlamak interactive mode'u seçer                            |
+| `claude_args`             | Doğrudan Claude Code'a geçirilen CLI argümanları — `--model`, `--max-turns`, `--allowedTools`, `--debug`                                                                                                                |
+| `anthropic_api_key`       | Claude Console'dan bir Claude API anahtarı                                                                                                                                                                              |
+| `claude_code_oauth_token` | `claude setup-token` ile üretilen bir abonelik token'ı                                                                                                                                                                  |
+| `github_token`            | GitHub işlemleri için token; Claude [GitHub App](/tr/playbook/glossary/#github-app) (Claude Code'u bir depoya bağlayan, pull request ve issue'larda otomatik çalışan entegrasyon) olarak kimlik doğrulamak için atlayın |
+| `plugin_marketplaces`     | Satır sonlarıyla ayrılmış marketplace Git URL'leri                                                                                                                                                                      |
+| `plugins`                 | Çalıştırmadan önce kurulacak, satır sonlarıyla ayrılmış `plugin-adı@marketplace-adı` girişleri                                                                                                                          |
+| `settings`                | Bir JSON string'i ya da bir settings dosyasının yolu olarak Claude Code ayarları                                                                                                                                        |
+| `trigger_phrase`          | Varsayılan olarak `@claude`                                                                                                                                                                                             |
+
+### Dokümanın review workflow'u
+
+Bu, resmi dokümandaki kanonik review workflow'udur. Anthropic'in marketplace'inden `code-review` [plugin](/tr/playbook/glossary/#plugin)'ini (hook, skill, subagent ve MCP server gibi bileşenleri paket hâlinde ekleyen eklentiyi) kurar ve onun skill'ini çalıştırır — `/install-github-app`'in review workflow'unun kullandığı plugin'in aynısı:
+
+<CodeBlock title=".github/workflows/code-review.yml">
+
+```yaml
+name: Code Review
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
+          plugins: 'code-review@claude-code-plugins'
+          prompt: '/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
+          claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment"'
+```
+
+</CodeBlock>
+
+İki satır review'ın nereye gideceğini kontrol eder. `--comment`, Claude'un review'ını pull request üzerinde göndermesini sağlar — bulduğu her sorun için satır içi bir yorum, ya da hiçbirini bulmadığında tek bir özet yorumu; onsuz Claude hiçbir şey göndermez ve bulguları çalıştırma günlüğünde okursunuz. `claude_args` satırı, skill'in kendi `allowed-tools` frontmatter'ı aynı tool'u adlandırsa bile kalır, çünkü action, satır içi yorum gönderen [MCP server](/tr/playbook/glossary/#mcp-server)'ı (Claude'a dış araç ve veri sağlayan sunucuyu) yalnızca `claude_args` içindeki `--allowedTools` onu adlandırdığında başlatır.
+
+Claude, taslak ve kapalı pull request'leri, review'a ihtiyaç duymadığına karar verdiklerini ve zaten Claude'dan bir yorum almış olanları atlar.
+
+### Lab deposunun workflow'u
+
+Lab deposu, `lesson/m13-02-solution`'da farklı bir şekil taşır ve fark öğreticidir. `ANTHROPIC_API_KEY` secret'ı olmayan public bir depodur, bu yüzden yine de yeşil kalmak zorundadır. Aşağıdaki blok kısaltılmıştır — prompt iki satıra indirilmiş ve dosyanın başlık yorumları çıkarılmıştır; dosyanın gönderildiği hâli için tag'i checkout edin:
+
+<CodeBlock title="claude-review.yml — kısaltılmış; tam dosya lesson/m13-02-solution'da">
+
+```yaml
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  review:
+    name: claude-review
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code review
+        if: ${{ env.ANTHROPIC_API_KEY != '' }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review this pull request against this repo's own conventions.
+            Use `gh pr comment` for top-level feedback.
+          claude_args: |
+            --allowedTools "Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"
+
+      - name: Skipped (no ANTHROPIC_API_KEY secret)
+        if: ${{ env.ANTHROPIC_API_KEY == '' }}
+        run: echo "ANTHROPIC_API_KEY is not set — skipping the Claude review step."
+```
+
+</CodeBlock>
+
+Adlandırmaya değer dört fark var, hiçbiri tesadüfi değil:
+
+1. **Job düzeyinde bir `env` artı adım düzeyinde bir `if`.** Bir secret, job düzeyinde bir `if` içinde referans alınamaz, bu yüzden workflow onu `env`'e taşır ve adımı korur. Public bir depoya karşı bir fork PR'da GitHub secret'ları esirger, bu yüzden aynı koruma bu durumu da kırmızıya düşmeden bedavaya karşılar.
+2. **`pull-requests: write`, `read` değil.** Bu, satır içi yorum MCP server'ı yerine `gh pr comment` ile gönderir ve bir yorum yazmak write gerektirir.
+3. **`actions/checkout`, sürümü sondaki bir yoruma koyarak bir [commit](/tr/playbook/glossary/#commit) (bir git deposundaki değişiklik kümesinin kalıcı, mesajlı kaydı) SHA'sına sabitlenmiş.** Bir tag değişkendir; bir SHA değildir. Bu eğitim deposunun kendi `ci.yml` ve `deploy.yml`'i de aynı şekilde sabitlenir — işlenmiş örnekler olarak onlara bakın.
+4. **Bir [permission mode](/tr/playbook/glossary/#permission-mode) (bir oturumun tool çağrılarını nasıl onaylayacağını belirleyen kip) yerine `claude_args`'ta tool allow kuralları.** `Bash(gh pr comment:*)`, `Bash(gh pr comment *)`'in `:*` sonek biçimidir ve üç kural birlikte review'ın aldığı kabuk yüzeyinin tamamıdır.
+
+### Maliyetler ve bunları nasıl sınırlarsınız
+
+Her çalıştırma GitHub Actions dakikaları ve API token'ları harcar. İkisi de aynı şekilde sınırlanır: `claude_args` içinde `--max-turns`, workflow düzeyinde bir `timeout-minutes`, paralel çalıştırmaları sınırlamak için GitHub'ın eşzamanlılık kontrolleri ve her çalıştırmada yeniden okunması ucuz olacak kadar kısa bir `CLAUDE.md`. `claude_code_oauth_token` ile kimlik doğrulamak, API yerine Claude aboneliğinize fatura eder.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · bir review workflow'u yazın ve doğrulayın"
+  lessonId="tr/l3-advanced/m13-headless-ci/github-actions-review"
+  repoTag="lesson/m13-02-start"
+  steps={[
+    "Lab klonunuzda `git checkout lesson/m13-02-start` yapın. Tag, ders 01'den `scripts/headless-example.sh`'i taşır ve henüz bir workflow yoktur.",
+    "Yukarıdaki Kavram bölümündeki doküman workflow'uyla, tam olarak basıldığı gibi, `.github/workflows/code-review.yml`'i yazın.",
+    "Yerel olarak doğrulayın: `npx --yes -p @action-validator/cli -p @action-validator/core action-validator .github/workflows/code-review.yml` ve `$?`'yi kontrol edin.",
+    "Şimdi `git checkout lesson/m13-02-solution` yapın ve lab deposunun gerçekten gönderdiği workflow'u okuyun. permissions bloğunu, checkout sabitlemesini ve claude_args'ını sizinkiyle karşılaştırın.",
+    "Gönderilen workflow'u aynı şekilde doğrulayın.",
+    "Gerçek bir API anahtarı taşıyan bir workflow'u ASLA push etmeyin ve bir çalıştırma tetiklemeyin: lab deposunun ANTHROPIC_API_KEY secret'ı yoktur ve bir tanesini public bir fork'a eklemek onu o fork'taki her workflow'a açık eder.",
+  ]}
+  expected="action-validator, doküman workflow'u ve lab deposunun gönderdiği claude-review.yml için hiçbir çıktı vermeden 0 çıkar. İkisi arasındaki fark şudur: pull-requests üzerinde read'e karşı write, satır içi yorum MCP tool'una karşı gh pr comment, değişken bir tag'e karşı sabitlenmiş bir SHA, ve env/if secret koruması."
+  checklist={[
+    'Workflow dosyanız exit code 0 ile doğrulanıyor',
+    '`permissions:` bloğu `id-token: write` içeriyor',
+    'Action `@beta` değil `anthropics/claude-code-action@v1` olarak referans alınıyor',
+    'Dosyanın hiçbir yerinde bir secret değeri görünmüyor — yalnızca `${{ secrets.NAME }}`',
+    "claude_args'ın satır içi yorum tool'unu neden adlandırdığını tek cümlede söyleyebiliyorsunuz",
+    'Gerçek bir API anahtarına karşı hiçbir workflow çalıştırması tetiklenmedi',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/02-github-actions-review/02-docs-workflows-validated.txt"
+    range="2-8"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/02-github-actions-review/01-action-validator.txt"
+    range="2-3"
+  />
+</Lab>
+
+İlk kayıt, yalnızca review olanını değil, resmi GitHub Actions sayfasında basılı üç workflow'un hepsini doğrular: `claude.yml`, dokümanın interactive `@claude` workflow'udur ve şeklini ders 03 kendi dosya adı altında uyarlar; `code-review.yml` az önce yazdığınızdır; `daily-report.yml` ise Kavram bölümünün maliyet tartışmasındaki zamanlanmış automation-mode şeklidir. Üçünü birden doğrulamak, herhangi birini uyarlamadan önce dokümanın YAML'ının geçerli olduğunu kanıtlamanın ucuz yoludur.
+
+`action-validator` başarıda sessizdir — çıktı yok, exit `0`. İstediğiniz sonuç budur; workflow'un şemasının, olay adlarının ve adım şekillerinin hepsinin geçerli olduğu anlamına gelir. `anthropics/claude-code-action@v1`'in var olduğunu ya da input'larınızın doğru yazıldığını kontrol etmez, bu yüzden push etmeden önce yukarıdaki input tablosunu bir kez daha okuyun.
+
+İkinci kayıt, lab deposunun `lesson/m13-02-solution`'daki kendi `claude-review.yml`'ini — SHA'ya sabitlenmiş, secret'ı korunan sürümü — doğrular ve o da geçer.
+
+### Action'ı kurmak
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+gh auth login
+claude
+# then, inside the session:
+# /install-github-app
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+gh auth login
+claude
+# then, inside the session:
+# /install-github-app
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+gh auth login
+claude
+# then, inside the session:
+# /install-github-app
+```
+
+  </Fragment>
+</OSTabs>
+
+`/install-github-app`, Claude GitHub App'i kurar, kimlik bilgisini bir depo secret'ı olarak kaydeder — bir API anahtarı için `ANTHROPIC_API_KEY`, `claude setup-token` ile üretilen bir abonelik token'ı için `CLAUDE_CODE_OAUTH_TOKEN` — seçtiğiniz workflow dosyalarıyla bir [branch](/tr/playbook/glossary/#branch) (bir git deposunun bağımsız bir geliştirme hattı) push eder ve oluşturulmaya hazır bir pull request açar. Depoda admin erişiminize ve kurulu, kimlik doğrulanmış GitHub CLI'ya ihtiyacınız var. Manuel yol, elle yapılan aynı üç parçadır: uygulamayı kurun, secret'ı ekleyin, action'ın deposundan `examples/claude.yml`'i `.github/workflows/`'a kopyalayın.
+
+## Anti-pattern'ler
+
+**Action'ı `@beta`'ya sabitlemek.** Beta input'ları kaldırıldı. _Düzeltme:_ `@v1`, `mode` input'unu çıkarın (action mode'u kendisi tespit eder), `direct_prompt`'u `prompt` olarak yeniden adlandırın, ve `max_turns` ile `model`'i `claude_args`'a taşıyın. `custom_instructions`, `--append-system-prompt` olur.
+
+**`id-token: write`'ı dışarıda bırakmak.** Action'ın varsayılan GitHub App kimlik doğrulaması buna ihtiyaç duyar, workload identity federation da öyle — kendi `github_token`'ınızı geçirseniz bile. _Düzeltme:_ bu action için her `permissions:` bloğuna ekleyin.
+
+**`github_token: ${{ secrets.GITHUB_TOKEN }}` geçirip sonra [CI](/tr/playbook/glossary/#ci)'nin (her push'ta ya da pull request'te otomatik olarak testleri ve kontrolleri çalıştıran hattın) Claude'un commit'lerinde neden hiç çalışmadığını merak etmek.** GitHub, varsayılan token ile yapılan commit'lerde workflow'ları tetiklemez. _Düzeltme:_ satırı kaldırın, böylece action Claude GitHub App olarak kimlik doğrular, ya da özel bir uygulama token'ı geçirin.
+
+**"Güvenli olsun diye" tüm tool yüzeyini vermek.** Herhangi bir kabuk komutu çalıştırabilen bir review job'u, push edebilen bir review job'udur. _Düzeltme:_ tam tool'ları `claude_args --allowedTools`'ta adlandırın ve job'un yazmadığı her şey için `permissions:`'ı `read`'de tutun.
+
+**Bir secret'ı hata ayıklamak için ekrana yazdırmak.** `run: echo "$ANTHROPIC_API_KEY"`, anahtarı read erişimi olan herkesin indirebileceği bir günlüğe koyar. _Düzeltme:_ kimlik bilgisini workflow'u hata ayıklamadan önce yerel olarak `claude` ile test edin ve workflow içinde yalnızca boş olup olmadığını doğrulayın (`if: ${{ env.ANTHROPIC_API_KEY != '' }}`).
+
+**Üçüncü taraf action'lar için değişken bir tag kullanmak.** `actions/checkout@v6`, o tag'in bugün neyi işaret ettiğine çözülür. _Düzeltme:_ lab deposunun yaptığı gibi, sürümü sondaki bir yoruma koyarak bir commit SHA'sına sabitleyin.
+
+<Callout variant="changed">
+  Hâlâ `anthropics/claude-code-action@beta` diyen workflow'ların güncellenmesi gerekiyor: güncel
+  sürüm `@v1`, `mode` input'u kalktı, `direct_prompt` artık `prompt`, ve `max_turns` ile `model`
+  gibi CLI seçenekleri `claude_args`'a taşındı. Ayrıca yeni: 2.1.229'dan beri üretilen review
+  workflow'u review'ını pull request üzerinde gönderiyor; öncesinde yalnızca workflow çalıştırma
+  günlüğüne yazıyordu.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/github-actions-review"
+  questionId="q1"
+  lang="tr"
+  prompt="Action'ın interactive mi automation mode'da mı çalışacağına hangi input karar verir?"
+  options={[
+    {
+      text: '`prompt` — var olması automation, yok olması interactive demektir',
+      correct: true,
+      explanation:
+        'Bir prompt ile Claude olayın kendisinde çalışır; onsuz tetikleyici ifadeyi bekler.',
+    },
+    {
+      text: '`mode`',
+      explanation: "Bu input beta'da vardı ve v1'de kaldırıldı.",
+    },
+    {
+      text: '`trigger_phrase`',
+      explanation: "Bu yalnızca interactive mode'un hangi ifadeyi dinlediğini değiştirir.",
+    },
+    {
+      text: "Workflow'un `on:` bloğu",
+      explanation:
+        "Tetikleyici, job'un ne zaman başlayacağına karar verir, action'ın hangi mode'u seçtiğine değil.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/github-actions-review"
+  questionId="q2"
+  lang="tr"
+  prompt="Doküman review workflow'u, skill zaten bu tool'u bildirmiş olsa bile mcp__github_inline_comment__create_inline_comment'i claude_args içindeki --allowedTools'ta adlandırıyor. Neden?"
+  options={[
+    {
+      text: "Action, satır içi yorum gönderen MCP server'ı yalnızca --allowedTools onu adlandırdığında başlatır",
+      correct: true,
+      explanation:
+        'Satırı kaldırırsanız review çalışır ama satır içi yorum gönderecek bir yolu olmaz.',
+    },
+    {
+      text: "Skill frontmatter'ı GitHub Actions içinde yok sayılır",
+      explanation: "Dikkate alınır; mesele action'ın hangi MCP server'ı başlattığıdır.",
+    },
+    {
+      text: 'Depo permission bloğunu geçersiz kılar',
+      explanation: 'Tool kuralları ve GitHub token izinleri ayrı sistemlerdir.',
+    },
+    {
+      text: 'Beta için tutulan eski bir sözdizimidir',
+      explanation: 'Güncel ve işlevseldir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/github-actions-review"
+  questionId="q3"
+  lang="tr"
+  prompt="Review workflow'unuz public bir depoda çalışıyor. Bir katkıcı kendi fork'undan bir pull request açıyor. Ne olur?"
+  options={[
+    {
+      text: "GitHub çalıştırmadan secret'ları esirger, bu yüzden review kimlik doğrulayamaz",
+      correct: true,
+      explanation:
+        "Lab deposunun adımı kırmızıya düşmek yerine secret'ın boş olmadığını koruma altına almasının nedeni budur.",
+    },
+    {
+      text: "Action secret'ı bunun yerine fork'tan okur",
+      explanation: "Bir fork'un upstream depo secret'larına erişimi yoktur.",
+    },
+    {
+      text: 'Çalıştırma, katkıcı bir bot olduğu için engellenir',
+      explanation: 'Bot kontrolü bot aktörlere uygulanır, fork katkıcılarına değil.',
+    },
+    {
+      text: "Hiçbir şey değişmez — fork PR'ları diğer her PR gibi secret alır",
+      explanation: 'Tasarım gereği almazlar.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/github-actions-review"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir review çalıştırmasının ne kadar harcayabileceğini sınırlamak istiyorsunuz. Hangi çift bunu gerçekten sınırlar?"
+  options={[
+    {
+      text: "claude_args içinde --max-turns artı bir workflow timeout'u",
+      correct: true,
+      explanation:
+        "Biri agentic loop'u sınırlar, diğeri duvar saati süresini; eşzamanlılık sınırları da paralel çalıştırmaları sınırlar.",
+    },
+    {
+      text: 'Daha kısa bir `prompt` ve daha küçük bir `fetch-depth`',
+      explanation: 'İkisi de marjinal yardımcı olur; hiçbiri bir tavan değildir.',
+    },
+    {
+      text: '`permissions: contents: read`',
+      explanation:
+        "Bu, token'ın ne yapabileceğini sınırlar, çalıştırmanın ne kadar süreceğini değil.",
+    },
+    {
+      text: 'Zamanın nereye gittiğini görebilmek için `--debug`',
+      explanation: 'Debug çıktısı tanıdır, bir sınır değil.',
+    },
+  ]}
+/>
+
+**Sırada:** `03-issue-to-pr`, aynı action'ı diğer yönde kullanır — bir issue yorumu bir branch'e ve bir pull request'e dönüşür.

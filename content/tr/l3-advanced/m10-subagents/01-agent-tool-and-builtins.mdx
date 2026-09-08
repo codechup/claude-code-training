@@ -1,6 +1,6 @@
 ---
 title: "Agent tool'u ve yerleşik subagent'lar"
-description: "Bir subagent, kendi context window'una sahip devredilmiş bir işçidir. Agent tool'unu, altı yerleşik ajanı (Explore, Plan, general-purpose, claude, statusline-setup, claude-code-guide) ve devretmeye değip değmeyeceğini belirleyen tek soruyu tanıyın."
+description: "Bir subagent, kendi context window'una sahip devredilmiş bir işçidir. Agent tool'unu, altı yerleşik agent’ı (Explore, Plan, general-purpose, claude, statusline-setup, claude-code-guide) ve devretmeye değip değmeyeceğini belirleyen tek soruyu tanıyın."
 level: 3
 module: 'm10-subagents'
 order: 1
@@ -9,7 +9,7 @@ difficulty: core
 tags: ['subagent', 'agent-tool', 'context', 'devretme']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Create custom subagents'
@@ -23,15 +23,289 @@ sources:
     title: 'Tools available to Claude'
     url: 'https://code.claude.com/docs/en/tools-reference.md'
     verified_at: 2026-09-07
+  - type: official
+    title: 'Manage agents with agent view'
+    url: 'https://code.claude.com/docs/en/agent-view.md'
+    verified_at: 2026-09-07
 lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders subagent'ın ne olduğuyla başlar: kendi context window'unda çalışan, işi bitince ana konuşmaya tek bir metin sonucu döndüren devredilmiş bir işçi. `Agent` tool'unun girdilerini (`subagent_type`, `prompt`, `description`, `name`, `run_in_background`, `model`, `isolation`) ve Claude Code'un hazır getirdiği altı yerleşik ajanı tek tek ele alır: `Explore` ve `Plan` salt-okunurdur, `CLAUDE.md` dosyalarını ve git durumunu atlar ve resume edilemez; `general-purpose` çok adımlı işler içindir; `claude`, `statusline-setup` ve `claude-code-guide` ise dar amaçlıdır. Laboratuvarda `Explore` ajanına headless bir oturumdan iş devredilir ve devretmenin gerçekten olup olmadığı JSON zarfındaki `subagent_stats.by_type` alanından — modelin anlattığına güvenmeden — kanıtlanır.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur.
+- Bir [subagent](/tr/playbook/glossary/#subagent)'ın (ana oturumun bir alt görevi devrettiği, kendi bağlam penceresi ve araç izinleri olan yardımcı agent) ne olduğunu tek cümlede söylemek ve size daha uzun bir [prompt](/tr/playbook/glossary/#prompt)'un (Claude'a verdiğiniz istek metni) veremeyeceği tek şeyi adlandırmak.
+- `Agent` [tool](/tr/playbook/glossary/#tool)'unun girdileriyle — `subagent_type`, `prompt`, `description`, `name`, `run_in_background`, `model`, `isolation` — ne yaptığını ve karşılığında neyin döndüğünü anlatmak.
+- Altı yerleşik subagent'ı adlandırmak ve her birinin ne işe yaradığını söylemek: `Explore`, `Plan`, `general-purpose`, `claude`, `statusline-setup`, `claude-code-guide`.
+- `Explore` ve `Plan`'ın neden salt-okunur olduğunu, neden `CLAUDE.md`'nizi ve git durumunu atladıklarını ve neden ikisinin de resume edilemediğini açıklamak.
+- Bir devretmenin gerçekten olup olmadığını, Claude'un sözüne güvenmek yerine [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) JSON zarfından kanıtlamak.
+
+**Ön koşullar.** Çalışan bir Claude Code kurulumu (L1 `m01-start`), yerleşik tool'lara aşinalık (L1 `m02-interact`) ve içinde salt-okunur bir oturum çalıştırabileceğiniz bir depo. Hiçbir yapılandırma gerekmez: yerleşik [agent](/tr/playbook/glossary/#agent)'lar (bir hedefi kendi başına adım adım yürüten, araç çağırabilen yapay zekâ süreci) Claude Code ile birlikte gelir.
+
+<WhenNotToUse>
+  Devretme bir gidiş-dönüş ve taze bir [context window](/tr/playbook/glossary/#context-window)'a
+  (bir modelin tek bir istekte görebildiği toplam token miktarı) mal olur, subagent da geriye
+  yalnızca bir metin özeti döndürür — ana oturum ara tool çağrılarını hiç görmez. Bu yüzden hangi
+  dosyayı, sembolü ya da satırı zaten biliyorsanız tek bir gerçeği aramak için devretme yapmayın:
+  kendiniz okumak daha ucuzdur ve cevap tam isabetlidir. Ara durumunu sürekli yönlendirmeniz gereken
+  bir işi de devretmeyin (yarı yolda düzeltmek istediğiniz bir refactor), çünkü çalışan tek seferlik
+  bir agent’ın içine girip onu yönlendiremezsiniz. Ve yavaş bir işi hızlandırmak için devretme
+  yapmayın: aynı anda birden çok agent işi bedavaya bölmez, token kullanımını çarpar.
+</WhenNotToUse>
+
+## Kavram
+
+### Bir subagent aslında nedir
+
+Bir subagent, bir yan görevi yapan ve onu başlatan konuşmaya tek bir metin sonucu döndüren, **kendi context window'una sahip devredilmiş bir işçidir**. Paralel çalışma yaklaşımlarının resmî karşılaştırması bunu açıkça koyar: bir subagent'a başvurun çünkü "bir yan görev, bir daha başvurmayacağınız arama sonuçları, günlükler ya da dosya içerikleriyle ana konuşmanızı boğar."
+
+İşin bütün ekonomisi bu. Tek bir soruyu yanıtlamak için kırk dosya okuyan bir kod tabanı taraması, siz kendiniz yaparsanız kırk dosyalık context'inize mal olur, bir subagent yaparsa tek bir paragrafa. Tool çağrıları subagent'ın kendi penceresinde gerçekleşir; yalnızca sonuç geri döner.
+
+Bundan iki sonuç çıkar ve ikisi de insanları şaşırtır:
+
+- **İşi görmezsiniz.** Ana oturum sonucu alır, dökümü değil. Bir cevabın nasıl bulunduğunu denetlemeniz gerekiyorsa subagent'ın [transcript](/tr/playbook/glossary/#transcript)'ini (kaydedilmiş gerçek bir oturum dökümü) `/tasks`'tan açın — kendi geçmişinizde bulmayı beklemeyin.
+- **Subagent konuşmanızı görmez.** [Fork](/tr/playbook/glossary/#fork) (bir oturumu, konuşma geçmişinin bir kopyasında devam ettirmek) olmayan bir subagent kendi system prompt'uyla, Claude'un devretme mesajıyla, `CLAUDE.md` hiyerarşinizle, bir git-durumu anlık görüntüsüyle, önceden yüklenmiş [skill](/tr/playbook/glossary/#skill)'lerle (`/ad` ile çağrılan yeniden kullanılabilir talimat paketleriyle) ve adlandırılmış kardeşlerinin bir listesiyle başlar. Konuşma geçmişinizi, çıktı stili tercihinizi ya da auto-memory'nizi **almaz**. İhtiyacı olan her şey ya prompt'ta ya da dosyalarda olmalıdır.
+
+### Agent tool'u
+
+Devretme tek bir tool üzerinden gerçekleşir: `Agent`. Girdileri şunlardır:
+
+| Girdi               | Ne yapar                                                                                  |
+| ------------------- | ----------------------------------------------------------------------------------------- |
+| `subagent_type`     | Hangi agent’ın başlatılacağı — yerleşik bir ad ya da sizin kendi agent’larınızdan biri    |
+| `prompt`            | Subagent'ın başlangıç talimatları                                                         |
+| `description`       | Görev için kısa, insan tarafından okunabilir bir etiket                                   |
+| `name`              | İsteğe bağlı bir ad; agent team'ler açıkken adlandırılmış bir çağrı bir teammate başlatır |
+| `run_in_background` | Eşzamanlı çalıştırma ister; 05. derste anlatılan yerleştirme kuralları buna karar verir   |
+| `model`             | Çağrı başına bir model geçersiz kılma                                                     |
+| `isolation`         | İzolasyon kipi, ör. `worktree`                                                            |
+| `team_name`         | Agent team'ler için kabul edilir, v2.1.178'den itibaren yok sayılır                       |
+
+`Agent` tool'unun kendisi hiçbir izin gerektirmez (tool referansı onu `Permission required: No` olarak listeler) — subagent'ın kendi tool'ları içeride yine de izin kontrolünden geçer. `Agent` çağrısını neredeyse hiç kendiniz yazmazsınız; gündelik dille sorarsınız ve Claude agent’ı seçer:
+
+```text
+Use the Explore subagent to find where the CLI persists tasks to disk.
+Report the file and function only.
+```
+
+Açık bir @-mention ile de belirtebilirsiniz — `@agent-code-reviewer`, ya da typeahead'den `@"code-reviewer (agent)"` seçerek — ya da `claude --agent code-reviewer` ile bütün bir oturumu tek bir agent olarak başlatabilirsiniz.
+
+İç içe geçme mümkündür: bir subagent kendi subagent'larını başlatabilir, varsayılan olarak üç katman derinliğe kadar (`CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH`, varsayılan `3`; sınırda subagent'lar `Agent` tool'unu kaybeder). Varsayılan olarak aynı anda 20'ye kadar subagent çalışabilir (`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`).
+
+### Altı yerleşik
+
+Claude Code, hiç tanımlamanıza gerek kalmayan altı subagent ile gelir.
+
+| Agent               | Model                                                      | Tool'lar                                   | Ne için                                                                                       |
+| ------------------- | ---------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `Explore`           | Ana konuşmadan devralır, Claude API'de Opus ile sınırlanır | Salt-okunur — `Write` ve `Edit` reddedilir | Hızlı kod tabanı keşfi ve arama                                                               |
+| `Plan`              | Ana konuşmadan devralır                                    | Salt-okunur                                | [plan mode](/tr/playbook/glossary/#plan-mode) sırasında, bir plan sunulmadan önceki araştırma |
+| `general-purpose`   | Ayarlıysa `CLAUDE_CODE_SUBAGENT_MODEL`, değilse ana model  | Subagent'lara açık tüm tool'lar            | Hem keşfeden hem de harekete geçen karmaşık, çok adımlı işler                                 |
+| `claude`            | Model çözümleme sırasını izler                             | —                                          | Hiçbir özel agent’a uymayan işler için genel amaçlı seçenek                                   |
+| `statusline-setup`  | Sonnet                                                     | —                                          | `/statusline`'ı yapılandırmak                                                                 |
+| `claude-code-guide` | Haiku                                                      | —                                          | Claude Code'un kendi özellikleriyle ilgili sorular                                            |
+
+`Explore` ve `Plan`'ın üç özelliği ezberlenmeye değer, çünkü ikisi hakkındaki kafa karışıklığının çoğunu açıklar:
+
+1. **Salt-okunurlar.** Hiçbir şeyi düzenleyemez, yazamaz ya da değiştiremezler. Onları çoğaltarak dağıtmayı güvenli kılan da budur.
+2. **`CLAUDE.md` dosyalarınızı ve git durumu anlık görüntüsünü atlarlar.** Diğer her subagent ikisini de yükler. `Explore` ve `Plan` bilinçli olarak yüklemez — ucuz başlarlar.
+3. **Resume edilemezler.** Tek seferliktirler. Bir agent’la konuşmayı sürdürmeniz gerekiyorsa `general-purpose`'u ya da kendi agent’larınızdan birini kullanın.
+
+`Explore` ayrıca bir kapsamlılık seviyesi de alır — hızlı, orta ya da çok kapsamlı — böylece "şu üç dizini ara" ile "bütün depoyu her adlandırma kuralı için tara" farklı ayarlardaki aynı tool olur.
+
+### Onları kapatmak
+
+Yerleşikler de her şey gibi aynı izin makinesine tabidir. Tek bir agent’ı ya da bütün devretmeyi reddedin:
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "permissions": {
+    "deny": ["Agent(Explore)", "Agent(my-custom-agent)"]
+  }
+}
+```
+
+</CodeBlock>
+
+CLI'dan `claude --disallowedTools "Agent(Explore)"` tek bir agent’ı, `claude --disallowedTools "Agent"` ise bütün subagent'ları engeller. `CLAUDE_CODE_DISABLE_EXPLORE_PLAN_AGENTS=1` özellikle iki salt-okunur yerleşiği kaldırır.
+
+### Subagent'lar paralel seçenekler arasında nereye oturur
+
+Subagent'lar işi paralel çalıştırmanın dört yolundan biridir ve en ağır seçeneğe başvurmadan önce resmî karşılaştırmayı içselleştirmeye değer:
+
+- **Subagent'lar** — bir oturumun içinde devredilmiş işçiler; sonuçlar çağırana döner.
+- **Agent view** (`claude agents`, araştırma önizlemesi) — gönderip sonra kontrol ettiğiniz arka plan oturumları; her biri herhangi bir şeyi düzenlemeden önce `.claude/worktrees/` altındaki kendi [worktree](/tr/playbook/glossary/#worktree)'sine (aynı deponun farklı bir [branch](/tr/playbook/glossary/#branch)'ini — bağımsız bir geliştirme hattını — ayrı bir dizinde çalışır tutan ek bir git çalışma ağacı) taşınır.
+- **Agent team'ler** — paylaşılan bir görev listesi ve doğrudan mesajlaşmayla eşgüdümlü oturumlar; deneysel ve varsayılan olarak kapalı.
+- **Dinamik [workflow](/tr/playbook/glossary/#workflow)'lar** — birçok subagent çalıştırıp sonuçlarını çapraz kontrol eden bir betik.
+
+Bu modül ilkiyle ilgili. Seviyenin geri kalanı diğerleriyle tanışıyor.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Bu laboratuvar hiçbir lab-repo tag'i gerektirmez: yerleşik agent’lar her oturumda mevcuttur. Biz
+  onu `main` üzerindeki lab deposunda çalıştırdık, ama birkaç kaynak dosyası olan herhangi bir depo
+  işe yarar.
 </Callout>
+
+<Lab
+  title="Laboratuvar · yerleşik bir agent’a devredin ve olduğunu kanıtlayın"
+  lessonId="tr/l3-advanced/m10-subagents/agent-tool-and-builtins"
+  repoTag="none"
+  steps={[
+    'Okuyabileceğiniz bir depoda bir terminal açın (biz `main` üzerinde `git clone https://github.com/codechup/claude-code-lab` kullandık).',
+    'Devredilmiş bir arama isteyin, headless olarak: `claude -p "Use the Explore subagent to find where the CLI persists tasks to disk. Report the file and function only." --model sonnet --max-turns 6 --output-format json`',
+    "JSON zarfında `subagent_stats`'ı bulun. `by_type`'ı okuyun — çalışan her agent’ı ve kaç kez çalıştığını adlandırır.",
+    "Aynı blokta `requested` ve `started_in_background`'ı okuyun: agent’ın önplanda mı arka planda mı istendiğini ve gerçekte nerede çalıştığını kaydederler.",
+    "`num_turns`'ü cevabın boyutuyla karşılaştırın. Aramanın kendisi ana konuşmaya yalnızca bir devretme ve bir sonuca mal oldu.",
+  ]}
+  expected="Zarf subagent_stats.by_type'ı {'Explore': 1} olan bir subtype: success bildirir ve dosya ile fonksiyonu adlandıran tek satırlık bir sonuç verir. Explore önplanda çalıştı (started_in_background: 0)."
+  checklist={[
+    "`subagent_stats.by_type` `Explore`'u adlandırıyor",
+    '`result` dizesi soruyu bir dosya içeriği duvarı olmadan tek satırda yanıtlıyor',
+    '`num_turns` küçük — dosya okumaları ana turda değil subagent içinde gerçekleşti',
+    'Depoda hiçbir şey değiştirilmedi (`git status` değişmedi)',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/01-agent-tool-and-builtins/01-explore-json.txt"
+    range="2-22"
+  />
+</Lab>
+
+`subagent_stats`, "gerçekten devretti mi?" sorusunun dürüst cevabıdır. Claude'un yazdığı metin, gerçekte olsun olmasın "Explore agent’ına sordum…" diyebilir; `by_type` ise model tarafından değil harness tarafından üretilir. Bir devretmenin önemli olduğu her durumda onu kontrol etme alışkanlığı edinin — bu modüldeki her laboratuvar buna dayanır.
+
+O kayıttaki `requested` bloğuna da dikkat edin: `foreground: 1`, `started_in_background: 0`. `Explore` burada önplanda çalıştı. 05. ders aynı alanın bir arka plan agent’ı için `1`'e döndüğünü gösterir ve buna neyin karar verdiğini açıklar.
+
+## Anti-pattern'ler
+
+**Tek bir `Read` ile yapabileceğiniz bir aramayı devretmek.** Bir subagent bir başlatma, taze bir context ve bir özetleme adımına mal olur. "`saveToDisk` ne yapıyor" için dosyayı açmak hem hız hem hassasiyette kazanır. _Düzeltme:_ genişliği devredin (birçok dosya, bilinmeyen konum), derinliği değil (bilinen tek bir dosya).
+
+**Subagent'ın az önce konuştuğunuzu bildiğini varsaymak.** Fork olmayan bir subagent hiçbir konuşma geçmişi almaz — yalnızca prompt'unu, memory dosyalarınızı ve depoyu alır. Klasik hata "konuştuğumuz hatayı düzelt" gibi bir prompt'tur. _Düzeltme:_ görevi baştan sona yeniden yazın, ya da bağlam gerçekten önemliyse bir fork kullanın (05. ders).
+
+**Anlatıya zarf yerine güvenmek.** "Bunu bir subagent'a devrettim" model tarafından yazılan bir metindir. _Düzeltme:_ `--output-format json`'da `subagent_stats.by_type`'ı, ya da etkileşimli bir oturumda `/tasks`'ı kontrol edin.
+
+**Bir şeyi değiştirmesi gereken bir iş için `Explore` kullanmak.** Yapı gereği salt-okunurdur, dolayısıyla düzeltmek yerine rapor verecektir ve raporu bir başarısızlık olarak okursunuz. _Düzeltme:_ görev bir düzenlemeyle bitiyorsa `general-purpose`'u ya da yazma tool'ları olan özel bir agent’ı kullanın.
+
+**`Explore` ya da `Plan`'ı resume etmeye çalışmak.** Tek seferliktirler ve resume edilemezler. _Düzeltme:_ bir takip turu beklediğinizde baştan `general-purpose`'u ya da özel bir agent’ı seçin.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/agent-tool-and-builtins"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir subagent bittiğinde ana konuşma ne alır?"
+  options={[
+    {
+      text: 'Subagent’ın her tool çağrısı dâhil tam dökümü',
+      explanation:
+        'Ana oturum ara tool çağrılarını görmez — devretmenin bütün amacı bu izolasyondur.',
+    },
+    {
+      text: 'Tek bir metin sonucu',
+      correct: true,
+      explanation:
+        'Kesinlikle. İş subagent’ın kendi context window’unda gerçekleşir; yalnızca sonuç geri döner.',
+    },
+    {
+      text: 'Subagent’ın dokunduğu her dosyanın diff’i',
+      explanation:
+        'Sonuç biçimiyle diff arasında bir ilişki yoktur; salt-okunur bir agent zaten hiçbir şeyi değiştirmez.',
+    },
+    {
+      text: 'Hiçbir şey — bir şey almak için /tasks açmanız gerekir',
+      explanation:
+        '/tasks bir çalıştırmayı incelemenizi sağlar, ama sonuç otomatik olarak konuşmaya döner.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/agent-tool-and-builtins"
+  questionId="q2"
+  lang="tr"
+  prompt="Yerleşik Explore agent’ıyla ilgili hangi ifade doğrudur?"
+  options={[
+    {
+      text: 'Diğer her subagent gibi CLAUDE.md dosyalarınızı yükler.',
+      explanation:
+        'Explore ve Plan, CLAUDE.md dosyalarını ve git durumu anlık görüntüsünü bilinçli olarak atlayan iki yerleşiktir.',
+    },
+    {
+      text: 'Salt-okunurdur, CLAUDE.md ve git durumunu atlar, resume edilemez.',
+      correct: true,
+      explanation:
+        'Üçü de doğru — bu da onu çoğaltarak dağıtmayı ucuz, takip turları için ise uygunsuz kılar.',
+    },
+    {
+      text: 'Maliyeti düşük tutmak için her zaman Haiku üzerinde çalışır.',
+      explanation:
+        'Explore, Claude API’de Opus ile sınırlanmış olarak ana konuşmanın modelini devralır. Haiku olan claude-code-guide’dır.',
+    },
+    {
+      text: 'Güzelce rica ederseniz bulduğu düzeltmeyi uygulayabilir.',
+      explanation: 'Tool’ları salt-okunurdur; rica edilecek bir düzenleme yolu yoktur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/agent-tool-and-builtins"
+  questionId="q3"
+  lang="tr"
+  prompt="Headless bir oturum çalıştırdınız ve bir subagent’ın gerçekten çalışıp çalışmadığını bilmek istiyorsunuz. Nereye bakarsınız?"
+  options={[
+    {
+      text: '`result` dizesine, devrettiğini söyleyen bir cümle için',
+      explanation: 'O model tarafından yazılan bir metindir. Kanıt değildir.',
+    },
+    {
+      text: 'JSON zarfındaki `subagent_stats.by_type`',
+      correct: true,
+      explanation:
+        'Bunu harness üretir: çalışan her agent türünü ve kaç kez çalıştığını adlandırır.',
+    },
+    {
+      text: 'Subagent başına bir tur sayan `num_turns`',
+      explanation: 'num_turns subagent’ları değil ana konuşma turlarını sayar.',
+    },
+    {
+      text: 'Hiçbir şey devredilmediğinde sıfır olan `total_cost_usd`',
+      explanation: 'Maliyet, devretme olsun olmasın ana tur için tahsil edilir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/agent-tool-and-builtins"
+  questionId="q4"
+  lang="tr"
+  prompt="Claude’un tek bir oturum için subagent’lara hiç devretmesini nasıl durdurursunuz?"
+  options={[
+    {
+      text: 'claude --disallowedTools "Agent"',
+      correct: true,
+      explanation:
+        'Çıplak Agent tool’unu reddetmek her devretme yolunu kaldırır; Agent(Explore) gibi bir türü adlandırmak yalnızca onu engeller.',
+    },
+    {
+      text: 'claude --no-subagents',
+      explanation: 'Böyle bir bayrak yok.',
+    },
+    {
+      text: '~/.claude/agents/ dizinini silmek',
+      explanation: 'Bu kendi agent’larınızı kaldırır; yerleşikler diskte dosya değildir.',
+    },
+    {
+      text: 'CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS=0 ayarlamak',
+      explanation:
+        'O değişken aynı anda kaç tanesinin çalışabileceğini sınırlar (varsayılan 20); kapatma anahtarı değildir.',
+    },
+  ]}
+/>
+
+**Sırada:** `02-custom-agents`, `.claude/agents/*.md`'yi açar — her frontmatter alanı, dosyaların nerede yaşadığı ve ikisi aynı adı paylaştığında hangi scope'un kazandığı.

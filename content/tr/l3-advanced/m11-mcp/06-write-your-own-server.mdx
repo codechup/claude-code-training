@@ -6,10 +6,10 @@ module: 'm11-mcp'
 order: 6
 duration_min: 30
 difficulty: advanced
-tags: ['mcp', 'typescript', 'sdk', 'stdio', 'tools']
+tags: ['mcp', 'typescript', 'sdk', 'stdio', 'araçlar']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Connect Claude Code to tools via MCP'
@@ -27,7 +27,298 @@ lab:
   repo_tag: 'lesson/m11-06-start'
 ---
 
-Bu ders `McpServer`, `registerTool` ve `StdioServerTransport` ile yaklaşık yüz satırlık bir stdio [MCP server](/tr/playbook/glossary/#mcp-server) — Claude Code'a dış araçlar ve veri kaynakları sunan program — yazdırır. Tool açıklamasının neden asıl arayüz olduğunu, stdout’a neden hiçbir şey yazılmaması gerektiğini ve SDK’nın 1.x ile 2.x sürümleri arasındaki farkı anlatır. Laboratuvarda server önce elle, sonra `claude -p` ile gerçek bir tool çağrısıyla doğrulanır.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l3-advanced/m11-mcp/06-write-your-own-server.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- TypeScript SDK ile bir stdio [MCP server](/tr/playbook/glossary/#mcp-server)'ı (Model Context Protocol ile Claude'a dış araç ve veri sağlayan sunucu) yazmak: `McpServer`, `registerTool`, `StdioServerTransport`.
+- Bir [tool](/tr/playbook/glossary/#tool)'un (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) girdilerini bir schema ile tarif etmek ve Claude'a onu ne zaman çağıracağını söyleyen bir açıklama yazmak.
+- Server'ı istemci olmadan, üç JSON-RPC satırı ve `printf` kullanarak doğrulamak.
+- Onu `claude mcp add` ile kaydetmek ve Claude'un [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) bir çalıştırmada onu çağırdığını kanıtlamak.
+- Hangi SDK ana sürümünde olduğunuzu ve diğerinde nelerin değiştiğini söylemek.
+
+**Ön koşullar.** 01, 02 ve 05. dersler. Laboratuvar deposunun `lesson/m11-06-start` etiketinden bir klonu, **Node 24** — `.nvmrc` dosyasının sabitlediği ve bu dersin kaydedildiği sürüm; server'ın bir derleme adımı yok, bu yüzden Node `.ts` dosyasını doğrudan çalıştırır — ve yüz satırlık bir dosyayı okumaya yetecek TypeScript.
+
+<WhenNotToUse>
+  Bir kabuk komutunun zaten iyi yaptığı bir şey için server yazmayın. Kurulu bir CLI'ı çağıran bir
+  tool, artık bakmanız, kurmanız ve güvenmeniz gereken bir sarmalayıcıdır — Claude o CLI'ı zaten
+  çalıştırabilir. Yetenek, komut satırından tek adımda gerçekten ulaşılamıyorsa server yazın:
+  yalnızca bir SDK'sı olan bir sistem, özel bir kimlik doğrulama şeması olan bir dahili API,
+  etrafında gerçek mantık gerektiren bir sorgu. Ayrıca *her şeyi* döndüren bir server yazmadan önce
+  durun: çıktısı bir veritabanı dökümü olan bir tool, protokol kılığına girmiş bir context-penceresi
+  sorunudur.
+</WhenNotToUse>
+
+## Kavram
+
+### Bütün şekil
+
+Bir MCP server'ı kulağa geldiğinden daha küçüktür. TypeScript SDK'nın kendi minimal örneği bir server nesnesi, bir kayıtlı tool ve bir transport'tur:
+
+<CodeBlock title="the shape of a stdio server">
+
+```typescript
+const server = new McpServer({ name: 'labtrack-mcp', version: '1.0.0' });
+
+server.registerTool(
+  'labtrack_status',
+  {
+    title: 'labtrack status',
+    description: 'Summarizes the labtrack task file: total/open/done/overdue counts.',
+    inputSchema: {
+      dataFile: z.string().optional().describe('Path to the labtrack data file.'),
+    },
+  },
+  async ({ dataFile }) => {
+    // ... do the work ...
+    return { content: [{ type: 'text', text: JSON.stringify(summary, null, 2) }] };
+  },
+);
+
+const transport = new StdioServerTransport();
+await server.connect(transport);
+```
+
+</CodeBlock>
+
+Dört parça ve her biri 01. dersteki handshake'te zaten gördüğünüz bir şeye karşılık gelir:
+
+- **`new McpServer({ name, version })`** — `initialize` üzerinde `serverInfo`'da geri gelen şey.
+- **`registerTool(name, spec, handler)`** — `tools/list` yanıtındaki bir girdi.
+- **`inputSchema`** — Claude Code'un modele gönderdiği JSON Schema'ya dönüştürülür.
+- **`StdioServerTransport` + `connect`** — stdin'den JSON-RPC satırları okuyup stdout'a yazan döngü.
+
+Handler, bir blok dizisi olan `content`'i döndürür. Bir metin bloğu yaygın olandır; JSON'u metin olarak döndürmek de iyidir ve çoğu zaman nesirden daha nettir, çünkü model onu veri olarak okur.
+
+### Açıklama, arayüzdür
+
+Tool'unuzun hiç kullanılıp kullanılmayacağına karar veren şey kod değildir — `description`'dır. Tool search açıkken (varsayılan), Claude oturum başında tool adlarını ve server'ın talimatlarını görür ve bir görev alakalı göründüğünde tanımlar için _arama yapar_. Tool'un ne yaptığını, ne üzerinde yaptığını ve ne zaman ona başvurulacağını söyleyen bir açıklama, bu aramayı isabet ettiren şeydir. Claude Code, tool açıklamalarını ve server talimatlarını her birini 2 KB'de keser; bu yüzden onları sıkı tutun ve kritik kısmı en başa koyun.
+
+Aynısı adlandırma için de geçerli. Laboratuvardaki tool `status` değil `labtrack_status`'tur: bir tool çağrısında bir cümle gibi okunur ve birinin daha sonra bağlayacağı diğer dört `status` tool'uyla çakışmaz.
+
+### stderr'e yazdırın, asla stdout'a değil
+
+Herkesi yakalayan tek kural: **stdout, protokoldür**. Bir stdio server'ındaki başıboş bir `console.log`, akışa JSON olmayan bir satır enjekte eder ve bağlantıyı bozar. Tanılamalar `console.error`'a gider; bu, Claude Code'un günlüklediği stderr'dir. Laboratuvarın server'ı bunu tam olarak kendi başarısızlık yolunda yapar.
+
+### İki SDK ana sürümü
+
+Laboratuvarın server'ı SDK'nın 1.x hattı üzerine kuruludur: paket `@modelcontextprotocol/sdk`'dır, `McpServer`, `@modelcontextprotocol/sdk/server/mcp.js`'den içe aktarılır, transport `.../server/stdio.js`'den gelir ve `inputSchema`, bir `z.object(...)` değil, zod doğrulayıcılarından oluşan bir nesnedir ("raw shape").
+
+`MCP_PROTOCOL_NEGOTIATION`'ı `auto`'ya ayarlamadığınız sürece Claude Code, stdio server'larına v1 istemci davranışıyla bağlanır; bu yüzden 1.x bir server burada eski bir kalıntı değil, birinci sınıf bir vatandaştır.
+
+Bunun yerine yeni bir server'ı v2 üzerine başlatırsanız üç şey değişir: içe aktarma `'@modelcontextprotocol/server'`'dan olur, stdio transport'u `@modelcontextprotocol/server/stdio`'da yaşar ve `inputSchema`, 1.x'in beklediği raw shape yerine bir Standard Schema nesnesi alır — Zod v4'ten bir `z.object(...)`, ya da Valibot veya ArkType. Bu dersteki her şeyin geri kalanı değişmez.
+
+### Bu dersin örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni)
+
+```text
+Use the labtrack MCP server's labtrack_status tool to report how many tasks
+are total, open, done and overdue in this project. Do not read any file yourself.
+```
+
+İkinci cümle gerçek iş yapıyor. O olmadan Claude, JSON dosyasını memnuniyetle `cat`'ler ve doğru cevap verir — server'ınız hakkında hiçbir şey kanıtlamadan.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · kendi MCP server'ınızı yazın, doğrulayın ve bağlayın"
+  lessonId="tr/l3-advanced/m11-mcp/write-your-own-server"
+  repoTag="lesson/m11-06-start"
+  steps={[
+    '`lesson/m11-06-start`’ı checkout edin ve depo kökünde `npm ci` çalıştırın.',
+    'Kendi `package.json`’ı (`"type": "module"`, bağımlılıklar `@modelcontextprotocol/sdk` ve `zod`) ve `tsconfig.json`’ı olan bir `mcp/` dizini oluşturun. Onu ayrı bir paket olarak tutmak, bir server eklemenin kök projenin `npm test` ya da `npm run typecheck`’ine hiç dokunmaması demektir.',
+    '`mcp/src/index.ts`’i yazın: `@modelcontextprotocol/sdk/server/mcp.js`’den `McpServer`’ı ve `@modelcontextprotocol/sdk/server/stdio.js`’den `StdioServerTransport`’u içe aktarın; isteğe bağlı bir `dataFile` string’i alan bir tool, `labtrack_status`, kaydedin; handler’da, labtrack CLI’sinin kalıcı hale getirdiği JSON dosyasını (varsayılan olarak `.labtrack-data.json`, `LABTRACK_DATA_FILE` ile geçersiz kılınabilir) okuyun ve `{ total, open, done, overdue }`’u bir JSON metin bloğu olarak döndürün. Eksik bir dosyayı bir hata değil boş bir görev listesi olarak ele alın. Hataları `console.log` ile değil, her zaman `console.error` ile günlükleyin.',
+    '`mcp/` içinde `npm install` çalıştırın.',
+    'Server’a raporlayacak bir şey verin: depo kökünden, CLI ile üç görev ekleyin (`node src/cli.ts add "…" --priority 1 --due 2026-08-01`, ve benzeri), sonra birini `node src/cli.ts done <full-id>` ile bitmiş işaretleyin ve `node src/cli.ts list`’i kontrol edin.',
+    'Server’ı hiç istemci olmadan doğrulayın: üç JSON-RPC satırını — `initialize`, `notifications/initialized`, `tools/list` — `node mcp/src/index.ts`’e pipe’layın ve iki yanıtı okuyun.',
+    'Kaydedin: `claude mcp add --scope local labtrack -- node mcp/src/index.ts`, sonra `claude mcp list` ve `✔ Connected`’ı doğrulayın.',
+    'Aynı komutu tarif eden tek server’lı bir `mcp-labtrack.json` yazın — `{"mcpServers":{"labtrack":{"type":"stdio","command":"node","args":["mcp/src/index.ts"]}}}` — böylece bir sonraki adım `--strict-mcp-config` ile çalışabilir ve bu tag’in taşıdığı `.mcp.json`’ı yok sayabilir, 05. dersle aynı numara.',
+    'Claude’un onu, headless olarak ve başka hiçbir şeye izin vermeden çağırdığını kanıtlayın: `claude -p "Use the labtrack MCP server\'s labtrack_status tool to report how many tasks are total, open, done and overdue in this project. Do not read any file yourself." --model sonnet --max-turns 6 --output-format text --mcp-config mcp-labtrack.json --strict-mcp-config --allowedTools "mcp__labtrack__labtrack_status,ToolSearch"`.',
+    'Sayıları `node src/cli.ts list` ile karşılaştırın. Sonra `claude mcp remove labtrack` ile temizleyin.',
+  ]}
+  expected="Elle sürülen handshake, serverInfo {name: labtrack-mcp, version: 1.0.0} ve zod shape’inden türetilmiş bir JSON Schema’sı olan labtrack_status için bir tools/list girdisi döndürür. claude mcp list, labtrack’i ✔ Connected olarak bildirir. Headless çalıştırma, hiçbir dosyayı kendisi okumadan, seed’lediğiniz görevlerle eşleşen 3 total — 2 open, 1 done, 1 overdue yanıtını verir."
+  checklist={[
+    'mcp/ kendi paketi ve kök projenin typecheck ve testleri değişmeden kaldı',
+    'initialize yanıtı server’ınızı ve sürümünü adlandırıyor',
+    'tools/list, bir açıklama ve bir inputSchema ile labtrack_status’u gösteriyor',
+    'claude mcp list, ✔ Connected bildiriyor',
+    'Headless çalıştırmanın sayıları `node src/cli.ts list` ile eşleşiyor',
+    'JSON-RPC dışında stdout’a hiçbir şey yazılmadı',
+    'Server sonunda kaldırıldı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/06-write-your-own-server/01-seed.txt"
+    range="2-11"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/06-write-your-own-server/02-handshake.txt"
+    range="3-4"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/06-write-your-own-server/03-register.txt"
+    range="2-11"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/06-write-your-own-server/04-tool-call.txt"
+    range="5-5"
+  />
+</Lab>
+
+Dört kısa kayıt ve her biri farklı bir şey kanıtlıyor.
+
+Seed kaydı zemin gerçekliktir: CLI aracılığıyla eklenen, biri sonradan bitmiş işaretlenen üç görev. `node src/cli.ts done`'un, `list`'in yazdırdığı sekiz karakterlik önek değil **tam** id istediğine dikkat edin — onu `added …` satırından kopyalayın.
+
+Handshake kaydı, hiçbir istemci karışmadan önce yanıt veren server'ınızdır. Ürettiği `inputSchema`'yı okuyun: `{"type":"object","properties":{"dataFile":{"type":"string","description":"…"}},"additionalProperties":false}`. Siz bir zod shape'i yazdınız; SDK onu modele verilen JSON Schema'ya çevirdi. Bu çeviri, her alanı tarif etmenin nedenidir — `.describe(...)` metni, modelin okuduğu şeydir.
+
+Register kaydı, laboratuvarın istemediği ve bu yüzden daha öğretici olan bir şey gösteriyor: `labtrack: ✔ Connected` ile birlikte, deponun [commit](/tr/playbook/glossary/#commit)'lenmiş (bir git deposundaki değişiklik kümesinin kalıcı, mesajlı kaydı) `.mcp.json`'ındaki iki server `⏸ Pending approval`'da oturuyor ve tanılama bloğu `[github] mcpServers.github: Missing environment variables: GITHUB_TOKEN` uyarısı veriyor. Bu gerçekçi bir proje: kendi server'ınız çalışıyor, onay bekleyen paylaşılan bir yapılandırma ve kimsenin ayarlamadığı bir değişken.
+
+Son kayıt tek satırdır — `Task status for this project: 3 total — 2 open, 1 done, 1 overdue.` — ve bu dersin amacı budur. Sayılar, CLI'ın yazdığı dosyadan hesaplanan, artık uçtan uca anladığınız bir protokol üzerinden teslim edilen, sizin server'ınızındır.
+
+### Bunun yerine bir tane iskelesini kurmak
+
+Boş bir dosyadan başlamak istemiyorsanız, dokümanlar sizin için bir server üreten resmî bir [plugin](/tr/playbook/glossary/#plugin)'e (Claude Code'a hook, skill, subagent ve MCP server gibi bileşenleri paket hâlinde ekleyen eklenti) işaret eder:
+
+<CodeBlock title="scaffold a server with the official plugin">
+
+```text
+/plugin install mcp-server-dev@claude-plugins-official
+/mcp-server-dev:build-mcp-server
+```
+
+</CodeBlock>
+
+Claude, kullanım durumunuz hakkında sorular sorar ve uzak bir HTTP ya da yerel bir stdio server'ının iskeletini kurar. Kurulum `Marketplace "claude-plugins-official" not found` bildirirse, marketplace'i `/plugin marketplace add anthropics/claude-plugins-official` ile ekleyip yeniden deneyin; özet `Run /reload-plugins to activate.` diyorsa bunu çalıştırın.
+
+## Anti-pattern'ler
+
+**Bir stdio server'ında `console.log`.** Protokol akışına JSON olmayan bir satır yazar ve bağlantı açık bir sebep olmadan ölür. _Düzeltme:_ tanılamaya dair her şey için `console.error`.
+
+**Belirsiz bir tool açıklaması.** `"Gets status"`, Claude'a onu ne zaman arayacağı hakkında hiçbir şey söylemez ve tool kullanılmadan otururken Claude sizin dosyalarınızı okur. _Düzeltme:_ ne yaptığını, neyi okuduğunu ve neyi döndürdüğünü söyleyin — 2 KB içinde, önemli kısım önce.
+
+**Bütün veri setini döndürmek.** Varsayılan sınırların üzerinde Claude Code uyarır ve aşırı büyük sonuçlar diske kalıcı hale getirilip bir dosya referansıyla değiştirilir. _Düzeltme:_ özetler ve sayılar döndürün; detay için parametreler ekleyin ve `anthropic/maxResultSizeChars`'ı yalnızca gerçekten ihtiyaç duyan tool'lar için işaretleyin.
+
+**Boş durumda hata fırlatmak.** Veri dosyası olmayan taze bir checkout bir hata değildir. _Düzeltme:_ `ENOENT`'i "öğe yok" olarak ele alın ve gerçek hataların yüzeye çıkmasına izin verin.
+
+**Server'ı ana projenin paketinin içine koymak.** Artık kök `npm test` ve `tsc`, SDK'yı ve tiplerini görür. _Düzeltme:_ laboratuvarın yaptığı gibi, `mcp/` altında ayrı bir `package.json` ve `tsconfig.json`.
+
+<Callout variant="changed">
+  TypeScript SDK'nın kararlı hattı artık v2 — 2026-07-28 MCP spesifikasyonu için
+  `@modelcontextprotocol/server` ve `@modelcontextprotocol/client` — v2'nin çıkışından sonra en az
+  altı ay boyunca hata düzeltmeleri ve güvenlik güncellemeleri almaya devam ederken. Bu ders,
+  gerçekten çalıştırılan 1.x kodunu öğretir. SDK deposunun README'sine karşı 2026-09-07'de
+  doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/write-your-own-server"
+  questionId="q1"
+  lang="tr"
+  prompt="stdio server’ınız bağlanıyor, sonra herhangi bir iş yaptığı anda düşüyor. Kontrol edilecek ilk şey nedir?"
+  options={[
+    {
+      text: 'Handler’ın protokol dışında stdout’a bir şey yazıp yazmadığı',
+      correct: true,
+      explanation:
+        'stdout, JSON-RPC kanalıdır. Tek bir console.log akışı bozar. Tanılamalar stderr’e gider.',
+    },
+    {
+      text: 'Tool açıklamasının 2 KB’nin altında olup olmadığı',
+      explanation: 'Kesme keşfi etkiler, bağlantıyı değil.',
+    },
+    {
+      text: 'OAuth token’larının süresinin dolup dolmadığı',
+      explanation: 'Yerel bir stdio server’ının OAuth’u yoktur.',
+    },
+    {
+      text: 'MAX_MCP_OUTPUT_TOKENS’ın çok düşük olup olmadığı',
+      explanation: 'Bu, sonuçları keser ya da kalıcı hale getirir; bağlantıyı düşürmez.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/write-your-own-server"
+  questionId="q2"
+  lang="tr"
+  prompt="Hangi üç JSON-RPC mesajı, hiçbir istemci olmadan bir stdio server’ını doğrular?"
+  options={[
+    {
+      text: 'initialize, notifications/initialized, tools/list',
+      correct: true,
+      explanation:
+        'Laboratuvarın printf ile gönderdiği tam olarak bu; server 1 ve 2 id’lerini yanıtlar.',
+    },
+    {
+      text: 'handshake, auth, list',
+      explanation: 'MCP metotları değil.',
+    },
+    {
+      text: 'tools/list, tools/call, shutdown',
+      explanation: 'Handshake’ten önce tool’ları listeleyemezsiniz.',
+    },
+    {
+      text: 'connect, tools/list, disconnect',
+      explanation: '`connect`, bir protokol mesajı değil bir SDK metot adıdır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/write-your-own-server"
+  questionId="q3"
+  lang="tr"
+  prompt="Server’ı `@modelcontextprotocol/sdk` v1.x’e karşı yazdınız. Ne doğrudur?"
+  options={[
+    {
+      text: 'v2, Standard Schema girdi şemalarıyla @modelcontextprotocol/server olarak gönderilir; v1.x, v2’nin çıkışından sonra en az altı ay boyunca düzeltmeler almaya devam eder',
+      correct: true,
+      explanation:
+        'Doğrudan SDK README’sinden. Kavramlar — server, tool, transport — her ikisinde de aynıdır.',
+    },
+    {
+      text: 'v1.x desteklenmiyor ve Claude Code ona bağlanamaz',
+      explanation:
+        'MCP_PROTOCOL_NEGOTIATION auto’ya ayarlanmadığı sürece Claude Code, stdio server’larına v1 davranışıyla bağlanır.',
+    },
+    {
+      text: 'v2, stdio’yu kaldırıp yalnızca HTTP’yi bıraktı',
+      explanation: 'v2, @modelcontextprotocol/server/stdio’da bir stdio transport’u gönderir.',
+    },
+    {
+      text: 'Paket adı iki ana sürüm arasında değişmedi',
+      explanation:
+        'v2, @modelcontextprotocol/server ve @modelcontextprotocol/client olarak ikiye ayrılır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/write-your-own-server"
+  questionId="q4"
+  lang="tr"
+  prompt="Laboratuvar prompt'u neden 'Do not read any file yourself' diyor?"
+  options={[
+    {
+      text: 'Çünkü MCP laboratuvarlarında dosya okumak yasak',
+      explanation: 'Yasak değil; kısıtlama çalıştırmanın neyi kanıtladığıyla ilgili.',
+    },
+    {
+      text: 'Böylece doğru bir cevap yalnızca server’ınız üzerinden gelmiş olabilir',
+      correct: true,
+      explanation:
+        'Claude, JSON’u `cat`’leyip doğru cevap verebilirdi, hiçbir şey kanıtlamadan. Kısıtlama, çalıştırmayı kanıt hâline getirir.',
+    },
+    {
+      text: 'Token tasarrufu için',
+      explanation: 'Küçük bir yan etki, ana neden değil.',
+    },
+    {
+      text: 'Çünkü dosya o noktada okunabilir değil',
+      explanation: 'Okunabilir — CLI onu daha önceki bir adımda yazdı.',
+    },
+  ]}
+/>
+
+**Sırada:** `07-mcp-security`, bütün modülün etrafında döndüğü soruyu sorar: bir server bağladığınızda tam olarak neye güveniyorsunuz ve bir yönetici bu konuda ne yapabilir?

@@ -9,7 +9,7 @@ difficulty: core
 tags: ['platformlar', 'vs-code', 'ide']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Use Claude Code in VS Code'
@@ -27,8 +27,259 @@ lab:
   repo_tag: 'lesson/m15-01-start'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m15-platforms/01-vs-code.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders Claude Code’un VS Code eklentisini anlatır. Eklenti CLI ile aynı agentic loop’u çalıştırır, aynı `CLAUDE.md` dosyasını okur ve aynı MCP server’lara bağlanır; değişen tek şey arayüzdür. Spark ikonu, Activity Bar, Command Palette ve Status Bar üzerinden panelin nasıl açıldığını; editör seçiminizin her prompt’a otomatik eklendiğini ve `Option+K` / `Alt+K` ile `@file.ts#5-10` biçiminde açık bir referansın nasıl yazıldığını; Manual mode’da yan yana diff içinde öneriyi kabul etmeden önce düzenleyebildiğinizi ve Claude’a bunun bildirildiğini kapsar. Ayrıca eklentinin çalıştırdığı, `/mcp` içinde gizli olan `ide` MCP server’ını ve modele görünen tek tool olan salt okunur `mcp__ide__getDiagnostics` tool’unu; `.env` gibi dosyaları bağlam dışında tutmak için `Read` deny rule kullanımını; ve `claude -p` ile Agent SDK gibi yalnızca CLI’da bulunan yetenekleri açıklar. Laboratuvar, `lesson/m15-01-start` etiketindeki lab deposu üzerinde eklentiyi gerçekten çalıştırır.
+- Claude Code eklentisini VS Code'a kurmak ve onu Spark ikonundan, Activity Bar'dan, Command Palette'ten ya da Status Bar'dan açmak.
+- Mevcut seçiminiz ekliyken bir [prompt](/tr/playbook/glossary/#prompt) (Claude'a verilen istek metni) göndermek ve `Option+K` / `Alt+K` ile açık bir `@file.ts#5-10` referansı eklemek.
+- VS Code'un yan yana diff'inde önerilen bir düzenlemeyi incelemek ve kabul etmeden önce öneriyi kabul etmek, reddetmek ya da düzenlemek.
+- Eklentinin entegre terminaldeki `claude`'a göre size ne kattığını — ve terminalin hâlâ eklentinin vermediği neyi verdiğini — söylemek.
+- Çalışan bir VS Code penceresine `/ide` ile _dış_ bir terminal oturumu bağlamak ve bunu başlangıçta hangi flag'in yaptığını bilmek.
+
+**Ön koşullar.** VS Code 1.94.0 veya üzeri; ücretli bir Claude aboneliği (Pro, Max, Team veya Enterprise) ya da bir Claude Console hesabı — API anahtarı gerekmez. Lab deposunun bir git checkout'una ihtiyacınız var (`lesson/m15-01-start`). [Permission mode](/tr/playbook/glossary/#permission-mode)'lar (bir oturumun tool çağrılarını nasıl onaylayacağını belirleyen kip) üzerine olan önceki modül (`m04`) ve git [workflow](/tr/playbook/glossary/#workflow)'ları (çok adımlı otomatik iş akışları) üzerine olan modül (`m08`) bilindiği varsayılıyor.
+
+<WhenNotToUse>
+  Editörü olmayan bir makinede SSH üzerinden çalışırken, Claude Code'u betiklerken (`claude -p`,
+  Agent SDK ve her [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek
+  komutla çalıştırma) workflow yalnızca CLI'da çalışır) ya da eklentinin taşımadığı yalnızca CLI'a
+  özgü bir özelliğe ihtiyacınız olduğunda eklentiyi atlayın. İzlemeyeceğiniz bir görev için de
+  yanlış yüzeydir: uzun, otonom bir refactor, odakta tutmanız gereken bir panelde değil, bir cloud
+  oturumunda ya da bir background oturumunda olmalıdır. Ve editörünüz eklentinin kurulamayacağı bir
+  VS Code fork'uysa, bunun yerine CLI'ı kurup o editörün entegre terminalinde `claude` çalıştırın —
+  CLI her terminalde çalışır.
+</WhenNotToUse>
+
+## Kavram
+
+### Aynı motor, farklı pencere
+
+Eklenti farklı bir ürün değildir. CLI ile aynı [agentic loop](/tr/playbook/glossary/#agentic-loop)'u (bağlam toplama, harekete geçme ve sonucu doğrulama çevrimini) çalıştırır, aynı `CLAUDE.md`'yi okur, aynı ayarlara uyar ve aynı MCP server'lara bağlanır. Değişen şey arayüzdür: kayan bir [transcript](/tr/playbook/glossary/#transcript) (gerçek bir oturumun kaydı) yerine editörünüzün içinde yaşayan bir panel, her önerilen düzenleme için VS Code'un kendi [diff](/tr/playbook/glossary/#diff) (değişikliklerin satır satır gösterimi) görüntüleyicisi ve editörünüzün seçiminin otomatik olarak Claude'a verilmesi.
+
+Kurmadan önce bilinmeye değer bir ayrıntı: **eklenti, sohbet paneli için CLI'ın kendi kopyasını paketler.** VS Code'un entegre terminalinde de `claude` yazmak istiyorsanız, bağımsız CLI kurulumuna da ihtiyacınız var.
+
+### Açmak
+
+VS Code'un her yerinde **Spark ikonu** Claude Code anlamına gelir. Dört giriş yolu:
+
+| Giriş noktası   | Nasıl                                                                                              |
+| --------------- | -------------------------------------------------------------------------------------------------- |
+| Editor Toolbar  | Editörün sağ üstündeki Spark ikonuna tıklayın. Yalnızca bir dosya açıkken görünür.                 |
+| Activity Bar    | Oturum listesini açmak için sol kenar çubuğundaki Spark ikonuna tıklayın. Her zaman görünür.       |
+| Command Palette | `Cmd+Shift+P` / `Ctrl+Shift+P`, "Claude Code" yazın, **Open in New Tab** gibi bir seçenek seçin.   |
+| Status Bar      | Sağ alttaki **✱ Claude Code**'a tıklayın — `preferredLocation` `sidebar` olduğunda kullanılabilir. |
+
+Paneli ilk açtığınızda tarayıcı üzerinden oturum açın. Daha sonra **Not logged in · Please run /login** görürseniz, eklenti oturum açma ekranını kendiliğinden yeniden açar; açmıyorsa **Developer: Reload Window**'u çalıştırın.
+
+### Seçim bağlamı ve `@` bahisleri
+
+Claude, seçtiğiniz metni otomatik olarak görür. Bu, hiçbir tuşa basmadan varsayılan olarak geçerlidir. `Option+K` (macOS) / `Alt+K` (Windows, Linux) tuşuna basmak bir adım daha ileri gider ve prompt'unuza `@file.ts#5-10` gibi açık bir referans ekler; böylece aralık, tek bir tur için örtük bir bağlam olmak yerine konuşmaya yazılmış olur.
+
+Her iki yol da aynı mekanizmadan geçer: eklenti bağlıyken CLI, her prompt'a bağlam olarak mevcut editör seçiminizi ve aktif dosyanın yolunu ekler. `.env` gibi hassas bir dosyayı bunun dışında tutmak için, o dosyanın yoluna bir `Read` **deny** kuralı ekleyin — eşleşen bir deny kuralı hem seçili metni hem de açık-dosya bildirimini engeller.
+
+Bu dersin işlenmiş örnek prompt'u bilinçli olarak bir seçim etrafında şekillenir, çünkü eklentinin yaptığı ve çıplak bir terminalin yapamadığı tek şey budur:
+
+```text
+Explain what the lines I have selected do, then tell me the one edge case
+they do not handle. Do not change any files yet.
+```
+
+### Değişiklikleri incelemek
+
+Claude düzenlemek istediğinde ne göreceğiniz, prompt kutusunun altında gösterilen permission mode'a bağlıdır:
+
+- **Auto** — bir sınıflandırıcı, size sormak yerine çoğu eylemi inceler. Pro, Max ve Team planlarında eklentinin yerleşik başlangıç modu budur.
+- **Manual** — Claude, orijinal ile öneriyi yan yana karşılaştırıp sonra sorar. Kabul eder, reddeder ya da bunun yerine ne yapılacağını söylersiniz. **Kabul etmeden önce diff görünümünde önerilen içeriği düzenlerseniz, Claude'a değiştirdiğiniz söylenir**, böylece dosyanın kendi önerisiyle eşleştiğini varsaymaya devam etmez.
+- **Plan** — Claude önce yaklaşımı tarif eder. VS Code, planı Claude başlamadan önce satır içi not düşebileceğiniz tam bir Markdown belgesi olarak açar.
+- **Edit automatically** — düzenlemeler sormadan uygulanır.
+
+### `ide` MCP server'ı
+
+Eklenti etkinken, CLI'ın bağlandığı `ide` adında yerel bir [MCP server](/tr/playbook/glossary/#mcp-server) (Claude'a dış araç ve veri sağlayan sunucu) çalıştırır. Diff'lerin yerel görüntüleyicide nasıl açıldığı, seçimlerin `@` bahislerine nasıl ulaştığı, Claude'un editör tanılamalarını nasıl okuduğu ve — bir Jupyter defterinde — hücreleri çalıştırmayı VS Code'dan nasıl istediği budur. `/mcp`'den gizlidir çünkü yapılandıracak bir şey yoktur, ama vardır ve kuruluşunuz bir `PreToolUse` [hook](/tr/playbook/glossary/#hook) (yaşam döngüsündeki belirli anlarda otomatik çalışan komut) içinde MCP [tool](/tr/playbook/glossary/#tool)'larını (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı araçları) allowlist'e alıyorsa önemlidir.
+
+Sunucu yaklaşık bir düzine tool barındırır; geri kalanı CLI'ın kendi arayüzü için kullandığı ve tool listesi Claude'a ulaşmadan önce filtrelenen dahili RPC'dir. Modele ulaşan **iki** tanedir:
+
+| Tool                       | Ne yapar                                                        | Salt okunur |
+| -------------------------- | --------------------------------------------------------------- | ----------- |
+| `mcp__ide__getDiagnostics` | VS Code'un Problems panelindeki hataları ve uyarıları döndürür. | Evet        |
+| `mcp__ide__executeCode`    | Aktif Jupyter defterinin kernel'inde Python çalıştırır.         | Hayır       |
+
+`mcp__ide__executeCode` hiçbir şeyi sessizce çalıştıramaz: kod, aktif defterin sonuna yeni bir hücre olarak eklenir ve her çağrıda yerel bir Quick Pick sizden **Execute** ya da **Cancel** ister. İptal etmek ya da `Esc` ile kapatmak Claude'a bir hata döndürür ve hiçbir şey çalışmaz. Bu Quick Pick, `PreToolUse` hook'larından ayrıdır — bir allowlist girdisi Claude'un bir hücreyi _önermesine_ izin verir; Quick Pick, onu _gerçekten_ çalıştırmasını sağlayan şeydir. JetBrains eklentisi bu noktada farklıdır ve bir sonraki ders bunu anlatır.
+
+### Eklenti mi CLI mi?
+
+Eklentideki her şey CLI'da da vardır. Tersi doğru değildir ve ayrım ezberlenmeye değer:
+
+| İstediğiniz                                                        | Kullanın                                          |
+| ------------------------------------------------------------------ | ------------------------------------------------- |
+| Satır içi diff'ler, belge olarak plan incelemesi, oturum sekmeleri | Eklenti                                           |
+| `claude -p`, Agent SDK, herhangi bir betik                         | CLI                                               |
+| Açık VS Code pencerenizi süren dış bir terminal                    | CLI artı `/ide` (ya da `claude --ide` çalıştırın) |
+| Tarayıcı otomasyonu                                                | İkisi de — bkz. `06-chrome`                       |
+
+`claude --ide`, bu sürümde gerçek bir flag'tir:
+
+<Transcript
+  src="content/_shared/transcripts/m15-platforms/01-vs-code/02-help-ide.txt"
+  range="2-4"
+/>
+
+`/ide`, çalışan bir oturumun içinden aynı şeyi yapar ve ayrıca bağlantı durumunu bildirir.
+
+## Uygulamalı laboratuvar
+
+Bu laboratuvar VS Code içinde geçer, dolayısıyla çoğu yazmaktan çok tıklamaktır. Aşağıda yalnızca iki doğrulama komutu kayıtlıdır — geri kalan her şey kendinizin yapıp gözlemlediği bir şeydir ve bu kurs, fotoğraflamadığı bir arayüzün ekran görüntülerini uydurmaz.
+
+<Lab
+  title="Laboratuvar · lab deposunu VS Code eklentisinden sürün"
+  lessonId="tr/l3-advanced/m15-platforms/vs-code"
+  repoTag="lesson/m15-01-start"
+  steps={[
+    'Lab deposunu klonlayın ve `lesson/m15-01-start`i checkout edin, sonra o klasörü VS Code’ta açın (checkout’tan `code .`, böylece VS Code kabuk ortamınızı devralır).',
+    'Eklentiyi kurun: `Cmd+Shift+X` / `Ctrl+Shift+X`e basın, "Claude Code" arayın, **Install**e tıklayın. Sonrasında panel görünmüyorsa Command Palette’ten **Developer: Reload Window** çalıştırın.',
+    '`src/api/server.ts`i açın, Editor Toolbar’daki Spark ikonuna tıklayın ve panel sizden istediğinde oturum açın.',
+    'Editörde bir request handler’ın gövdesini seçin. Bir dosya adı yazmadan şunu gönderin: `Explain what the lines I have selected do, then tell me the one edge case they do not handle. Do not change any files yet.` Cevabın seçiminizle ilgili olduğunu doğrulayın.',
+    'Farklı bir aralık seçiliyken `Option+K` / `Alt+K`ye basın ve prompt kutusuna bir `@src/api/server.ts#L…-…` referansı eklendiğini kontrol edin.',
+    'Prompt kutusunun altındaki permission-mode göstergesine tıklayın ve **Manual**a geçirin. Claude’dan seçtiğiniz handler’ın üstüne tek satırlık bir yorum eklemesini isteyin. Diff göründüğünde, diff görünümünde önerilen yorum metnini düzenleyin, sonra kabul edin.',
+    'Entegre terminalde `git diff` çalıştırın ve çalışma ağacındaki metnin Claude’un orijinal önerisi değil *sizin* düzenlediğiniz sürüm olduğunu doğrulayın.',
+    'VS Code dışında bir terminal açın, aynı checkout’ta `claude` çalıştırın, sonra `/ide` çalıştırın ve VS Code pencerenize bir bağlantı bildirdiğini doğrulayın.',
+  ]}
+  expected="Eklenti, siz bir dosya adı vermeden seçiminiz hakkında cevap verir; Option+K/Alt+K bir satır aralığıyla bir @-referansı ekler; Manual mode diff’i kabul etmeden önce öneriyi düzenlemenize izin verir ve git diff düzenlediğiniz metni gösterir; dışarıdan bir terminaldeki /ide aynı pencereye bağlanır."
+  checklist={[
+    'Claude Code paneli Spark ikonundan açıldı ve oturum açıldı',
+    'Dosya adı olmayan bir prompt mevcut seçim hakkında yanıtlandı',
+    'Option+K / Alt+K bir @file#Lstart-Lend referansı ekledi',
+    'Manual-mode diff’i kabul etmeden önce düzenlendi ve git diff düzenlenen metni gösteriyor',
+    'Dış bir terminalden /ide bir bağlantı bildirdi',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m15-platforms/01-vs-code/01-version.txt"
+    range="2-3"
+  />
+</Lab>
+
+VS Code'un entegre terminalinde `Shift+Enter` bir satır eklemek yerine gönderiyorsa, bir kez `/terminal-setup` çalıştırın. VS Code'da ayrıca `terminal.integrated.gpuAcceleration`ı `"off"` yapar (bozuk metni önlemek için) ve `terminal.integrated.mouseWheelScrollSensitivity`ı ayarlar.
+
+## Anti-pattern'ler
+
+**"Eklenti onu göremiyor" diye dosyayı prompt'a yapıştırmak.** Görebilir. Seçiminiz otomatik olarak eklenir ve `@` bahisleri geri kalan her şeyi kapsar. Büyük içeriği VS Code'un entegre terminaline yapıştırmak faydasızdan da beterdir: karakterler Claude Code'a ulaşmadan düşebilir. _Düzeltme:_ seçin, `@` ile bahsedin ya da Claude'dan dosyayı okumasını isteyin.
+
+**Eklentiyi kurup terminalde `claude` beklemek.** Eklenti, yalnızca kendi paneli için bir CLI kopyası paketler. _Düzeltme:_ terminal komutunu istiyorsanız bağımsız CLI'ı da kurun.
+
+**`.env`i görünür bırakmak.** Eklenti bağlıyken seçim ve açık-dosya bağlamı her prompt'ta Claude'a ulaşır. _Düzeltme:_ o yol için bir `Read` deny kuralı ekleyin; bu hem seçili metni hem de açık-dosya bildirimini engeller.
+
+**Auto mode "zaten kontrol etti" diye okumadığınız bir diff'i kabul etmek.** Auto mode'un sınıflandırıcısı riskli eylemleri engeller; değişikliğin istediğiniz şey olup olmadığına karar vermez. _Düzeltme:_ diff'i okuyun ve incelemeden birleştirmeyeceğiniz her şeyde Manual mode kullanın.
+
+**Eklentinin headless iş yapabileceğini varsaymak.** Betikleme, Agent SDK, [CI](/tr/playbook/glossary/#ci)'da (her push'ta ya da pull request'te otomatik çalışan test/kontrol hattı) `claude -p`: hepsi yalnızca CLI'da. _Düzeltme:_ otomasyon için CLI'ı kurulu tutun, etkileşimli iş için eklentiyi kullanın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/vs-code"
+  questionId="q1"
+  lang="tr"
+  prompt="Editörde on satır seçip hiçbir dosya adı vermeden bir soru soruyorsunuz. Claude ne görür?"
+  options={[
+    {
+      text: 'Hiçbir şey — önce dosyayı @ ile bahsetmeniz gerekir.',
+      explanation: 'Eklenti bağlıyken seçim bağlamı otomatiktir; @ bahisleri açık biçimidir.',
+    },
+    {
+      text: 'Seçiminiz ve aktif dosyanın yolu, prompt’a eklenmiş olarak.',
+      correct: true,
+      explanation:
+        'Bağlıyken CLI, her prompt’a bağlam olarak mevcut seçimi ve açık-dosya yolunu ekler.',
+    },
+    {
+      text: 'Bağlama yüklenmiş bütün çalışma alanı.',
+      explanation: 'Claude dosyaları talep üzerine okur; çalışma alanını önceden yüklemez.',
+    },
+    {
+      text: 'Yalnızca dosya adı, hiçbir zaman metin.',
+      explanation:
+        'Seçili metnin kendisi de dahildir, bu yüzden bir Read deny kuralı ikisini de engeller.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/vs-code"
+  questionId="q2"
+  lang="tr"
+  prompt="Manual mode’da Claude’un önerdiği değişikliği diff görünümü içinde düzenleyip sonra kabul ediyorsunuz. Sırada ne olur?"
+  options={[
+    {
+      text: 'Claude’a öneriyi değiştirdiğiniz söylenir, böylece dosyanın yazdığıyla eşleştiğini varsaymaz.',
+      correct: true,
+      explanation: 'Eklentinin diff görünümünün belgelenmiş davranışı.',
+    },
+    {
+      text: 'Düzenlemeniz atılır ve Claude’un orijinal önerisi uygulanır.',
+      explanation: 'Kabul edilen içerik, sizin düzenlediğiniz içeriktir.',
+    },
+    {
+      text: 'Yeniden eşitlenmek için oturum yeniden başlar.',
+      explanation: 'Hiçbir şey yeniden başlamaz.',
+    },
+    {
+      text: 'Düzenleme uygulanır ama Claude bilgilendirilmez, bu yüzden sonraki turlar yanlış olabilir.',
+      explanation: 'Bu, eklentinin Claude’a bildirerek tam olarak önlediği başarısızlık biçimidir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/vs-code"
+  questionId="q3"
+  lang="tr"
+  prompt=".env dosyasını eklentinin gönderdiği bağlamın dışında tutmak istiyorsunuz. Ne işe yarar?"
+  options={[
+    {
+      text: 'O yol için bir `Read` deny kuralı eklemek.',
+      correct: true,
+      explanation:
+        'Eşleşen bir deny kuralı, o dosya için hem seçili metni hem de açık-dosya bildirimini engeller.',
+    },
+    {
+      text: 'Prompt göndermeden önce dosyayı kapatmak — tek kontrol budur.',
+      explanation: 'O tur için işe yarar, ama kalıcı kontrol deny kuralıdır.',
+    },
+    {
+      text: '`/mcp` içinde `ide` MCP server’ını devre dışı bırakmak.',
+      explanation: '`ide` sunucusu `/mcp`den gizlidir çünkü orada yapılandıracak bir şey yoktur.',
+    },
+    {
+      text: 'Plan mode’a geçmek.',
+      explanation: 'Plan mode düzenlemeleri kısıtlar, hangi bağlamın okunduğunu değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/vs-code"
+  questionId="q4"
+  lang="tr"
+  prompt="Bunlardan hangisi yalnızca CLI’da vardır, eklentide karşılığı yoktur?"
+  options={[
+    {
+      text: 'Claude düzenlemeden önce bir planı incelemek.',
+      explanation: 'Eklenti, planı not düşebileceğiniz bir Markdown belgesi olarak açar.',
+    },
+    {
+      text: '`claude -p` ve Agent SDK.',
+      correct: true,
+      explanation: 'Betikleme ve Agent SDK yalnızca CLI yüzeyleridir.',
+    },
+    {
+      text: 'Chrome ile tarayıcı otomasyonu.',
+      explanation: 'Chrome hem CLI’dan hem de VS Code eklentisinden çalışır.',
+    },
+    {
+      text: 'Oturum ortasında permission mode değiştirmek.',
+      explanation: 'Eklentinin prompt kutusunda bir mode göstergesi vardır.',
+    },
+  ]}
+/>
+
+**Sırada:** `02-jetbrains`, diğer IDE yüzeyini anlatır — IntelliJ, PyCharm ya da WebStorm terminalinizde CLI'ı çalıştıran eklentiyi ve onu en sık bozan WSL ağını.

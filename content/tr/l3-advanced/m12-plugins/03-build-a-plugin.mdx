@@ -6,10 +6,10 @@ module: 'm12-plugins'
 order: 3
 duration_min: 30
 difficulty: core
-tags: ['plugins', 'skills', 'hooks', 'packaging']
+tags: ["plugin'ler", "skill'ler", "hook'lar", 'paketleme']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Create plugins'
@@ -27,8 +27,436 @@ lab:
   repo_tag: 'lesson/m12-03-start'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m12-plugins/03-build-a-plugin.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu laboratuvar, kursun başında yazdığınız `commit-msg` [skill](/tr/playbook/glossary/#skill)'ini ve `format-on-save` [hook](/tr/playbook/glossary/#hook)'unu `labtrack-tools` adlı tek bir plugin hâline getirir. Dönüşümün büyük kısmı dosya taşımaktır: skill `plugins/labtrack-tools/skills/commit-msg/` altına gider, hook yapılandırması `settings.json`'daki `hooks` nesnesiyle birebir aynı şekilde `hooks/hooks.json` dosyasına taşınır. İki nokta mekanik değildir. Birincisi, hook komutu paketlenmiş script'e mutlaka `${CLAUDE_PLUGIN_ROOT}` üzerinden ulaşmalıdır; çünkü kurulum plugin dizinini bir önbellek konumuna kopyalar ve göreli yol kullanıcının projesine çözülür. İkincisi, `m07` hook'u proje kökünü kendi dosya konumundan hesaplıyordu — plugin içinde bu, önbellek dizinine çıkar ve hook sessizce hiçbir şey yapmaz; bunun yerine kök, `PostToolUse` payload'ındaki `cwd` alanından alınmalıdır. Geliştirme sırasında plugin'i kurmadan `claude --plugin-dir ./plugins/labtrack-tools` ile yükler, değişiklikleri `/reload-plugins` ile alırsınız. Laboratuvar sonunda ağacı `lesson/m12-03-solution` etiketiyle karşılaştırır, `claude plugin validate` çalıştırır ve headless bir `claude -p "/labtrack-tools:commit-msg cli"` çağrısıyla plugin skill'inin gerçekten çalıştığını kanıtlarsınız.
+- Var olan bir `.claude/skills/` [skill](/tr/playbook/glossary/#skill)'ini (`SKILL.md` ile
+  tanımlanan, `/ad` ile çağrılan ya da Claude'un kendisinin yüklediği yeniden kullanılabilir
+  talimat paketi) ve bir `.claude/settings.json` [hook](/tr/playbook/glossary/#hook)'unu (Claude
+  Code'un yaşam döngüsündeki belirli anlarda otomatik çalışan komut), resmî geçiş adımlarını
+  izleyerek bir [plugin](/tr/playbook/glossary/#plugin)'e (Claude Code'a hook, skill,
+  [subagent](/tr/playbook/glossary/#subagent) (kendi bağlam penceresi olan yardımcı agent) ve
+  [MCP server](/tr/playbook/glossary/#mcp-server) (Claude'a dış araç ve veri sağlayan sunucu) gibi
+  bileşenleri paket hâlinde ekleyen eklenti) dönüştürmek.
+- Bir plugin `hooks/hooks.json` yazmak ve paket içindeki bir betiğe `${CLAUDE_PLUGIN_ROOT}`
+  üzerinden adres vermek.
+- `.claude/hooks/`'tan kopyalanan bir hook'un neden bir plugin içinde çalışmadan önce tek bir
+  satırının değişmesi gerektiğini açıklamak.
+- Geliştirme aşamasındaki bir plugin'i kurmadan `--plugin-dir` ile yüklemek ve `/reload-plugins`
+  ile yeniden yüklemek.
+- Bir plugin skill'inin gerçekten çalıştığını, CI'a koyabileceğiniz bir komutla
+  [headless](/tr/playbook/glossary/#headless) (arayüzsüz, tek seferlik çalıştırma) olarak
+  kanıtlamak.
+
+**Ön koşullar.** `01-plugin-anatomy` ve `02-marketplaces` dersleri. `m06-skills`'ten `commit-msg`
+skill'i ve `m07-hooks`'tan `format-on-save` hook'u — ikisi de bu dersin tag'inde laboratuvar
+deposunda zaten var. Node 24 ve laboratuvar deposunun bir klonu.
+
+<WhenNotToUse>
+  Hâlâ her gün değiştirdiğiniz bir `.claude/` kurulumunu bir plugin'e dönüştürmeyin. Resmî tavsiye,
+  hızlı yineleme için bağımsız başlamak ve paylaşmaya hazır olduğunuzda dönüştürmektir, ve nedeni
+  somuttur: bir plugin, senkron tutulması gereken bir manifest, her skill adına bir namespace ön
+  eki, yükseltilmesi gereken bir sürüm ve bir dağıtım kanalı ekler. "Başka kime lazım?" sorusunun
+  cevabı "henüz kimseye" ise, dönüşüm erken yaptığınız bir iştir. Ve tüm işi tek bir deponun kendi
+  kurallarını uygulamak olan bir hook'u dönüştürmeyin — o hook o depoya aittir, bir pakete değil.
+</WhenNotToUse>
+
+## Kavram
+
+### Geçiş aslında neyi değiştirir
+
+Dokümantasyon dönüşümü dört satırda özetliyor:
+
+| Bağımsız (`.claude/`)                   | Plugin                                   |
+| --------------------------------------- | ---------------------------------------- |
+| Yalnızca tek bir projede kullanılabilir | Marketplace'ler üzerinden paylaşılabilir |
+| `.claude/commands/`'taki dosyalar       | `plugin-name/commands/`'taki dosyalar    |
+| `settings.json`'daki hook'lar           | `hooks/hooks.json`'daki hook'lar         |
+| Paylaşmak için elle kopyalanmalı        | `/plugin install` ile kurulur            |
+
+Bu satırların ikisi mekanik dosya taşımalarıdır. Üçüncüsü — hook'ların `settings.json`'dan
+`hooks/hooks.json`'a taşınması — **aynı JSON biçimini** korur: ayar dosyanızdaki `hooks` nesnesini,
+üst düzey anahtarı `hooks` olan bir dosyaya kopyalarsınız. Dördüncüsü ise bütün mesele.
+
+Taşıdıktan sonra, yinelenenleri önlemek için orijinalleri `.claude/`'dan kaldırın. Dokümantasyonun
+işaret ettiği asimetriye dikkat edin: proje ve kullanıcı `.claude/agents/` tanımları aynı adlı
+plugin [agent](/tr/playbook/glossary/#agent)'larını (kendi başına iş yürüten yapay zekâ
+süreçlerini) **geçersiz kılar**, bu yüzden bir plugin agent'ı ancak orijinal kalktığında
+etkili olur. Plugin skill'leri namespace'lidir, bu yüzden `/commit-msg` ve
+`/labtrack-tools:commit-msg` ikisi de kullanılabilir kalır — hiçbir şey hiçbir şeyi geçersiz kılmaz,
+sadece iki tanenizin olur.
+
+### Kurduğumuz plugin
+
+`labtrack-tools`, kursun daha önceki bir yerinden bir skill ve bir hook'u bir araya getirir:
+
+```text
+plugins/labtrack-tools/
+  .claude-plugin/plugin.json   manifest — name, description, version, author
+  skills/commit-msg/SKILL.md   copy of .claude/skills/commit-msg (m06-03)
+  hooks/hooks.json             registers the hook below
+  hooks/format-on-save.mjs     copy of .claude/hooks/format-on-save.mjs (m07-03)
+  README.md                    what it is and how to try it
+```
+
+Manifest, `01` numaralı dersteki dört alanlı biçimdir:
+
+<CodeBlock title="plugins/labtrack-tools/.claude-plugin/plugin.json">
+
+```json
+{
+  "name": "labtrack-tools",
+  "description": "The m06/m07 example skill and hook (commit-msg, format-on-save), packaged as an installable plugin for the m12-03-build-a-plugin lab.",
+  "version": "1.0.0",
+  "author": {
+    "name": "CodeChup Claude Code Academy"
+  }
+}
+```
+
+</CodeBlock>
+
+### `hooks/hooks.json` ve kök değişkeni
+
+Hook yapılandırması, `settings.json`'a yazacağınız `hooks` nesnesinin aynısıdır, isteğe bağlı
+olmayan tek bir farkla:
+
+<CodeBlock title="plugins/labtrack-tools/hooks/hooks.json" highlight="9">
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/format-on-save.mjs\""
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+</CodeBlock>
+
+`${CLAUDE_PLUGIN_ROOT}`, plugin'in kurulum dizinine çözümlenir. Öyle olmak zorundadır, çünkü bir
+plugin'i kurmak onu **bir önbellek konumuna kopyalar** — geliştirdiğiniz yol, çalıştığı yol değildir.
+Göreli bir `./hooks/format-on-save.mjs`, kullanıcının projesine göre çözümlenir ve sizinki dışında
+her makinede başarısız olur.
+
+### Hook'un değişmesi gereken tek satırı
+
+İnsanları yakalayan kısım burası. `m07` hook'u depo kökünü kendi dosya konumundan hesaplar:
+
+```javascript
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+```
+
+Bu, betik depo içindeki `.claude/hooks/`'ta yaşadığında işe yarar. Bir plugin içinde bu yürüyüş
+plugin'in kendi önbellek dizinine çıkar, bu yüzden `node_modules/prettier` asla bulunmaz ve hook
+sessizce hiçbir şey yapmaz — en kötü başarısızlık kipi, çünkü her şey yolundaymış gibi görünür.
+
+Bir plugin hook'unun kurulduğu projeye göre sabit bir yolu yoktur, bu yüzden proje kökünü onun
+yerine hook payload'ından alır. `PostToolUse`, stdin'de JSON olarak `{tool_name, tool_input,
+tool_response, cwd, ...}` alır:
+
+<CodeBlock title="plugins/labtrack-tools/hooks/format-on-save.mjs (the changed lines)">
+
+```javascript
+// Unlike the project-local hook, a plugin hook has no fixed path relative to the project
+// it's installed into — use the project root PostToolUse itself reports (`cwd`).
+const root = input.cwd ?? process.cwd();
+const abs = isAbsolute(filePath) ? filePath : resolve(root, filePath);
+const rel = relative(root, abs).replace(/\\/g, '/');
+if (rel.startsWith('..') || rel.length === 0) return; // not inside the project
+```
+
+</CodeBlock>
+
+Hook'un geri kalanı değişmeden kalır, her yolun 0 ile çıkması kuralı dâhil: `PostToolUse` bloke
+edici bir olay değildir ve biçimlendirme bir oturumu asla kesintiye uğratmamalıdır.
+
+### Kurmadan test etmek
+
+`--plugin-dir`, bir plugin'i doğrudan bir dizinden yükler, marketplace ve kurulum olmadan:
+
+```bash
+claude --plugin-dir ./plugins/labtrack-tools
+```
+
+Aynı anda birkaçını yüklemek için bayrağı tekrarlayın, ve elinizde bir dizin yerine bir `.zip`
+arşivi varsa onu geçirin. Adı zaten kurulu bir marketplace plugin'iyle eşleşen bir `--plugin-dir`
+plugin'i **o oturum için önceliklidir** — zaten kurulu olan bir plugin'e yaptığınız bir değişikliği
+böyle test edersiniz. İstisna, yönetilen ayarların zorla etkinleştirdiği ya da zorla devre dışı
+bıraktığı bir plugin'dir — `--plugin-dir` bunları geçersiz kılamaz. Bu şekilde yüklendiğinde
+plugin'in kimliği `<ad>@inline` olur.
+
+Düzenledikçe, `/reload-plugins` yeniden başlatmadan değişiklikleri alır: plugin'ler, skill'ler,
+agent'lar, hook'lar, plugin MCP server'ları ve plugin LSP server'ları.
+
+Bu dersin örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni) dönüşümün kendisidir, devredilmiş hâliyle:
+
+```text
+Package .claude/skills/commit-msg and .claude/hooks/format-on-save.mjs as a
+plugin at ./plugins/labtrack-tools. Keep the skill's frontmatter as-is, register
+the hook through hooks/hooks.json, and make every bundled path work after an
+install — then run claude plugin validate on the result and show me the output.
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · m06 skill'ini ve m07 hook'unu labtrack-tools olarak paketleyin"
+  lessonId="tr/l3-advanced/m12-plugins/build-a-plugin"
+  repoTag="lesson/m12-03-start"
+  steps={[
+    "Laboratuvar deposunun klonunuzda yukarıdaki tag'i checkout edin ve `npm ci` çalıştırın.",
+    'Plugin iskeletini oluşturun: altında `.claude-plugin/`, `skills/` ve `hooks/` bulunan bir `plugins/labtrack-tools/`. Yalnızca manifest `.claude-plugin/` içine gider.',
+    "`.claude/skills/commit-msg/`'i `plugins/labtrack-tools/skills/commit-msg/`'e kopyalayın ve başlığını `/commit-msg`'den `/labtrack-tools:commit-msg`'e değiştirin — plugin namespace'i artık adın bir parçası.",
+    "`plugins/labtrack-tools/.claude-plugin/plugin.json`'ı `name`, `description`, `version` ve `author` ile yazın.",
+    "`.claude/hooks/format-on-save.mjs`'i `plugins/labtrack-tools/hooks/`'e kopyalayın, sonra proje kökünü nasıl bulduğunu değiştirin: betiğin kendi konumu yerine hook payload'ının `cwd`'sinden alın.",
+    "Hook'u `PostToolUse` üzerine `Write|Edit` matcher'ıyla ve `node \"${CLAUDE_PLUGIN_ROOT}/hooks/format-on-save.mjs\"` komutuyla kaydeden `plugins/labtrack-tools/hooks/hooks.json`'ı yazın.",
+    "Plugin'in ne içerdiğini ve nasıl deneneceğini söyleyen bir `README.md` ekleyin.",
+    'Ağacınızı çözümle karşılaştırın: `git add -A plugins && git diff --cached --stat lesson/m12-03-solution -- plugins/`. Çıktı olmaması tam bir eşleşme demektir.',
+    'Doğrulayın: `claude plugin validate ./plugins/labtrack-tools`, sonra makine tarafından okunabilir raporu görmek için tekrar `--json` ile.',
+    "Skill'in çalıştığını kanıtlayın. Plugin diskten yüklüyken ve tanımlanacak stage'lenmiş bir diff varken, aşağıdaki üçüncü transcript'teki headless komutu çalıştırın.",
+  ]}
+  expected="`git diff --cached --stat lesson/m12-03-solution -- plugins/` hiçbir şey yazdırmaz; `claude plugin validate ./plugins/labtrack-tools`, `✔ Validation passed` yazdırır ve 0 ile çıkar; headless çalıştırma `/labtrack-tools:commit-msg`'i çağırır ve stage'lenmiş plugin dosyaları için tek bir conventional commit mesajı yazdırır."
+  checklist={[
+    '`plugins/labtrack-tools/` altında beş dosya var, ve `.claude-plugin/` içinde yalnızca `plugin.json`',
+    'Hook komutu göreli bir yol değil `${CLAUDE_PLUGIN_ROOT}` kullanıyor',
+    "Hook, proje kökünü `import.meta.url`'den değil payload'ın `cwd`'sinden alıyor",
+    "Çözüm tag'ine karşı `git diff --cached --stat` hiçbir şey yazdırmıyor",
+    '`claude plugin validate` 0 ile çıkıyor',
+    "Headless çalıştırma bir `type(scope): summary` satırı yazdırdı — plugin skill'i gerçekten ateşlendi",
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/03-build-a-plugin/01-build-tree.txt"
+    range="2-10"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/03-build-a-plugin/02-validate.txt"
+    range="2-21"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/03-build-a-plugin/03-skill-headless.txt"
+    range="2-7"
+  />
+</Lab>
+
+O kayıtlarda adlandırılmaya değer üç şey var.
+
+`--json` raporu, `04` numaralı dersin üzerine bir CI kontrolü kurduğu biçimdir: `success`, `strict`,
+`target`, `manifest` ve bir `contents` dizisi. Burada `contents` boştur ve `manifest`, boş `errors`,
+`warnings` ve `notes` taşır — temiz bir manifest, ve bileşenler hakkında hiçbir şey söylenmemiş,
+çünkü doğrulama manifest'leri okur.
+
+Headless çalıştırma `--allowedTools "Bash(git diff:*),Bash(git status:*)"` geçirir. Skill'in kendi
+`allowed-tools` frontmatter'ı bunları zaten bildirir, ama laboratuvar klonuna güvenilmemiştir, bu
+yüzden oturum projenin `permissions.allow` girdilerini yok sayar ve bunu ilk satırında söyler. O
+uyarı gerçektir ve okumaya değer: **güvenilmeyen bir çalışma alanı projenin izin verme kurallarını
+düşürür**, bu yüzden headless bir çalıştırmanın izinlerinin komut satırında olması gerekir.
+
+Ve prompt, onun bir açıklaması değil, slash komutunun kendisidir — `/labtrack-tools:commit-msg
+cli`. `commit-msg`, `disable-model-invocation: true` ayarlar, bu yüzden Claude ona kendiliğinden
+asla başvurmaz; onu ateşlemenin tek yolu çağırmaktır. `--append-system-prompt "Reply in English."`
+oradadır çünkü bu kaydı yapan makinenin başka bir dilde cevap veren global tercihleri var — tam
+olarak `m01-start/01`'in anlattığı gibi.
+
+### İşletim sistemine göre plugin ağacını oluşturma
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+mkdir -p plugins/labtrack-tools/.claude-plugin plugins/labtrack-tools/hooks plugins/labtrack-tools/skills
+cp -r .claude/skills/commit-msg plugins/labtrack-tools/skills/commit-msg
+cp .claude/hooks/format-on-save.mjs plugins/labtrack-tools/hooks/format-on-save.mjs
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+mkdir -p plugins/labtrack-tools/.claude-plugin plugins/labtrack-tools/hooks plugins/labtrack-tools/skills
+cp -r .claude/skills/commit-msg plugins/labtrack-tools/skills/commit-msg
+cp .claude/hooks/format-on-save.mjs plugins/labtrack-tools/hooks/format-on-save.mjs
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+New-Item -ItemType Directory -Force plugins/labtrack-tools/.claude-plugin, plugins/labtrack-tools/hooks, plugins/labtrack-tools/skills
+Copy-Item -Recurse .claude/skills/commit-msg plugins/labtrack-tools/skills/commit-msg
+Copy-Item .claude/hooks/format-on-save.mjs plugins/labtrack-tools/hooks/format-on-save.mjs
+```
+
+  </Fragment>
+</OSTabs>
+
+### Bu plugin'i burada kurmak hakkında dürüst bir not
+
+Laboratuvar deposu, `.claude/hooks/format-on-save.mjs`'i zaten kendi `.claude/settings.json`'ında
+doğrudan bağlıyor. `labtrack-tools`'u **aynı depoda** kurmak, bu yüzden her `Write` ya da `Edit`'te
+Prettier'ı iki kez çalıştırır. Zararsızdır — zaten biçimlendirilmiş bir dosyayı biçimlendirmek
+hiçbir şey yapmaz — ama bu, bir kullanıcının kendi keşfetmesine bırakılmak yerine bir plugin'in
+README'sinde yüksek sesle söylemesi gereken türden bir şeydir. Hook'u henüz olmayan bir projede
+plugin'i kurmak, tam olarak `m07-03`'ün sonucudur, elle kopyalanan bir dosya yerine bir paket olarak
+teslim edilmiş hâliyle.
+
+## Anti-pattern'ler
+
+**Hook betiğini, projeyi nasıl bulduğunu değiştirmeden kopyalamak.** Depo kökünü
+`import.meta.url`'den türeten bir hook, bir kurulumdan sonra plugin önbelleğine iner ve sessizce
+hiçbir şey yapmaz. _Düzeltme:_ `cwd`'yi hook payload'ından okuyun.
+
+**`hooks.json`'da göreli bir yol.** `node ./hooks/format-on-save.mjs` yalnızca çalışma kopyanızda
+işe yarar, başka hiçbir yerde çalışmaz. _Düzeltme:_ `node
+"${CLAUDE_PLUGIN_ROOT}/hooks/format-on-save.mjs"`.
+
+**Geçişten sonra orijinalleri `.claude/`'da bırakmak.** Artık birbirinden uzaklaşan iki kopyanız var,
+ve proje tanımının onu geçersiz kıldığı için asla etkili olmayan bir plugin agent'ınız var.
+_Düzeltme:_ plugin çalıştığında orijinalleri silin ve bunu bir [commit](/tr/playbook/glossary/#commit)'te (kalıcı, mesajlı değişiklik kaydında) belirtin.
+
+**Plugin'i düzenleyip hiçbir şeyin değişmediğine şaşırmak.** Skill'ler canlı yeniden yüklenir;
+hook'lar, `.mcp.json`, agent'lar ve output style'lar yüklenmez. _Düzeltme:_ bir `SKILL.md` dışında
+bir şey değiştirdikten sonra `/reload-plugins` çalıştırın.
+
+**Yalnızca kodu okuyarak test etmek.** Doğrulanan, yüklenen ve bileşenlerini listeleyen bir plugin
+yine de Claude'un hiç seçmediği bir skill'e ya da [matcher](/tr/playbook/glossary/#matcher)'ı
+(hook'un hangi tool ya da event üzerinde ateşleneceğini daraltan alan) hiç ateşlenmeyen bir hook'a
+sahip olabilir. _Düzeltme:_ skill'i namespace'li adıyla çağırın ve hook'un olayını tetikleyin, sonra hangi
+hook'ların eşleştiğini ve nasıl çıktığını [debug log](/tr/playbook/glossary/#debug-log)'unda
+(hook'ların tam çıktısının yazıldığı günlük dosyasında) kontrol edin.
+
+**İki plugin arasında kod paylaşmak için `../`'a başvurmak.** Kurulum her plugin dizinini
+kopyalar; dışındaki dosyalar kopyalanmaz. _Düzeltme:_ dosyayı çoğaltın ya da bir marketplace içinde
+bir symlink ile paylaşın.
+
+<Callout variant="changed">
+  Yeni plugin skill'lerini `skills/<ad>/SKILL.md` olarak yazın. Düz `commands/*.md` biçimi hâlâ
+  yükleniyor, ama plugin referansı artık yeni plugin'leri `skills/`'e yönlendiriyor — bağımsız
+  `.claude/commands/*.md` mekanizması 2.1.3'te skill'lere birleşti, plugin dizini adını korudu.
+  Claude Code 2.1.263 için `plugins-reference.md` üzerinden doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/build-a-plugin"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir plugin'in hook yapılandırması nerede yaşar ve hangi biçimdedir?"
+  options={[
+    {
+      text: 'Üst düzey bir `hooks` nesnesiyle `.claude-plugin/hooks.json`.',
+      explanation: 'Yalnızca `plugin.json`, `.claude-plugin/` içine girer.',
+    },
+    {
+      text: 'Plugin kökünde, `settings.json` ile aynı `hooks` nesne biçimine sahip `hooks/hooks.json`.',
+      correct: true,
+      explanation: 'Biçim aynıdır — ayar dosyanızdaki `hooks` nesnesini kopyalarsınız.',
+    },
+    {
+      text: "Yalnızca `plugin.json`'da; ayrı bir hook dosyası desteklenmez.",
+      explanation: "Bir manifest `hooks` alanı var, ama varsayılan konum `hooks/hooks.json`'dır.",
+    },
+    {
+      text: "Kullanıcının `~/.claude/settings.json`'ında, kurulum sırasında yazılır.",
+      explanation:
+        "Bir plugin, kendi hook'larını kaydetmek için kullanıcının ayarlarını asla düzenlemez.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/build-a-plugin"
+  questionId="q2"
+  lang="tr"
+  prompt="Plugin hook'unuz geliştirme sırasında çalıştı ama bir kurulumdan sonra hiçbir şey yapmıyor. En olası neden nedir?"
+  options={[
+    {
+      text: 'Matcher yanlış.',
+      explanation: 'Mümkün, ama bu geliştirme sırasında da başarısız olurdu.',
+    },
+    {
+      text: 'Betik, proje kökünü kendi dosya konumundan hesaplıyor; bu, kurulumdan sonra plugin önbelleğine işaret ediyor.',
+      correct: true,
+      explanation:
+        "Kurulum plugin'i başka bir yere kopyalar. Proje kökünü payload'ın `cwd`'sinden alın.",
+    },
+    {
+      text: "PostToolUse hook'ları kurulu plugin'ler için çalışmaz.",
+      explanation: "Çalışır; plugin hook'ları tam olarak proje hook'ları gibi tetiklenir.",
+    },
+    {
+      text: '`claude plugin validate` bunu yakalardı.',
+      explanation: "Doğrulama manifest'i okur; hook'unuzu asla çalıştırmaz.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/build-a-plugin"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir marketplace'ten kurulu `labtrack-tools`'unuz zaten var ve yerel bir değişikliği test etmek istiyorsunuz. `claude --plugin-dir ./plugins/labtrack-tools` ne yapar?"
+  options={[
+    {
+      text: 'O adda bir plugin zaten kurulu olduğu için başlamayı reddeder.',
+      explanation: 'Başlar; ad çakışması bilerek ele alınmıştır.',
+    },
+    {
+      text: 'Yerel kopyayı yükler, bu da o oturum için önceliklidir.',
+      correct: true,
+      explanation:
+        "Mesele de bu — kaldırmadan bir değişikliği test edebilirsiniz. İstisna, yönetilen ayarların zorla etkinleştirdiği ya da zorla devre dışı bıraktığı plugin'lerdir.",
+    },
+    {
+      text: 'Her iki kopyayı da yükler ve yerel olanı farklı bir namespace ile ayırır.',
+      explanation: 'Tek ad, tek plugin — yerel kopya oturum için kazanır.',
+    },
+    {
+      text: 'Diskteki kurulu kopyayı kalıcı olarak değiştirir.',
+      explanation: '`--plugin-dir` yalnızca o oturumu etkiler.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/build-a-plugin"
+  questionId="q4"
+  lang="tr"
+  prompt="Plugin'inizin `hooks/hooks.json`'ını oturum ortasında değiştirdiniz. Bunu ne alır?"
+  options={[
+    {
+      text: 'Hiçbir şey — hook yapılandırma değişiklikleri tam bir yeniden başlatma gerektirir.',
+      explanation: '`/reload-plugins` yeterlidir; bir yeniden başlatma gerekmez.',
+    },
+    {
+      text: '`/reload-plugins`. Yalnızca `SKILL.md` değişiklikleri kendiliğinden etkili olur.',
+      correct: true,
+      explanation:
+        "Skill'ler canlı yeniden yüklenir; hook'lar, `.mcp.json`, agent'lar ve output style'lar yeniden yüklemeye ihtiyaç duyar.",
+    },
+    {
+      text: 'Bir `SKILL.md` gibi otomatik olarak yeniden yüklenir.',
+      explanation:
+        "Canlı değişiklik algılama skill'leri kapsar, plugin'in diğer bileşenlerini değil.",
+    },
+    {
+      text: '`claude plugin update labtrack-tools`.',
+      explanation: "Bu, bir marketplace'ten yeni bir sürüm getirir, farklı bir işlemdir.",
+    },
+  ]}
+/>
+
+**Sırada:** `04-validate-and-eval`, `claude plugin validate`'i bir CI kapısına dönüştürür ve
+kurumunuz `claude plugin eval`'e sahip olduğunda onun neyi ölçtüğüne bakar.

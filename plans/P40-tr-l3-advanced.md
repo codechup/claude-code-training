@@ -2,7 +2,7 @@
 id: P40
 title: "TR translation: L3 Advanced"
 milestone: M3
-status: in_progress
+status: review
 owner: lead-opus
 branch: plan/40-tr-l3-advanced
 model_hint: sonnet
@@ -18,8 +18,11 @@ owned_paths:
 shared_paths:
   - content/tr/playbook/glossary.mdx
 estimate: L
-updated_at: 2026-09-08T00:46:05Z
-open_questions: []
+updated_at: 2026-09-08T02:23:09Z
+open_questions:
+  - "Missing glossary terms encountered during translation that have no entry yet in content/tr/playbook/glossary.mdx (a sibling session owns that file during this wave, so P40 could not add them): agent view, agent teams/teammate, background (subagent placement sense), advisor, isolation, webhook, GitHub Action/action (distinct from the existing GitHub App entry), Agent SDK, runner, prompt injection, protected path/critical path, managed settings, data retention/ZDR, transport, stdio, scope, marketplace (listed as a kept term in .claude/rules/i18n.md but absent from the glossary file itself), extension, IDE, Remote Control, Claude Tag, routine (also listed as a kept term but absent), cloud environment/cloud session, Desktop app, computer use, Dispatch, teleport, ultrareview, tmux session/multiplexer, Access bundle. Owner should triage and add the genuinely load-bearing ones (marketplace and routine look like real gaps since D-rules already name them as kept terms)."
+  - "content/tr/l3-advanced/m10-subagents/index.mdx, m12-plugins/index.mdx, m13-headless-ci/index.mdx and content/tr/l3-advanced/index.mdx all still translate 'agent(s)' as the invented Turkish calque 'ajan/ajanlar' (D018 violation). These files pre-date this plan (not among the 37 draft stubs P40 was scoped to flip) and were flagged by the reviewer subagent as out-of-scope for this PR; a follow-up plan should fix them the same way the 37 lesson files were fixed (ajan -> agent + Turkish suffix)."
+  - "Two MINOR cosmetic findings from the final reviewer pass (non-blocking): content/tr/l3-advanced/m10-subagents/02-custom-agents.mdx has the 'plugin' glossary link on its second prose occurrence rather than its first (first occurrence is a markdown-table cell); content/tr/l3-advanced/m15-platforms/06-chrome.mdx has the same pattern for 'tool' (first occurrence is inside a <CodeBlock title=...> caption). Left as-is since table cells/code captions are borderline 'prose' — flagging for the owner to set a firm convention."
 ---
 
 ## Goal
@@ -86,5 +89,18 @@ A reviewer runs `npm run dev`, switches to `/tr/l3-advanced/` via LangSwitch fro
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+- All 37 `draft: true` TR lesson stubs under `content/tr/l3-advanced/{m10-subagents,m11-mcp,m12-plugins,m13-headless-ci,m14-security,m15-platforms}/` were translated to full Turkish and flipped to `draft: false`. Module counts: m10 (6), m11 (7), m12 (5), m13 (6 — the live EN tree has 6 lessons, not the 5 the plan text estimated), m14 (5), m15 (8 — live EN tree has 8, not the 7 estimated). Translation done via 6 parallel subagents (one per module), following `.claude/rules/i18n.md` and matching the voice of `content/tr/l1-beginner/m01-start/01-what-claude-code-is.mdx`.
+- **Bug caught and fixed (build-breaking):** the translation pass left stray literal `</content>`/`</invoke>` tool-call artifacts at the end of several files (from the subagents' own Write-tool output leaking into the file), and several JSX string literals (`steps=`, `checklist=` arrays) had unescaped straight apostrophes on Turkish suffixes (`agent'a`, `commit'i`) that broke MDX/JS parsing, plus one YAML frontmatter field with the same issue. Found via `npm run build` failures and a custom Node script that evaluates every `steps={[...]}`/`checklist={[...]}`/`options={[...]}` block as JS to catch parse errors; fixed all instances; `npm run build` is clean.
+- **Terminology bug caught and fixed:** the m10-subagents translator agent systematically translated the kept-English term "agent" as the invented Turkish calque "ajan"/"Ajan" (173 occurrences across all 6 lessons) — a clear D018 violation caught by the `reviewer` subagent. Fixed with a scripted, suffix-aware find/replace (agent'ı, agent'lar, agent'ın, etc., matching the existing correct "subagent" pattern in the same files) and re-verified clean.
+- **Glossary-link gap caught and fixed:** the `reviewer` subagent's first sample review (4 lessons across m10/m12/m13/m15) found 4 MAJOR findings — pages with zero first-use glossary links despite using kept English terms with existing glossary entries. A broader static scan (custom Node script) found this was systemic across most of the 37 files. Ran 6 more parallel subagents (one per module) to add first-use glossary links + short Turkish parentheticals to real prose only (never inside JSX component props/code fences), sourcing wording from `content/tr/playbook/glossary.mdx` without editing that file. Verified: 324 `/tr/playbook/glossary/#...` links across the module, all resolving to real anchors in the built `dist/tr/playbook/glossary/index.html` (checked programmatically), none leaked into JSX prop strings.
+- Did **not** edit `content/tr/playbook/glossary.mdx` (owned by a sibling session this wave) — new terms encountered without an existing entry are listed in `open_questions` above instead.
+- Code blocks, terminal output and `<Transcript>` src/range props are verified byte-identical to the EN twins for all 37 files (scripted diff, zero differences) — the reviewer subagent independently confirmed the same for its sampled files.
+- **Reviewer subagent runs (D071), read-only via `claude -p .../reviewer.md`:**
+  1. First pass, 4 lessons (m10/01, m12/03, m13/03, m15/06): 0 blockers, 4 majors (missing glossary links), 1 minor (tag apostrophe convention) — all fixed.
+  2. Second pass, re-check same terminology fix on a different 4 lessons (m10/02, m11/07, m14/03, m15/06): confirmed "ajan"→"agent" fix; found glossary-link fix had *not yet* landed on those 4 (the remediation subagents were still running) — 3 blockers, 2 majors.
+  3. Final pass, same 4 lessons, after remediation completed: **VERDICT: APPROVED**, 0 blockers, 0 majors, 2 cosmetic minors (glossary link on a term's second prose occurrence rather than first, in `02-custom-agents.mdx` and `06-chrome.mdx` — see `open_questions`).
+  - Combined counts across all reviewer runs: 3 blockers found → 3 fixed; 6 majors found → 6 fixed; 2 minors found → 1 fixed (tags), 2 left as cosmetic/non-blocking (documented in `open_questions`).
+- Verification commands run with real output (all green): `npm run gate`, `npm run typecheck`, `npm run lint`, `npm test` (187 tests passed), `npm run build` (`check-no-inline-script (dist): OK`), `node scripts/check-public-hygiene.mjs`, `node scripts/check-raw-colors.mjs`, `node tools/plan/cli.ts check`. `dist/tr/l3-advanced/` route set matches `dist/en/l3-advanced/` exactly (diffed).
+- Playwright: ran against a temporary `playwright.p40.config.ts` (port 4441) + temporary `e2e/p40-l3-tr.spec.ts` covering one lesson per module plus a LangSwitch EN↔TR round-trip and a glossary-link click-through — 20/20 passed at 390px and 1280px with zero serious/critical axe violations. Also re-ran the existing `e2e/shell.spec.ts` and `e2e/a11y.spec.ts` against the same config — all 32 passed. Both temporary files were deleted after capturing results (not committed).
+- **Follow-up for the owner / next TR plan:** the "ajan" calque also appears in `content/tr/l3-advanced/index.mdx`, `m10-subagents/index.mdx`, `m12-plugins/index.mdx` and `m13-headless-ci/index.mdx` — these are pre-existing files outside this plan's 37-stub scope (not `draft: true`, not written by this session), so left untouched; flagged in `open_questions`.
 

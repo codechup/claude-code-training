@@ -9,7 +9,7 @@ difficulty: advanced
 tags: ['platformlar', 'slack', 'claude-tag']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Claude Tag'
@@ -31,8 +31,270 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m15-platforms/07-slack-claude-tag.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders Claude Tag’i anlatır: Slack kanallarında `@Claude` etiketini kurumunuzun ortak kimliği olarak çalıştıran ve yalnızca **Team ve Enterprise** planlarında bulunan entegrasyon. Her oturumu tek tek kullanıcının hesabı altında çalıştıran eski Claude Code in Slack’ten farkını; Owner kurulum adımlarını (Slack workspace’i `@Claude connect` ile eşleştirme, servis bağlantıları, depo yetkileri, aylık harcama limiti ve launch) kapsar. En kritik kuralı vurgular: Claude Tag’in neye erişebileceğini soran kişi değil, **içinde bulunduğunuz kanal** belirler — tek istisna, gönderenin kendi claude.ai hesabında çalışan DM’lerdir. Kanal işinin kurumsal bir kullanım bakiyesinden faturalandığını ve kişi başı ücret eklemediğini açıklar. Son bölüm routine’leri — zamanlanmış işler, kanal izleme ve tek bir pull request aboneliği — ve saat diliminin varsayılan olarak UTC olduğu tuzağını anlatır.
+- Claude Tag'i eski Claude Code in Slack'ten ayırt etmek ve hangisinin hangi planda geçerli olduğunu söylemek.
+- Owner kurulum yolunu tarif etmek: workspace'i eşleştirmek, bağlantıları eklemek, depoları yetkilendirmek, bir harcama limiti belirlemek, launch etmek.
+- Claude'un belirli bir kanalda neye ulaşabileceğine karar veren kuralı açıklamak — ve bir DM'nin neden istisna olduğunu.
+- Kanal işinin nasıl faturalandırıldığını ve bir harcama limitinin kullanım bakiyesiyle nasıl etkileştiğini söylemek.
+- Bir kanaldan bir routine (zamanlanmış iş, kanal izleme, PR aboneliği) kurmak ve listelemek ya da devre dışı bırakmak.
+
+**Ön koşullar.** Claude Tag, Anthropic'in birinci taraf hizmetinde yalnızca **Team ve Enterprise planlarında** kullanılabilir. Kurmak, Claude kuruluşunuzda bir **Owner** olmayı ve bir Slack workspace'i eşleştirmeyi gerektirir. Pro veya Max kullanıyorsanız Claude Tag size açık değildir; eski Claude Code in Slack kurulum yolu olarak kalır ve farklar aşağıda anlatılır.
+
+<WhenNotToUse>
+  Claude Tag, paylaşılan kanallarda takım işi içindir. Kendi dosyalarınız üzerinde kişisel iş için
+  yanlış araçtır — bu, Claude Code ya da Cowork'tür. Bireysel planlarda (Free, Pro, Max) ya da
+  üçüncü taraf dağıtımlar için kullanılamaz. Makinenizde değil geçici bir
+  [sandbox](/tr/playbook/glossary/#sandbox)'ta (dosya sistemi ve ağ erişimi kısıtlanmış izole bir
+  ortamda) çalışır, bu yüzden yerel checkout'unuza, yerel [MCP
+  server](/tr/playbook/glossary/#mcp-server)'larınıza (Claude'a dış araç ve veri sağlayan sunucular)
+  ya da [commit](/tr/playbook/glossary/#commit)'lenmemiş (kalıcı olarak kaydedilmemiş) işinize
+  dokunamaz. Ve bir kanaldaki her üyenin söylediği şey Claude'un üzerine hareket edebileceği bir
+  bağlam olduğu için, güvenilmeyen insanların yazabileceği bir kanala koymayın: Claude, konuşmadaki
+  diğer mesajlardan talimatları izleyebilir.
+</WhenNotToUse>
+
+## Kavram
+
+### İki farklı Slack entegrasyonu
+
+Bu, netleştirilmesi gereken ilk şeydir, çünkü ikisi de Slack'te `@Claude`dır ve farklı davranırlar.
+
+|                                       | **Claude Tag**                                      | **Claude Code in Slack** (eski)               |
+| ------------------------------------- | --------------------------------------------------- | --------------------------------------------- |
+| İşi yapan kimlik                      | Kuruluşunuzun ortak kimliği                         | Her bireysel kullanıcının kendi Claude hesabı |
+| Erişim, kim tarafından yapılandırılır | Kapsam başına (kanal, workspace, kuruluş) bir Owner | Her kullanıcının kendi bağlı depoları         |
+| Planlar                               | Team ve Enterprise                                  | Pro, Max, Team, Enterprise                    |
+| Faturalandırma                        | Bir harcama limitli kuruluş kullanım bakiyesi       | Bireysel kullanıcının plan limitleri          |
+| Kullanıcı başına kurulum              | Yok — kanaldaki herkes kullanabilir                 | Her kullanıcı kendi hesabını bağlar           |
+
+Anthropic, Team ve Enterprise workspace'leri için eski sürümü Claude Tag lehine emekliye ayırıyor; mevcut Slack uygulaması ve `@Claude` handle'ı kalıyor ve hesap ekibiniz size geçiş tarihini söyleyebilir. Pro ve Max'te Claude Tag kullanılamaz, bu yüzden eski sayfa kurulum yolu olarak kalır.
+
+### Nerede çalışır
+
+Claude Tag Slack'te çalışır. Bir kanala, thread'e ya da DM'ye yazarsınız ve orada cevap verir; **mesajı almasını garantilemek için `@Claude`ı etiketleyin.** İlerledikçe thread'e bir kontrol listesi gönderir, böylece bütün alışveriş kanal için görünür kalır.
+
+Bir görev üzerinde çalıştığında **geçici bir sandbox**ta çalışır — bir konuşma başladığında oluşturulan, üzerinde çalıştığı kodu ya da dosyaları tutan, konuşma boşta kaldığında atılan. Bilgisayarınızda hiçbir şey çalışmaz.
+
+Claude Tag kanal oturumları yalnızca **kuruluş düzeyinde** cloud environment'lar kullanır: ya kuruluş paylaşımlı ortamlar ya da kendi barındırılan olanlar. Bu, yaygın bir kurulum hatasıdır — claude.ai/code'ta oluşturulan bir ortam kişisel hesabınıza aittir ve onda başlatılan kanal oturumları hemen başarısız olur, yeniden denemeler yardımcı olmaz. Bir Owner'ın onu bir kuruluş-paylaşımlı ortam olarak yeniden oluşturması gerekir.
+
+### Erişim kişiyi değil kanalı izler
+
+Ezberlenecek kural: **Claude Tag'in neye ulaşabileceği, kim olduğunuza değil, hangi kanalda olduğunuza bağlıdır.** Bir Owner, bağlantıları — depolar, ticket sistemleri, veri ambarları, özel araçlar — kapsam başına ekler ve bir workspace'e ya da kanala eklenen [tool](/tr/playbook/glossary/#tool) (Claude'un çağırdığı araç) kümesine **Access bundle** denir. Claude Tag, bu bağlantılar var olana kadar dış sistemlerinize hiçbir erişimle başlamaz.
+
+Bir kanalın neye ulaşabildiğini öğrenmenin en hızlı yolu sormaktır:
+
+```text
+@Claude what can you access from this channel?
+```
+
+Ya da Claude kuruluşunuza oturum açmışken, kanalın bağlantılarını görmek için bir Claude cevabının altbilgisinde **Configure**e tıklayın. Kuruluş-paylaşımlı kanallardaki cevapların Configure bağlantısı yoktur.
+
+**Tek istisna bir DM'dir**, orada Claude, kanalın kurulumu yerine _sizin kendi_ claude.ai hesabınızda çalışır. Owner'lar DM'leri kuruluş genelinde devre dışı bırakabilir.
+
+### Kurulum, bir kez, bir Owner tarafından
+
+Kurulum `claude.ai/admin-settings/claude-tag`te olur ve sayfa sizi adım adım geçirir:
+
+1. **Slack workspace'inizi eşleştirin** — bir eşleştirme kodu almak için Slack'te `@Claude connect` gönderin, sonra kurulum sayfasında girin.
+2. **Claude'un çalışacağı servisleri bağlayın** — her biri için Claude'a bir hesap oluşturun ve kimlik bilgisini girin.
+3. **Depoları yetkilendirin** — Claude [GitHub App](/tr/playbook/glossary/#github-app)'in (Claude Code'u bir GitHub deposuna bağlayan entegrasyon) hangi depolara ulaşabileceğini seçin.
+4. **Aylık bir harcama limiti belirleyin ve launch edin.**
+
+Launch ettikten sonra, Claude'un bulunduğu bir kanaldaki herkes onu, kullanıcı başına kurulum olmadan, hemen kullanabilir.
+
+### Faturalandırma
+
+Claude'u Slack'e eklemek, koltuk başına bir ücret eklemez. Kanal ve thread işi, kullanıma göre faturalandırılır; bir Owner'ın fonladığı, kuruluşunuzun faturalandırma para biriminde bir tutar olan **kullanım bakiyesi**nden çekilir — ve bir **harcama limiti**, Claude Tag'in her faturalandırma döneminde o bakiyeden ne kadar kullanabileceğini sınırlar. Doğrudan mesajlar yine istisnadır: bir DM, gönderenin kendi claude.ai hesabında çalışır ve o koltuğun olağan kullanım limitlerine uyar, bu yüzden kuruluş harcama limiti ona uygulanmaz.
+
+Önerilen boyutlandırma yolu, admin ayarlarındaki kullanım sayfasında kanal başına dökümü izleyerek bir harcama limiti belirlenmiş bir pilottur.
+
+### Routine'ler: bir kanaldan sürekli iş
+
+Bir kanaldan kurulan sürekli işe **routine** denir ve bunu bir mesajda tarif ederek oluşturursunuz. **O kanalın bağlantılarıyla**, yazılı bir istekle aynı izinlerle çalışır.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni), dokümanların önerdiği şekilde yazılmış zamanlanmış bir iştir — zamanlama, iş ve çıktı biçimi tek bir mesajda:
+
+```text
+@Claude every weekday at 9am Pacific, read the open threads in this channel,
+check the tickets and pull requests linked in them, and post a one-line status
+per item. Skip anything with a ✅ reaction.
+```
+
+Üç routine biçimi:
+
+- **Zamanlanmış işler** — zamanlamayı ve işi birlikte tarif edin. Tekrarlayan gönderilerin taranabilir kalması için çıktı biçimini adlandırın.
+- **Kanal izleme** — `@Claude watch #product-announce, #eng-announce, and #design-announce. Once a day, post here if anything is relevant to user education. Skip days with nothing.` Hem kanalları hem konuyu adlandırmak, bir izlemeyi kullanışlı tutan şeydir.
+- **[Pull request](/tr/playbook/glossary/#pull-request) abonelikleri** (bir branch'teki değişikliklerin ana koda alınması için açılan istekler) — `@Claude subscribe to PR #482 in acme/data-pipeline. When CI finishes or a review lands, post here, and tag me if anything failed.` Bir abonelik, **Claude'un Slack'ten GitHub olaylarına tepki verdiği tek yoldur**: o belirli PR'daki etkinlikte uyanır. Slack'ten, her yeni pull request gibi diğer depo olaylarında tetiklenen bir routine kuramazsınız.
+
+Bunları yönetmek kanaldaki herkese açıktır: _"what routines do you have set up in this channel?"_ diye sorun ya da `@Claude !routines` gönderin (başka bir kanalınkini listelemek için Slack'in otomatik tamamlamasından seçilmiş gerçek bir kanal bahsi ekleyin). Bir değişikliği tarif etmek onu düzenler; işi adlandırmak, \_"disable the Friday rollup"\_taki gibi devre dışı bırakır.
+
+Bir routine'in davranıp davranmayacağına karar veren dört sınır:
+
+- **Zamanlamalar varsayılan olarak UTC'dir.** "9am" değil "9am Pacific" deyin, yoksa Claude tahmin edebilir. _"what triggers do you have set up?"_ ile doğrulayın.
+- Claude, bir işin çıktısını **aynı workspace'teki başka bir herkese açık kanala**, yalnızca işin kendi kanalı herkese açıksa ve Claude hedefe eklenmişse gönderebilir. Mesajı geldiği kanalla etiketler.
+- Claude, iş çıktısını özel kanallara, DM'lere, grup DM'lerine ya da dışarıya paylaşılmış kanallara **göndermez** ve insanlara doğrudan mesaj atmaz. Tek istisna, routine'i kuran kişiye tamamlanma ya da başarısızlık bildirimidir, ve bu yalnızca onların Slack hesabı Claude hesaplarına bağlıysa geçerlidir.
+- Bir kanalın routine'leri, yaratıcısı kanaldan ya da kuruluştan ayrılsa da çalışmaya devam eder ve kanalda kalan herkes onları devre dışı bırakabilir. Bir DM'de kurulan routine'ler o kişinin hesabına aittir ve kişi kaldırıldığında kapatılır.
+
+## Uygulamalı laboratuvar
+
+Claude Tag tamamen Slack'te yaşar ve bir Team ya da Enterprise kuruluşunda Owner haklarını gerektirir, bu yüzden bu kursun [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) olarak yakalayabileceği hiçbir şey yok. Bu laboratuvar, açık bir beklenen sonuçla bir adım listesidir — ve kuruluşunuzda Claude Tag yoksa, salt-okunur adımları yapın ve 4. adımda durun.
+
+<Lab
+  title="Laboratuvar · bir kanalın erişimini doğrulayın, sonra bir routine oluşturup emekliye ayırın"
+  lessonId="tr/l3-advanced/m15-platforms/slack-claude-tag"
+  repoTag="none"
+  steps={[
+    'Planınızı doğrulayın: Claude Tag yalnızca Team ve Enterprise’dadır. Pro ya da Max’teyseniz, bunun yerine `slack.md`yi okuyun ve burada durun.',
+    'Claude’un zaten bulunduğu bir Slack kanalında `@Claude what can you access from this channel?` gönderin ve cevabı okuyun. Hangi bağlantıları adlandırdığını not edin.',
+    'Bunu, Claude’un cevabının altbilgisindeki Configure bağlantısıyla karşılaştırın (Claude kuruluşunuza oturum açmışken kullanılabilir, kuruluş-paylaşımlı kanallarda yok).',
+    '`@Claude !routines` gönderin ve kanalda hâlihazırda hangi sürekli işin var olduğunu not edin.',
+    'Açık bir saat dilimi ve çıktı biçimiyle zamanlanmış bir iş oluşturun, örneğin: `@Claude every weekday at 9am Pacific, post a summary of open threads in this channel and anything that looks like it is waiting on someone.`',
+    'Zamanlamanın istediğiniz gibi kurulduğunu doğrulayın: `@Claude what triggers do you have set up?` Bildirdiği saatin adlandırdığınız saat dilimiyle eşleştiğini kontrol edin.',
+    'Aynı kanaldaki bir takım arkadaşından `@Claude !routines` çalıştırmasını isteyin ve işinizi gördüğünü doğrulayın — sürekli iş kanala görünürdür, yaratıcısına özel değildir.',
+    'Adıyla devre dışı bırakın: `@Claude disable the weekday standup summary`, sonra kaybolduğunu doğrulamak için `@Claude !routines`i yeniden çalıştırın.',
+  ]}
+  expected="Claude, kişisel bağlantılarınızı değil kanalın bağlantılarını adlandırır; !routines kanalın sürekli işini herhangi bir üyeye listeler; zamanlanmış iş oluşturulur ve adlandırdığınız saat diliminde geri bildirilir; adıyla devre dışı bırakmak onu listeden kaldırır."
+  checklist={[
+    'Erişim cevabı, kendi claude.ai bağlayıcılarınızı değil kanal bağlantılarını tarif etti',
+    '`@Claude !routines`, kanalın sürekli işini listeledi',
+    'Açık bir saat dilimi ve adlandırılmış bir çıktı biçimiyle zamanlanmış bir iş oluşturuldu',
+    '`what triggers do you have set up?` istediğiniz saati bildirdi',
+    'Bir takım arkadaşı aynı kanalda aynı routine’i gördü',
+    'Routine adıyla devre dışı bırakıldı ve artık görünmüyor',
+  ]}
+/>
+
+## Anti-pattern'ler
+
+**Claude Tag'in _sizin_ görebildiğinizi görebildiğini varsaymak.** Erişim, Slack ya da GitHub izinlerinizi değil, kanalın Access bundle'ını izler. _Düzeltme:_ bir görevin mümkün olduğunu varsaymadan önce `@Claude what can you access from this channel?` diye sorun.
+
+**Kanalın cloud ortamını claude.ai/code'tan oluşturmak.** O ortam kişisel hesabınıza aittir ve kanal oturumları onda hemen başarısız olur. _Düzeltme:_ bir Owner, admin ayarlarından onu bir kuruluş-paylaşımlı ortam olarak yeniden oluşturur.
+
+**Saat dilimi olmayan bir zamanlama yazmak.** Zamanlamalar varsayılan olarak UTC'dir ve Claude tahmin edebilir. _Düzeltme:_ "9am Pacific" deyin ve _"what triggers do you have set up?"_ ile doğrulayın.
+
+**Claude'u güvenilmeyen bir kanala etiketlemek.** Claude'a konuşma bağlamı verilir ve içindeki diğer mesajlardan talimatları izleyebilir. _Düzeltme:_ katılımcılarına güvendiğiniz kanallarda kullanın ve hassas işi paylaşılan kanalların dışında tutun.
+
+**Bir routine'in her yeni pull request'te tetiklenmesini beklemek.** Slack'ten GitHub olaylarına yalnızca belirli bir PR'a abonelik tepki verir. _Düzeltme:_ depo genelinde tetikleyiciler için Code Review ya da bir GitHub Actions [workflow](/tr/playbook/glossary/#workflow)'u (çok adımlı otomatik iş akışı) kullanın.
+
+**DM'leri kanal işi gibi ele almak.** Bir DM kendi hesabınızda, kendi kullanım limitlerinizle, kendi kurulumunuzla çalışır — kuruluş harcama limiti ona uygulanmaz. _Düzeltme:_ takım işini, görünür olduğu ve kuruluşa faturalandığı kanalda yapın.
+
+<Callout variant="changed">
+  Team ve Enterprise workspace'leri için Anthropic, her oturumun bireysel bir kullanıcının hesabı
+  altında çalıştığı eski Claude Code in Slack'i, `@Claude`ı kuruluşun ortak kimliği olarak
+  çalıştıran Claude Tag lehine emekliye ayırıyor. Slack uygulaması ve `@Claude` handle'ı kalıyor;
+  geçiş tarihini hesap ekibinize sorun. Pro ve Max'te `slack.md` hâlâ kurulum yoludur.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/slack-claude-tag"
+  questionId="q1"
+  lang="tr"
+  prompt="Belirli bir Slack kanalında Claude Tag'in hangi dış servislere ulaşabileceğini kim ya da ne belirler?"
+  options={[
+    {
+      text: 'Bir Owner’ın o kanala ya da workspace’e eklediği Access bundle.',
+      correct: true,
+      explanation: 'Erişim, soran kişiyi değil kanalı izler.',
+    },
+    {
+      text: 'Soran kullanıcının kendi claude.ai hesabında kurduğu bağlayıcılar.',
+      explanation: 'Bu yalnızca, gönderenin kendi hesabında çalıştığı bir DM’de doğrudur.',
+    },
+    {
+      text: 'Soran kişinin GitHub izinleri.',
+      explanation: 'Depo erişimi, bir yöneticinin verdiği bağlantılardan gelir.',
+    },
+    {
+      text: 'Slack workspace admin rolleri.',
+      explanation:
+        'Slack adminleri uygulama kurulumunu kontrol eder, Claude’un bağlantılarını değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/slack-claude-tag"
+  questionId="q2"
+  lang="tr"
+  prompt="Claude Tag nasıl faturalandırılır?"
+  options={[
+    {
+      text: 'Koltuk başına ücret yok; kanal ve thread işi, bir harcama limitiyle sınırlanan bir kuruluş kullanım bakiyesinden çekilir, DM’ler ise gönderenin kendi hesabında çalışır.',
+      correct: true,
+      explanation: 'Kuruluş harcama limitinin bir DM’ye uygulanmamasının sebebi de budur.',
+    },
+    {
+      text: 'Claude’un bulunduğu bir kanaldaki herkes için koltuk başına bir ücret.',
+      explanation: 'Claude’u Slack’e eklemek koltuk başına bir ücret eklemez.',
+    },
+    {
+      text: 'Her şey, Claude’u etiketleyen bireye faturalanır.',
+      explanation: 'Bu, eski Claude Code in Slack’tir.',
+    },
+    {
+      text: 'Herkese açık beta sırasında sınırsız ve ücretsizdir.',
+      explanation:
+        'Bir başlangıç kullanım kredisi olabilir, ama bakiye ve harcama-limiti modeli yine de geçerlidir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/slack-claude-tag"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir depoda herhangi bir yeni pull request açıldığında Claude'un kanalınızda gönderi yapmasını istiyorsunuz. Bir Slack routine'i bunu yapabilir mi?"
+  options={[
+    {
+      text: 'Hayır — belirli bir pull request’e abonelik, Claude’un Slack’ten GitHub olaylarına tepki verdiği tek yoldur.',
+      correct: true,
+      explanation:
+        'Depo genelinde tetikleyiciler için bunun yerine Code Review ya da bir CI workflow’u gerekir.',
+    },
+    {
+      text: 'Evet, depoyu izlemesini isteyin.',
+      explanation: 'Kanal izleme, depoları değil Slack kanallarını kapsar.',
+    },
+    {
+      text: 'Evet, `@Claude !routines --repo` ile.',
+      explanation: 'Böyle bir biçim yok; `!routines`, bir kanalın sürekli işini listeler.',
+    },
+    {
+      text: 'Yalnızca Enterprise planlarında.',
+      explanation: 'Bu kısıtlama plana bağlı değildir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/slack-claude-tag"
+  questionId="q4"
+  lang="tr"
+  prompt="Kurduğunuz bir routine yanlış saatte gönderi yapıyor. En olası sebep nedir?"
+  options={[
+    {
+      text: 'Bir saat dilimi adlandırmadınız ve zamanlamalar varsayılan olarak UTC’dir.',
+      correct: true,
+      explanation: '"9am Pacific" deyin ve "what triggers do you have set up?" ile doğrulayın.',
+    },
+    {
+      text: 'Routine’ler trafiği dağıtmak için her zaman rastgele bir kaymayla çalışır.',
+      explanation: 'Bu, Claude Tag routine’leri değil Desktop zamanlanmış görevleridir.',
+    },
+    {
+      text: 'Kanalın bağlantıları süresi doldu.',
+      explanation: 'Bu, işi başarısız kılar, saati kaydırmaz.',
+    },
+    {
+      text: 'Saati yalnızca Owner’lar ayarlayabilir.',
+      explanation: 'Kanaldaki herkes sürekli işi kurabilir ve düzenleyebilir.',
+    },
+  ]}
+/>
+
+**Sırada:** `08-tmux-multi-session`, modülü terminale geri döndürerek kapatır — birkaç Claude Code oturumunu yan yana çalıştırarak.

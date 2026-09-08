@@ -9,7 +9,7 @@ difficulty: advanced
 tags: ['advisor', 'model', 'maliyet', 'yükseltme']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Escalate hard decisions with the advisor tool'
@@ -23,11 +23,281 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Advisor tool'u, Claude'un bir görevin kritik anlarında — bir yaklaşıma bağlanmadan önce, tekrar eden bir hatada, işi bitmiş ilan etmeden önce — ikinci ve genellikle daha güçlü bir modele danışmasını sağlar. Advisor bütün konuşmayı, her tool çağrısı ve sonucu dâhil, okur; bu yüzden maliyetin büyük kısmını o üstlenir. Bu ders, modülün geri kalanının tersidir: subagent aşağı doğru devretme, advisor ise yukarı doğru yükseltmedir. `/advisor`, `advisorModel` ayarı ve `--advisor` bayrağıyla açma yolları, "advisor en az ana model kadar yetenekli olmalı" eşleşme kuralı, maliyet modeli ve advisor / opusplan / `model` alanlı subagent / `/model` arasındaki seçim ele alınır. Laboratuvar hem gerçek bir yükseltmeyi hem de gerçek bir reddedilmeyi yakalar.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur.
+- Advisor [tool](/tr/playbook/glossary/#tool)'unun (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) ne olduğunu, nerede çalıştığını ve ne aldığını açıklamak.
+- Onu üç yolla etkinleştirmek — `/advisor`, `advisorModel` ayarı, `--advisor` bayrağı — ve yeniden kapatmak.
+- Eşleşme kuralını ifade etmek ve belirli bir ana-model/advisor kombinasyonunun kabul edilip edilmeyeceğini tahmin etmek.
+- Advisor kullanımının neye mal olduğunu ve genellikle ana modeli değiştirmekten neden daha ucuz olduğunu söylemek.
+- Advisor, `opusplan`, `model` ayarlı bir [subagent](/tr/playbook/glossary/#subagent) (ana oturumun bir alt görevi devrettiği, kendi bağlam penceresi ve araç izinleri olan yardımcı agent) ve düpedüz model değiştirmek arasında seçim yapmak.
+
+**Ön koşullar.** Model ailesi için L2 `m05-models-effort`, ve [agent](/tr/playbook/glossary/#agent) (bir hedefi kendi başına adım adım yürüten, araç çağırabilen yapay zekâ süreci) başına model seçimi için bu modülün 4. dersi. Advisor, Anthropic API'yi gerektirir — Amazon Bedrock'ta, AWS'de Claude Platform'da, Google Cloud'un Agent Platform'unda ya da Microsoft Foundry'de mevcut değildir.
+
+<WhenNotToUse>
+  Advisor, çoğu turun rutin olduğu ama plan kalitesinin sonucu belirlediği uzun, çok adımlı işler
+  için tasarlanmıştır. Planlanacak bir şeyi olmayan kısa işlerde çok az şey katar — ve her turun en
+  güçlü modeli gerektirdiği işlerde, ana modeli değiştirmek, ikinci bir modele bütün dökümü tekrar
+  tekrar okutmaktan hem daha basit hem daha ucuzdur. İkinci görüşün *ne zaman* gerçekleştiği
+  üzerinde kontrol istediğinizde de yanlış araçtır: buna Claude karar verir ve advisor çağrılarını
+  sınırlamak ya da zorlamak için bir ayar yoktur. Belirli, sınırlı bir soruda ikinci bir model
+  gerekiyorsa bunun yerine `model` ayarlı bir subagent'a devredin.
+</WhenNotToUse>
+
+## Kavram
+
+### Ne olduğu
+
+Advisor tool'u, Claude'un bir görev sırasındaki kritik anlarda ikinci, genellikle daha güçlü bir modele danışmasını sağlar: bir yaklaşıma bağlanmadan önce, bir hata tekrar ettiğinde ve bir görevi tamamlanmış ilan etmeden önce. Advisor, **her tool çağrısı ve sonucu dâhil bütün konuşmayı alır** ve Claude'un devam etmeden önce uyguladığı bir rehberlik döndürür.
+
+Hem abonelik hem de API faturalı hesaplar için mevcut bir sunucu tool'u olarak Anthropic'in altyapısında sunucu tarafında çalışır. Hangi modelin advisor olarak görev yapacağını siz seçersiniz; onu ne zaman çağıracağına Claude karar verir.
+
+Bu şekil adlandırılmaya değer, çünkü bu modüldeki her şeyi tersine çevirir. Bir subagent _aşağı doğru_ devretmedir: dar bir görev, taze bir context, geri dönen bir özet. Advisor ise _yukarı doğru_ yükseltmedir: bütün context, hiçbir görev yok, geri dönen bir yargı.
+
+<Callout>
+  Advisor tool'u deneyseldir ve Anthropic API'yi gerektirir. Davranış, fiyatlandırma ve
+  kullanılabilirlik değişebilir. Ayrıca Claude Code'un Anthropic'ten aldığı bir özellik bayrağına
+  bağlıdır, bu yüzden bayrak alımının kapalı olduğu bir oturumda — örneğin `DISABLE_TELEMETRY`
+  ayarlıyken — advisor kapalı kalır.
 </Callout>
+
+### Açmak
+
+Artan kapsamda üç yol:
+
+<CodeBlock title="advisor: üç ayarlama yolu">
+
+```bash
+# 1. Oturum ortasında, varsayılanınız olarak kaydedilir:
+/advisor opus
+
+# 2. Yalnızca bu oturum için, başlangıçta (claude --help’te listelenmez):
+claude --advisor opus
+
+# 3. Kalıcı olarak, ayarlar dosyanızda:
+#    { "advisorModel": "opus" }
+```
+
+</CodeBlock>
+
+`/advisor` argümansız bir seçici açar. Komut `Advisor set to` ve model adıyla onaylar, ve bunu kullanıcı ayarlarınızda `advisorModel`'e kaydeder. Bir advisor'la bir oturum başladığında, Claude Code bir `Advisor Tool (experimental) is on and may use more tokens · /advisor` bildirimi gösterir.
+
+Durdurmak için: `/advisor off`, ya da seçicide **No advisor**, kaydedilen `advisorModel`'i temizler. Özelliği tamamen kaldırmak için `CLAUDE_CODE_DISABLE_ADVISOR_TOOL=1` ayarlayın — `/advisor` komutu kullanılamaz hâle gelir, yapılandırılmış bir `advisorModel` yok sayılır ve `--advisor` kabul edilir ama hiçbir etkisi olmaz.
+
+### Eşleşme kuralı
+
+**Advisor, en az ana model kadar yetenekli olmalıdır.** Geri kalan her şey bu tek cümleden çıkar:
+
+- Haiku advisor'ı _çağırabilir_ ama biri olarak _görev yapamaz_.
+- Sonnet 5, advisor'ı olarak Fable, Opus ya da Sonnet 5'i kabul eder — daha eski bir Sonnet reddedilir.
+- Aynı jenerasyondaki Opus modelleri eşit yetenekli sıralanır, bu yüzden bir Opus diğerini kabul eder; bir Opus ana model daha eski bir Opus ya da bir Sonnet advisor ile reddedilir.
+- Bir Fable ana model yalnızca Fable'ı kabul eder — bir Opus ya da Sonnet advisor reddedilir, bir Fable 5.1 ana model için bir Fable 5 advisor da reddedilir.
+
+Advisor'ı `fable`, `opus` ya da `sonnet` olarak ayarlayın — o aile için Claude Code'un yerleşik varsayılan sürümüne çözümlenen ve yeni sürümlerle ilerleyen takma adlar — ya da `claude-opus-5` gibi tam bir model ID'si geçirin. **Subagent'lar yapılandırılmış advisor'ı devralır** ve aynı eşleşme kontrolünü kendi modellerine karşı uygular.
+
+Eşleşme başarısız olduğunda başarısızlık sessiz değil gürültülüdür. `--advisor` ile Claude Code başlangıçta bir hatayla çıkar; bir arka plan oturumunda ise çıkmak yerine advisor olmadan başlar. İşte en basit reddin gerçek mesajı — kimseye danışmanlık yapamayan Haiku:
+
+<Transcript
+  src="content/_shared/transcripts/m10-subagents/06-advisor/02-advisor-haiku-rejected.txt"
+  range="2-2"
+/>
+
+Advisor uygun olmamaktan çok ana modelden daha az yetenekliyse, ana modelin isteklerine bağlanmaz ve hem `/advisor` çıktısı hem bir bildirim bunu söyler — ancak kendi modeli eşleşmeyi karşılayan subagent'lar onu yine de kullanabilir.
+
+Advisor'ı ne zaman çağıracağına Claude karar verir; bir danışmayı sınırlayan ya da zorlayan bir ayar yoktur. Yine de [prompt](/tr/playbook/glossary/#prompt)'unuzda (Claude'a verdiğiniz istek metninde), herhangi bir tool istediğiniz gibi, bir tane isteyebilirsiniz — bu dersin işlenmiş prompt'u tam olarak bunu yapar:
+
+```text
+Consult the advisor before answering. Question: should paginate() in
+src/store.ts throw on a page number of 0 or below, or clamp it to page 1?
+Answer in one paragraph.
+```
+
+Claude'un bir görev boyunca daha sık ya da daha seyrek danışmasını istiyorsanız, bunu talimatlarınızda söyleyin.
+
+### Ne görürsünüz ve neye mal olur
+
+Claude advisor'ı çağırdığında, döküm çağrı sürerken advisor model adıyla bir `Advising` satırı gösterir. Döndüğünde, satır ya **Reviewed** — rehberliği okumak için `Ctrl+O`'ya basın — ya da `Advisor declined to advise on this request` bildirir.
+
+Claude genellikle rehberliği izler, ama kendi kanıtı belirli bir iddiayla çeliştiğinde uyum sağlar: önerilen bir adım denendiğinde başarısız olursa ya da dosya içeriği tavsiyeyle çelişiyorsa, koşulsuz izlemek yerine çatışmayı yüzeye çıkarır.
+
+Advisor her konuşmayı her seferinde yeniden okuduğu için, her çağrı ana modelinizin kullanımına **ek olarak** advisor modelinin oranlarında token tüketir. Okuması önbelleğe alınmaz: her çağrı bütün dökümü yeniden işler. Advisor kullanımı `/usage`'ın gösterdiği oturum toplamlarına ve abonelik planlarında planınızın sınırlarına sayılır — Fable kullanımının kullanım kredilerine faturalandığı planlarda bir Fable advisor'ın da öyle faturalanması dışında.
+
+Tasarruf argümanı fiyatla değil sıklıkla ilgilidir: Claude advisor'ı her turda değil karar anlarında çağırır, bu yüzden daha güçlü bir advisor'a sahip daha hızlı bir ana model genellikle güçlü modeli baştan sona çalıştırmaktan daha az maliyetlidir. Advisor'ı oturum ortasında etkinleştirmek ya da devre dışı bırakmak ana modelin prompt önbelleğini geçersiz kılmaz.
+
+### İkinci bir görüş almanın dört yolu arasında seçim yapmak
+
+| Yaklaşım                    | Daha güçlü model ne zaman çalışır                      | Nasıl başlar                                       |
+| --------------------------- | ------------------------------------------------------ | -------------------------------------------------- |
+| Advisor tool'u              | Görev ortasındaki karar anlarında                      | Claude rehberliğe ihtiyaç duyduğunda çağırır       |
+| `opusplan`                  | Plan mode sırasında, sonra yürütme için Sonnet'e geçer | Plan mode'a girersiniz                             |
+| `model` ayarlı bir subagent | Devredilen alt görevin tamamı boyunca                  | Claude devreder, ya da subagent'ı siz çağırırsınız |
+| `/model`                    | Bir sonraki istekten itibaren                          | Modelleri siz değiştirirsiniz                      |
+
+Ayırt edici soru \_ne zamana kimin karar verdiği_dir. Yalnızca advisor, bunu görev ortasında Claude'un ellerine bırakır.
+
+## Uygulamalı laboratuvar
+
+<Callout>
+  Bu laboratuvar hiçbir lab-repo tag'i gerektirmez — içinde gerçek bir tasarım sorusu olan herhangi
+  bir depo işe yarar. Ama desteklenen bir ana modelde Anthropic API-faturalı ya da abonelik hesabına
+  ihtiyaç duyar; Bedrock, AWS, Google Cloud'un Agent Platform'u ya da Microsoft Foundry'de advisor
+  kullanılamaz ve 3. adım bunu söyleyecektir.
+</Callout>
+
+<Lab
+  title="Laboratuvar · gerçek bir yükseltmeyi ve gerçek bir reddi izleyin"
+  lessonId="tr/l3-advanced/m10-subagents/advisor"
+  repoTag="none"
+  steps={[
+    'Önce red yolunu kontrol edin, çünkü anında ve bedavadır: `claude -p "hello" --model sonnet --advisor haiku --output-format json`. Hatayı okuyun.',
+    'Şimdi gerçek bir ödünleşim içeren bir soru için gerçek bir danışma isteyin. Lab deposunda: `claude -p "Consult the advisor before answering. Question: should paginate() in src/store.ts throw on a page number of 0 or below, or clamp it to page 1? Answer in one paragraph. Do not read more than two files and do not edit anything." --model sonnet --advisor fable --max-turns 12 --output-format json`',
+    "Zarftaki `modelUsage`'ı okuyun. İki model görünür: ana modeliniz ve advisor.",
+    'Token sayılarını karşılaştırın. Advisor’ın girdi token sayısı büyüktür çünkü bütün konuşmayı okur; ana modelinki küçüktür.',
+    '`result`\'ı okuyun ve akıl yürütmenin tek-model bir cevaptan daha iyi olup olmadığını sorun — dürüst hüküm bazen "hayır"dır, ve bu, advisor’ın işinizde maliyetini kazanıp kazanmadığı hakkında gerçek bir veri noktasıdır.',
+    "Etkileşimli olarak, seçiciyi açmak için `/advisor`'ı, sonra yeniden temizlemek için `/advisor off`'u çalıştırın.",
+  ]}
+  expected='Haiku çalıştırması `Error: The model "haiku" cannot be used as an advisor.` ile 1 çıkışı verir ve hiçbir JSON zarfı yazdırmaz. Fable çalıştırması başarılı olur ve modelUsage’ı hem claude-sonnet-5 hem de claude-fable-5-1’i listeler, advisor büyük girdi-token sayısını taşır.'
+  checklist={[
+    'Haiku girişimi, nedeni adlandıran bir mesajla başlangıçta başarısız oldu',
+    'Başarılı çalıştırmada `modelUsage` iki farklı modeli listeliyor',
+    'Advisor’ın inputTokens’ı ana modelinkini gölgede bırakıyor — bütün konuşmayı okudu',
+    '`total_cost_usd`, advisor olmadan aynı görevden daha yüksek',
+    '`/advisor off` kaydedilen advisorModel’i temizliyor',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/06-advisor/01-advisor-fable-json.txt"
+    range="2-20"
+  />
+</Lab>
+
+O kayıttaki rakamlar maliyet modelini somutlaştırır. Ana Sonnet modeli 10 girdi token'ı ve yaklaşık 1.057 çıktı token'ı harcadı; Fable advisor'ı 40.885 girdi token'ı ve 2.352 çıktı — ve çalıştırmanın 0,61 USD'sinin 0,53'ünü harcadı. O asimetri tasarımın tamamıdır: advisor her şeyi, her seferinde okur ve bu yüzden onu her turda değil bir avuç karar noktasında çağırmak istediğiniz bir şeydir.
+
+`Advising` satırı, `Reviewed`/`Declined` durumları ve rehberliği okumak için `Ctrl+O`, yalnızca etkileşimlidir — [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) kip bunun yerine size token muhasebesini gösterir, bu yüzden bu laboratuvar bir döküm satırı yerine `modelUsage`'ı okur.
+
+## Anti-pattern'ler
+
+**Advisor'ı her şey için açık bırakmak.** Kısa işlerde danışılacak bir şey yoktur ve yine de tam bir döküm okuması için ödersiniz. _Düzeltme:_ `advisorModel`'i küresel olarak ayarlı bırakmak yerine, onu uzun işlerde `--advisor` ile oturum başına etkinleştirin.
+
+**Ana modelden daha zayıf bir advisor seçmek.** Basitçe bağlanmaz; bir bildirim alırsınız ve hiçbir tavsiye almazsınız. _Düzeltme:_ kuralı hatırlayın — advisor en az ana model kadar yetenekli olmalıdır — ve `/advisor` çıktısını okuyun.
+
+**Advisor'ın zamanlayabileceğiniz bir gözden geçirici olmasını beklemek.** Çağrıları sınırlayan ya da zorlayan bir ayar yoktur; Claude karar verir. _Düzeltme:_ prompt'ta isteyin ("devam etmeden önce advisor'a danış"), ya da belirli, sınırlı bir soruda ikinci bir görüş gerektiğinde `model` ayarlı bir subagent kullanın.
+
+**Advisor rehberliğini koşulsuz saymak.** Claude kendi kanıtı belirli bir iddiayla çeliştiğinde uyum sağlar, siz de öyle yapmalısınız. _Düzeltme:_ tavsiye ile dosya anlaşmadığında dosyaya inanın ve bunu söyleyin.
+
+**Her yerde çalıştığını varsaymak.** Bu, yalnızca Anthropic-API sunucu tool'udur ve özellik-bayrağı alımına ihtiyaç duyar. _Düzeltme:_ bir ekip çalışma kılavuzuna yazmadan önce gereksinimleri kontrol edin.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/advisor"
+  questionId="q1"
+  lang="tr"
+  prompt="Claude ona danıştığında advisor ne alır?"
+  options={[
+    {
+      text: 'Yalnızca geçerli prompt',
+      explanation: 'Bu onu ucuz bir ikinci görüş yapardı — ama olan bu değil.',
+    },
+    {
+      text: 'Her tool çağrısı ve sonucu dâhil bütün konuşma',
+      correct: true,
+      explanation:
+        'Ki bu tam olarak girdi token sayısının bir çalıştırmanın maliyetine hâkim olmasının nedenidir.',
+    },
+    {
+      text: 'Claude’un onun için yazdığı bir özet',
+      explanation: 'Aralarında bir özetleme adımı yoktur.',
+    },
+    {
+      text: 'Depo, ama konuşma değil',
+      explanation: 'Advisor konuşmayı okur, depoyu doğrudan değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/advisor"
+  questionId="q2"
+  lang="tr"
+  prompt="Hangi eşleşme reddedilir?"
+  options={[
+    {
+      text: 'Opus advisor’lı Haiku 4.5 ana model',
+      explanation: 'Kabul edilir — Haiku advisor’ı çağırabilir, sadece biri olarak görev yapamaz.',
+    },
+    {
+      text: 'Fable advisor’lı Sonnet 5 ana model',
+      explanation: 'Kabul edilir — advisor en az o kadar yeteneklidir.',
+    },
+    {
+      text: 'Opus advisor’lı Fable 5.1 ana model',
+      correct: true,
+      explanation:
+        'Bir Fable ana model yalnızca Fable’ı kabul eder; bir Opus ya da Sonnet advisor reddedilir.',
+    },
+    {
+      text: 'Opus advisor’lı Opus ana model',
+      explanation:
+        'Kabul edilir — ilkini gözden geçiren ikinci bir Opus belgelenmiş bir eşleşmedir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/advisor"
+  questionId="q3"
+  lang="tr"
+  prompt="Hızlı bir ana model artı güçlü bir advisor, güçlü modeli baştan sona çalıştırmaktan neden genellikle daha ucuzdur?"
+  options={[
+    {
+      text: 'Advisor token’ları indirimli faturalandırılır',
+      explanation: 'Advisor modelinin kendi oranlarında faturalandırılırlar.',
+    },
+    {
+      text: 'Claude, advisor’ı her turda değil karar noktalarında çağırır',
+      correct: true,
+      explanation: 'Eşleşmeyi ucuzlatan şey fiyat değil sıklıktır.',
+    },
+    {
+      text: 'Advisor’ın konuşmayı okuması çağrılar arasında önbelleğe alınır',
+      explanation: 'Açıkça önbelleğe alınmaz — her çağrı bütün dökümü yeniden işler.',
+    },
+    {
+      text: 'Advisor kullanımı abonelik sınırlarına sayılmaz',
+      explanation: 'Planınızın kullanım sınırlarına sayılır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/advisor"
+  questionId="q4"
+  lang="tr"
+  prompt="Belirli, sınırlı bir soruda, seçtiğiniz bir anda daha güçlü bir model istiyorsunuz. Hangi araç uyar?"
+  options={[
+    {
+      text: 'Danışmasını isteyen bir prompt’la advisor',
+      explanation:
+        'Daha yakın, ama Claude yine de ne zaman olacağına karar verir ve advisor tek bir soru yerine her şeyi okur.',
+    },
+    {
+      text: '`model` ayarlı bir subagent',
+      correct: true,
+      explanation:
+        'Güçlü model devredilen alt görevin tamamı boyunca çalışır, ve ne zaman devredeceğinize siz karar verirsiniz.',
+    },
+    {
+      text: 'opusplan',
+      explanation:
+        'Bu, seçtiğiniz bir soru üzerinde değil plan mode sırasında güçlü modeli çalıştırır.',
+    },
+    {
+      text: '`isolation: worktree`',
+      explanation: 'Bu, model seçimiyle değil dosya izolasyonuyla ilgilidir.',
+    },
+  ]}
+/>
+
+**Sırada:** `m11-mcp`, devretmeyi geride bırakır ve Claude Code'u Model Context Protocol üzerinden dış sistemlere bağlar.

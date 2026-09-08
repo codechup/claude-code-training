@@ -1,6 +1,6 @@
 ---
 title: 'Claude in Chrome: gezinme, formlar, ekran görüntüleri, konsol'
-description: 'Claude’a gerçek tarayıcınızı ve oturum açmış hesaplarınızı verin: eklentiyi etkinleştirme, site izinleri, plan mode’daki okuma/yazma ayrımı ve bir sayfayı sürüp konsolunu okuma.'
+description: 'Claude’a gerçek tarayıcınızı ve oturum açmış hesaplarınızı verin: eklentiyi etkinleştirme, site izinleri ve plan mode’daki okuma/yazma ayrımı, sonra bir sayfayı sürüp konsolunu okuma, bir form doldurma ve bir ekran görüntüsü kaydetme.'
 level: 3
 module: 'm15-platforms'
 order: 6
@@ -9,7 +9,7 @@ difficulty: core
 tags: ['platformlar', 'chrome', 'tarayıcı']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Use Claude Code with Chrome'
@@ -27,8 +27,281 @@ lab:
   repo_tag: 'lesson/m15-06-start'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m15-platforms/06-chrome.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders Claude in Chrome entegrasyonunu anlatır. Claude, headless bir tarayıcıyı değil **sizin** Chrome’unuzu, oturum açmış hesaplarınızla ve görünür bir pencerede sürer; bu hem gücü hem de riskidir. Ders `claude --chrome` ile başlatmayı, `/chrome` panelinden durumu (`Status: Enabled`, `Extension: Installed`) doğrulamayı ve varsayılan olarak açmanın context tüketimini artırdığını kapsar. Site düzeyindeki izinlerin Chrome eklentisinden geldiğini ve asıl kapı olduğunu; plan mode’da hangi çağrıların izin sormadan çalıştığını (`read_page`, `get_page_text`, `find`, konsol ve ağ okuma, ekran görüntüsü) ve hangilerinin sorduğunu; `save_to_disk` ya da `clear` gibi bayrakların salt okunur bir çağrıyı durum değiştiren bir çağrıya dönüştürdüğünü açıklar. Dosya yüklemenin 10 MB sınırını, `Read` deny rule ile engellendiğini ve çok sayıda hard link taşıyan dosyaların reddedildiğini de kapsar. Laboratuvar `lesson/m15-06-start` etiketinde gerçek bir tarayıcıyla çalışır.
+- Claude in Chrome eklentisini kurmak, `--chrome` ile bir oturum başlatmak ve `/chrome` ile bağlantıyı kontrol etmek.
+- Site düzeyindeki izinlerin ne olduğunu, nerede yaşadığını ve eksik olduklarında ne olacağını açıklamak.
+- Hangi tarayıcı çağrılarının plan mode'da izin isteyeceğini, hangilerinin istemeyeceğini tahmin etmek.
+- Yerel bir web uygulamasını sürmek: gezinmek, konsolu okumak, bir form doldurmak, bir dosya yüklemek, diske bir ekran görüntüsü kaydetmek.
+- Bir oturum bittiğinde tab-group temizlik kurallarının ne yaptığını ve kaydedilmiş bir GIF'in neden paylaşmadan önce izlenmesi gerektiğini söylemek.
+
+**Ön koşullar.** Google Chrome, Microsoft Edge ya da başka bir Chromium tabanlı tarayıcı (Brave, Arc, Vivaldi, Opera); 1.0.36 ya da üzeri Claude in Chrome eklentisi; kurulu Claude Code; ve `/login` ile oturum açılmış **doğrudan bir Anthropic planı** (Pro, Max, Team veya Enterprise). `lesson/m15-06-start`in bir checkout'u ve lab deposunun HTTP API'sini yerelde sunmanın bir yolu.
+
+<WhenNotToUse>
+  Chrome entegrasyonu WSL'de kullanılamaz, üçüncü taraf sağlayıcılar üzerinden (Amazon Bedrock,
+  Google Cloud'un Agent Platform'u, Microsoft Foundry) kullanılamaz ve bir API anahtarı ya da bir
+  `claude setup-token` uzun ömürlü token'ıyla kimlik doğruladığınızda bilinçli olarak kapalı tutulur
+  — tarayıcı eklentisi bu kimlik bilgileriyle kimlik doğrulayamaz, bu yüzden `--chrome` yok sayılır.
+  Kullanılabilirliğin ötesinde: site, bunun yerine çağırabileceğiniz bir API'ye sahipse, bir test
+  framework'ü daha hızlı ve tekrarlanabilir olacaksa ya da görev, ucuz bir şekilde geri
+  alamayacağınız bir hesabın içinde Claude'un hareket etmesini gerektiriyorsa tarayıcıya
+  başvurmayın. Claude, tarayıcınızın oturum açma durumunu paylaşır — oturum açtığınız her oturum
+  erişilebilirdir — bu yüzden kötü ifade edilmiş bir talimatın patlama yarıçapı bir
+  [sandbox](/tr/playbook/glossary/#sandbox) (dosya sistemi ve ağ erişimini kısıtlayan izole bir
+  çalışma ortamı) değil, gerçek hesaplarınızdır.
+</WhenNotToUse>
+
+## Kavram
+
+### Headless olmayan, sizin tarayıcınız
+
+Bütün mesele, Claude'un **sizin** Chrome'unuzu, **sizin** oturum açmış hesaplarınızla, görünür bir pencerede gerçek zamanlı olarak sürmesidir. Bu, bir API bağlayıcısı olmadan oturum açtığınız Google Docs, Gmail, Notion ya da herhangi bir dahili araç içinde çalışabileceği anlamına gelir — ve aynı erişimin kötü ifade edilmiş bir talimata da açık olduğu anlamına gelir. Claude bir oturum açma sayfasına ya da bir CAPTCHA'ya çarptığında durur ve onu elle halletmenizi ister.
+
+Claude, tarayıcı görevleri için yeni sekmeler açar ve eklenti bunları oturumunuza bağlı bir **Chrome tab group**a (sekme grubu) toplar. Oturum bittiğinde o gruba ne olacağı, nasıl bittiğine bağlıdır:
+
+- `/clear`, açık sayfalar dahil grubu kapatır — clear'dan sağ çıkan iş hâlâ çalışmıyorsa.
+- `/resume` ile oturumları değiştirmek, Claude Code'dan çıkmak ya da clear'dan sağ çıkan iş çalışırken bir `/clear`: grup **yalnızca içinde boş yeni sekmelerden başka bir şey yoksa** kapanır, böylece hâlâ okuyor olabileceğiniz sayfalar açık kalır.
+
+### Açmak
+
+<CodeBlock title="tarayıcı tool'larıyla bir oturum başlatın">
+
+```bash
+claude --chrome
+```
+
+</CodeBlock>
+
+Her iki flag de bu sürümde vardır:
+
+<Transcript
+  src="content/_shared/transcripts/m15-platforms/06-chrome/01-help-chrome.txt"
+  range="2-5"
+/>
+
+İlk başlatma, entegrasyonu ve site izinlerinin nasıl çalıştığını açıklayan tek seferlik bir diyalog gösterir; Enter'a basın. Flag'i her seferinde atlamak için `/chrome` çalıştırın ve **Enabled by default**i seçin — ama dokümanların açıkça belirttiği ödünleşmeye dikkat edin: **CLI'da Chrome'u varsayılan olarak etkinleştirmek context kullanımını artırır, çünkü tarayıcı tool'ları her zaman yüklenir.** VS Code eklentisinde hiçbir flag'e gerek yoktur; eklenti kuruluysa Chrome her zaman kullanılabilir.
+
+`/chrome` sizin kontrol paneliniz: bağlantı durumu, izinler, **Reconnect extension** ve birden fazla tarayıcı bağlıyken **Select browser…**. Durum paneli `Status: Enabled` ve `Extension: Installed` gösterdiğinde entegrasyon çalışıyor demektir.
+
+Claude tarayıcıya ihtiyaç duyar ve eklenti algılanmazsa, "Claude wants to use your browser" başlıklı, oturum başına bir kez gösterilen ve üç seçenekli bir istem gösterir — **Install extension** (rehberli kurulum, sonra "Continue with browser tools"), **Not now**, **Don't ask again**.
+
+### Asıl kapı site izinleridir
+
+**Site düzeyindeki izinler Chrome eklentisinden devralınır** ve bunları eklentinin ayarlarında yönetirsiniz. Bu bir formalite değildir: bir site için izin olmadan, `--chrome` açık ve eklenti bağlı olsa bile Claude o sitede hareket edemez. İşte tam olarak o durumdaki bir makineden gerçek bir [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) yakalama — eklenti bağlı, hedef site için hiçbir izin verilmemiş:
+
+<Transcript
+  src="content/_shared/transcripts/m15-platforms/06-chrome/02-chrome-permission.txt"
+  range="2-4"
+/>
+
+O kayıtta durup düşünmeye değer üç şey var. Birincisi, cevap Türkçe: onu üreten makinenin genel Claude Code tercihleri Türkçe cevap istiyor ve bu tercihler, etkileşimli bir çalıştırmada olduğu kadar headless bir çalıştırmada da geçerli. İkincisi, ret bir hata ya da çökme değildir — Claude'un tarayıcı [tool](/tr/playbook/glossary/#tool)'ları (Claude'un çağırdığı yerleşik araçlar) vardır, onları kullanmaya çalışır, ihtiyaç duyduğu izne sahip olmadığı söylenir ve bunu kendi sözleriyle bildirir.
+
+Üçüncüsü, ve kaydın tarif edilmek yerine gösterilmesinin sebebi budur: headless bir çalıştırma iki izin katmanını üst üste bindirir ve ilk satır bunu kanıtlar. Claude Code'un kendi izin katmanı, çalışma alanı hiç güvenilmediği için bu çalışma alanının `permissions.allow` girdilerini zaten düşürmüştü. Yani transcript, _bir_ iznin tarayıcı eylemini durdurduğunu kanıtlar, _hangi_ katmanın reddettiğini değil — Claude Code'un kendi katmanı onları reddettiğinde tarayıcı tool'ları da kullanılamaz gibi okunur. Ayrım, etkileşimli yolda görünür ve orada aşağıda tarif edilen `Claude in Chrome wants to` diyaloğunu görürsünüz.
+
+Etkileşimli bir oturumda genellikle bunun yerine `Claude in Chrome wants to` ile başlayan bir izin diyaloğu görürsünüz; bu, o sitedeki tüm eylemlere oturum için izin verme seçeneği sunar.
+
+### Plan mode okumaları yazmalardan ayırır
+
+[Plan mode](/tr/playbook/glossary/#plan-mode)'da (Claude'un değişiklik yapmadan önce yalnızca okuyup bir plan sunduğu mod), yalnızca sayfayı ya da tarayıcı durumunu **okuyan** tarayıcı çağrıları istemsiz çalışır; durumu **değiştiren** çağrılar onay ister.
+
+| Salt okunur, istem yok                                                                     | Durum değiştiren, ister                                                 |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `read_page`, `get_page_text`, `find`, konsol ya da ağ isteklerini okuma, ekran görüntüleri | tıklamalar, yazma, gezinme, sekme ve pencere yönetimi, bir GIF kaydetme |
+
+İnce nokta: aksi hâlde salt okunur bir çağrı, durum değiştiren bir input flag'i ayarladığında **da** ister — `tabs_context_mcp`te `createIfEmpty`, konsol ve ağ okuyucularında `clear`, bir ekran görüntüsünde `save_to_disk`. Ve bir `browser_batch`, yalnızca içindeki _her_ eylem salt okunur olduğunda istemsiz çalışır.
+
+Gerçek tool listesini görmek için `/mcp` çalıştırın, `claude-in-chrome`ı seçin, sonra **View tools**.
+
+### Ne konuda iyi
+
+Canlı hata ayıklama (konsol hatalarını ve DOM durumunu okuyup sonra onlara sebep olan kodu düzeltmek), tasarım doğrulaması, web uygulaması testi, kimlik doğrulamalı web uygulamaları, veri çıkarma, görev otomasyonu, dosya yüklemeleri ve GIF kaydı. Kendini amorti eden desen, döngüdür: inşa et, aç, gözlemle, düzelt — terminalden hiç çıkmadan.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni) tek bir cümlede o döngüdür:
+
+```text
+Start the API on localhost:3000, open it in the browser, submit the task form
+with an empty title, and tell me what the console logs and what the page shows.
+```
+
+Dokümanlar, yüklemelerle ilgili üç kısıtlama adlandırır. **İzinler:** Claude, bir dosyayı yalnızca oturumun onu **okumasına** izin verildiğinde yükleyebilir, bu yüzden bir `Read` deny kuralı yüklemeyi de engeller. **Boyut:** tek bir yükleme toplamda en fazla **10 MB**lık dosya içerebilir. **Hard link'ler:** Claude, birden fazla hard link'i olan dosyaları reddeder; bu, `node_modules` gibi paket-yöneticisi depolarının içinde yaygındır — dosyayı kopyalayın ve kopyayı yükleyin.
+
+Konsol okuma konusunda dokümanların tavsiyesi belirgin ve iyidir: **tüm konsol çıktısını istemek yerine Claude'a hangi kalıpları arayacağını söyleyin**, çünkü loglar ayrıntılıdır ve [context window](/tr/playbook/glossary/#context-window)'unuza (modelin tek bir istekte görebildiği toplam token miktarına) düşer.
+
+### Kısaca sorun giderme
+
+- **Eklenti algılanmıyor**: `chrome://extensions`ı kontrol edin, `claude --version`ı kontrol edin, Chrome'un çalıştığını kontrol edin, `/chrome` → **Reconnect extension** çalıştırın, sonra ikisini de yeniden başlatın. Entegrasyonu ilk etkinleştirdiğinizde, Claude Code, Chrome'un başlangıçta okuduğu bir native messaging host yapılandırma dosyası yazar — bu yüzden ilk denemede algılama başarısız olursa Chrome'u yeniden başlatın.
+- **Tarayıcı yanıt vermiyor**: bir modal diyalog (`alert`, `confirm`, `prompt`) tarayıcı olaylarını engeller. Elle kapatın ve Claude'a devam etmesini söyleyin.
+- **Uzun bir oturumda bağlantı düşüyor**: eklentinin service worker'ı boşta kalır. `/chrome` → **Reconnect extension**.
+- **Windows**: named pipe çakışmaları (`EADDRINUSE`), başka bir sürecin pipe'ı tuttuğu anlamına gelir — Claude Code'u yeniden başlatın ve Chrome kullanan diğer oturumları kapatın.
+
+## Uygulamalı laboratuvar
+
+Bu laboratuvar, lab deposuna karşı olduğu gibi `lesson/m15-06-start`te çalışır ve gerçekten tarayıcı odaklıdır: Chrome'un işi yaptığını izlersiniz. Aşağıdaki tek [transcript](/tr/playbook/glossary/#transcript) (gerçek bir oturumun kaydı), Kavram bölümünde tartışılan, bu laboratuvarın dürüstçe kaydedilebilen tek parçası olan gerçek headless yakalamadır. Diğer her adım, bir tarayıcıda yapıp izlediğiniz bir şeydir.
+
+<Lab
+  title="Laboratuvar · lab API'sini kendi tarayıcınız üzerinden hata ayıklayın"
+  lessonId="tr/l3-advanced/m15-platforms/chrome"
+  repoTag="lesson/m15-06-start"
+  steps={[
+    'Lab deposunda `lesson/m15-06-start`i checkout edin ve Chrome ya da Edge’de Claude in Chrome eklentisini (1.0.36 ya da üzeri) kurun.',
+    'Checkout’ta `claude --chrome` çalıştırın. Tek seferlik diyalogda Enter’a basın, sonra `/chrome` çalıştırın ve panelin `Status: Enabled` ve `Extension: Installed` gösterdiğini doğrulayın.',
+    'Lab deposunun HTTP API’sini, README’sini izleyerek yerel bir portta başlatın.',
+    'Claude’a sorun: `Open http://localhost:3000 in the browser and tell me what the page renders.` İzin diyaloğu göründüğünde, oturum için o sitede eylemlere izin vermeyi seçerek onaylayın.',
+    'Konsolu okumasını isteyin: `Open the page again and check the console for errors containing "token" or "500" when it loads.` Her şeyi istemek yerine kalıbı adlandırdığınıza dikkat edin.',
+    'Geçersiz girdiyle bir form doldurup göndermesini ve hem konsol çıktısını hem de sayfanın gösterdiğini bildirmesini isteyin.',
+    'Diske kaydedilen bir ekran görüntüsü isteyin: `Take a screenshot of the page and save it to disk.` Claude’un bir dosya yolu bildirdiğini ve dosyanın var olduğunu doğrulayın.',
+    'Plan mode’a geçin (`/plan` ya da mode seçici) ve sayfayı yeniden okumasını isteyin. Okumanın bir izin istemi olmadan çalıştığını doğrulayın, sonra bir şeye tıklamasını isteyin ve bunun istediğini doğrulayın.',
+    '`/clear` çalıştırın ve oturumun Chrome tab group’unun kapandığını doğrulayın.',
+  ]}
+  expected="Site izni verildiğinde, Claude sayfayı bir oturum tab group'u içindeki görünür bir Chrome sekmesinde açar, ne render ettiğini bildirir, konsolu adlandırdığınız kalıba göre filtreler, formu gönderir ve sonucu bildirir, bir ekran görüntüsü kaydeder ve yolunu yazdırır; plan mode'da sayfa okuma istemsiz çalışırken tıklama onay ister; /clear tab group'u kapatır."
+  checklist={[
+    '`/chrome`, Status: Enabled ve Extension: Installed gösteriyor',
+    'Bir site izni verildi ve Claude yerel uygulamayı gerçek bir Chrome sekmesinde açtı',
+    'Konsol çıktısı toptan dökülmek yerine adlandırdığınız kalıba filtrelendi',
+    'Geçersiz girdili bir form gönderimi hem konsoldan hem sayfadan bildirildi',
+    'Bir ekran görüntüsü diske kaydedildi ve Claude yolunu yazdırdı',
+    'Plan mode’da okuma istemedi ve tıklama istedi',
+    '`/clear`, oturumun Chrome tab group’unu kapattı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m15-platforms/06-chrome/02-chrome-permission.txt"
+    range="2-4"
+  />
+</Lab>
+
+## Anti-pattern'ler
+
+**"Konsolu oku ve ne gördüğünü söyle."** Konsol logları ayrıntılıdır ve her satır context window'unuza düşer. _Düzeltme:_ kalıbı adlandırın — bir hata dizesi, bir durum kodu, bir bileşen öneki.
+
+**`--chrome`i varsayılan olarak açık bırakıp context'in nereye gittiğini merak etmek.** Varsayılan etkinken tarayıcı tool'ları her oturumda yüklenir. _Düzeltme:_ varsayılanı kapatın ve ihtiyaç duyduğunuzda `--chrome`u geçirin.
+
+**Oturum kapsamlı bir "bu sitedeki tüm eylemlere izin ver"in küçük olduğunu varsaymak.** Claude, tarayıcınızın oturum açma durumunu paylaşır, bu yüzden o site sizin gerçek, oturum açmış hesabınızdır. _Düzeltme:_ eklentide site bazında izinleri bilinçli olarak verin ve yıkıcı herhangi bir şey için bir test hesabı tercih edin.
+
+**Kaydedilmiş bir GIF'i izlemeden paylaşmak.** Kayıt, oturum açmış sayfalardaki hesap ayrıntıları dahil tarayıcıda görünen her şeyi yakalar. _Düzeltme:_ takımınızdan çıkmadan önce izleyin.
+
+**Bir API varken tarayıcıya başvurmak.** Bir sayfa etkileşimi bir istekten daha yavaş, daha kırılgan ve daha az tekrarlanabilirdir. _Düzeltme:_ tarayıcıyı yalnızca bir tarayıcının yapabileceği şey için kullanın — gerçek render, gerçek oturum açma durumu, gerçek konsol.
+
+**"Tarayıcı yanıt vermiyor"u her şeyi yeniden başlatarak hata ayıklamak.** On seferden dokuzunda bir JavaScript modalı sayfa olaylarını engeller. _Düzeltme:_ diyaloğu kapatın, sonra Claude'a devam etmesini söyleyin.
+
+<Callout variant="changed">
+  Bir API anahtarı ya da bir `claude setup-token` token'ıyla kimlik doğrulanmış oturumlar, artık siz
+  `--chrome`u geçirseniz bile Chrome entegrasyonunu kapalı tutuyor. v2.1.216'dan önce o oturumlar
+  onu etkinleştirebiliyordu, ama her bağlantı denemesi 403 ile başarısız oluyordu — Claude Code
+  2.1.263 için `chrome.md`ye karşı doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/chrome"
+  questionId="q1"
+  lang="tr"
+  prompt="`--chrome` açık ve `/chrome` eklentinin kurulu olduğunu bildiriyor, ama Claude bir sitede sekme açamadığını söylüyor. En olası sebep nedir?"
+  options={[
+    {
+      text: 'O site için site düzeyinde izin Chrome eklentisinde verilmemiş.',
+      correct: true,
+      explanation:
+        'Site izinleri eklentiden devralınır ve flag’den bağımsız olarak her eylemin önündeki kapıdır.',
+    },
+    {
+      text: 'Plan tarayıcı tool’larını içermiyor.',
+      explanation: 'Kullanılabilirlik plana göredir, ama panel Enabled bildirmezdi.',
+    },
+    {
+      text: 'Sayfada bir `h1` elementi yok.',
+      explanation: 'Bir izin koşulu değil.',
+    },
+    {
+      text: 'Bağlantıyı sıfırlamak için `--no-chrome` gerekir.',
+      explanation: '`--no-chrome`, entegrasyonu devre dışı bırakır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/chrome"
+  questionId="q2"
+  lang="tr"
+  prompt="Plan mode'da, bunlardan hangisi bir izin istemi OLMADAN çalışır?"
+  options={[
+    {
+      text: '`save_to_disk` olmadan bir ekran görüntüsü almak.',
+      correct: true,
+      explanation:
+        'Ekran görüntüleri salt okunurdur; `save_to_disk`i ayarlamak onları isteyen, durum değiştiren bir çağrıya dönüştürür.',
+    },
+    {
+      text: '`clear` ayarlıyken konsol mesajlarını okumak.',
+      explanation: '`clear` bayrağı, aksi hâlde salt okunur bir çağrıyı durum değiştiren yapar.',
+    },
+    {
+      text: 'Bir GIF kaydetmek.',
+      explanation: 'Açıkça durum değiştiren olarak listelenmiştir.',
+    },
+    {
+      text: 'Bir tıklama içeren bir `browser_batch`.',
+      explanation: 'Bir batch, yalnızca içindeki her eylem salt okunur olduğunda istemsiz çalışır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/chrome"
+  questionId="q3"
+  lang="tr"
+  prompt="Clear'dan sağ çıkan bir background görev hâlâ çalışırken `/clear` çalıştırıyorsunuz. Oturumun Chrome tab group'una ne olur?"
+  options={[
+    {
+      text: 'Yalnızca içinde boş yeni sekmelerden başka bir şey yoksa kapanır.',
+      correct: true,
+      explanation:
+        'Aynı temkinli kural `/resume`e ve Claude Code’dan çıkmaya da uygulanır, böylece hâlâ okuyor olabileceğiniz sayfalar açık kalır.',
+    },
+    {
+      text: 'Açık sayfalar dahil tamamen kapanır.',
+      explanation: 'Bu, hayatta kalan iş olmayan düz bir `/clear`dır.',
+    },
+    {
+      text: 'Hiçbir şey asla otomatik kapanmaz.',
+      explanation: "Tab group'ları belgelenen kurallar altında temizlenir.",
+    },
+    {
+      text: 'Chrome kapanır.',
+      explanation: 'Claude Code tarayıcınızdan asla çıkmaz.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/chrome"
+  questionId="q4"
+  lang="tr"
+  prompt="Chrome üzerinden dosya yüklemede hangi kısıtlama gerçektir?"
+  options={[
+    {
+      text: 'Claude, `node_modules` içinde yaygın olan, birden fazla hard link’i olan dosyaları reddeder.',
+      correct: true,
+      explanation:
+        'Dosyayı kopyalayın ve kopyayı yükleyin. Yüklemeler ayrıca toplamda 10 MB ile sınırlıdır.',
+    },
+    {
+      text: 'Yüklemeler yalnızca yerel oturumlarda çalışır, uzak olanlarda asla.',
+      explanation:
+        'Claude Code dosyayı okuyup içeriğini gönderir, bu yüzden yüklemeler ikisinde de çalışır.',
+    },
+    {
+      text: 'Bir `Read` deny kuralının yüklemeler üzerinde hiçbir etkisi yoktur.',
+      explanation: 'Onları engeller — Claude yalnızca oturumun okuyabileceğini yükleyebilir.',
+    },
+    {
+      text: 'Boyut sınırı yükleme başına değil dosya başınadır.',
+      explanation: 'Yükleme başına toplamda en fazla 10 MB’dır.',
+    },
+  ]}
+/>
+
+**Sırada:** `07-slack-claude-tag`, [agent](/tr/playbook/glossary/#agent)'ı (kendi başına adım adım çalışan yapay zekâ sürecini) takım sohbetine taşır; orada işi yapan kimlik sizin değil kuruluşunuzundur.

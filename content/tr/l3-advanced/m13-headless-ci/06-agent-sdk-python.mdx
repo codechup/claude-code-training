@@ -9,7 +9,7 @@ difficulty: advanced
 tags: ['agent-sdk', 'python', 'otomasyon']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Agent SDK quickstart'
@@ -19,6 +19,10 @@ sources:
     title: 'Agent SDK overview'
     url: 'https://code.claude.com/docs/en/agent-sdk/overview.md'
     verified_at: 2026-09-07
+  - type: official
+    title: 'Migrate to Claude Agent SDK'
+    url: 'https://code.claude.com/docs/en/agent-sdk/migration-guide.md'
+    verified_at: 2026-09-07
   - type: repo
     title: 'anthropics/claude-agent-sdk-python'
     url: 'https://github.com/anthropics/claude-agent-sdk-python'
@@ -27,8 +31,337 @@ lab:
   repo_tag: 'lesson/m13-06-start'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders, 05. derste TypeScript ile kurulan agent'ın aynısını `claude-agent-sdk` ile Python'da kurar. Kavramlar birebir aynıdır; değişen, isimlendirme ve tiplerdir: `allowed_tools`, `permission_mode`, `max_turns`, `setting_sources` ve `ClaudeAgentOptions(...)`; mesajlar string karşılaştırması yerine `SystemMessage`, `AssistantMessage` ve `ResultMessage` sınıflarıyla ele alınır, `SystemMessage` yükünü `.data` sözlüğünde taşır. `query()` bir async generator olduğu için `asyncio.run()` gerekir. Windows'a özgü iki tuzak da anlatılır: `Activate.ps1` dosyasını engelleyen execution policy ve konsol kod sayfasından kaynaklanan bozuk karakterler için `PYTHONIOENCODING=utf-8`.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.
+- `claude-agent-sdk`'yı `uv` ya da `pip` ile bir sanal ortama kurmak.
+- Aynı salt-okunur review [agent](/tr/playbook/glossary/#agent)'ını (bir hedefi kendi başına adım adım yürüten yapay zekâ sürecini) Python'da yazmak ve her seçenek adını TypeScript ikizine eşlemek.
+- Mesajları string karşılaştırmaları yerine SDK'nın tipli sınıflarıyla (`SystemMessage`, `AssistantMessage`, `ResultMessage`) ele almak.
+- Windows'ta karşınıza çıkan iki platform sorununu tanımak ve ikisini de düzeltmek.
+- Belirli bir iş için iki SDK'dan hangisine başvurmanız gerektiğine karar vermek.
+
+**Ön koşullar.** Python 3.10 ya da üzeri (bu ders 3.12.10'da doğrulanmıştır) ve ders 05 — kavramlar birebir aynıdır, bu yüzden bu ders zamanını farklı olan şeye harcar.
+
+<WhenNotToUse>
+  Ders 05'teki her şey burada da geçerlidir: yalnızca tek bir cevaba ihtiyacınız varsa, `claude -p`
+  bir bağımlılıktan daha basittir, ve yönetilen bir [sandbox](/tr/playbook/glossary/#sandbox)'a (bir
+  sürecin dosya sistemi ve ağ erişimini kısıtlayan izole çalışma ortamına) sahip barındırılan bir
+  agent farklı bir üründür. Python'a özgü sınır çalışma zamanıdır: `query()` bir async
+  generator'dır, bu yüzden çalışan bir olay döngüsüne ihtiyaç duyar. Onu senkron bir çerçeveye — düz
+  bir WSGI view'ına, bir Celery görevine, async farkında olmayan bir notebook hücresine — koymak,
+  her çağrıda onu `asyncio.run()` içine sarmak ve her seferinde tam agent başlangıç maliyetini
+  ödemek anlamına gelir. Host'unuz senkronsa ve gecikme önemliyse, bunun yerine CLI'yi bir alt süreç
+  olarak çalıştırın.
+</WhenNotToUse>
+
+## Kavram
+
+### Aynı SDK, snake_case
+
+Python ve TypeScript SDK'ları aynı üründür. `query()` hâlâ giriş noktasıdır, hâlâ bir async iterator döndürür ve hâlâ döngünün her adımı için bir mesaj verir. Farklar isimlendirme ve tiplemedir:
+
+| TypeScript                     | Python                                  |
+| ------------------------------ | --------------------------------------- |
+| `query({ prompt, options })`   | `query(prompt=..., options=...)`        |
+| `options: { … }`               | `options=ClaudeAgentOptions(…)`         |
+| `allowedTools`                 | `allowed_tools`                         |
+| `permissionMode`               | `permission_mode`                       |
+| `maxTurns`                     | `max_turns`                             |
+| `settingSources`               | `setting_sources`                       |
+| `cwd`                          | `cwd`                                   |
+| `message.type === 'assistant'` | `isinstance(message, AssistantMessage)` |
+
+Python tarafı, string karşılaştırmasından daha güzel olan, eşleştirebileceğiniz gerçek sınıflar verir: `SystemMessage`, `AssistantMessage`, `ResultMessage`. Tek pürüz, `SystemMessage`'ın yükünü bir `data` sözlüğünde taşıması, bu yüzden `init` olayının modeli ve cwd'si özellikler yerine `message.data.get('model')` ve `message.data.get('cwd')` olarak çıkar.
+
+İşlenmiş örnek [prompt](/tr/playbook/glossary/#prompt) (Claude'a verilen istek metni) bilinçli olarak ders 05'inkiyle aynıdır, böylece iki çalıştırmayı satır satır karşılaştırabilirsiniz:
+
+```text
+Read BUGS.md and src/store.ts. Name the one function that holds the off-by-one
+pagination bug, and quote the single line that is wrong. Do not edit anything.
+```
+
+### Kurulum
+
+İki desteklenen yol vardır. `uv init` ardından `uv add claude-agent-sdk`, sanal ortamı sizin için halleder. Ya da elle yapın: macOS ya da Linux'ta `python3 -m venv .venv` ve `source .venv/bin/activate`, Windows'ta `py -m venv .venv` ve `.venv\Scripts\Activate.ps1`, sonra `pip install claude-agent-sdk`.
+
+PowerShell, `Activate.ps1`'i bir execution-policy hatasıyla engellerse, `Set-ExecutionPolicy -Scope Process RemoteSigned` bunu yalnızca o kabuk için temizler.
+
+SDK, belgelenmiş tek bir istisnayla, yerel bir Claude Code ikili dosyasını paketler: pip, örneğin ARM64 Windows'ta, bir platform wheel'i yerine kaynak dağıtımını kurarsa, paketlenmiş bir ikili dosya olmaz ve bunun yerine Claude Code'u yerel olarak kurarsınız. SDK sonra onu `PATH`'inizde bulur.
+
+### Kimlik doğrulama ve ayarlar
+
+Ders 05 ile aynıdır, çünkü altında aynı motor vardır. `ANTHROPIC_API_KEY`, süreç ortamından okunur, `.env` dosyaları sizin için yüklenmez ve üçüncü taraf sağlayıcı anahtarları aynı ortam değişkenleridir. `setting_sources=[]`, aynı sınırlarla aynı izolasyon modunu verir: `~/.claude` ya da `.claude/`'dan `settings.json` yok, `CLAUDE.md` yok — ama managed politika, genel `~/.claude.json` ve `~/.claude/projects/<project>/memory/` altındaki auto memory yine de yüklenir, bu yüzden bu da önemliyse onu `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` ile eşleştirin. TypeScript tarafının olmadığı bir sürüm uyarısı: Python SDK 0.1.59 ve öncesi, boş bir listeyi seçeneği atlamakla aynı işledi, bu yüzden izolasyon sessizce hiçbir şey yapmıyordu. Bu ders 0.2.152'de doğrulanmıştır.
+
+### Hangi iş için hangi SDK
+
+Hiçbiri diğerinden daha yetenekli değildir. Agent'ın nerede yaşaması gerektiğine göre seçin: çevresindeki uygulamanızın yazıldığı dil ve agent'ın yanında ihtiyaç duyduğunuz ekosistem — bir web çerçevesi, bir veri işleme hattı, bir notebook. Gerçek bir seçiminiz varsa, karar veren soru genelde sistemin geri kalanının zaten async olup olmadığıdır.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · 05. ders agent'ı, Python'da yeniden kurulmuş"
+  lessonId="tr/l3-advanced/m13-headless-ci/agent-sdk-python"
+  repoTag="lesson/m13-06-start"
+  steps={[
+    "Lab klonunuzda `git checkout lesson/m13-06-start` yapın. Ders 05'in tag'i gibi bu da yalnızca süreç odaklıdır: `-start` ve `-solution` aynı commit'i işaret eder, çünkü agent'ınız kendi projesinde yaşar.",
+    'Yeni bir taslak klasörde bir sanal ortam oluşturup etkinleştirin, sonra `pip install claude-agent-sdk` yapın.',
+    'Kurulumu doğrulayın: `python -c "import claude_agent_sdk, importlib.metadata as m; print(m.version(\'claude-agent-sdk\'))"`.',
+    "Aşağıdaki kodla `agent.py`'yi yazın — ders 05 ile aynı prompt, aynı sınırlar, aynı izolasyon.",
+    'Lab klonuna karşı çalıştırın: `LAB_DIR=../claude-code-lab python agent.py`.',
+    "Çıktıyı ders 05'in transcript'iyle karşılaştırın: aynı tool'lar, aynı sonuç, farklı ifade.",
+    "Lab klonunda `git status`'un temiz olduğunu doğrulayın.",
+  ]}
+  expected="`python agent.py`, `init: model=claude-sonnet-5 cwd=<lab klonunuz>` yazdırır, iki `Tool: Read` satırı, src/store.ts'te paginate()'i adlandıran ve yanlış satır olarak `const start = page * pageSize;`'i alıntılayan bir cevap, sonra `Done: success (turns=3)`, 0 ile çıkar."
+  checklist={[
+    'venv etkinleştirildi ve `claude-agent-sdk` hatasız import ediliyor',
+    '`python agent.py` 0 ile çıkıyor',
+    'init satırı lab klonu yolunu gösteriyor',
+    'Yalnızca `Read` kullanıldı — Edit yok, Bash yok',
+    'Lab klonunda `git status` hiçbir değişiklik bildirmiyor',
+    'ASCII olmayan çıktı bozulmuyor (aşağıdaki kodlama notuna bakın)',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/06-agent-sdk-python/01-agent-py.txt"
+    range="3-17"
+  />
+</Lab>
+
+<CodeBlock title="agent.py">
+
+```python
+import asyncio
+import os
+
+from claude_agent_sdk import (
+    AssistantMessage,
+    ClaudeAgentOptions,
+    ResultMessage,
+    SystemMessage,
+    query,
+)
+
+LAB = os.environ["LAB_DIR"]
+
+
+async def main():
+    async for message in query(
+        prompt=(
+            "Read BUGS.md and src/store.ts. Name the one function that holds the "
+            "off-by-one pagination bug, and quote the single line that is wrong. "
+            "Do not edit anything."
+        ),
+        options=ClaudeAgentOptions(
+            cwd=LAB,
+            allowed_tools=["Read", "Glob", "Grep"],
+            permission_mode="dontAsk",
+            max_turns=8,
+            model="sonnet",
+            setting_sources=[],  # no settings.json or CLAUDE.md (auto memory still loads)
+        ),
+    ):
+        if isinstance(message, SystemMessage) and message.subtype == "init":
+            print(f"init: model={message.data.get('model')} cwd={message.data.get('cwd')}")
+        elif isinstance(message, AssistantMessage):
+            for block in message.content:
+                if hasattr(block, "text"):
+                    print(block.text)
+                elif hasattr(block, "name"):
+                    print(f"Tool: {block.name}")
+        elif isinstance(message, ResultMessage):
+            print(f"Done: {message.subtype} (turns={message.num_turns})")
+
+
+asyncio.run(main())
+```
+
+</CodeBlock>
+
+Bu çalıştırma hakkında durup düşünmeye değer iki şey var.
+
+**İki SDK, bir agent.** Bu [transcript](/tr/playbook/glossary/#transcript)'i (kaydedilmiş gerçek bir oturum dökümünü) ders 05'inkinin yanına koyun: her iki agent da aynı iki dosyayı okur, `paginate()` hakkında aynı sonuca varır ve ikisi de checkout edilen tag'in düzeltilmiş satırı zaten taşıdığını kendiliğinden söyler. Akıl yürütmede dile özgü hiçbir şey yoktur, çünkü döngü her iki durumda da aynı motordur. Değişen ifadedir — model deterministik değildir ve iki çalıştırmayı byte-özdeş sayan bir test kaybedeceğiniz bir testtir.
+
+**`asyncio.run(main())` süs değildir.** `query()` bir async generator'dır, bu yüzden `async for`'un çalışan bir olay döngüsüne ihtiyacı vardır. "Ne zaman kullanılmamalı" bölümünün senkron host'lar konusunda uyarmasının tek nedeni bu tek satırdır.
+
+### İşletim sistemine göre kurulum ve çalıştırma
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install claude-agent-sdk
+export ANTHROPIC_API_KEY=your-api-key
+LAB_DIR=../claude-code-lab python agent.py
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install claude-agent-sdk
+export ANTHROPIC_API_KEY=your-api-key
+LAB_DIR=../claude-code-lab python agent.py
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install claude-agent-sdk
+$env:ANTHROPIC_API_KEY = "your-api-key"
+$env:PYTHONIOENCODING = "utf-8"
+$env:LAB_DIR = "..\claude-code-lab"; python agent.py
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows panelindeki `PYTHONIOENCODING` satırı süs değildir. İşte değişken ayarlanmamış hâlde Windows PowerShell'de çalıştırılan aynı agent — ve `setting_sources` kaldırılmış, böylece cevap bu makinenin tercih ettiği dilde geri gelir ve bozulacak, ASCII olmayan karakterler gerçekten içerir:
+
+<Transcript
+  src="content/_shared/transcripts/m13-headless-ci/06-agent-sdk-python/02-agent-py-mojibake.txt"
+  range="5-14"
+/>
+
+Her `ç`, `ı`, `ş` ve `ğ`, `�` olarak geri geldi. Agent sorunsuzdu ve modelin çıktısı geçerli UTF-8'di; konsolun eski kod sayfası bunu yazdıramadı. `PYTHONIOENCODING=utf-8`'i ayarlayın, ya da script'inizin başında `sys.stdout.reconfigure(encoding="utf-8")`'i çağırın. Bu, o kaydın gösterdiği ikinci şeydir de: `setting_sources` atlandığında, Python SDK'sı, TypeScript SDK'sının yaptığı gibi tam olarak host ayarlarını sızdırır.
+
+## Anti-pattern'ler
+
+**`query()`'yi bir olay döngüsü olmadan çağırmak.** Bu bir async generator'dır; üzerinde çıplak bir `for`, bir hata fırlatır. _Düzeltme:_ döngüyü bir `async def` içine koyun ve onu `asyncio.run()` ile çağırın, ya da zaten async bir host'tan `await` edin.
+
+**Sistem Python'ına kurmak.** SDK büyük bir bağımlılık ağacı çeker ve onu global bir yorumlayıcıya karıştırmak, sürüm çakışmalarının başladığı yerdir. _Düzeltme:_ her zaman `uv` ya da bir `venv`.
+
+**Bir wheel'in kurulduğunu varsaymak.** Wheel'i olmayan bir platformda, pip kaynak dağıtımına geri döner ve hiçbir Claude Code ikili dosyası paketlenmez. _Düzeltme:_ SDK bir ikili dosya bulamıyorsa, Claude Code'u yerel olarak kurun — SDK onu `PATH`'ten alır.
+
+**Tipler yerine string'lerle eşleştirmek.** `message["type"] == "assistant"`, Python SDK'sının size verdiği her şeyi çöpe atar. _Düzeltme:_ `isinstance(message, AssistantMessage)`, ve `SystemMessage`'ın yükünü `.data`'da tuttuğunu unutmayın.
+
+**TypeScript seçenek adlarını kopyalamak.** `allowedTools`, sessizce `allowed_tools` değildir. _Düzeltme:_ seçenekleri `ClaudeAgentOptions(...)` ile kurun, böylece yanlış bir anahtar kelime, sessizce yok sayılan bir ayar yerine çağrı noktasında bir `TypeError` olur.
+
+**İki çalıştırmayı [diff](/tr/playbook/glossary/#diff)'leyip (satır satır karşılaştırıp) bir farkı regresyon saymak.** Model deterministik değildir; ifade değişir. _Düzeltme:_ gerçekten önemsediğiniz şeyi doğrulayın — kullanılan [tool](/tr/playbook/glossary/#tool)'lar (Claude'un çağırdığı yerleşik araçlar), exit durumu, çıkardığınız bir değer — düzyazıyı değil.
+
+<Callout variant="changed">
+  Python paketi `claude-agent-sdk`'dir, `claude_agent_sdk` olarak import edilir; `claude-code-sdk` /
+  `claude_code_sdk`'den yeniden adlandırıldı ve `ClaudeCodeOptions`, `ClaudeAgentOptions` oldu. İki
+  sürüm notu önemlidir: v0.1.0'dan beri SDK, varsayılan olarak artık Claude Code'un sistem
+  prompt'unu uygulamıyor, ve Python SDK 0.1.59 ve öncesi `setting_sources=[]`'i onu atlamakla aynı
+  işledi — izolasyon moduna güvenmeden önce yükseltin.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/agent-sdk-python"
+  questionId="q1"
+  lang="tr"
+  prompt="Python agent'ını normal bir script'ten çalıştırmak için hangi satır gereklidir?"
+  options={[
+    {
+      text: "`asyncio.run(main())`, çünkü `query()` bir async generator'dır",
+      correct: true,
+      explanation: "`async for`'un çalışan bir olay döngüsüne ihtiyacı vardır.",
+    },
+    {
+      text: "İlk query'den önce `claude_agent_sdk.configure()`",
+      explanation: 'Böyle bir çağrı yoktur.',
+    },
+    {
+      text: '`load_dotenv()` — SDK bir .env dosyası gerektirir',
+      explanation:
+        'SDK süreç ortamını okur ve hiçbir zaman bir .env dosyası gerektirmez; birini yüklemek isteğe bağlı ve manueldir.',
+    },
+    {
+      text: "Senkron host'lar için `query.sync(...)`",
+      explanation: 'Belgelenmiş bir senkron sarmalayıcı yoktur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/agent-sdk-python"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir TypeScript agent'ını Python'a taşıyorsunuz ve tool kısıtlamaları artık uygulanmıyor. Olası hata nedir?"
+  options={[
+    {
+      text: 'Seçenek `allowedTools` olarak yazılmış; Python `allowed_tools` kullanır',
+      correct: true,
+      explanation:
+        "Seçenekleri `ClaudeAgentOptions(...)` üzerinden kurmak, bu hatayı sessiz bir varsayılan yerine bir TypeError'a çevirir.",
+    },
+    {
+      text: "Python varsayılan olarak `bypassPermissions`'a geçer",
+      explanation:
+        "Geçmez — her iki SDK da `default`'ta başlar. (SDK'lar `bypassPermissions` konusunda farklıdır: TypeScript olanı ayrıca `allowDangerouslySkipPermissions: true` gerektirir.)",
+    },
+    {
+      text: "Python'da `cwd` mutlak olmalıdır",
+      explanation: 'Tool kısıtlamalarıyla ilgisizdir.',
+    },
+    {
+      text: 'Allow kurallarının çalışması için Python\'ın `setting_sources=["user"]`\'a ihtiyacı vardır',
+      explanation:
+        "Seçeneklerde geçirdiğiniz allow kuralları, setting source'lardan bağımsız olarak uygulanır.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/agent-sdk-python"
+  questionId="q3"
+  lang="tr"
+  prompt="`pip install claude-agent-sdk`, ARM64 Windows'ta başarılı oluyor, ama agent Claude Code'u başlatamıyor. Neden?"
+  options={[
+    {
+      text: "pip bir platform wheel'i yerine kaynak dağıtımını kurdu, bu yüzden hiçbir ikili dosya paketlenmedi",
+      correct: true,
+      explanation: "Claude Code'u yerel olarak kurun; SDK sonra onu PATH'te bulur.",
+    },
+    {
+      text: "SDK Windows'u desteklemiyor",
+      explanation: 'Destekliyor; quickstart PowerShell yolunu belgeliyor.',
+    },
+    {
+      text: "ANTHROPIC_API_KEY, pip install'den önce ayarlanmalıdır",
+      explanation: 'Kurulum zamanı ve çalıştırma zamanı burada ilgisizdir.',
+    },
+    {
+      text: 'venv etkinleştirilmemişti',
+      explanation: "Bu import'u bozardı, paketlenmiş ikili dosyayı değil.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/agent-sdk-python"
+  questionId="q4"
+  lang="tr"
+  prompt="Python SDK'sında `init` olayından modeli ve çalışma dizinini nasıl okursunuz?"
+  options={[
+    {
+      text: "subtype'ı \"init\" olan SystemMessage'ın `message.data`'sından",
+      correct: true,
+      explanation: '`message.data.get("model")` ve `message.data.get("cwd")`.',
+    },
+    {
+      text: '`message.model` ve `message.cwd` özelliklerinden',
+      explanation: "Bunlar TypeScript şeklidir; Python yükü `.data`'da tutar.",
+    },
+    {
+      text: "Çalıştırmanın sonundaki ResultMessage'dan",
+      explanation: 'Sonuç mesajı, oturum init yükünü değil, sonuç meta verisini taşır.',
+    },
+    {
+      text: "Okuyamazsınız — Python SDK'sı sistem mesajları yaymaz",
+      explanation: 'Yayar; `SystemMessage` export edilen sınıflardan biridir.',
+    },
+  ]}
+/>
+
+**Sırada:** `m14-security` modülü, bu modülün dayandığı izin sınırlarını alır ve onları asıl konu yapar.

@@ -9,7 +9,7 @@ difficulty: advanced
 tags: ['güvenlik', 'managed-settings', 'auto-mode', 'yönetim', 'izin-listeleri']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Deploy managed settings'
@@ -35,6 +35,351 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders, İngilizce aslından henüz çevrilmedi (taslak). Konusu: organizasyon ölçeğinde yapılandırma. Managed settings, her geliştiricinin makinesine dağıtılan ve Claude Code'un diğer tüm seviyelerin üstünde uyguladığı ayarlardır; dosya macOS'ta `/Library/Application Support/ClaudeCode/`, Linux ve WSL'de `/etc/claude-code/`, Windows'ta `C:\Program Files\ClaudeCode\` altına konur ve `/status` çıktısındaki `Setting sources` satırıyla doğrulanır. Ders `allowManagedPermissionRulesOnly`, `allowManagedHooksOnly`, `allowManagedMcpServersOnly` ve `sandbox.network.allowManagedDomainsOnly` kilitlerini, geçersiz değerlerde kapalı tarafa düşen (fail-closed) anahtarları ve bir geliştiricinin yine de değiştirebildiği dört şeyi anlatır. Auto mode tarafında `permissions.deny` (classifier'dan önce çalışır, geçersiz kılınamaz) ile `autoMode.hard_deny`/`soft_deny`/`allow` (classifier içindeki prose kurallar) ayrımı, `autoMode.environment` girdileri ve `"$defaults"` işaretçisinin neden kritik olduğu ele alınır. Laboratuvarda `claude auto-mode defaults` çıktısı gerçek bir çalıştırmadan alınır: tek bir `hard_deny` kuralı (Data Exfiltration), 69 `soft_deny`, 17 `allow` ve 21 `environment` yuvası.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Bir `managed-settings.json` yazmak, onu her işletim sistemi için doğru yola koymak ve yerine ulaştığını kanıtlamak.
+- Bir developer'ın (geliştirici) managed bir policy'ye rağmen hâlâ değiştirebildiği dört şeyi söylemek.
+- "Yalnızca managed settings sayılır" kilitlerini — `allowManagedPermissionRulesOnly`, `allowManagedHooksOnly`, `allowManagedMcpServersOnly`, `sandbox.network.allowManagedDomainsOnly` — adlandırmak ve her birinin neyi kapattığını söylemek.
+- Bir `permissions.deny` kuralı ile bir `autoMode.hard_deny` kuralı arasındaki farkı açıklamak ve doğrusunu seçmek.
+- Classifier'ın rutin iç işleri engellemesini durduran `autoMode.environment` girdilerini yazmak ve `"$defaults"`'ın neden önemli olduğunu bilmek.
+
+**Ön koşullar.** Bu modülün `01`–`03` numaralı dersleri. Takip etmek için yönetici hakları gerekmez: buradaki her inceleme komutu salt-okunurdur ve policy dosyası dağıtılmak yerine yalnızca gösterilir.
+
+<WhenNotToUse>
+  Bu, organizasyon ölçeğinde bir yapılandırmadır. Tek bir makinede tek bir developer'sanız
+  kurallarınızı `~/.claude/settings.json`'a koyun ve orada durun — kendinize dağıttığınız bir
+  managed settings dosyası, unutacağınız bir dosyadan ve önünüze çıktığında geçersiz kılamayacağınız
+  bir policy'den başka bir şey kazandırmaz. Ve tek bir yanlış pozitifi düzeltmek için `autoMode`
+  geçersiz kılmalarına başvurmayın: niyetinizi bir sonraki mesajınızda belirtip Claude'un yeniden
+  denemesine izin verin ya da tek bir `allow` kuralı ekleyin. Yerleşik bir kural listesini
+  değiştirmek, tüm filonuz hakkında bir karardır.
+</WhenNotToUse>
+
+## Kavram
+
+### Managed settings, ve ne olmadıkları
+
+Managed settings, organizasyonunuzun her developer'ın makinesine dağıttığı ayarlardır. Claude Code bunları diğer her seviyenin — kullanıcı, proje, local ve `--settings` — üstünde uygular; belgelenmiş küçük bir istisna kümesinde daha düşük bir seviyeden gelen _daha sıkı_ bir değer hâlâ geçerli sayılır.
+
+Minimal bir policy şöyle görünür:
+
+<CodeBlock title="managed-settings.json">
+
+```json
+{
+  "permissions": {
+    "deny": ["Read(./.env)", "Read(./secrets/**)"],
+    "disableBypassPermissionsMode": "disable",
+    "disableAutoMode": "disable"
+  },
+  "allowManagedPermissionRulesOnly": true
+}
+```
+
+</CodeBlock>
+
+Bu dosya iki okumayı engeller, `bypassPermissions`'ı her oturumdan kaldırır, auto mode'u `Shift+Tab` döngüsünden kaldırır (`--permission-mode auto` ile başlatılan bir oturum bunun yerine Manual'da başlar) ve managed settings'i permission kurallarının **tek** kaynağı yapar. Claude Code bundan sonra kullanıcı, proje, local ve `--settings` dosyalarındaki `allow`, `ask` ve `deny` kurallarını yok sayar, `--allowedTools`'u yok sayar, permission uyarılarındaki her-zaman-izin-ver seçeneklerini gizler ve yeni kural kaydetmeyi durdurur. `--disallowedTools` ve oturumun kendi `deny` ve `ask` kuralları hâlâ geçerlidir, çünkü bunlar yalnızca kısıtlar.
+
+Her işletim sistemi için sistem yoluna koyun:
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+sudo mkdir -p "/Library/Application Support/ClaudeCode"
+sudo cp managed-settings.json "/Library/Application Support/ClaudeCode/managed-settings.json"
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+sudo mkdir -p /etc/claude-code
+sudo cp managed-settings.json /etc/claude-code/managed-settings.json
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+New-Item -ItemType Directory -Force "C:\Program Files\ClaudeCode"
+Copy-Item managed-settings.json "C:\Program Files\ClaudeCode\managed-settings.json"
+```
+
+  </Fragment>
+</OSTabs>
+
+Dosya, **dört** dağıtım mekanizmasından biridir:
+
+| Mekanizma                               | Nasıl dağıtılır                                                                                                  | Claude Code onu ne zaman okur                                                                                                                    |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Server-managed settings                 | claude.ai yönetici konsolu ya da self-hosted bir Claude apps gateway'i                                           | Başlangıçta getirilir, saatte bir yoklanır                                                                                                       |
+| MDM ya da işletim sistemi düzeyi policy | Jamf, Intune ya da Group Policy üzerinden bir macOS configuration profile'ı ya da Windows `HKLM` registry değeri | Başlangıçta, her 30 dakikada bir yeniden kontrol edilir                                                                                          |
+| Dosya tabanlı                           | Her makinede sistem dizinindeki `managed-settings.json`                                                          | Başlangıçta, dosya değiştiğinde yeniden yüklenir                                                                                                 |
+| `HKCU` registry (Windows ve WSL)        | `HKLM`'e yazamadığınızda kullanılan bir Windows `HKCU` registry değeri                                           | Başlangıçta, her 30 dakikada bir yeniden kontrol edilir — **yalnızca** başka hiçbir managed kaynak bir policy anahtarı sağlamadığında kullanılır |
+
+MDM ve dosya satırlarına birlikte _endpoint-managed_ (uç nokta yönetimli) ayarlar denir, çünkü policy developer'ın cihazında yaşar; server-managed satırı ise bunun yerine getirilir. `policyHelper` beşinci bir mekanizma değildir: zaten seçtiğiniz MDM ya da dosya mekanizması _içinde_ policy'yi hesaplayan bir yürütülebilir dosyayı adlandıran, `wslInheritsWindowsSettings` ve `managedSourcesBehavior`'ın yanında bir dağıtım-kontrolü anahtarıdır.
+
+Aynı makineye birden fazla mekanizma ulaştığında, Claude Code varsayılan olarak birini uygular ve diğerlerini yok sayar; `managedSourcesBehavior`, her kaynağı birleştiren opt-in seçenektir.
+
+### Yerine ulaştığını kanıtlamak
+
+Makinede `/status` çalıştırın ve `Setting sources` satırını okuyun. Bir managed kaynak devredeyken Claude Code'un hangisini seçtiğini adlandırır: `(remote)`, `(plist)`, `(HKLM)`, `(file)`, `(drop-ins)`, `(file + drop-ins)`, `(HKCU)`, `(parent process)`, `(helper)` ya da `, merged` ile biten birleşik bir liste. İkinci bir satır, `Skipped sources`, bulunan ama seçilmeyen herhangi bir managed kaynağı adlandırır — "policy makineye hiç ulaşmadı" ile "daha yüksek öncelikli bir kaynak onu geçersiz kıldı" arasındaki farkı bu satırla anlarsınız.
+
+Satır tamamen yoksa, Claude Code bir policy anahtarı sağlayan hiçbir managed kaynak bulamamıştır. Attığı öğeleri listelemek için `claude doctor` çalıştırın: geçersiz girdiler tek tek onarılır ya da bir uyarıyla atlanır ve değeri hâlâ başarısız olan üst düzey bir anahtar atılırken kalan her geçerli anahtar zorunlu kılınmaya devam eder.
+
+Birkaç anahtar, geçersiz olduklarında atılmak yerine bilinçli olarak **kapalı tarafa düşer** (fail closed) — geçersiz bir `allowedMcpServers` boş bir allowlist olarak zorunlu kılınır, `allowManagedHooksOnly` ve `allowManagedMcpServersOnly` `true` sayılır, `availableModels` boş bir allowlist'e döner, `forceLoginOrgUUID` hiçbir organizasyona izin vermez ve `crossSessionInbound` `refuse` olur. `requiredMinimumVersion` ve `requiredMaximumVersion` ise tasarım gereği _açık tarafa_ düşer.
+
+Ve mevcut ama JSON nesnesi olarak ayrıştırılamayan bir managed settings dosyası, kaynağı adlandırarak Claude Code'un **başlamayı reddetmesine** neden olur — başka bir yönetici kaynağı geçerli bir policy sağlasa bile. Dosyanın olmaması sorun değildir; boş bir dosya `{}` sayılır.
+
+### Bir developer'ın hâlâ değiştirebildiği
+
+Dokümantasyon, "managed her zaman kazanır" kuralının dışında kalan dört şeyi adlandırır ve bir güvenlik incelemecisine bir kontrol vaat etmeden önce bunları bilmeye değer:
+
+1. **Model.** Managed bir `model`, bir varsayılandır, bir kilit değil. `--model` ve `ANTHROPIC_MODEL` bir oturum için hâlâ modeli seçer — seçimi kısıtlamak için `availableModels` dağıtın.
+2. **Yerel yönetici hakları.** Yönetici olan bir developer, managed kaynağın kendisini düzenleyebilir. MDM'in bir programa göre yeniden dağıtmasının nedeni de budur.
+3. **Server-managed önbelleği.** Yerel önbellekteki bir düzenleme, bir sonraki başarılı fetch'e kadar sürer.
+4. **Diğer [tool](/tr/playbook/glossary/#tool)'lar** (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araçlar). Managed settings, Claude Code'u bağlar. Başka bir şeyden API'yi çağıran bir developer bunlara tabi değildir.
+
+### Auto mode: iki farklı kural türü
+
+İki kapı vardır ve birbirlerinin yerine geçmezler.
+
+`permissions.deny`, Claude Code tarafından **classifier'a danışılmadan önce** değerlendirilen bir tool-deseni kuralıdır. Ne classifier ne de kullanıcı niyeti bunu geçersiz kılabilir. Asla çalışmaması gereken her şeyi buraya koyun.
+
+`autoMode.hard_deny` / `soft_deny` / `allow`, classifier tarafından okunan, dört katmanlı düz metin (prose) kurallarıdır: `hard_deny` koşulsuz engeller; `soft_deny` bir sonraki adımda engeller; `allow`, eşleşen `soft_deny` girdilerini geçersiz kılar; ve açık kullanıcı niyeti kalan soft engelleri geçersiz kılar — ama yalnızca mesajınız eylemi _doğrudan ve özel olarak_ tanımladığında. "Depoyu temizle" bir force push'u yetkilendirmez; "bu [branch](/tr/playbook/glossary/#branch)'i (bir git deposunun bağımsız bir geliştirme hattı) force-push et" yetkilendirir.
+
+Classifier, `autoMode`'u `~/.claude/settings.json`'dan, managed settings'ten ve `--settings`'ten okur — **asla** bir deponun `.claude/settings.json`'undan ya da `.claude/settings.local.json`'undan değil, çünkü aksi hâlde [commit](/tr/playbook/glossary/#commit)'lenmiş (bir git deposundaki değişiklik kümesinin kalıcı, mesajlı kaydı) bir depo ya da bir build adımı kendi allow kurallarını enjekte edebilirdi. Her kapsamdan gelen girdiler birleşir ve bir developer listeleri genişletebilir ama managed bir girdiyi kaldıramaz. Dokümantasyondaki dürüst uyarıya dikkat: `allow`, soft engellere bir istisna olarak davrandığından, developer'ın eklediği bir `allow`, bir organizasyon `soft_deny`'ını geçersiz kılabilir. Birleşim toplamsaldır, sert bir policy sınırı değil — `permissions.deny`'ın var olma nedeni de tam olarak budur.
+
+### `autoMode.environment`
+
+Çoğu organizasyon için ihtiyacınız olan tek alan budur. Varsayılan olarak classifier, çalışma dizinine ve deponun yapılandırılmış remote'larına güvenir, geri kalan her şeyi harici sayar — bu yüzden şirketinizin source-control organizasyonuna push yapmak ya da bir takım bucket'ına yazmak, bunların size ait olduğunu söyleyene kadar engellenir.
+
+<CodeBlock title="~/.claude/settings.json ya da managed-settings.json">
+
+```json
+{
+  "autoMode": {
+    "environment": [
+      "$defaults",
+      "Organization: Acme Corp. Primary use: software development",
+      "Source control: github.example.com/acme-corp and all repos under it",
+      "Trusted cloud buckets: s3://acme-build-artifacts, gs://acme-ml-datasets",
+      "Trusted internal domains: *.corp.example.com, api.internal.example.com",
+      "Key internal services: Jenkins at ci.example.com, Artifactory at artifacts.example.com",
+      "Internal package registry: npm and PyPI mirrors at artifacts.example.com"
+    ]
+  }
+}
+```
+
+</CodeBlock>
+
+Girdiler düz metindir, regex değil. Bunları altyapınızı yeni bir mühendise anlatır gibi yazın.
+
+<Callout>
+  `"$defaults"` sabit dizesi, yerleşik girdileri o konuma ekler. `environment`, `allow`, `soft_deny`
+  ya da `hard_deny`'ı bunu **olmadan** ayarlamak listenin tamamının yerini alır — yani onu
+  `soft_deny`'dan çıkarmak, force push, `curl | bash`, production dağıtımları ve auto-mode atlatması
+  dâhil her yerleşik soft engeli siler; `hard_deny`'dan çıkarmak ise yerleşik veri sızdırma kuralını
+  siler. Her bölüm bağımsız olarak değerlendirilir.
+</Callout>
+
+Girdileri taslak hâline getiren bir yönetici için bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni) şöyle:
+
+```text
+Read our CI config and git remotes, and draft autoMode.environment entries naming our
+source control org, internal package registry and CI host. Keep "$defaults" first and
+do not write to any settings file — print the JSON.
+```
+
+`/auto-mode-setup`, bu işi etkileşimli olarak yapar; girdileri projeden, ayarlarınızdan ve son oturumlarınızdaki host'lardan ve komut adlarından (mesajlarınızdan asla) taslak hâline getirir, ardından kabul edilen taslağı `~/.claude/settings.json`'a yazar.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · geçersiz kılmak üzere olduğunuz policy'yi okuyun"
+  lessonId="tr/l3-advanced/m14-security/managed-settings"
+  repoTag="none"
+  steps={[
+    "Classifier'ın yerleşik kurallarını JSON olarak yazdırın: `claude auto-mode defaults`. Uzundur — her kural tek bir düz metin dizesidir.",
+    'jq üzerinden pipe\'lamadan tek bir kuralı tam olarak okuyun: `claude auto-mode defaults --label "Data Exfiltration"`. Eşleştirme, her kuralın etiketi üzerinde büyük/küçük harfe duyarsız bir önektir.',
+    "Çıktıyı kural etiketlerine indirgeyerek policy'nin şeklini görün — JSON'ı, her listenin uzunluğunu ve her kuralın etiketini yazdıran birkaç satır Node'a pipe'layın.",
+    "Classifier'ın oturumunuzda gerçekte kullandığını, ayarlarınız uygulanmış ve geri kalanı varsayılan olarak yazdırın: `claude auto-mode config`.",
+    "Bir oturumda `/permissions` çalıştırın ve **Auto mode** sekmesini açın. Managed settings ya da `--settings`'ten gelen girdiler salt-okunur görünür; değiştirdiğiniz her şey `~/.claude/settings.json`'a kaydedilir.",
+    '`/status` çalıştırın ve `Setting sources` satırını bulun. Makinenizde managed bir policy yoksa satır hiçbir kurumsal kaynak adlandırmaz — bu yokluk sonucun kendisidir.',
+  ]}
+  expected="claude auto-mode defaults, dört listeyi — hard_deny, soft_deny, allow ve environment — düz metin dizeleri olarak yazdırır. Etiketlere indirgendiğinde Claude Code 2.1.263 için bunlar sırasıyla 1, 69, 17 ve 21 girdidir."
+  checklist={[
+    '`claude auto-mode defaults` dört listeyle bir JSON nesnesi yazdırdı',
+    '`--label` tek bir kural döndürdü ve diğer bölümleri boş liste olarak bıraktı',
+    'Tek hard_deny kuralını adlandırabiliyorsunuz',
+    '`claude auto-mode config`, kendi ayarlarınızı ayarladığınız yerde yansıtıyor',
+    "`/permissions`'taki **Auto mode** sekmesi her girdinin hangi kapsamdan geldiğini gösteriyor",
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m14-security/04-managed-settings/01-automode-defaults.txt"
+    range="2-8"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m14-security/04-managed-settings/01-automode-defaults.txt"
+    range="75-114"
+  />
+</Lab>
+
+O kayıtta iki şey öne çıkıyor.
+
+**Tam olarak bir `hard_deny` kuralı vardır ve adı Data Exfiltration'dır.** Classifier'ın engellediği geri kalan her şey — kayıt sırasında 69 kural, `Git Destructive` ve `Production Deploy`'dan `Credential Leakage`, `Self-Modification`'a ve beş tarayıcı-sızdırma kuralına kadar — açık niyetinizin temizleyebileceği bir _soft_ engeldir. Bu, auto mode hakkındaki en yararlı tek gerçektir: verinizi ait olmadığı bir yere göndermek dışında, itiraz edilebilir olmak üzere inşa edilmiştir.
+
+**21 `environment` yuvası yapılandırma yüzeyidir.** Bunlar kural değildir; kuralların karşısında okunduğu bağlamdır — `Trusted repo`, `Source control`, `Trusted internal domains`, `Sensitive data locations & audiences`, `Host containment` ve benzerleri. Çoğu, `None configured`'a ya da tutucu bir sezgisel kurala (örneğin, adında `prod` geçen herhangi bir host'u hassas bir hedef sayma) varsayılan olarak döner. Somut hedefleri adlandırmak, koruyucu kuralların sezgisel kural yerine _o hedeflere_ uygulanmasını sağlar.
+
+### Auto mode'dan çıkmadan bir insan denetim noktası eklemek
+
+Auto mode, varsayılan olarak üzerinde çalıştığınız deponun herhangi bir branch'ine push'a ve [pull request](/tr/playbook/glossary/#pull-request) (bir branch'teki değişikliklerin gözden geçirilip ana koda alınması için açılan istek) oluşturmaya izin verir. Döngüde bir insan istiyorsanız, bunu bir istek olarak değil kurallar olarak söyleyin:
+
+<CodeBlock title="~/.claude/settings.json">
+
+```json
+{
+  "permissions": {
+    "ask": ["Bash(git push *)", "Bash(gh pr create *)"]
+  },
+  "autoMode": {
+    "classifyAllShell": true
+  }
+}
+```
+
+</CodeBlock>
+
+İçerik-kapsamlı ask kuralları classifier'dan önce değerlendirilir ve auto modda bile her zaman sorar. `classifyAllShell`, auto mode etkinken _her_ Bash ve PowerShell allow kuralını askıya alır, böylece classifier her kabuk komutunu görür — bu, gecikmeyi kapsam için takas eder ve `Bash(npm test)` gibi dar bir kuralın beklenmeyen bir argümanı görünmeden geçirdiği boşluğu kapatır. v2.1.193 ya da sonrası gerektirir.
+
+## Anti-pattern'ler
+
+**Bir projenin `.claude/settings.json`'una bir `autoMode` bloğu yazmak.** Classifier bunu okumaz — bilinçli olarak, böylece commit'lenmiş bir depo kendi trust'ını genişletemez. _Düzeltme:_ `~/.claude/settings.json` ya da managed settings.
+
+**Bir kural listesini `"$defaults"` olmadan geçersiz kılmak.** İşaretçi olmadan yazılan tek bir özel `soft_deny` girdisi, her yerleşik soft engeli sessizce siler. _Düzeltme:_ `"$defaults"`'ı ekleyin ve gerçekte neyin geçerli olduğunu doğrulamak için sonradan `claude auto-mode config` çalıştırın.
+
+**Asla çalışmaması gereken bir şey için `autoMode.hard_deny` kullanmak.** Bu, classifier içinde bir düz metin kuralıdır; auto mode dışında geçerli değildir ve bir tool-deseni kapısı değildir. _Düzeltme:_ managed settings'teki `permissions.deny`, ki bu classifier'a danışılmadan önce engeller ve geçersiz kılınamaz.
+
+**Bir güvenlik incelemecisine managed settings'in modeli sabitlediğini vaat etmek.** Managed bir `model` bir varsayılandır; `--model` oturum için hâlâ kazanır. _Düzeltme:_ `availableModels`'ı (ve `enforceAvailableModels`'ı) dağıtın.
+
+**Bir policy'yi dağıtıp asla `/status`'a bakmamak.** Daha yüksek öncelikli managed bir kaynak ya da yanlış yoldaki bir dosya, developer'ın bakış açısından sessizce başarısız olur. _Düzeltme:_ dağıtımdan önce bir makinede `Setting sources` ve `Skipped sources`'ı okuyun.
+
+**Sonuçları okumadan "veri paylaşımını azaltmak" için telemetriyi kapatmak.** `DISABLE_TELEMETRY`, kendi analiz panonuzu besleyen kullanım verisini de durdurur ve feature-flag getirmeyi kapatır — bu da Remote Control'ü, auto-mode varsayılanını ve diğer flag'e bağlı özellikleri o developer'lar için kullanılamaz hâle getirir. _Düzeltme:_ bilinçli olarak karar verin; bir sonraki ders her değişkenin gerçekte neyi kontrol ettiğini ele alır.
+
+<Callout variant="changed">
+  Classifier artık `autoMode`'u `.claude/settings.local.json`'dan okumuyor; v2.1.207'den önce
+  okuyordu. O dosyada hâlâ yaşayan bir `autoMode` bloğunu `~/.claude/settings.json`'a taşıyın, aksi
+  hâlde sessizce yok sayılır. Claude Code 2.1.263 için `auto-mode-config.md` üzerinden doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m14-security/managed-settings"
+  questionId="q1"
+  lang="tr"
+  prompt="Auto mode classifier'ı `autoMode` yapılandırmasını NEREDEN okumaz?"
+  options={[
+    {
+      text: "Bir deponun .claude/settings.json'u",
+      correct: true,
+      explanation:
+        'Her iki proje dosyası da bilerek hariç tutulur: aksi hâlde checkout edilmiş bir depo ya da bir build adımı kendi allow kurallarını enjekte edebilirdi.',
+    },
+    { text: '~/.claude/settings.json', explanation: 'Bu, developer başına kapsamdır.' },
+    { text: 'Managed settings', explanation: 'Bu, organizasyon çapında bir kapsamdır.' },
+    { text: '--settings bayrağı', explanation: 'Bu, çağrı başına bir kapsamdır.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m14-security/managed-settings"
+  questionId="q2"
+  lang="tr"
+  prompt="autoMode.soft_deny'a özel bir kural ekliyorsunuz ve $defaults işaretçi dizesini atlıyorsunuz. Ne olur?"
+  options={[
+    {
+      text: 'Kuralınız yerleşik soft engellere eklenir.',
+      explanation:
+        'Yalnızca "$defaults"\'ı da eklerseniz — yerleşikleri geri ekleyen şey bu işaretçidir.',
+    },
+    {
+      text: 'Kuralınız, force push ve curl | bash dâhil her yerleşik soft engelin yerini alır.',
+      correct: true,
+      explanation:
+        '"$defaults" olmadan bir liste ayarlamak, o listenin tam sahipliğini alır. `claude auto-mode defaults` çalıştırın ve tutmak istediğinizi kopyalayın.',
+    },
+    {
+      text: 'Tüm autoMode bloğu geçersiz sayılıp yok sayılır.',
+      explanation: 'Geçerlidir — hatayı fark etmeyi zorlaştıran da bu.',
+    },
+    {
+      text: 'hard_deny listesi de yer değiştirir.',
+      explanation: 'Her bölüm bağımsız olarak değerlendirilir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m14-security/managed-settings"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir eylem, bir developer'ın kendi ayarlarında yazdığından ya da konuşmada söylediğinden bağımsız olarak asla çalışmamalı. Hangi mekanizma?"
+  options={[
+    {
+      text: "Managed settings'te autoMode.hard_deny",
+      explanation:
+        'Classifier içinde koşulsuz engeller, ama classifier yalnızca auto modda çalışır — bir tool-deseni kapısı değildir.',
+    },
+    {
+      text: "Managed settings'te permissions.deny",
+      correct: true,
+      explanation:
+        "Deny kuralları classifier'a danışılmadan önce engeller, her permission modunda geçerlidir ve managed bir değer geçersiz kılınamaz.",
+    },
+    {
+      text: "Organizasyonun CLAUDE.md'sinde bir satır",
+      explanation: "CLAUDE.md hem Claude'u hem classifier'ı yönlendirir, ama bu bir rehberliktir.",
+    },
+    {
+      text: "Managed settings'te permissions.ask",
+      explanation: 'Bu bir reddi değil bir uyarıyı garanti eder.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m14-security/managed-settings"
+  questionId="q4"
+  lang="tr"
+  prompt="Makinede bir managed settings dosyası var ama policy uygulanmıyor. Daha yüksek öncelikli bir kaynağın onu geçersiz kılıp kılmadığını size ne söyler?"
+  options={[
+    {
+      text: "/status'taki `Skipped sources` satırı",
+      correct: true,
+      explanation:
+        'Claude Code\'un bulduğu ama seçmediği her managed kaynağı adlandırır, bu da "makineye hiç ulaşmadı" ile "geçersiz kılındı" arasındaki farkı gösterir.',
+    },
+    {
+      text: 'claude --version',
+      explanation: 'Bu yalnızca sürümü yazdırır.',
+    },
+    {
+      text: 'Başlangıçta hiçbir hatanın olmaması',
+      explanation:
+        "Mevcut ama ayrıştırılamayan bir dosya, Claude Code'un başlamayı reddetmesine neden olur; sessizlik öncelik hakkında hiçbir şey söylemez.",
+    },
+    {
+      text: '/permissions, her kuralın geldiği dosyayı listeler',
+      explanation:
+        'Bu, kurallar konusunda yardımcı olur, ama hangi managed kaynağın atlandığını bildirmez.',
+    },
+  ]}
+/>
+
+**Sırada:** `05-data-and-retention` — makinenizden gerçekte ne çıkar, ne kadar süre tutulur ve bunu değiştiren her anahtar.

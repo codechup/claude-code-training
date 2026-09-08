@@ -6,10 +6,10 @@ module: 'm12-plugins'
 order: 5
 duration_min: 15
 difficulty: advanced
-tags: ['plugins', 'marketplace', 'team', 'distribution']
+tags: ['pluginler', 'marketplace', 'takım', 'dağıtım']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Create and distribute a plugin marketplace'
@@ -31,8 +31,451 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m12-plugins/05-team-marketplace.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Dahili bir marketplace, kökünde `.claude-plugin/marketplace.json` bulunan bir git deposudur; zorunlu alanlar `name`, `owner` ve `plugins`'tir, her plugin girdisi ise `name` ve `source` ister. Bir kullanıcı her ad için yalnızca **tek** marketplace kaydedebildiğinden bütün plugin'leri tek katalogda toplayın, ve Anthropic'e rezerve edilmiş adlardan (`claude-plugins-official`, `claude-community`, `first-party-plugins` ve benzerleri) kaçının — bu denetim her yüklemede yeniden çalışır. Kurum içi kullanımda en sağlam `source` seçimi, plugin klasörlerini marketplace deposuna commit'leyip `./plugins/<ad>` göreli yoluyla göstermektir; kuruluş ayarları üzerinden dağıtım zaten bunu şart koşar. Sürümleme üç seçenek sunar: `plugin.json`'da açık `version` (yalnızca siz artırınca güncelleme gelir), hiç `version` yazmamak (commit SHA'sı sürüm olur — aktif geliştirilen ekip plugin'leri için önerilen yol) ve archive source için digest. Ekibin katalogu elle eklemesini önlemek için depo `.claude/settings.json` dosyasına `extraKnownMarketplaces` ve `enabledPlugins` yazın; klasöre güvenildiği anda Claude Code marketplace'i ekler — ancak v2.1.195'ten beri harici kaynaklı bir plugin, üye onu kurana kadar yüklenmez. Son olarak private depolarda arka plan güncellemesi git credential helper'larını devre dışı bıraktığı için HTTPS ile kimlik doğrulayamaz; çözüm, yalnızca ilgili depoya kapsamlandırılmış bir git URL rewrite'ı ya da `CLAUDE_CODE_PLUGIN_KEEP_MARKETPLACE_ON_FAILURE=1` ayarıdır.
+- Zorunlu alanları ve [plugin](/tr/playbook/glossary/#plugin) (Claude Code'a bileşenleri paket
+  hâlinde ekleyen eklenti) başına bir girdiyi taşıyan bir `.claude-plugin/marketplace.json`
+  yazmak.
+- Bir `source` tipi seçmek ve dahili bir katalog için göreli bir yolun neden doğru varsayılan
+  olduğunu bilmek.
+- Bir depoyu, `extraKnownMarketplaces` ve `enabledPlugins` ile, klasöre güvenen her takım
+  arkadaşı için Claude Code'un marketplace'inizi eklemesi için yapılandırmak.
+- Dahili bir plugin'i bilerek sürümlemek ve `version`'ı atladığınızda ne olduğunu söylemek.
+- Pratikte yanlış giden üç şeyi öngörmek: rezerve adlar, arka plan güncellemelerinde private depo
+  kimlik doğrulaması ve bir plugin'i yeniden adlandırmak.
+
+**Ön koşullar.** `03-build-a-plugin` ve `04-validate-and-eval` dersleri. Dağıtmaya istekli
+olduğunuz bir plugin dizini ve ekibinizin zaten kullandığı bir git host'u.
+
+<WhenNotToUse>
+  Bir marketplace, bakım gerektiren bir dağıtım kanalıdır: tutulması gereken bir depo, yükseltilmesi
+  gereken sürümler ve onu kullanan herkes için bir kimlik doğrulama hikâyesi. Yalnızca tek bir
+  ekibin tek bir depoda kullandığı bir plugin için yanlış biçimdir — o plugin'i, bir skills dizini
+  plugin'i olarak deponun kendi `.claude/skills/`'ine [commit](/tr/playbook/glossary/#commit)'leyin
+  (kalıcı, mesajlı bir değişiklik kaydı olarak kaydedin), o zaman marketplace de kurulum adımı da
+  olmadan her iş birlikçi için yüklenir. Tam olarak bir plugin'iniz varsa ve ikincisi için bir
+  planınız yoksa da yanlış biçimdir: bir takım arkadaşı `--plugin-dir`'i bir checkout'a
+  yöneltebilir, ya da kuruluşunuzun claude.ai ayarları üzerinden dağıtabilirsiniz. Bir
+  marketplace'e, birkaç plugin'in tek bir ön kapıya ihtiyacı olduğunda ya da kurulumların
+  sürümlenmesi gerektiğinde başvurun.
+</WhenNotToUse>
+
+## Kavram
+
+### `marketplace.json`
+
+Bir marketplace, kökünde `.claude-plugin/marketplace.json` bulunan bir git deposudur (ya da
+barındırılan bir dosyadır). Üç alan zorunludur: `name`, `owner` ve `plugins`.
+
+<CodeBlock title="labtrack-marketplace/.claude-plugin/marketplace.json">
+
+```json
+{
+  "name": "labtrack-internal",
+  "owner": {
+    "name": "CodeChup Claude Code Academy"
+  },
+  "description": "Internal marketplace for the labtrack project's own Claude Code plugins.",
+  "plugins": [
+    {
+      "name": "labtrack-tools",
+      "source": "./plugins/labtrack-tools",
+      "description": "The commit-msg skill and the format-on-save hook, packaged for the labtrack project.",
+      "version": "1.0.0",
+      "category": "workflow",
+      "tags": ["git", "formatting"]
+    }
+  ]
+}
+```
+
+</CodeBlock>
+
+`name` dışa dönüktür ve kebab-case'dir: kullanıcılar onu `/plugin install
+labtrack-tools@labtrack-internal`'daki `@`'den sonra yazar. Her kullanıcı **ad başına bir
+marketplace** kaydedebilir — aynı adla ikincisini eklemek birincisinin yerini alır — bu yüzden bir
+adı paylaşan birkaç katalog yerine her şeyi tek bir `marketplace.json` altında yayımlayın. `owner`
+bir `name` ister; `email` ve `url` isteğe bağlıdır.
+
+`plugins` içindeki her girdi `name` ve `source` ister. Bunların ötesinde, bir girdi plugin manifest
+şemasından herhangi bir alan taşıyabilir — `description`, `version`, `author`, `commands`, `hooks`
+ve benzerleri — artı marketplace'e özgü `category`, `tags`, `strict`, `relevance`, `headers` ve
+`headersHelper`. Dahili bir katalog için yararlı isteğe bağlı alanlar:
+
+| Alan               | Neden ayarlarsınız                                                                                                    |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| `displayName`      | Seçicide insan tarafından okunabilir bir ad; boşluk içerebilir. Asla aramada kullanılmaz.                             |
+| `version`          | Plugin'i sabitler. Hem burada hem `plugin.json`'da ayarlanmışsa, `plugin.json` kazanır.                               |
+| `defaultEnabled`   | `false`, plugin'i kurulu ama kullanıcı devreye almadan kapalı gönderir. `plugin.json`'daki aynı alanı geçersiz kılar. |
+| `category`, `tags` | Discover sekmesinde organizasyon ve aranabilirlik.                                                                    |
+| `relevance`        | Öneri sinyalleri — yalnızca bir yöneticinin yönetilen ayarlarda izin listesine aldığı marketplace'ler için etkilidir. |
+
+Önemli bir adlandırma kuralı: bir dizi marketplace adı **Anthropic için rezervedir** — bunlar
+arasında `claude-plugins-official`, `claude-plugins-community`, `claude-community`,
+`claude-code-plugins`, `anthropic-marketplace` ve `first-party-plugins` var — ve
+`official-claude-plugins` gibi resmî kaynakları taklit eden adlar da engellenir. Rezerve adlar
+yalnızca eklendiğinde değil, bir marketplace her yüklendiğinde yeniden kontrol edilir, bu yüzden
+sonradan rezerve hâle gelen bir ad altında kayıtlı bir katalog yüklenmeyi durdurur ve güvenilmeyen
+bir kaynaktan kayıtlı olduğunu bildirir. Açıkça sizin olduğu belli bir ad seçin.
+
+### Source'lar ve göreli yolların dahilde neden kazandığı
+
+`source`, Claude Code'a plugin'i nereden getireceğini söyler. Göreli bir yol, bir GitHub deposu, bir
+git deposu, bir git alt dizini, bir npm paketi, bir zip arşivi ya da bir komut olabilir. Dahili bir
+katalog için en basit ve en sağlam seçim, **plugin klasörlerini marketplace deposuna commit'lemek**
+ve onlara göreli olarak başvurmaktır:
+
+```json
+{
+  "name": "deploy-tools",
+  "source": "./plugins/deploy-tools"
+}
+```
+
+Bu, ikinci bir erişim kontrolü hikâyesi olmadan private plugin'leri private tutar, ve kuruluş
+dağıtımının gerektirdiği de budur: bir Team ya da Enterprise planında **Organization settings >
+Plugins** üzerinden yayımlarsanız, her plugin source'u `github`, `url`, `git-subdir` ya da `./` ile
+başlayan göreli bir yol olmalıdır, ve sync'in kimlik doğrulayamadığı herhangi bir source herkese
+açık olmalıdır. Kuruluş sync'i, her göreli yollu plugin'i dağıtım sırasında paketler, bu yüzden
+kullanıcıların ayrı bir depoya erişime asla ihtiyacı olmaz.
+
+Kurulumların nasıl çalıştığından bir kısıt doğar: kurmak plugin dizinini **bir önbellek konumuna
+kopyalar**, bu yüzden bir plugin `../shared-utils` ile kendi dışındaki dosyalara başvuramaz — o
+dosyalar kopyalanmaz. Bunun yerine bir marketplace içinde plugin'ler arasında dosyaları symlink'lerle
+paylaşın.
+
+### Dahili bir plugin'i sürümlemek
+
+Claude Code, bir güncellemenin var olup olmadığına karar veren önbellek anahtarı olarak plugin'in
+sürümünü kullanır. Sürümü, ayarlanmış olanların ilkinden çözer: `plugin.json`'ın `version`'ı;
+marketplace girdisinin `version`'ı; source'un git commit SHA'sı; arşiv source'ları için SHA-256
+özeti; hiçbiri yoksa `unknown`.
+
+Bu, dahili ekiplere gerçek bir seçim sunar:
+
+| Yaklaşım              | Nasıl                                                  | Güncelleme davranışı                                                                | En uygun olduğu yer                               |
+| --------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------- | ------------------------------------------------- |
+| **Açık sürüm**        | `plugin.json`'da `"version"` ayarlayın                 | Kullanıcılar yalnızca siz yükselttiğinizde güncellenir                              | Kararlı yayın döngüsü olan yayımlanmış plugin'ler |
+| **Commit-SHA sürümü** | `version`'ı hem `plugin.json`'dan hem girdiden çıkarın | Kullanıcılar source'un çözümlenmiş commit'i her değiştiğinde güncellenir            | Aktif geliştirilen dahili ya da ekip plugin'leri  |
+| **Digest sürümü**     | Arşiv source, hiçbir yerde `version` yok               | `sha256` sabitlemesi ya da barındırılan dosyanın byte'ları değiştiğinde güncellenir | Zip dosyası olarak yayımlanan plugin'ler          |
+
+Kendi ekibinizin günlük yinelediği bir plugin için `version`'ı atlamak genellikle doğrudur: her
+[merge](/tr/playbook/glossary/#merge) (iki branch'in tarihçesini birleştirme işlemi) yeni sürümdür. Dışarıdan biri ona bağımlı olduğunda bir tane ayarlayın ve semver'i izleyin.
+
+`claude plugin tag [path]`, bir yayın için `{name}--v{version}` biçiminde bir git tag'i oluşturur ve
+`plugin.json`'ın ve onu kapsayan herhangi bir marketplace girdisinin uyuştuğunu doğrular — ikisinin
+birbirinden uzaklaşmasını yakalamanın ucuz bir yolu.
+
+### Ekip için otomatik hâle getirmek
+
+Bir marketplace'i mühendis başına elle eklemek ölçeklenmez. Bunun yerine depoya koyun: bir ekip
+üyesi **proje klasörüne güvendiğinde**, Claude Code bu marketplace'leri başka bir istem olmadan
+ekler.
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "labtrack-internal": {
+      "source": {
+        "source": "github",
+        "repo": "your-org/claude-plugins"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "labtrack-tools@labtrack-internal": true
+  }
+}
+```
+
+</CodeBlock>
+
+İnsanları şaşırtan bir uyarı: v2.1.195'ten beri, marketplace'i eklemek harici bir source'tan gelen
+bir plugin'i **kurmaz**. Yalnızca projenin `.claude/settings.json`'ının etkinleştirdiği ve source'u
+bir GitHub deposu ya da npm paketi olan bir plugin, ekip üyesi onu kurana kadar yüklenmez — Claude
+Code onu kurulu değil olarak bildirir ve çalıştırılacak `claude plugin install` komutunu yazdırır.
+
+Yöneticiler, her kullanıcının tek tek açması gerekmeden tüm kuruluş için arka plan güncellemelerini
+etkinleştirmek üzere bir `extraKnownMarketplaces` girdisinde `"autoUpdate": true` ayarlayabilir.
+Varsayılan olarak, üçüncü taraf ve yerel geliştirme marketplace'lerinde otomatik güncelleme
+**kapalıdır**, `claude-plugins-official` ve çoğu diğer resmî Anthropic marketplace'inde ise açıktır.
+
+### Private depolar
+
+Çalıştırdığınız komutlar — `marketplace add`, `install`, `update`, `marketplace update` — mevcut
+git kimlik bilgisi yardımcılarınızı kullanır, bu yüzden `gh auth login`, macOS Keychain ya da
+`git-credential-store` terminalinizde çalıştıkları gibi çalışır. SSH, host zaten `known_hosts`'ta
+ve anahtar `ssh-agent`'a yüklüyse çalışır, çünkü Claude Code etkileşimli SSH istemlerini bastırır.
+GitHub `owner/repo` kısayolu varsayılan olarak SSH üzerinden klonlanır; HTTPS için
+`CLAUDE_CODE_PLUGIN_PREFER_HTTPS=1` ayarlayın.
+
+**Arka plan otomatik güncellemeleri tuzaktır.** Varsayılan olarak arka plan yenilemesi, `git pull`'u
+için git kimlik bilgisi yardımcılarını devre dışı bırakır, bu yüzden bir yardımcı yapılandırılmış
+olsa bile HTTPS üzerinden private bir depoya kimlik doğrulayamaz; bunun yerine marketplace'i yeniden
+klonlamaya döner, ki bu saklı kimlik bilgilerinizi kullanır ama büyük bir depoda zaman aşımına
+uğrayabilir. İki ayar bunu öngörülebilir kılar:
+
+- `CLAUDE_CODE_PLUGIN_KEEP_MARKETPLACE_ON_FAILURE=1`, arka plan çekmesi başarısız olduğunda silip
+  yeniden klonlamak yerine mevcut klonu tutar.
+- **Kapsamlandırılmış** bir global git URL yeniden yazması, arka plan çekmesinin doğrudan kimlik
+  doğrulamasına izin verir, çünkü token bir yardımcı tarafından sağlanmak yerine uzak URL'ye
+  gömülüdür.
+
+<CodeBlock title="scope the rewrite to the marketplace repository, never to the bare host">
+
+```bash
+git config --global url."https://x-access-token:YOUR_TOKEN@github.com/acme-corp/plugins".insteadOf "https://github.com/acme-corp/plugins"
+```
+
+</CodeBlock>
+
+Bunu depo ya da kuruluş yoluna kapsamlandırın. Tabanı yalnızca host olan bir yeniden yazma, o
+makinede o host'a yapılan her fetch ve push'a uygulanır ve normal kimlik bilgilerinizi geçersiz
+kılar — kendi depolarınıza yaptığınız push'lar dâhil. Token, gitconfig'inizde düz metin olarak
+saklanır, bu yüzden salt okunur erişimi olan birini kullanın. GitLab kullanıcı adı olarak
+`oauth2:` ve Bitbucket `x-token-auth:` bekler. Ortamınızda `GITHUB_TOKEN` ayarlamanın tek başına
+arka plan kimlik doğrulamasını etkinleştir**mediğini** unutmayın: token'lar yalnızca yapılandırılmış
+bir kimlik bilgisi yardımcısı üzerinden etkili olur.
+
+Bu dersin örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni), başka biri katalogunuzu eklemeden önce çalıştırmanız gereken incelemedir:
+
+```text
+Read .claude-plugin/marketplace.json and every plugin directory it references.
+For each entry, tell me: the resolved source, whether the version is pinned or
+follows the commit SHA, and anything the plugin runs at load time. Do not
+install anything.
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · 03 numaralı dersteki plugin etrafında dahili bir marketplace kurun"
+  lessonId="tr/l3-advanced/m12-plugins/team-marketplace"
+  repoTag="none"
+  steps={[
+    'Laboratuvar klonunuzun yanında bir marketplace dizini oluşturun: içinde `.claude-plugin/` ve `plugins/` bulunan bir `labtrack-marketplace/`.',
+    "`03` numaralı dersteki `labtrack-tools` plugin'ini `labtrack-marketplace/plugins/labtrack-tools/`'e kopyalayın.",
+    "`name`, `owner`, `description` ve `source`'u `./plugins/labtrack-tools` göreli yolu olan tek bir plugin girdisiyle `labtrack-marketplace/.claude-plugin/marketplace.json`'ı yazın.",
+    'Açıkça sizin olduğu belli bir ad seçin — ona bağlanmadan önce rezerve listesine karşı kontrol edin.',
+    'Katalogu doğrulayın: marketplace dizininin içinden `claude plugin validate .`. Çıktının "plugin manifest" değil "marketplace manifest" dediğine dikkat edin.',
+    '`02` numaralı derste olduğu gibi ekleyin ve ondan kurun: `claude plugin marketplace add ../labtrack-marketplace`, sonra `claude plugin install labtrack-tools@labtrack-internal --scope local`.',
+    "Gerçek bir ekip deposunun `.claude/settings.json`'ına commit'leyeceğiniz `extraKnownMarketplaces` ve `enabledPlugins` bloğunu yazın. Bunu burada commit'lemeyin — bu marketplace yalnızca yerel.",
+    'Temizleyin: `claude plugin uninstall labtrack-tools@labtrack-internal --scope local`, sonra `claude plugin marketplace remove labtrack-internal`, sonra `claude plugin marketplace list` ile doğrulayın.',
+  ]}
+  expected="`claude plugin validate .`, `Validating marketplace manifest: …/.claude-plugin/marketplace.json`'ın ardından `✔ Validation passed`, çıkış 0 bildirir. Temizlikten sonra `claude plugin marketplace list` yine yalnızca `claude-plugins-official`'ı gösterir."
+  checklist={[
+    "Marketplace manifest'i `.claude-plugin/marketplace.json`'da, plugin ise `plugins/<ad>/`'da",
+    "Plugin girdisinin `source`'u `./` ile başlayan göreli bir yol",
+    'Seçtiğiniz ad rezerve listesinde değil',
+    "`claude plugin validate .`, dosyayı bir plugin manifest'i değil bir marketplace manifest'i olarak tanımladı",
+    "Gerçek bir ekip deposuna commit'leyeceğiniz `extraKnownMarketplaces` bloğunu taslak olarak yazdınız",
+    'Hem plugin hem marketplace sonunda yeniden kaldırıldı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/05-team-marketplace/01-validate-marketplace.txt"
+    range="2-6"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m12-plugins/05-team-marketplace/02-cleanup.txt"
+    range="2-13"
+  />
+</Lab>
+
+Burada hiçbir şey hiçbir yere yayımlanmadı. Katalog yerel bir dizindir, yola göre eklenmiştir ve
+sonunda yeniden kaldırılmıştır — bu da bir marketplace'i bir ekibin önüne koymadan önce prova
+etmenin dürüst yoludur.
+
+Temizlik [transcript](/tr/playbook/glossary/#transcript)'i (kaydedilmiş gerçek oturum dökümü) unutulması kolay bir şeyi açıkça ortaya koyar: **bir marketplace'i kaldırmak
+ondan kurduğunuz plugin'leri kaldırır**, bu yüzden yukarıdaki uninstall adımı kesinlikle gerekli
+olmaktan çok ek bir güvencedir. Marketplace kaydı, proje başına değil, kullanıcı başına bir kez
+`~/.claude/plugins/known_marketplaces.json`'da saklanır — bu yüzden git worktree'leri arasında
+çalışıyorsanız, hepsi aynı marketplace durumunu paylaşır, ve göreli bir yola sahip yerel bir
+`directory` source'u deponun ana checkout'una göre çözümlenir.
+
+### Bir plugin'i sonradan yeniden adlandırmak ya da kaldırmak
+
+Bir girdiyi yeniden adlandırdığınızda, mevcut kullanıcıların `enabledPlugins` anahtarları hâlâ eski
+adı gösterir. Marketplace'teki `renames` alanı, önceki bir plugin `name`'ini geçerli olanına, ya da
+plugin kaldırıldıysa `null`'a eşler, böylece mevcut kullanıcılar otomatik olarak geçiş yapar
+(v2.1.193 veya sonrası):
+
+<CodeBlock title=".claude-plugin/marketplace.json">
+
+```json
+{
+  "name": "labtrack-internal",
+  "owner": { "name": "Platform Team" },
+  "renames": {
+    "labtrack-helpers": "labtrack-tools",
+    "labtrack-legacy": null
+  },
+  "plugins": []
+}
+```
+
+</CodeBlock>
+
+## Anti-pattern'ler
+
+**Resmî görünen bir ad seçmek.** `anthropic-plugins-v2`, `official-claude-plugins` ve rezerve liste
+engellenir, ve kontrol her yüklemede çalışır — bu yüzden sonradan rezerve hâle gelen bir ad
+katalogunuzu herkes için bozar. _Düzeltme:_ kuruluşunuzla ön ek koyun.
+
+**Bir ad altında birkaç katalog yayımlamak.** Her kullanıcı ad başına bir marketplace kaydeder;
+ikincisini eklemek birincisinin yerini alır, önceki plugin'leri sessizce onunla birlikte götürür.
+_Düzeltme:_ tek bir `marketplace.json`, çok sayıda girdi.
+
+**Plugin'lere ayrı bir private depodan başvurmak.** Artık her tüketicinin ikinci bir depo için
+kimlik bilgilerine ihtiyacı var, ve kuruluş sync'i kimlik doğrulayamadığı bir source'u reddedecek.
+_Düzeltme:_ plugin klasörlerini marketplace deposuna commit'leyin ve `./` göreli yollarını kullanın.
+
+**Host genelinde bir git URL yeniden yazması.** `https://github.com`'a kapsamlandırılmış bir
+`insteadOf`, makinedeki her fetch ve push'a uygulanır ve normal kimlik bilgilerinizi geçersiz kılar.
+_Düzeltme:_ yeniden yazmayı, salt okunur bir token'la, marketplace deposuna ya da kuruluş yoluna
+kapsamlandırın.
+
+**Tek başına `enabledPlugins`'in bir plugin'i teslim etmesini beklemek.** v2.1.195'ten beri, harici
+bir source'tan gelen proje-etkin bir plugin, üye onu kurana kadar yüklenmez. _Düzeltme:_ ekibe
+`claude plugin install` satırını söyleyin, ya da marketplace deposu içinde göreli yollu source'lar
+kullanın.
+
+**Hiçbir şeyi yükseltmeyip kimsenin düzeltmeyi neden almadığına şaşırmak.** `plugin.json`'da açık
+bir `version` varken commit push'lamak hiçbir şeyi değiştirmez — `/plugin update`, "already at the
+latest version" bildirir. _Düzeltme:_ alanı yükseltin, ya da onu atlayıp commit SHA'sının sürüm
+olmasına izin verin.
+
+**Kuruluş ayarları üzerinden üst düzey bir `bin/` göndermek.** claude.ai, ister marketplace sync'i
+ister doğrudan yükleme yoluyla gelsin, üst düzey bir `bin/` dizini olan bir plugin'i reddeder.
+_Düzeltme:_ çalıştırılabilirleri `scripts/`'e koyun ve onlara `${CLAUDE_PLUGIN_ROOT}/scripts/<ad>`
+olarak başvurun.
+
+<Callout variant="changed">
+  İki davranış, daha eski bir kılavuzu izleyen birini yakalayacak kadar yakın zamanda değişti:
+  v2.1.195'ten beri, bir ekip marketplace'i eklemek artık harici bir source'tan gelen plugin'leri
+  kurmuyor, ve kullanıcıları bir plugin yeniden adlandırmasında geçiren alan olan `renames`,
+  v2.1.193 veya sonrasını gerektiriyor.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/team-marketplace"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir `marketplace.json` hangi üç alanı gerektirir?"
+  options={[
+    {
+      text: '`name`, `version`, `plugins`',
+      explanation: "`version` isteğe bağlıdır — bir gereksinimi değil manifest'i tarif eder.",
+    },
+    {
+      text: '`name`, `owner`, `plugins`',
+      correct: true,
+      explanation: 'Ve her plugin girdisi de sırasıyla `name` ve `source` gerektirir.',
+    },
+    {
+      text: '`name`, `description`, `source`',
+      explanation: "`source`, marketplace'in kendisine değil bir plugin girdisine aittir.",
+    },
+    {
+      text: '`owner`, `plugins`, `extraKnownMarketplaces`',
+      explanation: '`extraKnownMarketplaces`, tüketen taraftaki bir ayar anahtarıdır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/team-marketplace"
+  questionId="q2"
+  lang="tr"
+  prompt="Dahili plugin'iniz aktif olarak geliştiriliyor ve her merge'in ekibe ulaşmasını istiyorsunuz. `version` ile ne yaparsınız?"
+  options={[
+    {
+      text: "`plugin.json`'da ayarlayın ve her merge'de yükseltin.",
+      explanation:
+        "Açık bir sürüm plugin'i sabitler, bu yüzden yükseltmeyi unuttuğunuz bir merge kimseye ulaşmaz — sorunun istediğinin tam tersi.",
+    },
+    {
+      text: "Hem `plugin.json`'dan hem marketplace girdisinden çıkarın, böylece git commit SHA'sı sürüm olsun.",
+      correct: true,
+      explanation:
+        "Dokümantasyon buna commit-SHA yaklaşımı diyor ve aktif geliştirilen dahili plugin'ler için öneriyor.",
+    },
+    {
+      text: 'Yalnızca marketplace girdisinde ayarlayın, böylece `plugin.json` temiz kalsın.',
+      explanation:
+        "Bu yine de plugin'i sabitler — ve `plugin.json` da bir tane ayarlarsa, `plugin.json` kazanır.",
+    },
+    {
+      text: '`"latest"` olarak ayarlayın.',
+      explanation:
+        'Alan, çözümlenecek bir tag değil, önbellek anahtarı olarak kullanılan bir sürüm dizesidir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/team-marketplace"
+  questionId="q3"
+  lang="tr"
+  prompt="Private marketplace'inizin arka plan otomatik güncellemesi sürekli başarısız oluyor, oysa `claude plugin marketplace update` elle gayet iyi çalışıyor. Neden?"
+  options={[
+    {
+      text: 'Private depolar marketplace olarak kullanılamaz.',
+      explanation: 'Kullanılabilir; çalıştırdığınız komutlar normal şekilde kimlik doğrular.',
+    },
+    {
+      text: 'Arka plan yenilemesi, çekmesi için git kimlik bilgisi yardımcılarını devre dışı bırakır, bu yüzden HTTPS kimlik doğrulaması başarısız olur ve yeniden klonlamaya döner.',
+      correct: true,
+      explanation:
+        'SSH uzak depoları etkilenmez. Kapsamlandırılmış bir URL yeniden yazması, ya da `CLAUDE_CODE_PLUGIN_KEEP_MARKETPLACE_ON_FAILURE=1`, bunu öngörülebilir kılar.',
+    },
+    {
+      text: '`GITHUB_TOKEN`, kabuğunuzda export edilmemiş.',
+      explanation:
+        "Bir sağlayıcı token'ı ayarlamak tek başına arka plan kimlik doğrulamasını etkinleştirmez — yalnızca yapılandırılmış bir yardımcı üzerinden işe yarar.",
+    },
+    {
+      text: "Üçüncü taraf marketplace'lerde otomatik güncelleme varsayılan olarak açık ve hız sınırlarına takılıyor.",
+      explanation:
+        "Üçüncü taraf ve yerel marketplace'lerde otomatik güncelleme varsayılan olarak kapalıdır.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m12-plugins/team-marketplace"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir plugin girdisini `labtrack-helpers`'tan `labtrack-tools`'a yeniden adlandırıyorsunuz. Mevcut kullanıcıları çalışır tutan nedir?"
+  options={[
+    {
+      text: "Hiçbir şeye gerek yok — Claude Code `name`'e değil `source`'a göre eşleştirir.",
+      explanation: '`enabledPlugins`, marketplace girdisi adına göre anahtarlanır.',
+    },
+    {
+      text: "Marketplace'teki, eski addan yeni ada bir `renames` haritası.",
+      correct: true,
+      explanation:
+        "Bir plugin kaldırıldığında bunun yerine `null`'a eşleyin. v2.1.193 veya sonrasını gerektirir.",
+    },
+    {
+      text: "Her iki girdiyi de `plugins`'te sonsuza dek tutmak.",
+      explanation:
+        "İki girdi iki plugin demektir, bu yüzden kullanıcılar eskisinde kalır ve Discover'da bir kopya görür — hiçbir şey geçiş yapmaz.",
+    },
+    {
+      text: 'Eski ada ayarlanmış bir `displayName`.',
+      explanation: '`displayName` kozmetiktir ve asla aramada kullanılmaz.',
+    },
+  ]}
+/>
+
+**Sırada:** `m13-headless-ci`, az önce dağıttığınız plugin'i alır ve bir pipeline'da işe koşar —
+`claude -p`, GitHub Actions ve [Agent](/tr/playbook/glossary/#agent) SDK'sı (kendi başına iş
+yürüten yapay zekâ süreçleri kurmak için kullanılan SDK).

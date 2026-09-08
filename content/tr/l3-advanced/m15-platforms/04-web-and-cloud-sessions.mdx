@@ -1,6 +1,6 @@
 ---
 title: 'claude.ai/code, cloud ortamları, --teleport ve ultrareview'
-description: 'Claude Code’u Anthropic tarafından yönetilen VM’lerde çalıştırın: GitHub bağlantısı, cloud ortamları ve ağ erişim seviyeleri, --cloud ile işi göndermek, --teleport ile geri almak ve /code-review ultra.'
+description: 'Claude Code’u Anthropic tarafından yönetilen VM’lerde çalıştırın: GitHub bağlantısı, cloud ortamları ve ağ erişim seviyeleri, --cloud ile işi göndermek, --teleport ile geri almak ve /code-review ultra ile doğrulanmış, çok-agent’lı bir inceleme çalıştırmak.'
 level: 3
 module: 'm15-platforms'
 order: 4
@@ -9,7 +9,7 @@ difficulty: core
 tags: ['platformlar', 'cloud', 'teleport', 'ultrareview']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Use Claude Code on the web'
@@ -31,8 +31,322 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m15-platforms/04-web-and-cloud-sessions.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders Claude Code on the web’i anlatır: oturumlar `claude.ai/code` üzerindeki bulut altyapısında çalışır ve tarayıcıyı kapatsanız da devam eder. GitHub’ı tarayıcı onboarding’i ya da `/web-setup` ile bağlamayı ve her iki yöntemin de bağlı hesabın görebildiği **her** depoya erişim verdiğini; cloud environment kavramını ve dört ağ erişim seviyesini (**None**, **Trusted**, **Full**, **Custom**) ile bu allowlist’i baypas eden dört yolu kapsar. `claude --cloud "…"` komutunun yerel çalışma dizininizi değil GitHub remote’unuzu klonladığını, bu yüzden önce push etmeniz gerektiğini; `claude -p "…" --cloud <session-id>` ile çalışan bir oturuma mesaj kuyruklamayı; `--teleport` komutunun dört ön koşulunu ve teleport sonrası terminalin oturumun kendi kopyasını aldığını açıklar. Son bölüm `/code-review ultra` özelliğini — doğrulanmış bulgular, 5–10 dakika, Pro ve Max için üç ücretsiz çalıştırma, sonrasında yaklaşık 5–25 USD — yerel `/code-review` ile karşılaştırır.
+- GitHub'ı, tarayıcıdan ya da `/web-setup` ile, Claude Code on the web'e bağlamak ve her yöntemin gerçekte ne verdiğini söylemek.
+- Bir cloud ortamının ne olduğunu açıklamak ve bir proje için bir ağ erişim seviyesi (**None**, **Trusted**, **Full**, **Custom**) seçmek.
+- Terminalinizden `claude --cloud "…"` ile bir cloud oturumu başlatmak ve çalışan bir oturuma `claude -p "…" --cloud <session-id>` ile bir takip mesajı kuyruklamak.
+- Bir cloud oturumunu `--teleport` ile terminalinize çekmek ve teleport'un kontrol ettiği dört gereksinimi saymak.
+- `/code-review ultra` çalıştırmak ve sinyal, maliyet ve süre açısından yerel bir `/code-review`dan farkını söylemek.
+
+**Ön koşullar.** Bir Pro, Max, Team veya Enterprise planı (Claude Code on the web; Pro, Max ve Team için, ve premium koltukları ya da Chat + Claude Code koltukları olan Enterprise kullanıcıları için araştırma önizlemesindedir), CLI'da API anahtarı değil claude.ai oturum açışı, ve bir GitHub deposu. `03-desktop-app` dersi faydalı bağlamdır ama gerekli değildir.
+
+<WhenNotToUse>
+  Cloud oturumları deponuzu taze bir VM'e klonlar, bu yüzden iş yerel yapılandırmanıza,
+  [tool](/tr/playbook/glossary/#tool)'larınıza (Claude'un dosya okuma, komut çalıştırma gibi işleri
+  yapmak için çağırdığı araçlar), ortamınıza ya da yalnızca makinenizde var olan bir [MCP
+  server](/tr/playbook/glossary/#mcp-server)'a (Claude'a dış araç ve veri sağlayan sunucu) ihtiyaç
+  duyduğunda yanlış seçimdir. Ayrıca üçüncü taraf sağlayıcılar (Amazon Bedrock, Google Cloud'un
+  Agent Platform'u, Microsoft Foundry) üzerinden, Zero Data Retention açık kuruluşlarda ve —
+  Anthropic barındırmalı oturumlar için — IP allowlisting açık kuruluşlarda kullanılamaz; orada her
+  oturum bir kimlik doğrulama hatasıyla başarısız olur. Depo klonlama ve PR oluşturma GitHub
+  gerektirir; GitLab ve Bitbucket depoları yerel bir bundle olarak gönderilebilir ama oturum geri
+  push edemez. Ve yineleme sırasında hızlı geri bildirim için ultrareview'u atlayın: kullanım
+  kredisi harcar ve 5 ila 10 dakika sürer.
+</WhenNotToUse>
+
+## Kavram
+
+### İş nerede çalışır
+
+Claude Code on the web, görevleri `claude.ai/code`teki Anthropic tarafından yönetilen cloud altyapısında, ya da oraya yönlendirildiğinde kuruluşunuzun kendi barındırdığı ortamda çalıştırır. Oturum, tarayıcıyı kapattıktan sonra da devam eder ve onu Claude mobil uygulamasından izleyebilirsiniz.
+
+Anthropic barındırmalı bir oturumun yaşam döngüsü dört adımdır: **klonla ve hazırla** (deponuz yönetilen bir VM'e klonlanır ve setup betiğiniz çalışır), **ağı yapılandır** (ortamın erişim seviyesine göre), **çalış** (Claude analiz eder, düzenler, testleri çalıştırır, kendini kontrol eder), **[branch](/tr/playbook/glossary/#branch)'i (bağımsız geliştirme hattını) push et**. Branch'i push etmek oturumu kapatmaz — PR oluşturma ve daha fazla düzenleme hepsi aynı konuşmada olur.
+
+### GitHub'ı bağlamak
+
+İki yol vardır ve emek açısından eşdeğer değildir ama erişim açısından _eşdeğerdir_:
+
+| Yöntem       | Nasıl                                                                                                                                                            | En uygunu                                        |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| GitHub App   | Tarayıcı onboarding'i sırasında Claude [GitHub App](/tr/playbook/glossary/#github-app)'i (Claude Code'u bir GitHub deposuna bağlayan entegrasyon) yetkilendirin. | Tarayıcı onboarding'i; Auto-fix isteyen takımlar |
+| `/web-setup` | Yerel `gh` token'ınızı hesabınızla eşitlemek için CLI'da `/web-setup` çalıştırın.                                                                                | Zaten `gh` kullanan geliştiriciler               |
+
+Güvenlik incelemesi için önemli olan ayrıntı: **her iki yöntemle de bir cloud oturumu, bağlanan GitHub hesabının görebildiği herhangi bir depoya erişebilir** — yalnızca Claude GitHub App'in kurulu olduğu depolara değil. Uygulama kurulumu Auto-fix için PR webhook'larını etkinleştirir; oturum düzeyinde bir erişim kontrolü değildir. Takımınızın neye ulaşabileceğini kısıtlamak için, GitHub üzerinde kısıtlayın.
+
+Team ve Enterprise planlarında `/web-setup` varsayılan olarak gizlidir: önce bir Owner'ın Admin settings → Claude Code'ta **Quick web setup** anahtarını açması gerekir. Zero Data Retention'lı kuruluşlar `/web-setup`ı ya da diğer cloud oturum özelliklerini hiç kullanamaz.
+
+### Cloud ortamları
+
+Her cloud oturumu bir **cloud environment** (cloud ortamı) içinde çalışır — ağ erişimini, ortam değişkenlerini ve setup betiklerini kontrol eden kaydedilmiş yapılandırma. Aynı ortamlar, bir cloud oturumunun başlayabildiği her yerde geçerlidir: web, `claude --cloud`, Claude Tag, routine'ler, mobil ve Desktop uygulamaları.
+
+**Network access** alanı dört seviyeden birini alır:
+
+| Seviye      | Giden bağlantılar                                                                        |
+| ----------- | ---------------------------------------------------------------------------------------- |
+| **None**    | Oturumun ağı üzerinden giden ağ erişimi yok                                              |
+| **Trusted** | Yalnızca allowlist'e alınmış alan adları: paket kayıt defterleri, GitHub, cloud SDK'ları |
+| **Full**    | Herhangi bir alan adı                                                                    |
+| **Custom**  | İsteğe bağlı olarak varsayılanları da içeren kendi allowlist'iniz                        |
+
+Dört şey her seviyede bu allowlist'i atlar, çünkü her biri farklı bir yol izler: GitHub (kendi proxy'si üzerinden), etkinleştirdiğiniz MCP bağlayıcıları (Anthropic'in sunucuları üzerinden), ortamın API kimlik bilgilerinde listelenen host'lar ve Anthropic API'sinin kendisi — **None'da bile**, bu yüzden dokümanlar ağ erişimi devre dışıyken çalışmanın hâlâ verinin VM'den çıkmasına izin verebileceğini açıkça belirtir.
+
+Claude çalışmaya başlamadan önce bir setup betiği çalışır ve ortam önbelleğini kurmak için kabaca beş dakikalık bir bütçe vardır. Oturumlar setup sırasında takılıyorsa, genellikle sebep bu bütçedir: kurulumları `&` ve sondaki bir `wait` ile paralelleştirin, en büyük indirmeleri arka planda bir `SessionStart` [hook](/tr/playbook/glossary/#hook)'una (yaşam döngüsünde belirli anlarda otomatik çalışan komut) taşıyın ve uzun yeniden deneme uykularını kaldırın.
+
+### Terminalden cloud'a
+
+<CodeBlock title="terminalden bir cloud oturumu başlatın">
+
+```bash
+claude --cloud "Fix the authentication bug in src/auth/login.ts"
+```
+
+</CodeBlock>
+
+İnsanları yakalayan üç ayrıntı. **Cloud VM, mevcut dizininizin GitHub remote'unu mevcut branch'inizde klonlar, yerel checkout'unuzu değil** — yerel [commit](/tr/playbook/glossary/#commit)'leriniz (kalıcı, mesajlı değişiklik kayıtlarınız) varsa önce push edin. `--cloud`, aynı anda bir depo üzerinde çalışır. Ve eski `--remote` yazımı, deprecated bir alias olarak hâlâ çalışır.
+
+Depo GitHub'a bağlı değilse, Claude Code onu bunun yerine paketler ve yükler: tüm branch'lerdeki tam geçmiş artı izlenen dosyalardaki commit'lenmemiş değişiklikler, 100 MB altında, izlenmeyen dosyalar hariç. macOS, Linux ve WSL'de kimlik bilgisi gibi görünen dosyalardaki (`.env`, `*.tfvars`, `id_rsa`, `*.pem`) commit'lenmemiş değişiklikleri dışarıda bırakır ve nelerin atlandığını adlandırır. Bu yolu `CCR_FORCE_BUNDLE=1` ile zorlayın.
+
+Zaten çalışan bir oturumu, oturum açtığınız herhangi bir makineden yönlendirmek için:
+
+<CodeBlock title="çalışan bir cloud oturumuna mesaj kuyruklayın">
+
+```bash
+claude -p "also update the changelog" --cloud session_01DiUkqY2kzbUbDmW1w96rfi
+```
+
+</CodeBlock>
+
+Bu, bir mesaj gönderir ve çıkar; `--output-format json` size `{ok, session_id, url}` verir. `-p` olmadan ve bir oturum kimliğiyle `--cloud`, bir bağlanma değil bir hatadır.
+
+Her iki flag de bu sürümde gerçektir:
+
+<Transcript
+  src="content/_shared/transcripts/m15-platforms/04-web-and-cloud-sessions/01-help-cloud-teleport.txt"
+  range="2-8"
+/>
+
+### Cloud'dan terminale geri
+
+`--teleport`, bir cloud oturumunu ve branch'ini terminalinize çeker. Beş giriş yolu: bir seçici için `claude --teleport`, belirli biri için `claude --teleport <session-id>`, çalışan bir oturumun içinde `/teleport` (ya da `/tp`), `/tasks` listesinden `t`, ya da web oturumu menüsünden **Open in > Terminal**. Cloud oturumunun kendi içinde `/teleport` yazmak, çalıştırılacak tam komutu yazdırır.
+
+Teleport, devam etmeden önce dört şeyi kontrol eder: **temiz bir git durumu** (stash etmeyi önerir), **doğru depo** (bir [fork](/tr/playbook/glossary/#fork) değil — yani konuşmayı ayrı bir kopyada devam ettirme değil, aynı deponun bir checkout'u), remote'ta **kullanılabilir branch** ve cloud'da kullandığınızla **aynı hesap**.
+
+İsimleri birbirine çok yakın olduğu için ezberlenmeye değer iki ayrım:
+
+- `--teleport`, bir cloud oturumunu ve branch'ini çeker. `--resume`, bu makinenin yerel geçmişinden bir konuşmayı yeniden açar ve cloud oturumlarını hiç listelemez.
+- `--cloud`, cloud oturumları oluşturur. `--remote-control`, _yerel_ bir oturumu web'den sürmek için açığa çıkarır — bir sonraki derste anlatılan ilgisiz bir özellik.
+
+**Teleport ettikten sonra, terminal oturumun kendi kopyasını alır.** Oradaki yeni iş yerel kalır ve claude.ai ya da mobil uygulamadaki cloud oturumunda görünmez. Sonrasında telefonunuzdan sürmeye devam etmek için, yerel oturumda `/remote-control` başlatın.
+
+### Bir cloud oturumunda çalışmak
+
+Çoğu yerleşik komut çalışır, ama yalnızca terminal arayüzü olarak var olanlar çalışmaz: `/plugin` ve `/resume` kullanılamaz, `/clear` da öyle — kenar çubuğundan yeni bir oturum başlatın. Normalde bir seçici açan komutlar bunun yerine bir argüman alır: `/model sonnet`, `/effort …`, `/fast`, `/color`, `/rename`. Web'de `/config`, bir değer ayarlamak yerine ayarlar sayfanızı açar ve sonrasındaki metin yok sayılır — bir cloud oturumunu yapılandırmak için ortam değişkenlerini kullanın ya da ayar dosyalarını depoya commit'leyin.
+
+Sunulan [permission mode](/tr/playbook/glossary/#permission-mode)'lar (tool çağrılarının nasıl onaylanacağını belirleyen kipler) **Auto**, **Accept edits** ve **Plan**'dır; Manual ve Bypass permissions cloud oturumlarında yoktur.
+
+[Diff](/tr/playbook/glossary/#diff)'ler (değişikliklerin satır satır gösterimi) bir `+42 -18` göstergesi olarak görünür; açın, belirli satırlara yorum yapın ve yorumlar bir sonraki mesajınızla paketlenir, böylece Claude, `at src/auth.ts:47, don't catch the error here`i talimatın yanında görür.
+
+**Auto-fix**, Claude'u bir PR'ın GitHub etkinliğine abone eder, böylece [CI](/tr/playbook/glossary/#ci) (her push'ta ya da pull request'te otomatik çalışan test/kontrol hattı) başarısızlıklarına ve inceleme yorumlarına yanıt verir. Bunu bir web oturumundaki CI durum çubuğundan, terminalde PR'ın branch'inde `/autofix-pr` ile, mobil uygulamadan ya da bir PR URL'sini bir oturuma yapıştırarak açın. Claude, inceleme thread'lerine GitHub'da **sizin GitHub hesabınızı kullanarak** cevap verebilir — Claude Code'dan geldiği etiketlenir ama sizin kullanıcı adınız altında gönderilir, bu da Atlantis ya da `issue_comment` [workflow](/tr/playbook/glossary/#workflow)'ları (çok adımlı otomatik iş akışları) gibi yorum tabanlı otomasyonu tetikleyebilir. Etkinleştirmeden önce deponuzun otomasyonunu gözden geçirin.
+
+Cloud oturumları bir hareketsizlik süresinden sonra durur ve VM geri alınır. claude.ai'dan yeniden açmak, konuşma geçmişi geri yüklenmiş taze bir VM sağlar — ama [subagent](/tr/playbook/glossary/#subagent)'lar (ana oturumun bir alt görevi devrettiği yardımcı agent'lar) ve kabuk komutları gibi çalışmakta olan background iş geri yüklenmez.
+
+### Ultrareview
+
+Ultrareview, aynı cloud altyapısında çalışan derin, çok-[agent](/tr/playbook/glossary/#agent)'lı (kendi başına adım adım çalışan yapay zekâ süreçleriyle) bir kod incelemesidir. Komut `/code-review ultra`dır; özellik hesabınıza açıksa `/ultrareview` bir alias'tır.
+
+```text
+/code-review ultra
+```
+
+Farklı bir tabana karşı: `/code-review ultra develop`. Bir PR'a karşı: `/code-review ultra 1234`. Düz metinle: `/code-review ultra check my auth changes` (birden fazla kelime, bir branch adı ya da PR referansı değil).
+
+Yerel bir `/code-review`ile karşılaştırıldığında ultrareview daha yüksek sinyal (her bulgu bağımsız olarak yeniden üretilir ve doğrulanır), daha geniş kapsam (paralel çalışan daha büyük bir inceleyici agent filosu) ve sıfır yerel kaynak kullanımı sağlar. Bir maliyeti vardır: Pro ve Max **üç ücretsiz çalıştırma, tek seferlik, yenilenmez** alır; Team ve Enterprise hiç almaz; sonrasında kullanım kredisi olarak faturalandırılır, tipik olarak inceleme başına **5 ila 25 dolar**. Bir çalıştırma, erken durdursanız bile cloud oturumu başladığında sayılır. Kabaca **5 ila 10 dakika** sürer ve bir background görev olarak çalışır — `/tasks` ile izleyin.
+
+Bir branch incelemesi varsayılan olarak en fazla **500 değişen dosya ve 8.000 değişen satır** içerebilir; ret mesajı, geçerli sınırları ve diff'inizin boyutunu adlandırır. Etkileşimsiz olarak, bulgular gelene kadar bloklayan bir alt komut vardır:
+
+<Transcript
+  src="content/_shared/transcripts/m15-platforms/04-web-and-cloud-sessions/02-help-ultrareview.txt"
+  range="2-6"
+/>
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni), cloud oturumlarının tam olarak inşa edildiği şekildir — iyi tanımlı, doğrulanabilir ve üzerinize titremenizi gerektirmeyen:
+
+```text
+The pagination helper returns one row too many at the last page.
+Reproduce it with a failing test, fix it, run the suite, and push the branch.
+```
+
+## Uygulamalı laboratuvar
+
+Aşağıdaki her şey, sahip olduğunuz bir depoya karşı gerçek terminal ve tarayıcı işidir; [transcript](/tr/playbook/glossary/#transcript)'ler (gerçek oturum kayıtları) zaten gösterilen iki flag yakalamasıdır, çünkü bu laboratuvarın cloud kısımları kullanım kredisi harcar ve kendi hesabınızda gerçek oturumlar başlatır.
+
+<Lab
+  title="Laboratuvar · bir görevi cloud'a gönderin, geri çekin, sonra inceleyin"
+  lessonId="tr/l3-advanced/m15-platforms/web-and-cloud-sessions"
+  repoTag="none"
+  steps={[
+    'Bir API anahtarıyla değil bir claude.ai hesabıyla oturum açtığınızı doğrulayın: `claude` çalıştırın, sonra `/status` çalıştırın ve **Login method** satırının bir claude.ai hesabı gösterdiğini kontrol edin. Göstermiyorsa `/login` çalıştırın.',
+    'GitHub’ı bağlayın. Ya claude.ai/code’ta tarayıcı onboarding’ini bitirin, ya da — `gh` CLI kullanıyorsanız ve kuruluşunuz izin veriyorsa — `gh auth login` çalıştırın, sonra CLI’da `/web-setup` çalıştırın ve `Connected as <github-kullanıcı-adınız>`ı arayın.',
+    'claude.ai/code’ta ortam ayarlarını açın ve **Default** ortamınızı okuyun. **Network access** seviyesini not edin; bu laboratuvar için **Trusted**te bırakın.',
+    'Sahip olduğunuz bir GitHub deposunun push edilmiş bir branch’inden çalıştırın: `claude --cloud "Add a short CONTRIBUTING.md describing how to run the tests"`. Provizyon kontrol listesini izleyin.',
+    'Oturumu görmek için terminalinizde `/tasks` çalıştırın. Sonra farklı bir kabuktan bir takip kuyruklayın: `claude -p "also mention the Node version" --cloud <session-id>` ve oturum kimliğini ve bir görüntüleme bağlantısını yazdırdığını doğrulayın.',
+    'Oturumu claude.ai/code’ta açın, `+N -M` diff göstergesine tıklayın, bir satıra satır içi bir yorum bırakın ve bir mesajla gönderin.',
+    'Claude branch’ini push ettiğinde, aynı deponun temiz bir checkout’undan `claude --teleport` çalıştırın ve oturumu seçin. Branch’in checkout edildiğini ve konuşma geçmişinin mevcut olduğunu doğrulayın.',
+    'Tek yönlü kuralı doğrulayın: teleport edilen terminal oturumunda bir mesaj gönderin, sonra oturumu claude.ai’da yeniden yükleyin ve yeni mesajınızın orada olmadığını doğrulayın.',
+    'İsteğe bağlı, ve ücretsiz bir çalıştırma ya da kullanım kredisi harcar: branch’te `/code-review ultra` çalıştırın ve `/tasks`te izleyin. Onaylamadan önce onay diyaloğunun maliyet tahminini okuyun.',
+  ]}
+  expected="`claude --cloud`, push edilmiş branch'inizi klonlayan ve terminaliniz olmadan çalışan bir oturum oluşturur; `claude -p --cloud <id>`, mesajın gönderildiğini bildirir ve bir oturum kimliği ile bir görüntüleme bağlantısı yazdırır; `--teleport`, cloud branch'ini checkout eder ve konuşmayı geri yükler; teleport sonrası yapılan iş web oturumunda görünmez."
+  checklist={[
+    '`/status`, bir API anahtarı değil bir claude.ai login method gösteriyor',
+    'GitHub bağlı (tarayıcı onboarding’i ya da /web-setup’tan `Connected as <kullanıcı adı>`)',
+    'Push edilmiş bir branch’ten `--cloud` ile bir cloud oturumu oluşturuldu',
+    '`claude -p "…" --cloud <session-id>` ile bir takip kuyruklandı',
+    'Satır içi bir diff yorumu bir sonraki mesajla Claude’a ulaştı',
+    '`--teleport`, branch’i checkout etti ve geçmişi geri yükledi',
+    'Teleport sonrası iş yerel kaldı ve claude.ai’da görünmedi',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m15-platforms/04-web-and-cloud-sessions/01-help-cloud-teleport.txt"
+    range="2-8"
+  />
+</Lab>
+
+## Anti-pattern'ler
+
+**Push edilmemiş commit'lerle `--cloud` çalıştırmak.** VM, mevcut branch'inizde GitHub remote'unuzu klonlar, çalışma ağacınızı değil. Yerel commit'leriniz basitçe orada değildir. _Düzeltme:_ önce push edin, ya da bundle fallback'ini bilinçli olarak kabul edin.
+
+**GitHub App kurulumunu bir erişim kontrolü gibi görmek.** Bir oturum, bağlı hesabın görebildiği herhangi bir depoya ulaşır. _Düzeltme:_ GitHub üzerinde kısıtlayın — bağlı hesaplar için takım ve depo üyeliği.
+
+**`--teleport`in iki tarafı senkron tutacağını varsaymak.** Tutmaz; terminal kendi kopyasını alır. _Düzeltme:_ telefonunuzdan sürmeye devam etmeniz gerekiyorsa, teleport ettikten sonra yerelde `/remote-control` başlatın.
+
+**`--cloud`u `--remote-control` ile karıştırmak.** Biri bir cloud oturumu oluşturur; diğeri yerel bir oturumu web'e açar. _Düzeltme:_ bunları _"işi uzağa gönder"_ ile _"işi burada tut ve başka yerden sür"_ olarak okuyun.
+
+**Ağ erişimini None'a ayarlayıp oturumu çevrimdışı diye adlandırmak.** Claude Code hâlâ Anthropic API'sine ulaşır ve GitHub, MCP bağlayıcıları ile API-kimlik-bilgisi host'ları hepsi allowlist'i atlar. _Düzeltme:_ erişim seviyelerini _oturumun kendi ağı_ üzerindeki kontroller olarak görün, bir veri-sızıntısı garantisi olarak değil.
+
+**Bir PR yorumunun deploy edebildiği bir depo için Auto-fix'i açmak.** Claude'un cevapları sizin GitHub hesabınız altında gönderilir ve `issue_comment` otomasyonunu tetikleyebilir. _Düzeltme:_ önce deponun workflow'larını denetleyin.
+
+**Her branch için `/code-review ultra`ya başvurmak.** Ücretsiz çalıştırmalar yenilenmez ve sonrasında her inceleme kabaca 5–25 dolar kullanım kredisidir. _Düzeltme:_ yineleme sırasında yerel `/code-review`; önemli bir şeyi birleştirmeden önce ultra.
+
+<Callout variant="changed">
+  `--remote`, `--cloud` için deprecated bir alias'tır. Hâlâ çalışır ama `--cloud` yazın — Claude
+  Code 2.1.263 için `claude-code-on-the-web.md`ye karşı doğrulandı.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/web-and-cloud-sessions"
+  questionId="q1"
+  lang="tr"
+  prompt="Üç push edilmemiş yerel commit'iniz varken bir görev tanımıyla `claude --cloud` çalıştırıyorsunuz. Cloud VM ne görür?"
+  options={[
+    {
+      text: 'Mevcut branch’inizdeki GitHub remote’unuz — push edilmemiş commit’ler eksiktir.',
+      correct: true,
+      explanation:
+        'VM, yerel checkout’unuzu değil remote’u klonlar, bu yüzden dokümanlar önce push etmeyi söyler.',
+    },
+    {
+      text: 'Çalışma dizininizin byte-for-byte bir kopyası.',
+      explanation:
+        'Yalnızca bundle fallback yerel durumu yükler, ve yalnızca GitHub erişimi kullanılamadığında.',
+    },
+    {
+      text: 'Hiçbir şey — komut siz push edene kadar reddeder.',
+      explanation: 'Çalışır; sadece remote’a karşı çalışır.',
+    },
+    {
+      text: 'Mevcut branch’inizi yok sayıp varsayılan branch.',
+      explanation: 'Mevcut branch’inizde klonlar.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/web-and-cloud-sessions"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir ortam **None** ağ erişimine ayarlanmış. Oturum bunlardan hangisine hâlâ ulaşabilir?"
+  options={[
+    {
+      text: 'Anthropic API’si, kendi proxy’si üzerinden GitHub, etkinleştirilmiş MCP bağlayıcıları ve ortamın API-kimlik-bilgisi host’ları.',
+      correct: true,
+      explanation: 'Bunların her biri, oturumun ağ allowlist’inden geçmeyen bir yol izler.',
+    },
+    {
+      text: 'Hiçbir şey — None bu demektir.',
+      explanation:
+        'None, *oturumun kendi ağı üzerinden* giden erişimi engeller, o dört yolu değil.',
+    },
+    {
+      text: 'Yalnızca paket kayıt defterleri.',
+      explanation: 'Bu Trusted’tır.',
+    },
+    {
+      text: 'Bir allowlist’te listelediğiniz herhangi bir alan adı.',
+      explanation: 'Bu Custom’dır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/web-and-cloud-sessions"
+  questionId="q3"
+  lang="tr"
+  prompt="Teleport'un kontrol ettiği dört gereksinimden hangisi DEĞİLDİR?"
+  options={[
+    {
+      text: 'Gerekirse stash etmeyi öneren, temiz bir git durumu.',
+      explanation: 'Dört gereksinimden biridir.',
+    },
+    {
+      text: 'Bir fork değil, aynı deponun bir checkout’u.',
+      explanation: 'Dört gereksinimden biridir.',
+    },
+    {
+      text: 'Claude GitHub App’in depoya kurulu olması.',
+      correct: true,
+      explanation:
+        'Uygulama kurulumu Auto-fix webhook’larını etkinleştirir; teleport bunu gerektirmez. Dördüncü kontrol, aynı claude.ai hesabında oturum açmış olmaktır.',
+    },
+    {
+      text: 'Cloud oturumunun branch’inin remote’a push edilmiş olması.',
+      explanation: 'Dört gereksinimden biridir; teleport onu getirir ve checkout eder.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/web-and-cloud-sessions"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir branch üzerinde yineleme yapıyorsunuz ve çalışma diff'iniz üzerinde hızlı geri bildirim istiyorsunuz. Hangi komut uyar?"
+  options={[
+    {
+      text: 'Yerel olarak `/code-review`.',
+      correct: true,
+      explanation:
+        'Saniyeler ile birkaç dakika arası, normal kullanıma sayılır ve çalışma diff’inizi inceler.',
+    },
+    {
+      text: 'Daha yüksek sinyal verdiği için `/code-review ultra`.',
+      explanation:
+        'Daha yüksek sinyal, ama 5 ila 10 dakika ve ücretsizlerden sonra çalıştırma başına kabaca 5–25 dolar. Birleştirmeden önce için saklayın.',
+    },
+    {
+      text: 'Bir döngüde `claude ultrareview --json`.',
+      explanation: 'Alt komut CI ya da betikler içindir ve her çalıştırma yine faturalanır.',
+    },
+    {
+      text: '`/autofix-pr`.',
+      explanation:
+        'Bu, açık bir PR’ı CI başarısızlıkları ve inceleme yorumları için izler; bir inceleme komutu değildir.',
+    },
+  ]}
+/>
+
+**Sırada:** `05-remote-control-mobile` yönü tersine çevirir — kod makinenizde kalırken konuşma telefonunuza taşınır.

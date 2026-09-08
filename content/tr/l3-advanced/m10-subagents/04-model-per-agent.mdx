@@ -1,5 +1,5 @@
 ---
-title: 'Ajan başına model seçmek'
+title: 'Agent başına model seçmek'
 description: 'Dört adımlı model çözümleme sırası, CLAUDE_CODE_SUBAGENT_MODEL ve _FORCE eşi, ve pahalı modeli yalnızca cevabı değiştirdiği yere koyan bir maliyet stratejisi — üç gerçek çalıştırmayla kanıtlanmış.'
 level: 3
 module: 'm10-subagents'
@@ -9,7 +9,7 @@ difficulty: core
 tags: ['subagent', 'model', 'maliyet', 'ortam-değişkeni']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Create custom subagents'
@@ -23,11 +23,269 @@ lab:
   repo_tag: 'lesson/m10-03-solution'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bir subagent'ın modeli şu sırayla belirlenir: çağrı başına `model` parametresi, ajan dosyasının `model` alanı (`inherit` ana konuşmanın modeli demektir), `CLAUDE_CODE_SUBAGENT_MODEL` ortam değişkeni, ana konuşmanın modeli. Buradan iki sonuç çıkar: dosyada model pinleyen bir ajan ortam değişkenini yener, ve `model` alanını hiç yazmamakla `model: inherit` yazmak — ortam değişkeni ayarlıyken — aynı şey değildir. `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` (v2.1.257+) bu dengeyi tersine çevirir. Laboratuvarda üç headless çalıştırmanın `modelUsage` haritaları yan yana konarak sıranın hangi adımının çalıştığı gözle görülür hâle getirilir.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur.
+- Bir [subagent](/tr/playbook/glossary/#subagent) (ana oturumun bir alt görevi devrettiği, kendi bağlam penceresi ve araç izinleri olan yardımcı agent) için dört adımlı model çözümleme sırasını ezbere sıralamak ve belirli bir durumda hangi adımın kazandığını söylemek.
+- `inherit`'in ne anlama geldiğini ve `model`'i atlamakla neden aynı şey olmadığını açıklamak.
+- `CLAUDE_CODE_SUBAGENT_MODEL` ve `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`'u bilinçli olarak kullanmak ve hangisinin pinlenmiş bir [agent](/tr/playbook/glossary/#agent)'ı (bir hedefi kendi başına adım adım yürüten, araç çağırabilen yapay zekâ süreci) geçersiz kıldığını söylemek.
+- Hangi modellerin gerçekten çalıştığını görmek için [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) JSON zarfındaki `modelUsage`'ı okumak.
+- Agent’larınızdan hangilerinin daha büyük bir modeli hak ettiğine ve hangilerinin işe yarayan en ucuz şey olması gerektiğine karar vermek.
+
+**Ön koşullar.** Bu modülün 1–3. dersleri, ve model ailesi ile takma adların ne anlama geldiği için L2 `m05-models-effort`.
+
+<WhenNotToUse>
+  İşi gerçekten model bağımsız olan bir agent’a `model` pinlemeyin. Pinlenmiş bir agent oturumunuzu
+  takip etmeyi bırakır: iş zorlaştığı için ana konuşmayı daha güçlü bir modele geçirirseniz, `model:
+  haiku` olan bir agent Haiku kalitesinde cevap vermeye devam eder ve suçu
+  [prompt](/tr/playbook/glossary/#prompt)'a (Claude'a verdiğiniz istek metnine) atarsınız. `model`'i
+  dışarıda bırakın — ya da `inherit` ayarlayın — agent’ın farklı olması için kendi bir nedeni
+  olmadıkça. Ve normal bir günde para biriktirmek için `CLAUDE_CODE_SUBAGENT_MODEL_FORCE`'a
+  başvurmayın: bu, bir meslektaşınızın iyi bir nedenle pinlediği modeller dâhil, her agent’ın
+  bilinçli seçimini geçersiz kılar.
+</WhenNotToUse>
+
+## Kavram
+
+### Çözümleme sırası
+
+Bir subagent'ın modeli, geçerli olan bunlardan ilkiyle belirlenir:
+
+1. `Agent` [tool](/tr/playbook/glossary/#tool)'una (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araca) geçirilen çağrı başına `model` parametresi.
+2. Subagent tanımının `model` frontmatter alanı — `inherit`'in "ana konuşmanın modeli" anlamına geldiği yer.
+3. `CLAUDE_CODE_SUBAGENT_MODEL` ortam değişkeni.
+4. Ana konuşmanın modeli.
+
+Bunu yukarıdan aşağıya okuyunca iki şey ortaya çıkar. Birincisi, `model: sonnet` pinleyen bir agent dosyası ortam değişkenini **yener** — ortam değişkeni, seçim yapmayan agent’lar için bir varsayılandır, bir geçersiz kılma değil. İkincisi, `model`'i tamamen atlamak ve `model: inherit` yazmak, yalnızca ortam değişkeni ayarlanmadığında aynı yere varır; ortam değişkeni ayarlıyken `model`'i atlamak 3. adıma iner, `inherit` ise 2. adımda ana modele çözümlenir. Bu fark, birisi CI'da değişkeni export edene kadar görünmezdir.
+
+### Her yerde tek bir modeli zorlamak
+
+Ortam değişkeninin pinlenmiş agent’ları yenmesini istediğinizde, eşini ayarlayın:
+
+<CodeBlock title=".claude/settings.json">
+
+```json
+{
+  "env": {
+    "CLAUDE_CODE_SUBAGENT_MODEL": "haiku",
+    "CLAUDE_CODE_SUBAGENT_MODEL_FORCE": "1"
+  }
+}
+```
+
+</CodeBlock>
+
+`CLAUDE_CODE_SUBAGENT_MODEL_FORCE`, Claude Code v2.1.257 ya da sonrasını gerektirir. Bu kaba bir araçtır ve mesele de budur: onu bir [CI](/tr/playbook/glossary/#ci) (her push'ta ya da pull request'te otomatik olarak testleri ve kontrolleri çalıştıran hat) işi ya da tekdüzeliğin herhangi bir agent’ın kendi yargısından daha önemli olduğu bir maliyet deneyi için kullanın, kalıcı bir ayar olarak değil.
+
+Aynı iki değişken agent team'leri de yönetir. Bir teammate'in modeli önce spawn prompt'undan, sonra bir subagent tanımının `model`'inden (`inherit`'in lider'in modelini seçtiği yer), sonra `inherit`'ten farklı bir şeye ayarlıysa `CLAUDE_CODE_SUBAGENT_MODEL`'den, sonra lider'in geçerli modelinden gelir — ve `_FORCE` teammate'ler için de geçerlidir.
+
+### Gerçekte hangi modelin çalıştığını okumak
+
+Tahmin etmeye gerek yok. Headless kipte `--output-format json`, her birinin harcadığı token'larla birlikte kanonik model id'sine göre anahtarlanmış bir `modelUsage` haritası döndürür:
+
+```text
+Use the scout subagent to answer: which functions does src/store.ts export?
+```
+
+Bunu, `model` alanı olmayan bir agent’a karşı, ortam değişkeniyle ve değişken olmadan çalıştırın; harita size hangi kuralın tetiklendiğini söyler. Laboratuvarın bütünü bu.
+
+### Temasa dayanıklı bir maliyet stratejisi
+
+İşe yarayan soru "hangi model en iyisi" değil "daha büyük bir model nerede cevabı değiştiriyor"dur. Üç genel kural ayakta kalır:
+
+- **Arama ve getirme büyük bir model gerektirmez.** İşi bir dosya bulmak, dışa aktarımları listelemek ya da bir kuralı grep'lemek olan bir agent, akıl yürütme değil arama yapıyordur. Onu ucuz pinleyin — ya da pinlemeden bırakın ve ucuz bir `CLAUDE_CODE_SUBAGENT_MODEL`'in onu yakalamasına izin verin.
+- **Yargı gerektiren kararlar gerektirir.** Bir bulgunun gerçek olup olmadığına karar vermesi gereken bir gözden geçirici, ya da iki tasarımı tartan bir planlayıcı, bütçesinin tamamını daha güçlü bir modelin daha iyi olduğu kısma harcar. Onları pinleyin.
+- **Hacim, çağrı başına fiyatı yener.** On ucuz arama genellikle bir pahalı aramadan daha az maliyetlidir, ama herhangi bir modelde yirmi eşzamanlı agent tek bir dikkatli oturumdan daha fazla harcar. Eşzamanlılık tavanının (`CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS`, varsayılan 20) bir nedeni var.
+
+3.  dersteki dört agent’ın hepsi `model: sonnet` pinliyor, ki bu küçük bir proje için savunulabilir bir varsayılandır: işleri yargı şeklindedir ve Sonnet genel kodlama modelidir. `scout` tarzı bir arama agent’ı, daha ucuz bir oturum varsayılanının ona ulaşabilmesi için pinlenmeden bırakılmaya en açık adaydır.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · çözümleme sırasını üç çalıştırmada görünür kılın"
+  lessonId="tr/l3-advanced/m10-subagents/model-per-agent"
+  repoTag="lesson/m10-03-solution"
+  steps={[
+    'Lab klonunda: `git checkout lesson/m10-03-solution` — 03. dersteki dört agent zaten orada, her biri `model: sonnet` pinliyor.',
+    "02. dersteki pinlenmemiş `.claude/agents/scout.md`'yi ekleyin (`name`, `description` ve `tools` içeren frontmatter, bilerek hiç `model` yok).",
+    'Çalıştırma A — temel çizgi, ortam değişkeni yok: `claude -p "Use the scout subagent to answer: which functions does src/store.ts export?" --model sonnet --max-turns 4 --output-format json`. `modelUsage`\'ı okuyun.',
+    'Çalıştırma B — ortam değişkeni pinlenmemiş bir agent’a ulaşıyor: `CLAUDE_CODE_SUBAGENT_MODEL=haiku claude -p "Use the scout subagent to answer: which functions does src/store.ts export?" --model sonnet --max-turns 4 --output-format json`. `modelUsage`\'ı yeniden okuyun.',
+    'Çalıştırma C — aynı değişken pinlenmiş bir agent’a karşı: `CLAUDE_CODE_SUBAGENT_MODEL=haiku claude -p "Use the researcher subagent to answer: which functions does src/store.ts export?" --model sonnet --max-turns 4 --output-format json`.',
+    'Üç `modelUsage` haritasını yan yana koyun ve her birinin çözümleme sırasının hangi adımını gösterdiğini adlandırın.',
+  ]}
+  expected="Çalıştırma A yalnızca claude-sonnet-5 gösterir (4. adım: ana konuşmanın modeli). Çalıştırma B, sonnet'in yanına claude-haiku-4-5'i ekler — ortam değişkeni pinlenmemiş agent’a ulaştı (3. adım). Çalıştırma C yeniden yalnızca claude-sonnet-5 gösterir, çünkü researcher'ın `model: sonnet` frontmatter'ı ortam değişkenini yendi (2. adım)."
+  checklist={[
+    "Çalıştırma A `modelUsage`'ı tam olarak bir model içeriyor",
+    "Çalıştırma B `modelUsage`'ı iki tane içeriyor: ana model ve haiku",
+    "Çalıştırma C `modelUsage`'ı bir tane içeriyor, ve o haiku değil",
+    '`subagent_stats.by_type` her çalıştırmada hedeflediğiniz agent’ı adlandırıyor',
+    'Her çalıştırmanın sıranın hangi numaralı adımını gösterdiğini yüksek sesle söyleyebiliyorsunuz',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/04-model-per-agent/01-env-unset.txt"
+    range="2-16"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/04-model-per-agent/02-env-haiku-unpinned-agent.txt"
+    range="2-20"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/04-model-per-agent/03-env-haiku-pinned-agent.txt"
+    range="2-16"
+  />
+</Lab>
+
+### Değişkeni tek bir komut için ayarlamak
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+CLAUDE_CODE_SUBAGENT_MODEL=haiku claude -p "Use the scout subagent to answer: which functions does src/store.ts export?" --model sonnet --max-turns 4 --output-format json
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+CLAUDE_CODE_SUBAGENT_MODEL=haiku claude -p "Use the scout subagent to answer: which functions does src/store.ts export?" --model sonnet --max-turns 4 --output-format json
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$env:CLAUDE_CODE_SUBAGENT_MODEL = 'haiku'
+claude -p "Use the scout subagent to answer: which functions does src/store.ts export?" --model sonnet --max-turns 4 --output-format json
+Remove-Item Env:\CLAUDE_CODE_SUBAGENT_MODEL
+```
+
+  </Fragment>
+</OSTabs>
+
+PowerShell'in satır içi bir `DEĞİŞKEN=değer komut` öneki yoktur, bu yüzden değişken üç ayrı ifade olarak ayarlanır, kullanılır ve kaldırılır. Yukarıdaki kayıtlar Bash biçimiyle alındı.
+
+Çalıştırma B ilginç olandır: hem `claude-sonnet-5` hem de `claude-haiku-4-5-20251001` görünür, çıktı token'larının büyük payını Haiku üstlenir. Bu ayrım, ana konuşma Sonnet'te kalırken subagent'ın Haiku'da çalışmasıdır — tam olarak 3. adım. Çalıştırma C, hangi agent’ın hedeflendiği dışında komutta hiçbir değişiklik olmadan Haiku'yu yeniden kaldırır, ki bu 2. adımın kazanmasıdır.
+
+## Anti-pattern'ler
+
+**Ortam değişkeninin her şeyi geçersiz kıldığını varsaymak.** 3. adımda oturur, agent’ın kendi `model`'inin altında. Ekipler, gerçekte harcayan agent’lara sessizce uygulanmayan bir CI maliyet tavanıyla bunu keşfeder. _Düzeltme:_ `CLAUDE_CODE_SUBAGENT_MODEL_FORCE: "1"` ekleyin, ya da pinleri kaldırın.
+
+**"Güvenli olsun diye" her agent’ı en güçlü modele pinlemek.** Ucuz bir modelin tam olarak doğru cevap verdiği aramalar için en üst oranı ödersiniz. _Düzeltme:_ yalnızca çıktısı bir yargı olan agent’ları pinleyin.
+
+**`model: inherit` yazıp ortam değişkenini takip etmesini beklemek.** `inherit`, 2. adımda ana konuşmanın modeline çözümlenir, dolayısıyla 3. adımı _atlar_. _Düzeltme:_ ortam değişkeninin agent’a ulaşabilmesini istediğinizde `model`'i atlayın.
+
+**Modeli cevabın tonundan yargılamak.** Model kimliği `modelUsage`'dadır, metnin ne kadar kendinden emin göründüğünde değil. _Düzeltme:_ zarfı okuyun.
+
+**Saat zamanından kazanmak için yirmi agent’ı aynı anda dağıtmak.** Aynı anda birden çok oturum ya da subagent çalıştırmak token kullanımını çarpar; işi bedavaya bölmez. _Düzeltme:_ gerçekten paralelleşen şeyi devredin ve sayıyı küçük tutun.
+
+<Callout variant="changed" label="Değişti">
+  `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` — ortam değişkeninin bir agent’ın kendi `model`'ini geçersiz
+  kılmasına izin veren anahtar — Claude Code v2.1.257 ya da sonrasını gerektirir. Daha eski
+  sürümlerde pinlenmiş bir agent her zaman kazanır.
 </Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/model-per-agent"
+  questionId="q1"
+  lang="tr"
+  prompt="Bir agent dosyası `model: sonnet` ayarlıyor. CLAUDE_CODE_SUBAGENT_MODEL, _FORCE olmadan haiku'ya ayarlı. Agent’ı hangi model çalıştırır?"
+  options={[
+    {
+      text: 'sonnet',
+      correct: true,
+      explanation:
+        'Frontmatter alanı 2. adımdır; ortam değişkeni 3. adımdır ve yalnızca seçim yapmayan agent’lara uygulanır.',
+    },
+    {
+      text: 'haiku',
+      explanation:
+        'Ortam değişkeni yalnızca CLAUDE_CODE_SUBAGENT_MODEL_FORCE ayarlıyken (v2.1.257+) kazanır.',
+    },
+    {
+      text: 'Ana konuşmanın modeli',
+      explanation: 'Bu 4. adımdır — yalnızca üstündeki hiçbir şey uygulanmadığında ulaşılır.',
+    },
+    { text: 'O anda hangisi daha ucuzsa', explanation: 'Maliyete dayalı bir seçim yoktur.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/model-per-agent"
+  questionId="q2"
+  lang="tr"
+  prompt="`model`\'i atlamak ile `model: inherit` yazmak arasındaki fark nedir?"
+  options={[
+    {
+      text: 'Hiçbiri — ikisi de ana konuşmanın modeli anlamına gelir',
+      explanation: 'CLAUDE_CODE_SUBAGENT_MODEL ayarlanır ayarlanmaz ayrışırlar.',
+    },
+    {
+      text: "`inherit`, 2. adımda ana modele çözümlenir, dolayısıyla ortam değişkenini atlar; `model`'i atlamak 3. adımın uygulanmasına izin verir",
+      correct: true,
+      explanation:
+        'Kesinlikle — `inherit` bir seçimdir ve seçimler ortam değişkeni varsayılanından önce yapılır.',
+    },
+    {
+      text: '`inherit`, onu başlatan agent’ın modelini kopyalar, ki bu başka bir subagent olabilir',
+      explanation: 'Ana konuşmanın modeline çözümlenir.',
+    },
+    {
+      text: "`model`'i atlamak geçersiz frontmatter’dır",
+      explanation: '`model` isteğe bağlıdır; yalnızca `name` ve `description` zorunludur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/model-per-agent"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir çalıştırmanın gerçekte hangi modelleri kullandığını hangi headless alan söyler?"
+  options={[
+    {
+      text: '`modelUsage`',
+      correct: true,
+      explanation:
+        'Kanonik model id’sine göre anahtarlanan ve her birinin harcadığı token’ları taşıyan bir harita.',
+    },
+    {
+      text: '`subagent_stats.by_type`',
+      explanation: 'Bu, modelleri değil agent türlerini adlandırır.',
+    },
+    { text: '`usage.service_tier`', explanation: 'Bu, model değil hizmet katmanıdır.' },
+    { text: '`stop_reason`', explanation: 'Bu, turun neden bittiğini söyler.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/model-per-agent"
+  questionId="q4"
+  lang="tr"
+  prompt="Elinizdeki en ucuz model için hangi agent en iyi adaydır?"
+  options={[
+    {
+      text: 'Bir bulgunun gerçek bir hata olup olmadığına karar veren bir gözden geçirici',
+      explanation: 'Bu bir yargıdır — daha güçlü bir modelin maliyetini kazandığı yer.',
+    },
+    {
+      text: 'Bir fonksiyonun nerede tanımlandığını bulup file:line raporlayan bir arama agent’ı',
+      correct: true,
+      explanation: 'Akıl yürütme değil getirme; ucuz bir model doğru sonuç verir.',
+    },
+    {
+      text: 'İki refactoring tasarımını karşılaştıran bir planlayıcı',
+      explanation: 'Bu da bir yargıdır.',
+    },
+    {
+      text: 'Yeni bir özellik için testleri yazan bir agent',
+      explanation: 'Gerçek kod için doğru testler yazmak bir arama görevi değildir.',
+    },
+  ]}
+/>
+
+**Sırada:** `05-fork-background-worktree`, bir agent’ın yerleştirilebileceği üç yolu ele alır — bağlamınızdan [fork](/tr/playbook/glossary/#fork)'lanmış (bir oturumu, konuşma geçmişinin bir kopyasında devam ettirmek), arka planda çalışan ya da kendi git worktree'sinde izole edilmiş.

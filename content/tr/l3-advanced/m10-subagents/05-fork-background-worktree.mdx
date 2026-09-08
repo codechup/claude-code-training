@@ -1,6 +1,6 @@
 ---
 title: 'Fork, background ve worktree izolasyonu'
-description: "Bir ajanı yerleştirmenin üç yolu: /subtask ile konuşmanızdan fork'lamak, siz çalışmaya devam ederken arka planda koşturmak ya da isolation: worktree ile kendi git worktree'sine kapatmak — gerçek bir çalıştırma ve bunu kanıtlayan git worktree list çıktısıyla."
+description: "Bir agent’ı yerleştirmenin üç yolu: /subtask ile konuşmanızdan fork'lamak, siz çalışmaya devam ederken arka planda koşturmak ya da isolation: worktree ile kendi git worktree'sine kapatmak — gerçek bir çalıştırma ve bunu kanıtlayan git worktree list çıktısıyla."
 level: 3
 module: 'm10-subagents'
 order: 5
@@ -9,7 +9,7 @@ difficulty: advanced
 tags: ['subagent', 'fork', 'background', 'worktree', 'izolasyon', 'monitor']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Create custom subagents'
@@ -31,11 +31,272 @@ lab:
   repo_tag: 'lesson/m10-05-start'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Fork'lanmış bir subagent bütün konuşma geçmişini, system prompt'u, tool'ları ve modeli devralır; tool çağrılarını ve nihai sonucu ise izole eder. `/subtask` (v2.1.212+) onu başlatır ve fork mode etkileşimli oturumlarda varsayılan olarak açıktır. Foreground mu background mu sorusunu dört adımlı bir kural yanıtlar — varsayılan background'dır. Tool kümesi iki filtreden geçer: birincisi kısa bir listeyi her subagent'tan kaldırır, ikincisi ise yalnızca background'da çalışır ve bir allowlist'tir; background'daki bir subagent her MCP tool'unu korur ama yerleşik tool'lardan yalnızca belgelenmiş kısa listeyi tutar. `isolation: worktree` ise ajana geçici bir git worktree verir ve izolasyonu dört ayrı kontrolle harness zorlar. Laboratuvarda izole bir ajan bir dosya oluşturur ve `git worktree list` ile ana checkout'un hiç dokunulmadığı gösterilir.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur.
+- [Fork](/tr/playbook/glossary/#fork)'lanmış (bir oturumu, konuşma geçmişinin bir kopyasında devam ettirilmiş) bir [subagent](/tr/playbook/glossary/#subagent)'ın (ana oturumun bir alt görevi devrettiği, kendi bağlam penceresi ve araç izinleri olan yardımcı agent) neyi devraldığını ve neyi izole ettiğini söylemek, `/subtask` ile bir tane başlatmak.
+- Bir subagent'ın önplanda mı arka planda mı çalışacağına karar veren dört adımlı kuralı adlandırmak ve cevabı JSON zarfından okumak.
+- Bir arka plan [agent](/tr/playbook/glossary/#agent)'ının (bir hedefi kendi başına adım adım yürüten, araç çağırabilen yapay zekâ süreci) kaybettiği [tool](/tr/playbook/glossary/#tool)'ları (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araçları) listelemek ve nedenini açıklamak.
+- Bir agent’a `isolation: worktree` eklemek ve `git worktree list` ile düzenlemelerinin ana checkout'a hiç ulaşmadığını göstermek.
+- Periyodik temizliğin neyi kaldırdığını ve neyi bilerek geride bıraktığını söylemek.
+
+**Ön koşullar.** Bu modülün 1–4. dersleri, ve git worktree'lerinin kendisi için L2 `m08-git` 2. ders. Laboratuvar gerçek bir worktree oluşturur, bu yüzden onu lab klonunda çalıştırın.
+
+<WhenNotToUse>
+  İzolasyon bedava değildir. Bir worktree taze bir checkout'tur: bağımlılıklarınız orada kurulu
+  değildir, bir `.worktreeinclude` onu kopyalamadıkça `.env`'iniz orada değildir ve agent’ın işi
+  kimsenin bakmadığı bir [branch](/tr/playbook/glossary/#branch)'e (bağımsız bir geliştirme hattına)
+  düşer. Zaten gözden geçirecek olduğunuz bir ya da iki dosyayla sınırlı bir değişiklik için,
+  yerinde düzenleme yapan sıradan bir subagent daha basittir ve daha çabuk biter. Fork'lar, yan
+  görevin gerçekten geçmişinize ihtiyacı olmadığında yanlış araçtır — bir fork bütün konuşmayı
+  subagent'a taşır, ki bu tam olarak devretmenin kaçınmaya çalıştığı context maliyetidir. Ve görevin
+  ortasında bir soruyu yanıtlamanız gerektiğinde background yanlıştır: bir arka plan agent’ının
+  hiçbir etkileşimli tool'u yoktur.
+</WhenNotToUse>
+
+## Kavram
+
+### Fork: konuşmayı devralmak
+
+Fork'lanmış bir subagent, hiçten değil konuşmanızdan başlar. Bütün konuşma geçmişini, system [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni), tool'ları, modeli ve mesaj geçmişini devralır. Tool çağrılarını — asla ana context'inize ulaşmazlar — ve mesaj olarak geri dönen nihai sonucu izole eder.
+
+Bir tane kendiniz `/subtask` ile başlatın:
+
+```text
+/subtask draft unit tests for the parser changes so far
+```
+
+Fork mode etkileşimli oturumlarda **varsayılan olarak açıktır**, bu da Claude'un da kendi başına fork'lar başlattığı ve Claude'un başlattığı subagent'ları otomatik olarak arka planda çalıştırdığı anlamına gelir. Ayarlarınızın `env`'inde `CLAUDE_CODE_DISABLE_FORK_MODE=1` ile kapatın.
+
+Benzer iki komutu karıştırmayın: `/subtask` konuşmayı bir subagent'a fork'lar, `/fork` ise bütün oturumu, onunla birlikte çalışan yeni bir arka plan oturumuna kopyalar. Agent view kapalıyken, fork'lanmış-subagent komutu `/fork`'tur ve `/subtask` kullanılamaz.
+
+### Background: siz çalışmaya devam ederken
+
+**Subagent'lar varsayılan olarak arka planda çalışır.** Claude'un başlattığı her biri için Claude Code, geçerli olan bunlardan ilkini alır:
+
+1. Onu bir in-process agent team teammate'i başlattı — önplan.
+2. `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` ayarlı — önplan, her tür oturumda ve fork mode açık olsun olmasın.
+3. Fork mode açık (etkileşimli bir oturumda varsayılan) — hem fork'lar hem fork olmayanlar için arka plan, ve Claude önplan isteyemez.
+4. Fork mode kapalı (`-p`'de ve açmadıkça Agent SDK'da olduğu gibi) — varsayılan olarak arka plan, ve Claude devam etmeden önce sonuca ihtiyaç duyduğunda önplan. Agent’ın `background: true`'sunu ayarlamak o durumda bile onu arka planda tutar.
+
+Önplandaki bir agent işi bitene kadar ana konuşmayı bloke eder ve izin istemleri doğrudan size geçer. Arka plandaki bir agent eşzamanlı çalışır ve istemlerini ana oturumunuzda, soran agent’ı adlandırarak yüzeye çıkarır — onaylayın, ya da agent’ı durdurmadan o tek tool çağrısını reddetmek için `Esc`'e basın.
+
+Background ayrıca **tool kümesini daraltır** ve bunu iki filtreyle yapar. Birincisi, önplan ya da arka plan fark etmeksizin _her_ subagent'tan kısa bir listeyi kaldırır: `AskUserQuestion`, `EndConversation`, `EnterPlanMode`, `ScheduleWakeup`, `TaskOutput`, `WaitForMcpServers` ve `Workflow`, artı spawn-derinliği sınırındaki `Agent` ve agent’ın `permissionMode`'u `plan` olmadıkça `ExitPlanMode`. İkincisi yalnızca arka planda uygulanır ve bir denylist değil bir allowlist'tir: arka plandaki bir subagent her MCP tool'unu korur ama yerleşiklerden yalnızca şunları tutar — `Read`, `Grep`, `Glob`, `Bash`, `PowerShell`, `Edit`, `Write`, `NotebookEdit`, `WebFetch`, `WebSearch`, `TodoWrite`, `Skill`, `ToolSearch`, `EnterWorktree`, `ExitWorktree`, `Monitor`, `TaskStop`, `SendMessage` ve `Artifact`. Geri kalan her şey, `tools`'ta devralınmış ya da belirtilmiş olsun, hiçbir hata olmadan kaldırılır — böylece aynı tanım önplanda ve arka planda farklı tool'lara çözümlenebilir. Fork'lar her iki filtreyi de atlar ve ana konuşmanın tam tool havuzunu alır.
+
+Yerleştirme kuralını zaten yakaladığınız zarflarda görebilirsiniz. Her iki çalıştırma da fork mode'un kapalı olduğu `claude -p`'ydi, bu yüzden ikisine de 4. durum uyguladı: 1. dersteki `Explore` çalıştırması `"started_in_background": 0` bildirdi çünkü Claude cevap vermeden önce sonuca ihtiyaç duydu, 03. dersteki `code-reviewer` çalıştırması ise `1` bildirdi. Aynı komut şekli, sonuca farklı ihtiyaç.
+
+`/tasks`, geçerli oturumun arka planında çalışan her şeyi, bitmiş subagent'lar dâhil, listeler ve birine bağlanmanızı ya da onu durdurmanızı sağlar. Adlandırılmış arka plan subagent'ları, durumlarıyla birlikte `@`-mention typeahead'inde de görünür.
+
+### Adlandırılmış bir agent’ı resume etmek
+
+Claude, bir subagent'ı başlatırken ona bir ad verebilir ve adlandırılmış bir agent ulaşılabilir kalır. Bir incelemeyi sürdürmek tek bir cümledir:
+
+```text
+Continue that code review and now analyze the authorization logic
+```
+
+Perde arkasında bu, agent id'si ya da adına yönlendirilen `SendMessage` tool'udur. Resume edilen bir subagent bütün konuşma geçmişini korur ve `maxTurns` tarafından kesilen çıktı kısmi olarak işaretlenir, böylece Claude nereden devam edebileceğini bilir. Yerleşik `Explore` ve `Plan` agent’ları resume edilemez — bir takip turu olasıysa `general-purpose`'u ya da kendi agent’larınızdan birini kullanın.
+
+### Worktree izolasyonu
+
+`isolation: worktree`, bir agent’a geçici bir git worktree'si verir: deponun geçmişini ve remote'unu paylaşan, kendi dosyaları ve branch'i olan ayrı bir çalışma dizini.
+
+<CodeBlock title=".claude/agents/refactorer.md">
+
+```markdown
+---
+name: refactorer
+description: Applies a mechanical, repo-wide change in an isolated worktree so the main checkout is never touched.
+tools: Read, Write, Edit, Glob, Grep, Bash
+isolation: worktree
+model: sonnet
+---
+
+You work in a temporary git worktree: an isolated copy of this repository.
+Apply the requested change there, then report the worktree path (`pwd`) and
+the output of `git status --short`, so the caller can see exactly what changed.
+Never try to edit the main checkout.
+```
+
+</CodeBlock>
+
+İzolasyon, agent’ın iyi davranışıyla değil harness tarafından zorlanır. Claude Code dört kontrol uygular ve biri başarısız olduğunda tool çağrısını doğrudan engeller: ana checkout'taki bir yolu hedefleyen bir `Edit`, `Write` ya da `NotebookEdit`; çalışma dizini ana checkout'a çözümlenen bir `Bash`, `PowerShell` ya da `Monitor` komutu; git'i ana checkout'a geri yönlendiren bir komut (`git -C`, `--git-dir`, `GIT_DIR`, `GIT_WORK_TREE` ya da bir `cd` üzerinden); ve Claude Code'un worktree'nin içinde kaldığını doğrulayamadığı şekildeki bir komut. Sonuncusu kapatılamaz.
+
+Subagent worktree'leri `--worktree` ile aynı temelden dallanır: `worktree.baseRef`, bunun yerine geçerli yerel `HEAD`'inizden dallanan `"head"`'e ayarlanmadıkça, deponuzun varsayılan branch'i. İzole agent’ın devam eden bir işin üzerinde çalışması gerektiğinde `"head"`'i kullanın — aksi hâlde `main`'den başlar ve değişikliklerinizin nereye gittiğini merak eder.
+
+Temizliğin ezberlenmeye değer bir kuralı vardır: agent’ı **değişiklik olmadan** biten bir worktree otomatik olarak kaldırılır. **Değişikliği olan** bir tanesi ise periyodik bir tarama iş kaybetmeden onu kaldırabilene kadar diskte kalır; bu `cleanupPeriodDays` tarafından yönetilir. Tarama ayrıca hâlâ değiştirilmiş ya da izlenmeyen dosyalar ya da push edilmemiş commit'ler taşıyan her worktree'yi ve kendinizin `git worktree add` ile oluşturduğu her worktree'yi olduğu gibi bırakır — Claude Code, oluşturduğu her worktree'nin git meta verisine bir işaretçi yazar ve tarama işaretçisi olmayan her şeyi tutar. Birini elle kaldırmak için: `git worktree remove`, commit'lenmemiş değişiklikler için `--force` ekleyerek, ve git kilitli olduğu için reddederse önce `git worktree unlock`.
+
+Bu dersin işlenmiş prompt'u, bunun hepsini çalıştıran prompt'tur:
+
+```text
+Use the refactorer subagent to create a file NOTES.md at the repository root
+containing one line: 'Reviewed by the refactorer agent.'
+Report the worktree path it worked in.
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · bir agent’ı bir worktree'de izole edin ve ana checkout'un temiz kaldığını kanıtlayın"
+  lessonId="tr/l3-advanced/m10-subagents/fork-background-worktree"
+  repoTag="lesson/m10-05-start"
+  steps={[
+    'Lab klonunda: `git checkout lesson/m10-05-start`. 03. dersteki dört agent zaten mevcut.',
+    "Worktree’nin içeriğinin ana checkout’ta izlenmeyen dosyalar olarak görünmemesi için `.claude/worktrees/`'i `.gitignore`'a ekleyin.",
+    "`.claude/agents/refactorer.md`'yi yukarıda gösterildiği gibi tam olarak yazın — bütün mesele `isolation: worktree` satırıdır.",
+    'İsteğe bağlı ama burada tavsiye edilen: worktree’nin varsayılan branch yerine checkout ettiğiniz commit’ten dallanması için `.claude/settings.local.json`\'a `{"worktree": {"baseRef": "head"}}` koyun.',
+    'Çalıştırın: `claude -p "Use the refactorer subagent to create a file NOTES.md at the repository root containing one line: \'Reviewed by the refactorer agent.\' Report the worktree path it worked in." --model sonnet --max-turns 10 --permission-mode acceptEdits --output-format json`',
+    "`subagent_stats.by_type`'ı (`refactorer`'ı adlandırmalı) ve worktree yolunu ile branch’i raporlayan `result`'ı okuyun.",
+    'Şimdi iki checkout’u kontrol edin: `git worktree list`, sonra `git status --short`, sonra `ls NOTES.md`, sonra `cat .claude/worktrees/*/NOTES.md`.',
+    'İşiniz bitince temizleyin: `git worktree remove .claude/worktrees/<ad> --force`.',
+  ]}
+  expected="git worktree list iki girdi gösterir — ana checkout ve .claude/worktrees/ altında kendi worktree-agent branch'indeki geçici bir worktree. NOTES.md ana checkout'ta yoktur (`ls` No such file or directory bildirir) ama worktree'nin içinde istenen satırla vardır. Worktree, içinde bir değişiklik taşıdığı için çalıştırmadan sonra hâlâ oradadır."
+  checklist={[
+    "`subagent_stats.by_type` `refactorer`'ı adlandırıyor",
+    '`git worktree list` `.claude/worktrees/` altında ikinci bir checkout gösteriyor',
+    'Ana checkout’ta `ls NOTES.md` başarısız oluyor',
+    '`cat .claude/worktrees/*/NOTES.md` istenen satırı yazdırıyor',
+    'Ana checkout’ta `git status --short` yalnızca kendinizin eklediği dosyaları gösteriyor',
+    'Worktree, içinde değişiklik olduğu için agent bittikten sonra hâlâ oradaydı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/05-fork-background-worktree/01-isolated-agent-json.txt"
+    range="2-16"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/05-fork-background-worktree/02-worktree-list.txt"
+    range="2-14"
+  />
+</Lab>
+
+O kayıttaki iki ayrıntı derstir. Çalıştırma bitince worktree hâlâ listeleniyor — çünkü agent içinde bir değişiklik bıraktı ve yalnızca temiz bir worktree otomatik olarak kaldırılır. Ve ana checkout'ta `ls NOTES.md` başarısız olurken `cat .claude/worktrees/*/NOTES.md` başarılı olur: agent’ın oluşturduğu dosya, çalışma ağacınızın hiç görmediği bir dizinde, bir branch'te var.
+
+`/subtask` ve `/fork` [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) karşılığı olmayan etkileşimli komutlardır, bu yüzden burada onlar için bir [transcript](/tr/playbook/glossary/#transcript) (kaydedilmiş gerçek bir oturum dökümü) yok — bunları etkileşimli bir oturumda kendiniz çalıştırın ve `/tasks`'ı izleyin.
+
+## Anti-pattern'ler
+
+**Sıradan bir subagent'ın yeterli olacağı yerde bir fork'a başvurmak.** Bir fork bütün konuşmanızı subagent'a taşır, ki bu tam olarak devrederek kaçınmaya çalıştığınız context maliyetidir. _Düzeltme:_ yan görev az önce konuşulana gerçekten bağımlıysa fork'layın.
+
+**Bir arka plan agent’ının size bir şey sormasını beklemek.** `AskUserQuestion`'ı ve hiçbir plan-mode tool'u yoktur, yerleşik kümesi de çoğu başka tool'u dışarıda bırakan bir allowlist'tir. "Emin değilsen bana sor" ile biten bir prompt bunu yapmayacaktır. _Düzeltme:_ arka plan işine belirsiz olmayan bir görev tanımı verin, ya da önplanda çalıştırın.
+
+**Boş bir `git worktree list`'in izolasyonun başarısız olduğu anlamına geldiğini varsaymak.** Değişiklik olmadan biten bir agent’ın worktree'si otomatik olarak kaldırılır — görülecek bir şey olmaması, salt-okunur bir çalıştırma için belgelenmiş başarı yoludur. _Düzeltme:_ agent’a bir şey yazdırın, ya da listeyi değil sonucu kontrol edin.
+
+**"Buradan" demek istediğinizde izole bir agent’ın `main`'den dallanmasına izin vermek.** Varsayılan `"fresh"` temelle worktree deponun varsayılan branch'inden başlar, dolayısıyla devam eden işiniz onun içinde değildir. _Düzeltme:_ `worktree.baseRef`'i `"head"`'e ayarlayın.
+
+**İzole bir agent’ı çalıştırıp bağımlılıklarınızı beklemek.** Bir worktree taze bir checkout'tur: `node_modules` yok, `.env` yok. _Düzeltme:_ agent’ın ihtiyacı olanı kurmasını sağlayın, ya da gitignore'lanmış dosyaları `.worktreeinclude`'da listeleyin.
+
+**Worktree'leri unutmak.** `.claude/worktrees/` altında birikirler ve tarama yalnızca kendi oluşturduğu ve artık iş taşımayanları kaldırır. _Düzeltme:_ işiniz bitince `git worktree remove`'u çalıştırın ve `.claude/worktrees/`'i `.gitignore`'a ekleyin.
+
+<Callout variant="changed" label="Değişti">
+  Arka plan subagent komutlarındaki bir saatlik sınır kaldırıldı — bir arka plan agent’ı artık bir
+  saat sonra kesilmiyor. Ayrıca, `/subtask` (v2.1.212+) geçerli konuşmayı bir subagent'a fork'layan
+  komuttur; daha eski sürümlerde ve agent view'i kapalı oturumlarda bu komut `/fork`'tur.
 </Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/fork-background-worktree"
+  questionId="q1"
+  lang="tr"
+  prompt="Fork'lanmış bir subagent, onu başlatan konuşmadan neyi devralır?"
+  options={[
+    {
+      text: '/subtask sonrasında yazdığınız yalnızca prompt',
+      explanation:
+        'Bu sıradan bir subagent’tır — bir fork, daha fazlasını devralmasıyla tanımlanır.',
+    },
+    {
+      text: 'Bütün konuşma geçmişi, system prompt, tool’lar, model ve mesaj geçmişi',
+      correct: true,
+      explanation: 'Ve tool çağrılarını ile mesaj olarak dönen nihai sonucu izole eder.',
+    },
+    {
+      text: 'Dosya listesi, ama konuşma değil',
+      explanation: 'Her subagent depo bağlamı alır; fork tam olarak konuşmayla ilgilidir.',
+    },
+    {
+      text: 'Hiçbir şey — fork’lar temiz başlar, bu yüzden ucuzdurlar',
+      explanation: 'Bu, fork olmayan bir subagent’ı anlatır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/fork-background-worktree"
+  questionId="q2"
+  lang="tr"
+  prompt="Arka planda çalışan bir subagent’a HANGİ tool açık DEĞİLDİR?"
+  options={[
+    { text: 'Read', explanation: 'Okuma, yerleştirmeden etkilenmez.' },
+    {
+      text: 'AskUserQuestion',
+      correct: true,
+      explanation:
+        'İlk filtre onu her subagent’tan kaldırır, arka plandaki bir subagent’ın yerleşik allowlist’i de onu içermez.',
+    },
+    { text: 'Grep', explanation: 'Arama tool’ları arka planda çalışır.' },
+    { text: 'Edit', explanation: 'Agent’ın tools listesi izin veriyorsa düzenleme izinlidir.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/fork-background-worktree"
+  questionId="q3"
+  lang="tr"
+  prompt="isolation: worktree olan bir agent biter ve hiçbir değişiklik bırakmaz. Worktree’sine ne olur?"
+  options={[
+    {
+      text: 'Claude Code onu otomatik olarak kaldırır',
+      correct: true,
+      explanation:
+        'Değişikliği olan bir worktree ise, iş kaybetmeden onu kaldırabilene kadar periyodik tarama gelene dek kalır.',
+    },
+    {
+      text: 'Siz git worktree remove çalıştırana kadar kalır',
+      explanation: 'Bu, hâlâ iş taşıyan bir worktree için geçerlidir.',
+    },
+    {
+      text: 'Ana checkout’a merge edilir',
+      explanation:
+        'Hiçbir şey otomatik olarak merge edilmez; branch kullanmanız ya da bırakmanız için sizindir.',
+    },
+    {
+      text: 'Bir arka plan oturumuna dönüştürülür',
+      explanation: 'Worktree’ler ve oturumlar ayrı şeylerdir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/fork-background-worktree"
+  questionId="q4"
+  lang="tr"
+  prompt="İzole agent’ınızın main üzerinde değil checkout ettiğiniz özellik branch’i üzerinde çalışması gerekiyor. Neyi değiştirirsiniz?"
+  options={[
+    {
+      text: 'Ayarlarda `worktree.baseRef`\'i `"head"`\'e ayarlamak',
+      correct: true,
+      explanation:
+        '"fresh" (varsayılan) deponun varsayılan branch’inden dallanır; "head" geçerli yerel HEAD’inizden dallanır.',
+    },
+    {
+      text: "`worktree.baseRef`'i branch adınıza ayarlamak",
+      explanation:
+        'Ayar yalnızca "fresh" ya da "head" kabul eder — belirli bir branch için worktree’yi doğrudan git ile oluşturun.',
+    },
+    {
+      text: 'Agent frontmatter’ına `isolation: head` eklemek',
+      explanation: '`isolation` yalnızca `worktree` kabul eder; bir `head` değeri yoktur.',
+    },
+    {
+      text: 'Hiçbir şey — subagent worktree’leri her zaman geçerli checkout’tan dallanır',
+      explanation:
+        'Varsayılan olarak varsayılan branch’e dallanan --worktree ile aynı temeli kullanırlar.',
+    },
+  ]}
+/>
+
+**Sırada:** `06-advisor`, modülü tersi bir hamleyle kapatır — işi aşağı doğru devretmek yerine, bir kararı daha güçlü bir modele yukarı doğru yükseltmek.

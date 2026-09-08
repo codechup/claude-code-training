@@ -9,7 +9,7 @@ difficulty: core
 tags: ['headless', 'ci', 'json', 'otomasyon']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Run Claude Code programmatically'
@@ -27,8 +27,336 @@ lab:
   repo_tag: 'lesson/m13-01-start'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders `claude -p` ile headless (etkileşimsiz, tek seferlik) çalıştırmayı anlatır: `--output-format` değerleri `text`, `json` ve `stream-json`; JSON zarfındaki `result`, `subtype`, `is_error`, `num_turns`, `duration_ms`, `total_cost_usd` ve `session_id` alanları; cevabın şeklini garantilemek için `--json-schema` ve `structured_output`; çalıştırmayı sınırlamak için `--allowedTools`, `--permission-mode` ve `--max-turns`; CI için `--bare` bayrağının neleri atladığı; ve script'inizin okuması gereken exit code'lar. Laboratuvarda `lesson/m13-01-start` etiketine karşı beş gerçek çalıştırma yapılır — bunlardan biri `--max-turns 1` ile kasıtlı olarak sınırı aşar ve `exit=1` ile `error_max_turns` sonucunu üretir.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu sayfa henüz çevrilmemiş bir taslaktır; tam içerik için İngilizce sürümüne bakın.
+- `claude -p` ile tek seferlik bir Claude Code görevi çalıştırmak ve `text`, `json` ile `stream-json` çıktıları arasında seçim yapmak.
+- JSON zarfını okumak: `result`, `subtype`, `is_error`, `num_turns`, `duration_ms`, `total_cost_usd`, `session_id`.
+- `--json-schema` ile belirli bir çıktı şeklini zorunlu kılmak ve bunu `structured_output`'tan geri okumak.
+- Gözetimsiz bir çalıştırmayı `--max-turns`, `--allowedTools` ve bir permission mode ([izin modu](/tr/playbook/glossary/#permission-mode) — bir oturumun [tool](/tr/playbook/glossary/#tool) (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) çağrılarını nasıl onaylayacağını belirleyen kip) ile sınırlamak ve ardından bir [exit code](/tr/playbook/glossary/#exit-code) (bir komutun bittiğinde döndürdüğü sayı) değerine göre dallanmak.
+- `--bare`'ın neyi atladığını ve bir CI ([sürekli entegrasyon](/tr/playbook/glossary/#ci)) çalıştırmasının bunu genelde neden istediğini açıklamak.
+
+**Ön koşullar.** Claude Code 2.1.263 veya üzeri, `PATH`'inizde `jq` ve laboratuvar deposunun bir klonu. Permission mode'lar ve allow/deny kural sözdizimine zaten aşina olmalısınız (m02-interact, `03-permissions`).
+
+<WhenNotToUse>
+  `claude -p`, bir kez tarif edip bırakabileceğiniz bir görev içindir. Hâlâ keşif aşamasındayken ona
+  başvurmayın — etkileşimli bir oturum turun ortasında yön değiştirmenize izin verir,
+  [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma)
+  bir çalıştırma vermez. Onu daha ucuz bir sohbet penceresi gibi kullanmayın: her çalıştırma tam bir
+  başlangıç maliyeti öder ve proje bağlamınızı yeniden okur. Ve kimsenin exit code'u okumadığı bir
+  pipeline'a `-p` çalıştırması koymayın; kimlik doğrulaması başarısız olan, denetlenmemiş bir
+  headless çalıştırma, başarılı olanla tıpatıp aynı görünür, çünkü Claude Code çalıştırma içi
+  hataları stderr'e değil, sonuç olarak stdout'a yazdırır.
+</WhenNotToUse>
+
+## Kavram
+
+### Tek bir bayrak agent'ı bir komuta çevirir
+
+Herhangi bir `claude` komutuna `-p` (ya da `--print`) eklemek onu etkileşimsiz çalıştırır: Claude her zamanki gibi [agentic loop](/tr/playbook/glossary/#agentic-loop)'tan (bağlam toplayıp harekete geçen ve sonucu doğrulayan çevrim) geçer, bir sonuç yazdırır ve çıkar. Bildiğiniz her şey geçerliliğini korur: aynı tool'lar, aynı izin kuralları, aynı `CLAUDE.md`.
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni), cevap bir script'in tüketebileceği kadar küçük olsun diye böyle şekillendirilmiştir:
+
+```text
+How many bugs does BUGS.md list? Answer with the number only.
+```
+
+Her CLI seçeneği `-p` ile birleşmez. Claude Code `--bg`'yi doğrudan reddeder ve `--cloud`'u bir görev tanımıyla birlikte reddeder.
+
+### Üç çıktı biçimi
+
+`--output-format` üç değer alır:
+
+| Değer         | Ne alırsınız                                                                                | Ne için kullanılır                                                                                                                    |
+| ------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `text`        | Düz metin — varsayılan                                                                      | Terminali okuyan bir insan ya da bir `>` yönlendirmesi                                                                                |
+| `json`        | Sonucu ve oturum meta verisini taşıyan tek bir JSON nesnesi                                 | Bir script'in ayrıştırdığı her şey                                                                                                    |
+| `stream-json` | Satır sonlarıyla ayrılmış JSON, her olay için bir nesne, sonu bir `result` nesnesiyle biter | Canlı ilerleme ya da bir [transcript](/tr/playbook/glossary/#transcript)'i (kaydedilmiş gerçek bir oturum dökümünü) yeniden oluşturma |
+
+`json` zarfı cevaptan fazlasını taşır. `result` metni tutar ve onun yanında `session_id` (daha sonra `--resume` için), `num_turns`, `duration_ms`, `total_cost_usd` artı `modelUsage` içinde model bazlı bir döküm, ve çalıştırmanın nasıl bittiğini söyleyen `subtype` / `is_error` alırsınız. Maliyet rakamları istemci tarafı tahminlerdir ve faturanızdan farklı olabilir.
+
+`stream-json` **`--verbose` gerektirir** — onsuz çalıştırma `Error: When using --print, --output-format=stream-json requires --verbose` diyerek başlamayı reddeder ve 1 ile çıkar (aşağıdaki laboratuvarda yakalanmıştır). Bütün mesajlar yerine token düzeyinde farklar istiyorsanız buna ek olarak `--include-partial-messages` ekleyin.
+
+### Düzyazı değil şekil gerektiğinde `--json-schema`
+
+`--output-format json`, bir zarf garanti eder, `result` içindeki cevabın şeklini değil. Onu `--json-schema '<bir JSON Schema>'` ile eşleştirin, Claude Code o şemaya uyan bir değeri ayrı bir `structured_output` alanına koysun:
+
+<CodeBlock title="extract, don't parse">
+
+```bash
+claude -p "Extract the main function names from auth.py" \
+  --output-format json \
+  --json-schema '{"type":"object","properties":{"functions":{"type":"array","items":{"type":"string"}}},"required":["functions"]}' \
+  | jq '.structured_output'
+```
+
+</CodeBlock>
+
+Değer geçerli bir JSON Schema değilse, `claude` `Error: --json-schema is not a valid JSON Schema` mesajıyla ve ardından doğrulayıcının tanısıyla çıkar. `format` anahtar sözcüğü (`"format": "email"`) kabul edilir ama yalnızca bir açıklama olarak ele alınır — zorunlu kılınmaz.
+
+### Gözetimsiz bir çalıştırmayı sınırlamak
+
+Üç kaldıraç vardır ve genelde üçünü de istersiniz:
+
+- **`--allowedTools`** belirli tool'ları önceden onaylar, böylece hiçbir şey sormaz. [İzin kuralı sözdizimini](https://code.claude.com/docs/en/permissions.md#permission-rule-syntax) kullanır: `Bash(git diff *)`, `git diff` ile başlayan her komuta izin verir. `*`'dan önceki boşluk önemlidir — `Bash(git diff*)` `git diff-index`'i de eşleştirirdi. `:*` soneki bu sondaki joker karakteri yazmanın eşdeğer bir yoludur, yani `Bash(gh pr comment:*)` ile `Bash(gh pr comment *)` aynı komutları eşleştirir.
+- **Bir permission mode.** `-p` için dokümantasyon, her planda yerleşik başlangıç permission mode'unun **Manual** olduğunu söylüyor — `manual`, CLI'nin `default` için takma adı — bu yüzden istediğinizi geçin: dosya yazan bir çalıştırma için `--permission-mode acceptEdits`, ya da izin kurallarınızın dışındaki her şeyi reddeden, kilitli bir CI çalıştırması için `--permission-mode dontAsk`.
+- **`--max-turns N`** agentic loop'u sınırlar. Yalnızca print mode'da geçerlidir ve çalıştırma sınıra ulaştığında bir hatayla biter.
+
+Gerçekten gözetimsiz bir iş için `--permission-prompts none` ekleyin (Claude Code 2.1.259 veya üzeri): sormaya çalışacak her şey reddedilir, Claude'a bunu kimsenin onaylayamayacağı ve tekrar denememesi söylenir ve çalıştırma askıda kalmak yerine devam eder. `--output-format stream-json` ile bu reddedişler `permission_denied` sistem mesajları olarak gelir ve son sonuç mesajı bunları `permission_denials` içinde listeler — aşağıdaki laboratuvarın boş gösterdiği bir alan, çünkü tool'larının tamamı önceden onaylanmış bir çalıştırma hiçbir zaman alamayacağı bir şeye uzanmaz.
+
+### Exit code'lar
+
+Claude Code başarıda `0` ile, çalıştırma başarısız olduğunda sıfırdan farklı bir kodla çıkar, böylece bir script `$?` üzerinden dallanabilir. Geçersiz bir bayrak, çalıştırma başlamadan önce stderr'e bildirilir; çalıştırmanın _içindeki_ bir hata — örneğin eksik kimlik doğrulama — sonuç olarak stdout'a, sıfırdan farklı bir exit ile yazdırılır. Bir `--max-turns` aşımı bir başarısızlıktır: aşağıdaki laboratuvar exit code `1`'i, `subtype: "error_max_turns"`'ü ve `is_error: true`'yu yakalar. Bir `-p` çalıştırmasını SIGTERM ile durdurursanız, Claude Code `SessionEnd` [hook](/tr/playbook/glossary/#hook)'larını (Claude Code'un yaşam döngüsünde belirli anlarda otomatik çalışan komutlarını) çalıştırdıktan sonra `143` koduyla çıkar.
+
+### CI için `--bare`
+
+`--bare` olmadan, bir `-p` oturumu etkileşimli bir oturumun yükleyeceği tam olarak aynı şeyi yükler: hook'lar, [skill](/tr/playbook/glossary/#skill)'ler (`SKILL.md` ile tanımlanan yeniden kullanılabilir talimat paketleri), özel komutlar, [subagent](/tr/playbook/glossary/#subagent)'lar (ana oturumun bir alt görevi devrettiği, kendi bağlamı olan yardımcı agent'lar), [plugin](/tr/playbook/glossary/#plugin)'ler (hook, skill, subagent ve MCP server gibi bileşenleri paket hâlinde ekleyen eklentiler), [MCP server](/tr/playbook/glossary/#mcp-server)'lar (Claude'a dış araç ve veri sağlayan sunucular), auto memory ve `CLAUDE.md` — proje dizininden ve `~/.claude`'dan, hiç güvenmediğiniz bir klasörde bile, güven diyaloğu ya da sunucu başına onay istemi olmadan. `--bare` bunların hepsini atlar, böylece her makine aynı sonucu alır.
+
+Tuzak şu: bare mode'da Claude Code hiçbir zaman OAuth kimlik bilgilerini ya da sistem anahtarlığını okumaz. `ANTHROPIC_API_KEY`'e (ya da bir bulut sağlayıcısının kendi kimlik bilgilerine) ihtiyaç duyar. Laboratuvar bunu unuttuğunuzda tam olarak ne olduğunu yakalar.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · laboratuvar deposuna karşı beş headless çalıştırma"
+  lessonId="tr/l3-advanced/m13-headless-ci/claude-p"
+  repoTag="lesson/m13-01-start"
+  steps={[
+    'Laboratuvar deposunu klonlayın ve `git checkout lesson/m13-01-start` yapın, ardından depo kökünde ve `mcp/` içinde `npm ci` çalıştırın.',
+    "`lesson/m13-01-solution`'daki `scripts/headless-example.sh` dosyasını okuyun — bu laboratuvarın ulaşmaya çalıştığı şekil budur.",
+    'Salt-okunur bir soruyu JSON zarfıyla çalıştırın ve jq üzerinden geçirin: `claude -p "How many bugs does BUGS.md list? Answer with the number only." --model sonnet --max-turns 6 --output-format json --allowedTools "Read" | jq \'{subtype, is_error, num_turns, duration_ms, total_cost_usd, session_id, result}\'`',
+    "Aynı depoya `--json-schema` ile sabit bir şekil sorun ve `.result` yerine `.structured_output`'u okuyun.",
+    "Bir aşım zorlayın: en az iki tool çağrısı gerektiren bir prompt'u `--max-turns 1` ile tekrarlayın, stdout'u bir dosyaya yönlendirin ve hemen ardından `$?`'yi yazdırın.",
+    "`--output-format stream-json --verbose` ile olay sırasını izleyin, her satırı jq ile `type` ve `subtype`'ına göre süzün.",
+    "O stream-json komutundan `--verbose`'u çıkarın ve tekrar çalıştırın — hatayı ve exit code'u okuyun.",
+    "Gözetimsiz bir şeklin işe yaradığını kanıtlayın: `--permission-mode dontAsk --permission-prompts none` ile salt-okunur bir soru çalıştırın ve zarftaki `permission_denials`'ın boş olduğunu kontrol edin.",
+    "Son olarak, `ANTHROPIC_API_KEY`'in tanımsız olduğu bir kabukta herhangi bir salt-okunur soruyu `--bare` ile çalıştırın — aşağıdaki kayıt README.md'yi özetlemesini ister — ve hem exit code'u hem de `result` alanını okuyun.",
+  ]}
+  expected="jq çalıştırması subtype 'success', is_error false ve result '7' yazdırır. --json-schema çalıştırması B1…B7'lik bir bug_ids dizisi içeren bir nesne yazdırır. --max-turns 1 çalıştırması subtype 'error_max_turns' ile 1 çıkar. Akış hook olaylarını, ardından system/init'i, ardından assistant'ı, bir rate_limit_event'i, ardından result'u gösterir; --verbose olmadan başlamayı reddeder ve 1 ile çıkar. --bare çalıştırması 'Not logged in · Please run /login' sonuç metniyle 1 çıkar."
+  checklist={[
+    'JSON zarfı num_turns, duration_ms, total_cost_usd ve session_id gösteriyor',
+    '`.structured_output` serbest düzyazı değil, geçtiğiniz şemayla eşleşiyor',
+    'Aşım çalıştırması sıfırdan farklı çıktı ve subtype error_max_turns bildirdi',
+    'stream-json çıktısı tek bir `result` satırıyla bitiyor',
+    '`--permission-prompts none` çalıştırması boş bir permission_denials dizisiyle 0 çıkıyor',
+    "Yalnızca stdout'u pipe'ladınız (`2>/dev/null`) — stderr'i jq'ya karıştırmak ayrıştırmayı bozar",
+    'Laboratuvar deposunda hiçbir dosya değiştirilmedi (`git status` temiz)',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/01-claude-p/02-json-envelope.txt"
+    range="2-12"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/01-claude-p/03-json-schema.txt"
+    range="2-14"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/01-claude-p/04-max-turns-overrun.txt"
+    range="2-12"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/01-claude-p/05-stream-json.txt"
+    range="2-10"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/01-claude-p/08-stream-json-no-verbose.txt"
+    range="2-5"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/01-claude-p/09-permission-prompts-none.txt"
+    range="2-9"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m13-headless-ci/01-claude-p/06-bare-no-api-key.txt"
+    range="2-8"
+  />
+</Lab>
+
+Bu kayıtlarda durup düşünmeye değer dört şey var.
+
+**Aşım gerçek bir başarısızlıktır.** `exit=1`, `is_error: true`, `subtype: "error_max_turns"` ve `errors: ["Reached maximum number of turns (1)"]`. Sınır `1` olsa bile `num_turns`'ün `2` okuduğuna dikkat edin — sayaç sınırı tetikleyen turu da içeriyor, bu yüzden onu bir doğrulama olarak kullanmayın.
+
+**Akış `init` ile değil hook'larla başlar.** Laboratuvar deposu bir `SessionStart` hook'u taşır, bu yüzden ilk üç olay `hook_started`, `hook_progress` ve `hook_response`'tur; modeli, tool'ları, MCP server'ları ve yüklenen plugin'leri bildiren olay olan `system/init` ancak ondan sonra gelir. Bu sıralama belgelenmiştir ve `init`'in ilk satır olduğunu varsayan bir CI gate'i, bir başlangıç hook'u olan herhangi bir depoda bozulur. Aynı kayıt, assistant mesajı ile sonuç arasında bir `rate_limit_event` de taşır: olay listesini açık uçlu sayın, önemsediğiniz `type` değerleriyle eşleştirin ve geri kalanını yok sayın.
+
+**`--bare` çalıştırması dürüstçe başarısız oldu.** `subtype` yine `success` okur, ama `is_error` `true`'dur ve `result` alanı `Not logged in · Please run /login`'i taşır. Bu belgelenmiş davranıştır — çalıştırma içi bir hata sonuç olarak stdout'ta görünür — ve tam da bu yüzden yalnızca çıktı alıp almadığınıza değil, exit code'a ve `is_error`'a bakarsınız.
+
+**`--verbose`, `stream-json` için isteğe bağlı değildir.** Beşinci kayıt, `--verbose`'un çıkarıldığı aynı komuttur: Claude Code çalıştırma başlamadan reddeder, `Error: When using --print, --output-format=stream-json requires --verbose` yazdırır ve 1 ile çıkar. O mesajın nereye gittiğine dikkat edin — stderr'e, çalıştırmadan önce — bu bir bayrak hatası için belgelenmiş şekildir ve yukarıdaki `--bare` başarısızlığının tam tersidir.
+
+**stderr'i pipe'a karıştırmak jq'yı bozar.** Bu kaydın ilk denemesi `2>&1` kullandı ve Claude Code'un güvenilmeyen çalışma alanı uyarısı JSON'dan önce pipe'a girdi: `jq: parse error: Invalid numeric literal at line 1, column 9`. stderr'i ayrı tutun.
+
+### Aynı komutlar, işletim sistemine göre
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+claude -p "List the bug ids in BUGS.md." --model sonnet --max-turns 6 \
+  --output-format json --allowedTools "Read" \
+  --json-schema '{"type":"object","properties":{"bug_ids":{"type":"array","items":{"type":"string"}}},"required":["bug_ids"]}' \
+  | jq '.structured_output'
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+claude -p "List the bug ids in BUGS.md." --model sonnet --max-turns 6 \
+  --output-format json --allowedTools "Read" \
+  --json-schema '{"type":"object","properties":{"bug_ids":{"type":"array","items":{"type":"string"}}},"required":["bug_ids"]}' \
+  | jq '.structured_output'
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+$schema = '{\"type\":\"object\",\"properties\":{\"bug_ids\":{\"type\":\"array\",\"items\":{\"type\":\"string\"}}},\"required\":[\"bug_ids\"]}'
+claude -p "List the bug ids in BUGS.md." --model sonnet --max-turns 6 `
+  --output-format json --allowedTools "Read" --json-schema $schema |
+  ConvertFrom-Json | Select-Object -ExpandProperty structured_output | ConvertTo-Json
+```
+
+  </Fragment>
+</OSTabs>
+
+Windows paneli kozmetik değildir: PowerShell, tek tırnaklı bir JSON argümanının içindeki çift tırnakları çalıştırılabilir dosya onu görmeden önce çıkarır, bu yüzden şemanın içindeki her `"` bir ters eğik çizgi ister. İşte bu çalıştırma, Windows PowerShell 5.1'de kaydedilmiştir:
+
+<Transcript
+  src="content/_shared/transcripts/m13-headless-ci/01-claude-p/07-json-schema-powershell.txt"
+  range="2-5"
+/>
+
+## Anti-pattern'ler
+
+**Exit code'u yok saymak.** Kimlik doğrulaması yapamayan headless bir çalıştırma yine de stdout'ta JSON yazdırır ve yine de çıktı gibi görünür. _Düzeltme:_ `$?`'yi kontrol edin ve zarftaki `is_error`'a bakın; sıfırdan farklı her exit'i bir pipeline başarısızlığı sayın.
+
+**`--max-turns` olmaması.** Varsayılan olarak bir tur sınırı yoktur. "Bir şey daha" bulmaya devam eden bir prompt, başka bir şey onu durdurana kadar harcamaya devam eder. _Düzeltme:_ görevin gerçekten sığdığını gördüğünüz bir sınır koyun ve sert bir para tavanı için `--max-budget-usd` ekleyin.
+
+**CI'da `--dangerously-skip-permissions`.** Bu, başka bir adla `bypassPermissions`'tır ve çalıştırmanın dokunduğu her şeye uygulanır — getirilen bir web sayfasının ya da checkout edilmiş bir [branch](/tr/playbook/glossary/#branch)'in (bir git deposunun bağımsız bir geliştirme hattının) Claude'a ne yapmasını söylediği de dâhil. _Düzeltme:_ ihtiyacınız olan tool'ları `--allowedTools` ile adlandırın ve listelenmemiş her şeyin sorulmak yerine reddedilmesi için `--permission-mode dontAsk` kullanın.
+
+**`-p`'yi `--bare` olmadan güvenilmeyen bir checkout'ta çalıştırmak.** Bir `-p` oturumu, o deponun `.claude/settings.json`'undaki hook'ları çalıştırır ve `.mcp.json`'undaki sunuculara güven diyaloğu ya da sunucu başına istem olmadan bağlanır. _Düzeltme:_ CI'da `--bare` kullanın ve gerçekten ihtiyacınız olanı `--settings`, `--mcp-config` ya da `--append-system-prompt` ile geri geçirin.
+
+**`text` çıktısını bir regex ile ayrıştırmak.** Düz metin bir cevabın ifadesi bir sözleşme değildir. _Düzeltme:_ zarf için `--output-format json`, cevabın şekline de ihtiyacınız olduğunda `--json-schema`.
+
+**stderr'i ayrıştırıcınıza pipe'lamak.** `2>&1 | jq`, uyarıları JSON akışına karıştırır. _Düzeltme:_ yalnızca stdout'u yönlendirin, stderr'i önemsiyorsanız ayrı okuyun.
+
+<Callout variant="changed">
+  `--permission-prompts`, Claude Code 2.1.259'da yenidir — daha önceki sürümler onu bilinmeyen
+  seçenek hatasıyla reddeder. `--json-schema` de değişti: 2.1.205'ten önce Claude Code geçersiz bir
+  şemayı sessizce yok sayıp yapılandırılmamış metin döndürüyordu ve `format` içeren her şemayı
+  reddediyordu.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/claude-p"
+  questionId="q1"
+  lang="tr"
+  prompt="Cevabın sabit bir JSON şekline uymasına ihtiyacınız var. Hangi kombinasyon bunu sağlar?"
+  options={[
+    {
+      text: 'Yalnızca --output-format json',
+      explanation: "Bu zarfı garanti eder, `result` string'i içindeki cevabın şeklini değil.",
+    },
+    {
+      text: '--output-format json ile --json-schema, ardından .structured_output okumak',
+      correct: true,
+      explanation: "Şemaya uyan değer, olağan meta verinin yanında `structured_output`'a düşer.",
+    },
+    {
+      text: '--verbose ile --output-format stream-json',
+      explanation: 'Bu size bir olay akışı verir, bir şema garantisi değil.',
+    },
+    {
+      text: '--append-system-prompt "reply as JSON"',
+      explanation: 'Bir prompt bir istektir, doğrulanmış bir sözleşme değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/claude-p"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir `claude -p --max-turns 1` çalıştırması sınıra ulaşıyor. Çalıştırma ne bildirir?"
+  options={[
+    {
+      text: 'subtype "success" ile exit code 0 — sınır bir hata değildir',
+      explanation: 'Yakalanan çalıştırma 1 ile çıkar; sınıra ulaşmak çalıştırmayı hatayla bitirir.',
+    },
+    {
+      text: 'Exit code 1, is_error true, subtype "error_max_turns"',
+      correct: true,
+      explanation:
+        'Laboratuvarın yakaladığı tam olarak budur, errors: ["Reached maximum number of turns (1)"] ile birlikte.',
+    },
+    {
+      text: 'Exit code 143',
+      explanation: "143, SIGTERM exit code'udur, tur sınırı kodu değil.",
+    },
+    {
+      text: "stdout'ta hiçbir şey — hata yalnızca stderr'e gider",
+      explanation:
+        "JSON zarfı yine de stdout'a yazdırılır; yalnızca bayrak hataları ondan önce gelir.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/claude-p"
+  questionId="q3"
+  lang="tr"
+  prompt="`claude --bare -p …`, oturum açmış ama ANTHROPIC_API_KEY'i olmayan bir makinede neden başarısız olur?"
+  options={[
+    {
+      text: 'Bare mode hiçbir zaman OAuth kimlik bilgilerini ya da sistem anahtarlığını okumaz',
+      correct: true,
+      explanation:
+        'ANTHROPIC_API_KEY, --settings içinde bir apiKeyHelper ya da bir bulut sağlayıcı kimlik bilgisi gerekir.',
+    },
+    {
+      text: "Bare mode Read tool'unu devre dışı bırakır",
+      explanation: "Bare mode Bash, dosya okuma ve dosya düzenleme tool'larını korur.",
+    },
+    {
+      text: 'Bare mode --output-format json gerektirir',
+      explanation: 'Çıktı biçimi kimlik doğrulamayla ilgisizdir.',
+    },
+    {
+      text: 'Bare mode yalnızca güvenilen bir çalışma alanında çalışır',
+      explanation: 'Bare mode proje keşfini tamamen atlar; mesele güven değildir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m13-headless-ci/claude-p"
+  questionId="q4"
+  lang="tr"
+  prompt="Hangi allow kuralı, Claude'un `gh pr comment 42 --body ok`'u sormadan çalıştırmasına izin verir ve `gh pr comm` ile başlayan başka hiçbir şeye izin vermez?"
+  options={[
+    {
+      text: 'Bash(gh pr comment *)',
+      correct: true,
+      explanation:
+        "Sondaki `*`'dan önceki boşluk kuralın bir parçasıdır; `Bash(gh pr comment:*)` eşdeğer sonek biçimidir.",
+    },
+    {
+      text: 'Bash(gh pr comment*)',
+      explanation: 'Boşluksuz hâli `gh pr commentary` tarzı komutları da eşleştirir.',
+    },
+    {
+      text: 'Bash(gh * comment)',
+      explanation: 'Alt komuttan önceki bir `*`, her gh alt komutuna izin verir — çok fazla geniş.',
+    },
+    {
+      text: 'Bash(command:gh pr comment *)',
+      explanation:
+        "Claude Code bir tool'un birincil içerik alanı üzerindeki bir kuralı yok sayar ve başlangıçta uyarır.",
+    },
+  ]}
+/>
+
+**Sırada:** `02-github-actions-review`, aynı headless çalıştırmayı alır ve [pull request](/tr/playbook/glossary/#pull-request)'leri (bir branch'teki değişikliklerin ana koda alınması için açılan istekleri) gözden geçiren bir GitHub Actions [workflow](/tr/playbook/glossary/#workflow)'unun (Claude Code'un bir görev için planlayıp yürüttüğü otomatik iş akışının) arkasına koyar.

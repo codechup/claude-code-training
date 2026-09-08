@@ -6,10 +6,10 @@ module: 'm11-mcp'
 order: 4
 duration_min: 20
 difficulty: core
-tags: ['mcp', 'browser', 'playwright', 'ui-checks']
+tags: ['mcp', 'tarayıcı', 'playwright', 'arayüz-kontrolleri']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Connect to MCP servers'
@@ -27,7 +27,244 @@ lab:
   repo_tag: 'lesson/m11-04-start'
 ---
 
-Bu ders Playwright [MCP server](/tr/playbook/glossary/#mcp-server)’ını — Claude Code'a dış araçlar ve veri kaynakları sunan program — yerel bir stdio server olarak ekler, `mcp__<server>__<tool>` adlandırmasını gösterir ve `--allowedTools` ile bir [headless](/tr/playbook/glossary/#headless) (etkileşimsiz) çalıştırmayı yalnızca okuma yapacak şekilde sınırlar. Laboratuvarda Claude yerel bir sayfayı açar; planladığınız console hatasını da, planlamadığınızı da bulur.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l3-advanced/m11-mcp/04-browser-mcp.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Playwright [MCP server](/tr/playbook/glossary/#mcp-server)'ını (Model Context Protocol ile Claude'a dış araç ve veri sağlayan sunucu) yerel bir stdio process olarak eklemek ve bağlandığını doğrulamak.
+- Bağlı bir server'ın sunduğu [tool](/tr/playbook/glossary/#tool)'ları (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araçlar) listelemek ve `mcp__<server>__<tool>` adlandırma kuralını okumak.
+- Claude'un bir sayfayı açmasını, erişilebilirlik anlık görüntüsünü okumasını ve console hatalarını raporlamasını sağlamak, sayfaya dokunmadan.
+- `--allowedTools` ile [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) bir tarayıcı çalıştırmasını, yalnızca gezinip okuyabilecek ama harekete geçemeyecek şekilde sınırlamak.
+- Bir tarayıcı server'ının ne zaman doğru kontrol olduğunu ve ne zaman bir testin olduğunu söylemek.
+
+**Ön koşullar.** 01. ve 02. dersler. Laboratuvar deposunun `lesson/m11-04-start` etiketinden bir klonu, Node.js 18 ya da üzeri (`@playwright/mcp`, `npx` ile çalışır) ve makinenizde kurulu bir Chrome.
+
+<WhenNotToUse>
+  Bir tarayıcı server'ı bir *gözlem* aracıdır, bir test paketi değil. Kontrol her
+  [commit](/tr/playbook/glossary/#commit)'te (bir git deposundaki değişiklik kümesinin kalıcı,
+  mesajlı kaydı) çalıştırmak istediğiniz türdense, bir Playwright testi yazın ve
+  [CI](/tr/playbook/glossary/#ci)'da (her push'ta ya da pull request'te otomatik olarak testleri ve
+  kontrolleri çalıştıran hat) çalıştırın: deterministiktir, yüksek sesle başarısız olur ve hiç
+  token'a mal olmaz. MCP server'ına, döngü keşifsel olduğunda başvurun — "değişikliğimden sonra bu
+  sayfa hâlâ doğru görünüyor mu", "bu hata raporundaki adımları gözden geçir", "o ekrandaki
+  console'da ne var" — bir insanın aksi halde tıklıyor olacağı yerlerde. Onu oturum açmış olduğunuz
+  bir üretim sitesine yöneltmeyin ve bir yabancıya vermeyeceğiniz kimlik doğrulanmış bir oturumu
+  sürmesine izin vermeyin: tarayıcı, sürdüğü profilin sahip olduğu erişime sahip olur.
+</WhenNotToUse>
+
+## Kavram
+
+### İki tarayıcı server'ı
+
+Claude Code'a tarayıcı vermenin iki yolu var ve farklı sorulara cevap veriyorlar.
+
+**Playwright MCP server'ı** (`@playwright/mcp`), Playwright'ın kontrol ettiği bir tarayıcıyı süren yerel bir stdio server'ıdır. Hesap gerektirmez, `npx` üzerinden çalışır ve Node.js 18 ya da üzerini gerektirir. Makinenizde zaten kurulu olan Chrome'u sürer; başka birini kullanmak için paket adından sonra `--browser firefox` ekleyin. Bu, önce öğrenilecek olan ve bu laboratuvarın kullandığı server'dır.
+
+**Claude in Chrome** farklı bir şeydir: uzantı içinde verdiğiniz site-bazlı izinlere bağlı olarak, kendi girişleriniz ve sekmelerinizle _sizin_ mevcut Chrome oturumunuzu süren bir eklenti. Platformlar modülünde (`m15-platforms`) ele alınır. Genel kural: otomasyon altında temiz bir tarayıcı için Playwright, zaten içinde oturduğunuz tarayıcı için Claude in Chrome.
+
+### Ekleme
+
+<CodeBlock title="add the Playwright MCP server">
+
+```bash
+claude mcp add playwright -- npx -y @playwright/mcp@latest
+```
+
+</CodeBlock>
+
+3.  dersin HTTP server'larından üç şey farklı. `--transport` bayrağı yok, çünkü yerel server'lar varsayılan `stdio` transport'unu kullanır. `--`'den sonraki her şey, Claude Code'un server'ı başlatmak için çalıştırdığı komuttur. Ve `-y`, `npx`'e paketi sormadan kurmasını söyler.
+
+Ekledikten sonraki ilk `claude mcp list`, `npx` paketi indirirken `✘ Failed to connect` bildirebilir — bir an bekleyip tekrar çalıştırın. Birkaç denemeden sonra hâlâ başarısız oluyorsa, yapılandırılan komutu doğrudan çalıştırın (`npx -y @playwright/mcp@latest`): başlayıp girdi beklerse server sorunsuzdur ve sorun yapılandırmanızdadır; hata verirse mesaj neyin eksik olduğunu adlandırır, genellikle Node.js ya da bir tarayıcı.
+
+### Tool'larının adları nasıl
+
+Her MCP tool'u, Claude'a üretilmiş bir adla ulaşır: `mcp__<server>__<tool>`. Server kısmı, `claude mcp add`'de _sizin_ seçtiğiniz addır; bu yüzden bir server'ı iyi adlandırmak işe yarar — yazacağınız her permission kuralının ve her `--allowedTools` girdisinin önekidir.
+
+Bu adlandırma, headless bir tarayıcı çalıştırmasını betiklemek için güvenli kılan şeydir. `--allowedTools` tam tool adlarını alır; böylece tıklayan, yazan ya da kod değerlendiren her şeyi geri tutarken gezinme ve okumaya izin verebilirsiniz:
+
+<CodeBlock title="a read-only browser run">
+
+```bash
+claude -p "Open http://localhost:4429/ and report the page title, the h1 text and any console errors." \
+  --model sonnet --max-turns 10 --output-format text \
+  --allowedTools "mcp__playwright__browser_navigate,mcp__playwright__browser_snapshot,mcp__playwright__browser_console_messages,mcp__playwright__browser_close"
+```
+
+</CodeBlock>
+
+O listede _olmayana_ dikkat edin: `browser_click`, `browser_type`, `browser_fill_form`, `browser_evaluate` ve `browser_run_code_unsafe`. `claude -p`'de bir permission istemine cevap verecek kimse yoktur, bu yüzden izin vermediğiniz bir tool'a yapılan bir çağrı basitçe engellenir — laboratuvar, Claude'un tam olarak bunu bildirdiğini kaydeder. Çalıştırma, modelin doğru davranacağına umut bağlamak yerine bayrak tarafından sınırlanır.
+
+Laboratuvarın sizi keşfetmeye zorladığı bir uyarı: bir allowlist (izin listesi), içindeki tool'lar gerçekte ne kadar darsa o kadar dardır. `browser_navigate`'in kendi sonucu, sayfa anlık görüntüsünü ve console mesajlarını taşır; bu yüzden yalnızca gezinmeye izin vermek bile console hataları hakkındaki bir soruyu yanıtlar. Bir tool'un adının onu sınırladığını varsaymadan önce ne döndürdüğünü okuyun.
+
+### Claude bir sayfayı nasıl okur
+
+Claude, varsayılan olarak bir ekran görüntüsüne bakmaz. `browser_snapshot`, sayfanın yapısını, rollerini ve metnini taşıyan bir **erişilebilirlik anlık görüntüsü** döndürür — bu, üzerine akıl yürütmesi daha ucuz, daha güvenilir ve bir ekran okuyucunun gezeceği aynı ağaçtır. `browser_take_screenshot`, soru gerçekten görselse diye vardır. `browser_console_messages` ve `browser_network_requests`, bir tarayıcıyı bir izleyiciden çok bir hata ayıklama aracına dönüştüren ikilidir.
+
+Bu dersin örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni):
+
+```text
+Open http://localhost:4429/ and tell me the page title, the h1 text,
+and any console errors. Do not change anything.
+```
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · gerçek bir tarayıcıyla bir sayfayı kontrol edin"
+  lessonId="tr/l3-advanced/m11-mcp/browser-mcp"
+  repoTag="lesson/m11-04-start"
+  steps={[
+    '`lesson/m11-04-start`’ı checkout edin. `.mcp.json` dosyası zaten bir `playwright` girdisi taşıyor — önce onu okuyun, sonra server’ı local scope’ta ekleyerek bu laboratuvarın proje dosyasını onaylamaya bağımlı olmamasını sağlayın: `claude mcp add playwright -- npx -y @playwright/mcp@latest`.',
+    '`claude mcp list` çalıştırın. İlk kontrol `✘ Failed to connect` bildirirse, `npx` indirmesinin bitmesini bekleyip tekrar çalıştırın.',
+    'Claude’dan, hiçbirini çağırmadan, server’ın sunduğu tool’ları headless olarak listelemesini isteyin: `claude -p "List the tool names the playwright MCP server exposes, one per line, sorted. Do not call any of them and do not open a browser." --model sonnet --max-turns 4 --output-format text --allowedTools "ToolSearch"`. Her addaki `mcp__playwright__` önekine dikkat edin.',
+    'Bakılacak bir sayfa sunun. Bir `<title>`, bir `<h1>` ve bir kez `console.error(...)` çağıran bir `<script>` ile `site/index.html` oluşturun, sonra o klasörden 4429 portunda statik bir server çalıştırın (`python -m http.server 4429`, ya da eşdeğeri).',
+    'Salt okunur kontrolü çalıştırın: `claude -p "<yukarıdaki prompt>" --model sonnet --max-turns 10 --output-format text --allowedTools "mcp__playwright__browser_navigate,mcp__playwright__browser_snapshot,mcp__playwright__browser_console_messages,mcp__playwright__browser_close"`. Çalışırken izleyebilmeniz için bir tarayıcı penceresi açılır.',
+    'Cevabı yazdığınız sayfayla karşılaştırın. Planladığınız console hatasını buldu mu? Planlamadığınız birini buldu mu?',
+    'Allowlist’i `--allowedTools "mcp__playwright__browser_navigate,ToolSearch"`’a daraltın ve aynı prompt’u yeniden çalıştırın. Önce ne olacağını tahmin edin, sonra cevabı okuyun — çoğu kişinin beklediği gibi değil.',
+    'Şimdi hiç tarayıcı tool’una izin vermeyin (`--allowedTools "ToolSearch"`) ve tekrar sorun, Claude’a kullanamadığı tool’u adlandırmasını söyleyin. Engellenmiş bir MCP tool’unun headless bir çalıştırmada nasıl göründüğü budur.',
+    'Temizleyin: `claude mcp remove playwright`, ve statik server’ı durdurun.',
+  ]}
+  expected="claude mcp list, playwright’ı ✔ Connected olarak bildirir; tool listesi, hepsi mcp__playwright__ önekli 24 tool gösterir; tarayıcı çalıştırması sayfa başlığını, h1 metnini ve her iki console hatasını — planladığınız olanı ve tarayıcının kendi favicon.ico 404’ünü — bildirir ve hiçbir şeyin değiştirilmediğini belirtir. Allowlist’i yalnızca browser_navigate’e daraltmak hâlâ bütün soruyu yanıtlar; her tarayıcı tool’unu kaldırmak, Claude’un mcp__playwright__browser_navigate’in izin verilmediği için engellendiğini bildirmesine yol açar."
+  checklist={[
+    'Server `--` ile ve `--transport` bayrağı olmadan eklendi',
+    '`claude mcp list` sonunda ✔ Connected bildirdi',
+    'Listedeki her tool adı `mcp__playwright__` ile başlıyor',
+    'Tarayıcı çalıştırması, HTML’inizde gerçekten olan başlığı ve h1’i bildirdi',
+    'Planladığınız console hatasını bildirdi',
+    'Daraltılmış yeniden çalıştırma yine de yanıt verdi — bir tool’un sonucunun adının önerdiğinden fazlasını taşıyabileceğini gördünüz',
+    'Hiçbir tarayıcı tool’una izin verilmediğinde Claude, `mcp__playwright__browser_navigate`’i engellendi olarak adlandırdı',
+    'Server sonrasında kaldırıldı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/04-browser-mcp/01-add-and-status.txt"
+    range="2-9"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/04-browser-mcp/02-tool-list.txt"
+    range="6-29"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/04-browser-mcp/03-page-check.txt"
+    range="5-12"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/04-browser-mcp/04-narrow-allowlist.txt"
+    range="4-12"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/04-browser-mcp/05-tool-denied.txt"
+    range="4-6"
+  />
+</Lab>
+
+Üçüncü kayıt iki kez okunmaya değer. Kaydedilen sayfada tam olarak bir `console.error` vardı — `labtrack: failed to load /api/tasks` — ve çalıştırma **iki** hata bildiriyor: o hata ve hiç kimsenin yazmadığı, tarayıcının kendi başına ürettiği `favicon.ico` için `Failed to load resource: the server responded with a status of 404 (File not found)`.
+
+İşte bir tarayıcı server'ının bütün argümanı tek satırda bu. Bir test, ne öngördüyseniz onu doğrular. Bir tarayıcı, sayfanın gerçekte ne yaptığını bildirir — aramayı bilmediğiniz şey dahil. Aynı zamanda bir uyarıdır: gerçek bir sayfanın kaydettiğinin yarısı gürültüdür ve hangi yarı olduğuna karar vermek size düşer.
+
+Son iki kayıt, `--allowedTools`'u yazma biçiminizi değiştirecek olanlar. Yalnızca `browser_navigate`'e daraltmak, Claude'un console sorusunu yanıtlamasını **durdurmadı**: `browser_navigate`, kendi sonucunda sayfa anlık görüntüsünü ve console mesajlarını döndürür; bu yüzden izin verilen tek bir tool üç soruyu kapsadı. Her tarayıcı tool'unu kaldırın, sınır hemen ortaya çıkar — `The mcp__playwright__browser_navigate tool call was blocked because permission wasn't granted for it.` Bir allowlist gerçek bir kontroldür; sadece tool adlarının gösterdiği kadar ince taneli değildir.
+
+Tool listesi de bu server'ın neler yapabildiğinin bir haritası olarak saklanmaya değer — gezinme, anlık görüntü, console ve ağ okumaları, tıklama, yazma, form doldurma, dosya yükleme, sekmeler, ekran görüntüleri ve adı kendi dokümantasyonu olan `browser_run_code_unsafe`.
+
+## Anti-pattern'ler
+
+**Bir tarayıcı server'ını headless modda kısıtlamasız çalıştırmak.** `--allowedTools` olmadan `claude -p`, MCP tool'larını tamamen reddeder; kapsamlı bir izinle ise gezindiği her şeye tıklayıp yazabilir. _Düzeltme:_ görevin ihtiyaç duyduğu tam tool'ları listeleyin ve salt okunur kontroller için harekete geçenleri dışarıda bırakın.
+
+**Onu oturum açılmış bir üretim sitesine yöneltmek.** Tarayıcı, sürdüğü profilin sahip olduğu erişime sahiptir ve bir sayfa, onu okuyan [agent](/tr/playbook/glossary/#agent)'a (bir hedefi kendi başına adım adım yürüten, araç çağırabilen yapay zekâ süreci) yönelik talimatlar içerebilir. _Düzeltme:_ yerel geliştirme server'ları ve tek kullanımlık hesaplar; sayfa içeriğini güvenilmeyen girdi olarak görün.
+
+**Testleri tarayıcı oturumlarıyla değiştirmek.** "Sayfayı kontrol eden" bir prompt bir regresyon testi değildir — deterministik değildir ve CI'da çalışmaz. _Düzeltme:_ bir tarayıcı oturumu bir hata bulduktan sonra, onu yakalayacak testi yazın.
+
+**Server'ı proje başına elle yeniden eklemek.** Bir tarayıcı genel amaçlı bir araçtır, bir proje bağımlılığı değil. _Düzeltme:_ her yerde kullanıyorsanız `--scope user`'ı bir kez.
+
+**İlk denemede `✘ Failed to connect`'i bozuk olarak okumak.** İlk çalıştırma paketi indirir. _Düzeltme:_ bekleyin, tekrar `claude mcp list` çalıştırın ve ancak o zaman gerçek hatayı görmek için server komutunu elle çalıştırın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/browser-mcp"
+  questionId="q1"
+  lang="tr"
+  prompt="`claude mcp add playwright -- npx -y @playwright/mcp@latest` neden --transport bayrağına ihtiyaç duymaz?"
+  options={[
+    {
+      text: 'Çünkü stdio, yerel server’lar için varsayılan transport’tur',
+      correct: true,
+      explanation:
+        '`--`’den sonraki her şey Claude Code’un çalıştırdığı komuttur; server yerel bir process olduğu için stdio, söylenmeden geçerli olur.',
+    },
+    {
+      text: 'Çünkü npx server’ları her zaman kendi transport’unu müzakere eder',
+      explanation:
+        'Transport, npx’in müzakere ettiği bir şey değil, istemci tarafı bir yapılandırma kararıdır.',
+    },
+    {
+      text: 'Çünkü Playwright içeride WebSocket kullanır',
+      explanation:
+        'Playwright’ın tarayıcıyla nasıl konuştuğu kendi işidir; Claude Code, server’la stdio üzerinden konuşur.',
+    },
+    {
+      text: 'Çünkü --transport yalnızca OAuth gerektiren server’lar için geçerlidir',
+      explanation: '--transport, http ve sse için geçerlidir; stdio yalnızca varsayılandır.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/browser-mcp"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir sayfaya bakabilen ama tıklamaması ya da yazmaması gereken headless bir çalıştırma istiyorsunuz. Ne geçirirsiniz?"
+  options={[
+    {
+      text: '--permission-mode plan',
+      explanation:
+        'Plan mode genel olarak düzenlemeler ve yürütmeyle ilgilidir; hangi MCP tool’larının var olduğunu bu şekilde seçmezsiniz.',
+    },
+    {
+      text: 'Tam salt okunur tool adlarıyla --allowedTools, ör. mcp__playwright__browser_navigate ve mcp__playwright__browser_snapshot',
+      correct: true,
+      explanation:
+        'Tool adları `mcp__<server>__<tool>` biçimindedir ve `claude -p`’de izin vermediğiniz bir tool’a yapılan çağrı tamamen engellenir — cevaplanacak bir istem yoktur.',
+    },
+    {
+      text: '--allowedTools "mcp__playwright__*" ve prompt’ta kibar bir talimat',
+      explanation:
+        'Bir joker karakter, browser_click, browser_type ve browser_run_code_unsafe’i geri kabul eder; bir talimat bir uygulama mekanizması değildir.',
+    },
+    {
+      text: 'Hiçbir şey — MCP tool’ları varsayılan olarak salt okunurdur',
+      explanation:
+        'Onlar server’ın uyguladığı her şeydir; bu server tıklar, yazar ve dosya yükler.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/browser-mcp"
+  questionId="q3"
+  lang="tr"
+  prompt="browser_snapshot ne döndürür?"
+  options={[
+    {
+      text: 'Görünür alanın bir PNG’si',
+      explanation: 'O, browser_take_screenshot’tur.',
+    },
+    {
+      text: 'Sayfanın erişilebilirlik anlık görüntüsü — yapısı, rolleri ve metni',
+      correct: true,
+      explanation:
+        'Bir görüntüden daha ucuz ve üzerine akıl yürütmesi daha güvenilirdir; bir ekran okuyucunun gezdiği aynı ağaçtır.',
+    },
+    {
+      text: 'Sunulduğu haliyle ham HTML kaynağı',
+      explanation:
+        'Betikler çalıştıktan sonraki canlı erişilebilirlik ağacıdır — sunulan kaynak değil.',
+    },
+    {
+      text: 'Ağ şelalesi',
+      explanation: 'O, browser_network_requests’tir.',
+    },
+  ]}
+/>
+
+**Sırada:** `05-database-mcp`, bir veritabanını MCP üzerinden bağlar ve server'ın kendisini yazma yapmayı reddetmeye zorlar.

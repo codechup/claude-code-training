@@ -9,7 +9,7 @@ difficulty: advanced
 tags: ['platformlar', 'tmux', 'terminal', 'worktree']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Configure your terminal for Claude Code'
@@ -27,8 +27,307 @@ lab:
   repo_tag: 'none'
 ---
 
-> **Taslak.** Bu sayfanın Türkçe çevirisi henüz tamamlanmadı; İngilizce kaynağı `content/en/l3-advanced/m15-platforms/08-tmux-multi-session.mdx` dosyasıdır.
+## Hedefler ve ön koşullar
 
-## Özet
+Bu dersin sonunda şunları yapabileceksiniz:
 
-Bu ders Claude Code’u tmux gibi bir terminal multiplexer içinde çalıştırmayı anlatır. Varsayılan olarak iki şey bozulur — `Shift+Enter` satır eklemek yerine gönderir, masaüstü bildirimleri ile ilerleme çubuğu dış terminale ulaşmaz — ve üç `~/.tmux.conf` satırı (`allow-passthrough`, `extended-keys`, `terminal-features`) bunu düzeltir. `/terminal-setup` komutunun tmux içinde değil host terminalde çalıştırılması gerektiğini; `claude --worktree` ile her oturuma kendi git worktree’sini vermeyi ve `--tmux` flag’inin `--worktree` gerektirdiğini kapsar. Kopan bir SSH bağlantısında oturumu ayakta tutmanın yolunun bir multiplexer olduğunu — Remote Control yerel bir süreç olduğu ve süreç ölünce oturum saniyeler içinde çevrimdışı olduğu için — açıklar; ayrıca `claude --bg` ile `claude attach`, Desktop paralel oturumları ve cloud oturumları arasındaki seçimi karşılaştırır.
+- Claude Code tmux içinde çalışırken tam olarak neyin bozulduğunu söylemek ve bunu düzelten üç `~/.tmux.conf` satırını eklemek.
+- `/terminal-setup`ın neden tmux ya da screen içinde değil host terminalde çalıştırılması gerektiğini açıklamak.
+- `claude --worktree` ve `--tmux` ile birkaç oturumu yan yana başlatmak ve her flag'in ne yaptığını söylemek.
+- Kopan bir SSH bağlantısı boyunca bir oturumu ayakta tutmak ve Remote Control'ün ya da bir background oturumunun ne zaman daha iyi cevap olduğunu bilmek.
+- Belirli bir iş için bir multiplexer, `claude --bg`, Desktop paralel oturumları ve cloud oturumları arasında karar vermek.
+
+**Ön koşullar.** Bir terminal, kurulu `tmux` (`tmux -V`) ve bir git deposu. Windows'ta bu, WSL içinde çalıştırmak anlamına gelir, çünkü tmux bir PowerShell programı değildir; Claude Code'un kendi tmux rehberliği bir `~/.tmux.conf` varsayar, bu da bir Windows makinesinin POSIX tarafıdır. `05-remote-control-mobile` dersi faydalı bir art alandır: ikisi de örtüşen sorunları farklı şekillerde çözer.
+
+<WhenNotToUse>
+  Bir multiplexer bir terminal pencere yöneticisidir, bir zamanlayıcı ya da bir denetleyici değil.
+  Makineniz kapalıyken devam eden bir iş istediğinizde (bir cloud oturumu), çalışan bir oturumu
+  telefonunuzdan sürmek istediğinizde (Remote Control), Claude tarafından yönetilen bir kimlikle
+  hiçbir terminale bağlı olmayan bir oturum istediğinizde (`claude --bg`, sonra `claude attach`) ya
+  da iki bölme istemenizin sebebi iki görevin aynı çalışma ağacında çakışacak olmasıysa — bu durumda
+  düzeltme bir bölme değil bir worktree'dir — başka bir şeye başvurun. Ve iki oturum görmek için
+  yerel bir masaüstü [workflow](/tr/playbook/glossary/#workflow)'una (çok adımlı otomatik iş
+  akışına) tmux eklemeyin: Desktop'ın kenar çubuğu ve bölünmüş görünüm bunu oturum başına git
+  izolasyonuyla zaten yapar.
+</WhenNotToUse>
+
+## Kavram
+
+### tmux'ın bozduğu şey ve düzeltmesi
+
+Claude Code, herhangi bir terminalde yapılandırma olmadan çalışır — ama **tmux içinde, varsayılan olarak iki şey bozulur**:
+
+1. `Shift+Enter`, bir satır eklemek yerine gönderir.
+2. Masaüstü bildirimleri ve ilerleme çubuğu asla dış terminale ulaşmaz; tmux onları yutar.
+
+Üç satır ikisini de düzeltir:
+
+<CodeBlock title="~/.tmux.conf">
+
+```bash
+set -g allow-passthrough on
+set -s extended-keys on
+set -as terminal-features 'xterm*:extkeys'
+```
+
+</CodeBlock>
+
+Sonra yeniden başlatmadan çalışan sunucuya uygulayın:
+
+<CodeBlock title="tmux'ı yeniden başlatmadan uygulayın">
+
+```bash
+tmux source-file ~/.tmux.conf
+```
+
+</CodeBlock>
+
+`allow-passthrough`, bildirimlerin ve ilerleme güncellemelerinin dış terminale ulaşmasını sağlar. İki `extended-keys` satırı, tmux'ın `Shift+Enter`i düz `Enter`den ayırt etmesini sağlar.
+
+İki ilgili tuzak:
+
+- **tmux içinde `Shift+Enter`, dış terminal onu zaten desteklese bile bu yapılandırmaya ihtiyaç duyar.** Ghostty, Kitty, iTerm2, WezTerm, Warp, Apple Terminal ve Windows Terminal, `Shift+Enter`i hepsi yerel olarak ele alır — ama yukarıdaki satırlar olmadan tmux üzerinden değil.
+- **`/terminal-setup`ı host terminalde çalıştırın, tmux ya da screen içinde değil**, çünkü host terminalin yapılandırma dosyasına yazar. (`/terminal-setup`, tmux içinden bile iTerm2'yi algılar; orada etkinleştirdiği pano ayarı için.)
+
+Hiçbir şey yapılandırmak istemiyorsanız, `Ctrl+J`, hiçbir kurulum olmadan her terminalde bir satır ekler; `\` sonra `Enter` yazmak da öyle.
+
+Bildirimler ikinci bir satırı hak ediyor. Claude Code, masaüstü bildirimlerini varsayılan olarak yalnızca Ghostty, Kitty ve iTerm2'de gönderir. Diğer her yerde, `preferredNotifChannel`ı `"terminal_bell"`a ayarlayın:
+
+<CodeBlock title="~/.claude/settings.json">
+
+```json
+{
+  "preferredNotifChannel": "terminal_bell"
+}
+```
+
+</CodeBlock>
+
+Masaüstü bildirimi, SSH üzerinden yerel makinenize gerçekten ulaşır, bu yüzden uzak bir oturum yine de sizi uyarabilir — passthrough açık olduğu sürece.
+
+### Yan yana oturumlar
+
+Aynı anda birkaç oturum isteme sebebi neredeyse hiçbir zaman "daha fazla bölme" değildir. İki görevin aynı çalışma ağacı için kavga edecek olmasıdır. Claude Code'un birinci sınıf bir cevabı vardır:
+
+<CodeBlock title="kendi git worktree'sinde bir oturum">
+
+```bash
+claude --worktree
+claude --worktree api-refactor
+```
+
+</CodeBlock>
+
+Ve bunun üzerine, worktree'nin oturumunu bir multiplexer'da düzenleyen bir flag:
+
+<Transcript
+  src="content/_shared/transcripts/m15-platforms/08-tmux-multi-session/01-help-tmux.txt"
+  range="2-9"
+/>
+
+Dikkatli okuyun: **`--tmux`, `--worktree`i gerektirir.** Kullanılabildiğinde iTerm2'nin yerel bölmelerini kullanır; `--tmux=classic` geleneksel tmux'ı zorlar. Yani biçim `claude --worktree <name> --tmux`tur, tek başına `--tmux` değil.
+
+Bunu elle yapmak, daha fazla yazmakla aynı fikirdir ve flag'in neyi otomatikleştirdiğini anlamanız için bir kez yapmaya değer:
+
+<CodeBlock title="iki oturum, iki worktree, bir tmux oturumu">
+
+```bash
+git worktree add ../lab-api feature/api
+git worktree add ../lab-cli feature/cli
+tmux new-session -d -s cc -n api -c ../lab-api
+tmux new-window -t cc -n cli -c ../lab-cli
+tmux send-keys -t cc:api 'claude' Enter
+tmux send-keys -t cc:cli 'claude' Enter
+tmux attach -t cc
+```
+
+</CodeBlock>
+
+Bu dersin işlenmiş örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verilen istek metni), ikinci bir worktree'yi hak eden türden bir görevdir — aynı ağaçtaki başka bir şeyle iç içe geçmesini istemeyeceğiniz türden:
+
+```text
+Rename the pagination helper across the whole codebase and update every call
+site and test. Do not touch anything outside src/ and test/.
+```
+
+### Kopan bir bağlantıdan sağ çıkmak
+
+Bu, tmux'a başvurmanın klasik sebebidir ve Remote Control dokümantasyonu bunu açıkça adlandırır: **SSH'dan bağlantınızı kestikten sonra bir oturumu uzak bir makinede çalışmaya devam ettirmek için, onu `tmux` ya da `screen` içinde başlatın.** Remote Control yerel bir süreç olarak çalışır — terminali kapatın ya da istemciden çıkın, oturum saniyeler içinde çevrimdışı olur. Bir multiplexer süreci canlı tutar; `tmux attach` sizi ona geri getirir.
+
+İkisi iyi birleşir. Uzak makinede tmux içinde `claude remote-control`ü başlatın, ayrılın, dizüstünüzü kapatın ve oturumu telefonunuzdan sürün: tmux süreci canlı tutar, Remote Control size arayüzü verir.
+
+### Alternatifler, dürüstçe
+
+| İstediğiniz                                                       | Başvurun                                               |
+| ----------------------------------------------------------------- | ------------------------------------------------------ |
+| Bir çalışma ağacını paylaşmaması gereken iki görev                | `claude --worktree` (isteğe bağlı olarak `--tmux` ile) |
+| SSH bağlantınız koptuğunda sağ çıkan bir oturum                   | Uzak makinede tmux ya da screen                        |
+| Yeniden bağlanabileceğiniz bir kimliği olan ayrılmış bir oturum   | `claude --bg`, sonra `claude attach <id>`              |
+| Çalışan bir yerel oturumu bir telefondan ya da tarayıcıdan sürmek | Remote Control                                         |
+| Makineniz kapalıyken devam eden iş                                | Bir cloud oturumu                                      |
+| Git izolasyonlu ve bir GUI'li paralel oturumlar                   | Desktop uygulamasının kenar çubuğu                     |
+
+`claude --bg`, bir multiplexer olmadan "çalışmaya devam etsin" yarısını çözdüğü için bahsedilmeye değer: oturumu arka planda başlatır ve `claude attach`, `logs`, `stop` ve `rm`'nin aldığı bir kimlik yazdırır, `claude agents` de bunları listeler. İstediğiniz tek şey ayrılmaksa, bu tmux'tan daha basittir.
+
+Buraya ait bir terminal notu daha: Claude çalışırken ekran titriyorsa ya da kaydırma konumu zıplıyorsa, `/tui fullscreen`, tam ekran render'a geçer ve tercihi kaydeder. Bir multiplexer içinde bu genellikle çıplak bir terminalde olduğundan daha çok önem taşır.
+
+## Uygulamalı laboratuvar
+
+Bunun bazı bölümleri gerçekten yakalanabilir, çünkü tmux bir CLI aracıdır. Aşağıdaki [transcript](/tr/playbook/glossary/#transcript) (gerçek bir oturumun kaydı), 4. adımın ve 8. adımdaki temizliğin gerçek bir çalıştırmasıdır ve Kavram bölümündeki flag yakalaması da gerçektir. Geri kalanı — `~/.tmux.conf`u düzenlemek, `/terminal-setup`, iki `claude --worktree` oturumu, Shift+Enter testi ve ayrılma/yeniden bağlanma — kendiniz yapıp gözlemlersiniz; burada hiçbir şey onların yerine geçmez.
+
+<Lab
+  title="Laboratuvar · iki worktree, iki oturum, bir tmux penceresi"
+  lessonId="tr/l3-advanced/m15-platforms/tmux-multi-session"
+  repoTag="none"
+  steps={[
+    'tmux’ın kurulu olduğunu doğrulayın: `tmux -V`. Windows’ta bunu WSL içinde yapın — tmux, PowerShell altında çalışmaz.',
+    'Kavram bölümündeki üç satırla `~/.tmux.conf`u oluşturun, sonra `tmux source-file ~/.tmux.conf` çalıştırın.',
+    'tmux dışında, host terminalinizde, `claude` çalıştırın ve sonra bir kez `/terminal-setup` çalıştırın. Bir Shift+Enter bağlaması kurduğunu (ya da zaten yapılandırılmış olduğunu) bildirdiğini doğrulayın.',
+    'İki adlandırılmış pencereli bir tmux oturumu başlatın ve var olduklarını doğrulayın: `tmux new-session -d -s cc-lab -n api && tmux new-window -t cc-lab -n web && tmux list-windows -t cc-lab`.',
+    '`tmux attach -t cc-lab` ile bağlanın. `api` penceresinde `claude --worktree api-lab` çalıştırın ve `web` penceresinde (tmux önekiniz ardından `n` ile geçin, varsayılan olarak `Ctrl+b n`) `claude --worktree web-lab` çalıştırın. `git worktree list` ile her oturumun kendi ağacı olduğunu doğrulayın.',
+    'Oturumlardan birinde, prompt kutusunda Shift+Enter’a basın ve göndermek yerine bir satır eklediğini doğrulayın.',
+    '`Ctrl+b d` ile ayrılın, terminal penceresini kapatın, yeni bir tane açın ve `tmux attach -t cc-lab` çalıştırın. İki oturumun da hâlâ orada olduğunu doğrulayın.',
+    'Temizleyin: her iki Claude oturumundan çıkın, `tmux kill-session -t cc-lab`, sonra oluşturduğunuz her worktree için `git worktree remove` çalıştırın.',
+  ]}
+  expected="`tmux list-windows` iki pencere bildirir; yapılandırma kaynaklandıktan sonra Shift+Enter tmux içinde bir satır ekler; `git worktree list` oturum başına ayrı bir ağaç gösterir; ayrılıp yeniden bağlanmak her iki Claude Code oturumunu da çalışır bırakır."
+  checklist={[
+    '`tmux -V` bir sürüm yazdırdı',
+    'Üç satır ~/.tmux.conf’ta ve çalışan sunucuya kaynaklandı',
+    '`/terminal-setup`, tmux içinde değil host terminalde çalıştırıldı',
+    'Her biri kendi worktree’sinde bir Claude Code oturumu olan iki adlandırılmış tmux penceresi var',
+    'Shift+Enter, tmux içinde bir satır ekliyor',
+    'Ayrılıp yeniden bağlanmak her iki oturumu da çalışır bıraktı',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m15-platforms/08-tmux-multi-session/02-tmux-session.txt"
+    range="2-9"
+  />
+</Lab>
+
+## Anti-pattern'ler
+
+**Worktree yerine bölme eklemek.** Terminal nasıl düzenlenirse düzenlensin, bir çalışma ağacındaki iki oturum birbirinin düzenlemelerinin üzerine yazacaktır. _Düzeltme:_ `claude --worktree`, ve düzeni de istiyorsanız yalnızca `--tmux` ekleyin.
+
+**`--tmux`ı tek başına geçirmek.** `--worktree`i gerektirir. _Düzeltme:_ `claude --worktree <name> --tmux`.
+
+**`/terminal-setup`ı tmux içinde çalıştırmak.** Host terminalin yapılandırma dosyasına yazar ve multiplexer'ın içinden onu göremez. _Düzeltme:_ bir kez host terminalde çalıştırın, sonra tmux'ı kullanın.
+
+**tmux içinde bildirimler durduğunda Claude Code'u suçlamak.** tmux, `allow-passthrough on` olmadan onları yutar. _Düzeltme:_ üç yapılandırma satırı, artı terminaliniz Ghostty, Kitty ya da iTerm2 değilse `preferredNotifChannel: "terminal_bell"`.
+
+**tmux'ı bir zamanlayıcı olarak kullanmak.** Bir süreci canlı tutar; işi başlatmaz, yeniden denemez ya da siz uzaktayken çalıştırmaz. _Düzeltme:_ zamanlanmış iş için cloud routine'ler ya da Desktop zamanlanmış görevleri; yönetilen bir kimlikle ayrılma için `claude --bg`.
+
+**Kendi masaüstünüzde "iki oturumu izlemek" için tmux'a başvurmak.** Desktop'ın kenar çubuğu ve bölünmüş görünüm bunu oturum başına bir git worktree'siyle zaten yapar. _Düzeltme:_ bunun için yapılmış yüzeyi kullanın ve tmux'ı uzak ve SSH işi için saklayın.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/tmux-multi-session"
+  questionId="q1"
+  lang="tr"
+  prompt="~/.tmux.conf'taki hangi satır, masaüstü bildirimlerinin ve ilerleme çubuğunun dış terminale ulaşmasını sağlar?"
+  options={[
+    {
+      text: '`set -g allow-passthrough on`',
+      correct: true,
+      explanation: 'İki `extended-keys` satırı bildirimler için değil Shift+Enter içindir.',
+    },
+    {
+      text: '`set -s extended-keys on`',
+      explanation: 'Bu, tmux’ın Shift+Enter’ı Enter’dan ayırt etmesini sağlar.',
+    },
+    {
+      text: "`set -as terminal-features 'xterm*:extkeys'`",
+      explanation: 'Shift+Enter düzeltmesinin de bir parçası.',
+    },
+    {
+      text: '`set -g mouse on`',
+      explanation: 'Belgelenen yapılandırmanın bir parçası değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/tmux-multi-session"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir depoda `claude --tmux` çalıştırıyorsunuz ve reddediyor. Neden?"
+  options={[
+    {
+      text: '`--tmux`, `--worktree`i gerektirir; *worktree için* bir tmux oturumu oluşturur.',
+      correct: true,
+      explanation: 'Biçim `claude --worktree <name> --tmux`tur.',
+    },
+    {
+      text: 'tmux yalnızca macOS’ta iTerm2 ile desteklenir.',
+      explanation:
+        'Kullanılabildiğinde iTerm2’nin yerel bölmelerini, yoksa klasik tmux’ı kullanır.',
+    },
+    {
+      text: 'Bunu mevcut bir tmux oturumunun içinden çalıştırmalısınız.',
+      explanation: 'Flag, oturumu sizin için oluşturur.',
+    },
+    {
+      text: '`--tmux`, 2.1.263’te kaldırıldı.',
+      explanation: 'Bu sürümün `claude --help`inde mevcuttur.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/tmux-multi-session"
+  questionId="q3"
+  lang="tr"
+  prompt="Orada uzun bir Claude Code görevi çalışırken bir build makinesine SSH bağlantınız kopuyor. Onu ne canlı tutardı?"
+  options={[
+    {
+      text: 'Oturumu o makinede tmux ya da screen içinde başlatmak.',
+      correct: true,
+      explanation:
+        'Remote Control dokümanları tam olarak bunu adlandırır: bir multiplexer, siz bağlantıyı kestikten sonra yerel süreci çalışır tutar.',
+    },
+    {
+      text: 'Tek başına Remote Control.',
+      explanation:
+        'Remote Control yerel bir süreç olarak çalışır; süreç dururken oturum saniyeler içinde çevrimdışı olur.',
+    },
+    {
+      text: 'Bağlantıyı kesmeden önce `--teleport`.',
+      explanation: 'Teleport bir cloud oturumunu bir terminale çeker; yerel bir tanesini korumaz.',
+    },
+    {
+      text: '`preferredNotifChannel`ı `terminal_bell`a ayarlamak.',
+      explanation: 'Bu, süreç ömrünü değil bildirimleri değiştirir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m15-platforms/tmux-multi-session"
+  questionId="q4"
+  lang="tr"
+  prompt="Terminaliniz onu yerel olarak desteklese bile, tmux içinde Shift+Enter göndermek yerine satır eklemek yerine gönderiyor. Hangisi doğrudur?"
+  options={[
+    {
+      text: 'tmux, dış terminal ne desteklerse desteklesin extended-keys yapılandırmasına ihtiyaç duyar.',
+      correct: true,
+      explanation:
+        'Bir yedek olarak Ctrl+J, ya da `\\` sonra Enter, hiçbir kurulum olmadan her yerde çalışır.',
+    },
+    {
+      text: 'Terminaliniz `/terminal-setup` gerektiren listededir.',
+      explanation: 'Mümkün, ama burada belgelenen sebep tmux katmanıdır.',
+    },
+    {
+      text: 'Shift+Enter bir multiplexer içinde hiçbir zaman kullanılamaz.',
+      explanation: 'tmux tuşu ayırt edebildiğinde çalışır.',
+    },
+    {
+      text: 'keybindings dosyasında `chat:newline`ı yeniden eşlemelisiniz.',
+      explanation:
+        'Bu, bağlamayı değiştirmek için bir seçenektir, tmux’ın onu yutmasının düzeltmesi değil.',
+    },
+  ]}
+/>
+
+Bu, platform turunu kapatır: aynı motor, aynı `CLAUDE.md`, aynı [tool](/tr/playbook/glossary/#tool)'lar (Claude'un çağırdığı araçlar) — editörde, masaüstünde, cloud'da, telefonunuzda, tarayıcıda, takım sohbetinde ve terminalde yan yana.

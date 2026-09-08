@@ -9,7 +9,7 @@ difficulty: advanced
 tags: ['güvenlik', 'veri-kullanımı', 'saklama', 'telemetri', 'opentelemetry', 'zdr']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Data usage'
@@ -35,6 +35,269 @@ lab:
   repo_tag: 'none'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu ders, İngilizce aslından henüz çevrilmedi (taslak). Konusu: makinenizden ne çıktığı ve ne kadar süreyle saklandığı. Ücretsiz, Pro ve Max hesaplarında model eğitimi bir tercihtir; Team, Enterprise, API ve üçüncü taraf platformlarda Anthropic, ticari şartlar altında Claude Code'a gönderilen kod ve prompt'larla üretken model eğitmez. Saklama süreleri hesap tipine göre 5 yıl, 30 gün ya da ZDR ile "yanıt döndükten sonra saklanmaz" şeklindedir; bunlardan bağımsız olarak oturum transcript'leri `~/.claude/projects/` altında düz metin hâlinde varsayılan 30 gün yerel olarak tutulur (`cleanupPeriodDays` ile değiştirilir). Ders iki tür operasyonel telemetriyi (metrikler ve hata raporları) ve bunları kapatan değişkenleri, `/feedback`'in konuşma geçmişini kodla birlikte gönderdiğini, oturum kalitesi anketinin yalnızca puanı kaydettiğini ve sağlayıcıya göre değişen varsayılanları anlatır. ZDR'nin kapsamı, kapsamadıkları ve tamamen devre dışı bıraktığı özellikler (web, cloud session'lar, Claude Tag, Artifacts, feedback, Remote Control) tablolanır. Son bölüm, organizasyonun kendi OpenTelemetry collector'ına aktardığı sekiz metriği ve standart öznitelikleri gösterir.
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- Planınıza bağlı olarak [prompt](/tr/playbook/glossary/#prompt)'larınızın (Claude'a verdiğiniz istek metinleri) ve kodunuzun bir modeli eğitmek için kullanılıp kullanılamayacağını söylemek.
+- Hesap türünüz için saklama süresini belirtmek ve yerel düz metin kopyasının nerede yaşadığını söylemek.
+- Claude Code'un gönderdiği iki tür operasyonel telemetriyi ve her birini kapatan değişkeni listelemek.
+- Zero data retention'ın neyi kapsadığını, neyi kapsamadığını ve hangi özellikleri tamamen devre dışı bıraktığını söylemek.
+- Organizasyonunuzun kullanımı kendi collector'ından ölçmesi için bir OpenTelemetry export'u yapılandırmak.
+
+**Ön koşullar.** `04-managed-settings` dersi — buradaki her kontrol, yöneticinizin aynı şekilde dağıtabileceği bir `env` girdisidir.
+
+<WhenNotToUse>
+  Bu ders, Anthropic'in kendi dokümantasyonunun Claude Code 2.1.263 itibarıyla veri işleme hakkında
+  söylediklerini anlatır. Hukuki tavsiye değildir ve sözleşmenizin yerine geçmez: geçerli olan
+  Commercial Terms, Consumer Terms ve Privacy Policy'dir; bir incelemecinin gerçekte isteyeceği
+  uyumluluk belgeleri Trust Center'da bulunur. Bir güvenlik anketini cevaplıyorsanız bunları
+  belirtin, bir eğitim sayfasını değil. Ve telemetriyi bir refleks olarak kapatmayın — önce başka
+  neyi kapattığını anlatan bölümü okuyun.
+</WhenNotToUse>
+
+## Kavram
+
+### Eğitim
+
+**Tüketici planları (Free, Pro, Max)** bir seçenek alır: ayar açıkken, Anthropic bu hesaplardan gelen veriyle — Claude Code kullanımı dâhil — yeni modeller eğitir. Bu, gizlilik ayarlarınızdan her zaman değiştirilebilir.
+
+**Ticari kullanıcılar** — Team ve Enterprise planları, API, üçüncü taraf platformlar ve Claude Gov — mevcut policy'yi korur: Anthropic, ticari şartlar altında Claude Code'a gönderilen kod ya da prompt'lar üzerinde üretken model eğitmez; müşteri veri sağlamayı seçmedikçe — örneğin bir organizasyon yöneticisinin dâhil olduğu ve yalnızca first-party API için geçerli olan Development Partner Program üzerinden.
+
+### Saklama
+
+| Hesap                                                       | Saklama                         |
+| ----------------------------------------------------------- | ------------------------------- |
+| Tüketici, model geliştirme için veri kullanımı **açık**     | 5 yıl                           |
+| Tüketici, model geliştirme için veri kullanımı **kapalı**   | 30 gün                          |
+| Ticari (Team, Enterprise, API), standart                    | 30 gün                          |
+| Zero data retention'lı Enterprise                           | Yanıt döndükten sonra saklanmaz |
+| `/feedback`, `/bug`, `/share` ile paylaşılan transcript'ler | 5 yıl                           |
+| Kalite anketinden sonra paylaşılan bir oturum transcript'i  | En fazla 6 ay                   |
+
+Bunların hepsinden ayrı olarak bir **yerel düz metin kopyası** vardır: Claude Code, oturum [transcript](/tr/playbook/glossary/#transcript)'lerini (gerçek bir Claude Code oturumunun kaydı) kendi makinenizde `~/.claude/projects/` altında varsayılan olarak 30 gün saklar, böylece oturumlar sürdürülebilir. Bu pencereyi `cleanupPeriodDays` ile değiştirin. Claude Desktop'ta ya da Cowork'te başlatılan ya da en son orada sürdürülen oturumların transcript'leri varsayılan olarak bu sınırdan muaftır. Bu, çoğu tehdit modelinin unuttuğu ve gerçekten silebileceğiniz kopyadır.
+
+### Makineden ne çıkar
+
+Claude Code yerel olarak çalışır ve modeli servis etmek için prompt'ları ve model çıktılarını TLS 1.2+ üzerinden gönderir. Bunun ötesinde, iki tür operasyonel telemetri vardır:
+
+- **Metrikler** — gecikme, güvenilirlik ve kullanım desenleri, Anthropic'e ve üçüncü taraf loglama altyapısına gönderilir. **Asla kodunuzu, prompt'larınızı ya da dosya yollarınızı içermezler.** `DISABLE_TELEMETRY=1` bundan çıkış sağlar.
+- **Hata raporları** — Claude Code'un kendi iç yapısından gelen hata mesajları ve stack trace'ler, üçüncü taraf bir hata izleme servisine, herhangi bir şey çıkmadan önce [secret](/tr/playbook/glossary/#secret)'ların (depoya commit'lenmemesi gereken hassas değer), dosya yollarının, e-posta adreslerinin ve diğer kişisel bilgilerin bilinen desenleri redakte edilerek. `DISABLE_ERROR_REPORTING=1` bundan çıkış sağlar. Hata raporlama yalnızca; Pro ya da Max aboneliğiyle oturum açtığınızda, v2.1.198 ya da sonrasındayken, doğrudan Claude API'sine bağlanırken ve organizasyonunuzun bir ZDR ya da HIPAA anlaşması olmadığında etkindir.
+
+`/feedback` türü olarak farklıdır: konuşma geçmişinizin bir kopyasını **kod dâhil** gönderir. `/bug` ve `/share` aynı yol üzerinden gönderir ve `DISABLE_FEEDBACK_COMMAND=1` bunu kapatır. Bedrock'ta, Google Cloud'un Agent Platform'unda ya da yapılandırılmış hiçbir Anthropic credential'ı olmadığında, `/feedback` herhangi bir şey göndermek yerine `~/.claude/feedback-bundles/` altına yerel bir arşiv yazar.
+
+**Oturum kalitesi anketi** ("Claude bu oturumda nasıl gidiyor?") yalnızca puanınızı kaydeder — transcript yok, girdi yok, çıktı yok, Dismiss'i seçseniz bile. Anthropic'in transcript'inize bakıp bakamayacağını soran takip sorusu ayrı, opt-in bir adımdır: **Evet**'i seçmek, konuşmayı, [subagent](/tr/playbook/glossary/#subagent) (ana oturumun bir alt görevi devrettiği, kendi bağlam penceresi olan yardımcı agent) transcript'lerini ve ham oturum kaydını yükler; bilinen API anahtarı ve token desenleri redakte edilir ama kaynak kod olduğu gibi yüklenir.
+
+Sağlayıcıdan ve `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`'ten bağımsız olarak çalışan bir kontrol vardır: bir `WebFetch`'ten önce, istenen **hostname** — yalnızca hostname, yol ya da sayfa değil — bir güvenlik blok listesine karşı kontrol edilmek üzere `api.anthropic.com`'a gönderilir. `skipWebFetchPreflight: true`, blok listesine danışılmadan getirme pahasına bundan çıkış sağlar.
+
+### Her anahtar, tek bir yerde
+
+<CodeBlock title="managed-settings.json ya da ~/.claude/settings.json">
+
+```json
+{
+  "env": {
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "DISABLE_FEEDBACK_COMMAND": "1",
+    "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1"
+  },
+  "cleanupPeriodDays": 7,
+  "skipWebFetchPreflight": false
+}
+```
+
+</CodeBlock>
+
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, anketler dâhil tüm zorunlu olmayan trafiği tek seferde kapatır. WebFetch kontrolünü ya da resmi [plugin](/tr/playbook/glossary/#plugin) (Claude Code'a hook, skill, subagent ve MCP server gibi bileşenleri paket hâlinde ekleyen eklenti) marketplace'inin otomatik kurulumunu etkilemez — bunların her birinin kendi opt-out'u vardır.
+
+<Callout>
+  `DISABLE_TELEMETRY` ve `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, **feature-flag getirmeyi** de
+  devre dışı bırakır. Bu bir kenar notu değildir: flag'ler kapalıyken bir terminal oturumunun
+  yerleşik başlangıç [permission mode](/tr/playbook/glossary/#permission-mode)'u (bir oturumun tool
+  çağrılarını nasıl onaylayacağını belirleyen kip) Manual'a döner, Remote Control çalışmayı
+  durdurur, `/auto-mode-setup` çalışamaz ve organizasyonunuzun analiz panosu o developer'lar için
+  kullanım verisi almayı durdurur. `DISABLE_ERROR_REPORTING`'in bu etkisi yoktur.
+</Callout>
+
+Varsayılan davranış sağlayıcıya göre de değişir. Amazon Bedrock, Google Cloud'un Agent Platform'u, Microsoft Foundry ve AWS üzerindeki Claude Platform'da hata raporlama, telemetri ve hata bildirimi **varsayılan olarak kapalıdır**; oturum kalitesi anketleri ve WebFetch kontrolü istisnadır ve yine de çalışır.
+
+### Zero data retention
+
+ZDR, Claude for Enterprise'da uygun hesaplar için kullanılabilir. Standart Enterprise planının bir parçası değildir ve yönetici ayarlarından açılamaz — bir Anthropic hesap ekibi bunu organizasyon başına etkinleştirir ve aynı hesap altındaki yeni bir organizasyona devretmez.
+
+ZDR açıkken, Claude Code oturumlarından gelen prompt'lar ve model yanıtları gerçek zamanlı işlenir ve yasaya uymak ya da kötüye kullanımla mücadele için gerekmedikçe yanıt döndükten sonra saklanmaz. Bir policy ihlaliyle bağlantılı veri, 2 yıla kadar hâlâ tutulabilir.
+
+**Kapsamadığı** şeyler: claude.ai'daki sohbet, Cowork, kullanıcı ve koltuk (seat) yönetimi, üçüncü taraf entegrasyonları ve [MCP server](/tr/playbook/glossary/#mcp-server)'ları (Claude'a dış araç ve veri sağlayan sunucular) ve Claude Code Analytics — bu, hiçbir prompt ya da yanıt saklamaz ama hesap e-postaları ve kullanım istatistikleri gibi verimlilik meta verisi toplar.
+
+Backend'de tamamen **devre dışı bıraktığı** şeyler: web'deki Claude Code, masaüstü uygulamasından cloud oturumları, Claude Tag, Artifacts, feedback gönderimi (`/feedback`, `/bug`, `/share`) ve Remote Control. Bunların her biri, bir transcript'in ya da yayınlanmış içeriğin sunucu tarafında saklanmasını gerektirir.
+
+Adı verilmeye değer bir yönlendirme tuzağı: ZDR, ZDR etkinleştirilmiş organizasyona kimlik doğrulayan isteklere uygulanır. Kişisel bir hesapla ya da farklı bir organizasyondan bir API anahtarıyla oturum açmış bir developer kapsanmaz. Doğru girişi zorunlu kılmak için managed settings'te `forceLoginMethod` ve `forceLoginOrgUUID` dağıtın.
+
+### Bunu kendiniz ölçmek
+
+Buradaki neden "developer'larımızın ne yaptığını bilmemiz gerekiyor"sa, cevap Anthropic'in telemetrisini okumak değildir — kendi collector'ınızı çalıştırmaktır. Claude Code, OpenTelemetry metrikleri ve olayları export eder:
+
+<CodeBlock title="managed-settings.json — OpenTelemetry export">
+
+```json
+{
+  "env": {
+    "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
+    "OTEL_METRICS_EXPORTER": "otlp",
+    "OTEL_LOGS_EXPORTER": "otlp",
+    "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://collector.example.com:4317",
+    "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=Bearer example-token"
+  }
+}
+```
+
+</CodeBlock>
+
+Bugün sekiz metrik sunulur: `claude_code.session.count`, `claude_code.lines_of_code.count`, `claude_code.pull_request.count`, `claude_code.commit.count`, `claude_code.cost.usage` (USD), `claude_code.token.usage` (token), `claude_code.code_edit_tool.decision` ve `claude_code.active_time.total` (saniye). Bir metrik kurulumunu doğrulamak için bir oturum başladığında gelen `claude_code.session.count`'a bakın; yalnızca log kurulumu için bir prompt gönderin ve `claude_code.user_prompt` olayına bakın.
+
+Standart öznitelikler arasında `session.id`, `organization.id`, `user.account_uuid`, OAuth ile kimlik doğrulandığında `user.email`, `terminal.type` ve ilk çalıştırmada üretilip `~/.claude.json`'da saklanan rastgele, anonim bir `user.id` bulunur — dokümantasyon bunun hiçbir kişisel bilgi içermediğini ve Claude hesabınızdan türetilmediğini belirtir. Birkaç öznitelik opt-in'dir (`app.version`, `app.entrypoint`) ve birkaçı opt-out'tur (`OTEL_METRICS_INCLUDE_SESSION_ID`, `OTEL_METRICS_INCLUDE_ACCOUNT_UUID`), bu yüzden gizliliğe duyarlı bir dağıtımın gerçek kontrol düğmeleri vardır.
+
+`claude --debug`, exporter hatalarını `[3P telemetry]` hataları olarak bildirir; `[Anthropic telemetry]` önekli satırlar Anthropic'in ayrı operasyonel telemetrisidir ve collector'ınızda bir sorun olduğunu göstermez.
+
+Bir denetimden önce kendi ayarlarınıza karşı çalıştırabileceğiniz, bu dersin işlenmiş örnek prompt'u:
+
+```text
+Read my settings files and tell me, as a table: which telemetry each one turns on or
+off, where my local transcripts are kept and for how long, and which of these settings
+a project file could override. Do not change anything.
+```
+
+## Uygulamalı laboratuvar
+
+Bu dersin bir laboratuvarı yoktur: buradaki her kontrol bir settings değeri ya da bir ortam değişkenidir ve önemli sonuçlar — bir saklama süresi, bir eğitim policy'si, bir organizasyonun ZDR durumu — bir terminalden gözlemlenebilir olmaktan çok sözleşmeseldir. Bunu bir denetçinin yapacağı gibi doğrulayın: kendi ayar dosyalarınızı okuyun, makinenizde `cleanupPeriodDays`'i ve `~/.claude/projects/`'in içeriğini kontrol edin ve organizasyon düzeyindeki cevapları Anthropic hesap ekibinizle ve Trust Center ile doğrulayın.
+
+## Anti-pattern'ler
+
+**"Enterprise'dayız" demenin zero data retention anlamına geldiğini varsaymak.** ZDR, standart Enterprise planına dâhil değildir ve yönetici ayarlarından etkinleştirilemez. _Düzeltme:_ hesap ekibinizle doğrulayın ve bunun yeni organizasyonlara devretmediğini unutmayın.
+
+**Telemetriyi kapatıp sonra auto mode'un neden varsayılan olarak açılmadığını merak etmek.** `DISABLE_TELEMETRY`, yerleşik `auto` başlangıç modunun, Remote Control'ün ve `/auto-mode-setup`'ın bağlı olduğu feature-flag getirmeyi de öldürür. _Düzeltme:_ amacınız yalnızca hata raporlarını durdurmaksa bunun yerine `DISABLE_ERROR_REPORTING` ayarlayın.
+
+**Yerel transcript'leri unutmak.** Sunucu tarafı saklama, oturumlarınızı varsayılan olarak 30 gün düz metin hâlinde tutan `~/.claude/projects/` hakkında hiçbir şey söylemez. _Düzeltme:_ `cleanupPeriodDays`'i policy'nizin gerçekten izin verdiği değere ayarlayın ve Desktop ile Cowork oturumlarının varsayılan olarak muaf olduğunu bilin.
+
+**`/feedback`'i bir bug tracker gibi ele almak.** Konuşma geçmişinizi kod dâhil gönderir, 5 yıl saklanır. _Düzeltme:_ ne kadar geçmişin dâhil edileceğine bilinçli olarak karar verin ve policy gerektirdiğinde `DISABLE_FEEDBACK_COMMAND=1` ayarlayın.
+
+**Girişi zorunlu kılmadan ZDR'yi zorunlu kılmak.** ZDR, kimlik doğrulanan organizasyonu takip eder, bu yüzden kişisel bir giriş onu tamamen atlatır. _Düzeltme:_ `forceLoginMethod` ve `forceLoginOrgUUID` dağıtın.
+
+**`api.anthropic.com`'u güvenlik duvarında engelleyip WebFetch'in çalışmasını beklemek.** Alan adı güvenlik kontrolü önce çalışır; endpoint'e ulaşamazsa getirmeler başarısız olur. _Düzeltme:_ alan adını allowlist'e alın ya da `skipWebFetchPreflight: true` ayarlayıp bunu `WebFetch` permission kurallarıyla eşleştirin.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m14-security/data-and-retention"
+  questionId="q1"
+  lang="tr"
+  prompt="Claude Code, oturum transcript'lerinizin düz metin kopyasını nerede tutar ve varsayılan olarak ne kadar süreyle?"
+  options={[
+    {
+      text: '~/.claude/projects/, 30 gün, cleanupPeriodDays ile ayarlanabilir',
+      correct: true,
+      explanation:
+        'Yerel önbellek, oturumların sürdürülebilmesi için vardır; Desktop ve Cowork oturumları varsayılan olarak sınırdan muaftır.',
+    },
+    {
+      text: "Tutmaz — transcript'ler yalnızca sunucu tarafında bulunur.",
+      explanation: 'Yerel olarak düz metin hâlinde saklanırlar.',
+    },
+    {
+      text: '~/.claude/feedback-bundles/, 5 yıl',
+      explanation:
+        "O dizin, /feedback Anthropic'e gönderemediğinde yazılan feedback arşivlerini tutar.",
+    },
+    {
+      text: 'Depoda, .claude/ altında',
+      explanation: "Oturum transcript'leri projenize yazılmaz.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m14-security/data-and-retention"
+  questionId="q2"
+  lang="tr"
+  prompt="Aşağıdakilerden hangisi hâlâ tamamen zero data retention kapsamındadır?"
+  options={[
+    {
+      text: 'Claude for Enterprise üzerindeki Claude Code model çıkarımı',
+      correct: true,
+      explanation:
+        "Bu tam olarak ZDR'nin kapsamıdır: prompt'lar ve yanıtlar gerçek zamanlı işlenir ve sonrasında saklanmaz.",
+    },
+    {
+      text: "claude.ai'daki sohbet konuşmaları",
+      explanation: "Açıkça ZDR'nin kapsamı dışındadır.",
+    },
+    {
+      text: "Üçüncü taraf MCP server'lar tarafından işlenen veri",
+      explanation: 'Kapsanmaz — bu servislerin kendi veri işlemesini ayrıca incelemeniz gerekir.',
+    },
+    {
+      text: 'Claude Code Analytics',
+      explanation:
+        'Hiçbir prompt ya da yanıt saklamaz, ama standart saklama altında hesap e-postaları gibi verimlilik meta verisi toplar.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m14-security/data-and-retention"
+  questionId="q3"
+  lang="tr"
+  prompt="DISABLE_TELEMETRY=1'i bir organizasyon genelinde ayarlamanın belgelenmiş yan etkisi nedir?"
+  options={[
+    {
+      text: 'Feature-flag getirme durur, bu yüzden Remote Control, yerleşik auto-mode varsayılanı ve analiz panosu etkilenir.',
+      correct: true,
+      explanation:
+        "Değişken, metrikleri susturmaktan fazlasını yapar; DISABLE_ERROR_REPORTING'in bu etkisi yoktur.",
+    },
+    {
+      text: "Prompt'lar modele gönderilmeyi durdurur.",
+      explanation: 'Model trafiği zorunludur — telemetri, onun yanındaki operasyonel veridir.',
+    },
+    {
+      text: 'WebFetch alan adı güvenlik kontrolü devre dışı kalır.',
+      explanation:
+        'O kontrol sağlayıcıdan bağımsız çalışır ve zorunlu-olmayan-trafik anahtarından etkilenmez.',
+    },
+    {
+      text: "Yerel transcript'ler yazılmayı durdurur.",
+      explanation: 'Bu, telemetri ayarları değil cleanupPeriodDays tarafından yönetilir.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m14-security/data-and-retention"
+  questionId="q4"
+  lang="tr"
+  prompt="Bir OpenTelemetry metrik export'unun çalıştığını doğrulamak için hangi metriğe bakmalısınız?"
+  options={[
+    {
+      text: 'claude_code.session.count',
+      correct: true,
+      explanation:
+        'Claude Code bunu bir oturum başladığında yayar, bu da onu en hızlı kontrol yapar.',
+    },
+    {
+      text: 'claude_code.user_prompt',
+      explanation: 'Bu bir olaydır, yalnızca log kurulumunu doğrulamak için kullanılır.',
+    },
+    {
+      text: 'claude_code.cost.usage',
+      explanation:
+        'Vardır, USD cinsinden, ama yalnızca bildirilecek bir harcama olduğunda görünür.',
+    },
+    {
+      text: 'otel.exporter.ok',
+      explanation:
+        "Böyle bir metrik yoktur — exporter hataları --debug'da [3P telemetry] satırları olarak görünür.",
+    },
+  ]}
+/>

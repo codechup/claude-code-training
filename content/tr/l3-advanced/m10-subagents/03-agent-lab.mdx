@@ -1,6 +1,6 @@
 ---
-title: 'Laboratuvar: işini hak eden dört ajan'
-description: "Lab deposunda code-reviewer, test-writer, docs-writer ve researcher ajanlarını kurun, sonra her devretmeyi Claude'un anlatımından değil headless JSON zarfından kanıtlayın."
+title: 'Laboratuvar: işini hak eden dört agent'
+description: "Lab deposunda code-reviewer, test-writer, docs-writer ve researcher agent’larını kurun, sonra her devretmeyi Claude'un anlatımından değil headless JSON zarfından kanıtlayın."
 level: 3
 module: 'm10-subagents'
 order: 3
@@ -9,7 +9,7 @@ difficulty: core
 tags: ['subagent', 'laboratuvar', 'code-review', 'test', 'dokümantasyon']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Create custom subagents'
@@ -27,11 +27,226 @@ lab:
   repo_tag: 'lesson/m10-03-start'
 ---
 
-## Özet
+## Hedefler ve ön koşullar
 
-Bu laboratuvar, kursun geri kalanında kullanılan dört ajanı kurar ve aralarındaki tek anlamlı farkın ne yapmalarına izin verildiği olduğunu gösterir: `code-reviewer` yalnızca `Read, Grep, Glob` alır (düzeltemez, sadece raporlar), `test-writer` `Bash(npm test:*)` ile kapsamı daraltılmış bir kabuk izni alır, `docs-writer` kabuğa hiç erişemez, `researcher` ise salt-okunur artı `WebFetch` ile çalışır. Ajan gövdelerinin genel inceleme tavsiyesi değil bu deponun kendi kurallarını taşıması gerektiği vurgulanır. Devretmeler headless olarak çalıştırılır ve `subagent_stats.by_type` ile `permission_denials` alanlarından doğrulanır; incelemenin bulduğu gerçek bir kusur (`addTask`'ın `NaN` öncelik kabul etmesi) örnek olarak incelenir.
+Bu dersin sonunda şunları yapabileceksiniz:
 
-<Callout label="Çeviri bekleniyor">
-  Bu sayfa henüz çevrilmedi. Yukarıdaki özet dersin kapsamını anlatır; tam ders şu an yalnızca
-  İngilizce mevcuttur.
-</Callout>
+- İşlerine uygun [tool](/tr/playbook/glossary/#tool) (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) kümeleriyle dört çalışan [agent](/tr/playbook/glossary/#agent) (bir hedefi kendi başına adım adım yürüten, araç çağırabilen yapay zekâ süreci) yazmak — `code-reviewer`, `test-writer`, `docs-writer`, `researcher`.
+- Gözden geçiricinin tool'lardan _yoksunluğunun_ neden özellik olduğunu ve kapsamı daraltılmış bir `Bash(npm test:*)`'in tam kabuk erişiminden nasıl farklı olduğunu açıklamak.
+- Adlandırılmış bir agent’a [headless](/tr/playbook/glossary/#headless) (etkileşimli arayüz olmadan tek komutla çalıştırma) olarak devretmek ve `subagent_stats`'tan doğru olanın çalıştığını doğrulamak.
+- Zarftaki `permission_denials`'ı okumak ve bir reddi agent’ın `tools` listesine bağlamak.
+- Bir rolün ne zaman bir dosyayı hak ettiğini ve ne zaman bir [prompt](/tr/playbook/glossary/#prompt) (Claude'a verilen istek metni) olarak kalması gerektiğini fark etmek.
+
+**Ön koşullar.** Bu modülün 1. ve 2. dersleri. Lab deposunun yerel bir klonu ve Node 24 (`npm ci` başarılı olmalı). Bu laboratuvar `.claude/agents/` içine dosya yazar, bu yüzden onu önemsediğiniz bir depoda değil lab klonunda çalıştırın.
+
+<WhenNotToUse>
+  Dört agent küçük bir proje için epey fazla kalıcı yapılandırmadır. Deponuzda tek bir test komutu,
+  tek bir stil kuralı ve tek bir gözden geçirici varsa, iyi bir prompt'la tek bir `general-purpose`
+  devretmesi hiçbir şeyin bakımını gerektirmeden aynı işi yapar. Bu kümeyi, roller ihtiyaç
+  duydukları tool'larda gerçekten farklılaştığında kurun — düzenleme yapmaması gereken bir gözden
+  geçirici, `npm test` çalıştırması gereken bir test yazarı, `src/`'e dokunmaması gereken bir
+  dokümantasyon yazarı — çünkü bir dosyanın ifade edebildiği ve bir prompt'un edemediği tek şey bu
+  farktır.
+</WhenNotToUse>
+
+## Kavram
+
+### Bir rol, bir tool kümesi
+
+Bu laboratuvardaki dört agent tam olarak tek ilginç yönde farklılaşır: neyi yapmalarına izin verildiğinde.
+
+| Agent           | `tools`                                           | Neden                                                                     |
+| --------------- | ------------------------------------------------- | ------------------------------------------------------------------------- |
+| `code-reviewer` | `Read, Grep, Glob`                                | Rapor vermeli, asla düzeltmemeli. `Edit`, `Write`, `Bash` yok.            |
+| `test-writer`   | `Read, Write, Edit, Grep, Glob, Bash(npm test:*)` | Test yazar ve onları çalıştırmalıdır — ama yalnızca test komutunu.        |
+| `docs-writer`   | `Read, Write, Edit, Grep, Glob`                   | Markdown düzenler. Kabuğu yok, bu yüzden derleyemez ya da commit'leyemez. |
+| `researcher`    | `Read, Grep, Glob, WebFetch`                      | Salt-okunur, artı dış bağımlılık soruları için web.                       |
+
+`Bash(npm test:*)`, üzerinde durmaya değer bir desen. Bu, tam kabuk erişimi değil kapsamı daraltılmış bir Bash izni: test yazarı projenin testlerini çalıştırabilir, başka hiçbir şeyi değil. Bu, ona `npm test`'e sadık kalması için nazikçe rica eden bir gövde paragrafından çok daha güçlü bir güvencedir, çünkü modelin işbirliğiyle değil harness tarafından zorlanır.
+
+Gözden geçiricinin boş tool kemeri aynı fikrin tersidir. Gövdesi bunu açıkça söyler:
+
+> `Edit`, `Write` ya da `Bash` erişiminiz yok: hiçbir şeyi değiştiremez, test çalıştıramaz ya da kendiniz bir düzeltme uygulayamazsınız — göreviniz, incelemeyi isteyen kişinin harekete geçebileceği kadar hassas bulgular raporlamaktır.
+
+Bunu gövdede söylemek, allowlist zaten zorlasa da önemlidir: `git diff` çalıştıramayacağını bilen bir agent, sahip olmadığı bir tool'da tur yakmak yerine sizden dosyaları adlandırmanızı ister.
+
+### Proje bilgisi taşıyan gövdeler
+
+Bu laboratuvardaki dört gövde kısadır ve neredeyse her satır genel bir tavsiye değil _bu_ deponun kendisiyle ilgili bir gerçektir: temel mantık `src/store.ts`'de yaşar ve `src/cli.ts` ya da `src/api/server.ts`'ye çoğaltılmamalıdır; her hata düzeltmesi kendi testini tutar; zamana bağlı testler enjekte edilmiş sahte bir saat kullanır çünkü gerçek-saat iddiası ekilen hatalardan biriydi; `BUGS.md` girdileri Where/Bug/Reproduce/Fix/Used-by şeklini izler.
+
+Onları bir dosyaya değer kılan da budur. Genel gözden geçirici metni — "doğruluk, güvenlik ve stil sorunlarına bakın" — zaten modelde vardır. Projenin kendi kuralları değildir.
+
+Bu dersin işlenmiş prompt'u bilerek sadedir, çünkü spesifikasyonu agent’ın gövdesi yapıyor:
+
+```text
+Use the code-reviewer subagent to review src/store.ts.
+```
+
+### Devretmek ve kontrol etmek
+
+Gündelik dille ada göre çağırırsınız, ya da açıkça `@agent-code-reviewer` ile. Her iki durumda da kanıt aynıdır: `--output-format json`'da `subagent_stats.by_type`. Bu laboratuvarda önemli olan iki zarf alanı daha var:
+
+- `permission_denials` — boş bir dizi hiçbir şeyin engellenmediği anlamına gelir. Gözden geçiriciniz `Bash` denerse ve o allowlist'inde değilse, bu girişim burada görünür.
+- `started_in_background` — agent’ın ana turla birlikte mi çalıştığı. 05. ders buna neyin karar verdiğini açıklar.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · dört agent kurun ve gözden geçiricinin çalıştığını kanıtlayın"
+  lessonId="tr/l3-advanced/m10-subagents/agent-lab"
+  repoTag="lesson/m10-03-start"
+  steps={[
+    'Lab deposunun klonunuzda: `git checkout lesson/m10-03-start`, sonra `npm ci` ve yeşil bir başlangıç noktasını doğrulamak için `npm test`.',
+    "`.claude/agents/`'i oluşturun ve dört dosyayı yazın: `code-reviewer.md`, `test-writer.md`, `docs-writer.md`, `researcher.md`. Her birine yukarıdaki tablodan `tools` listesini, `model: sonnet`'i ve projenin kendi kurallarını belirten bir gövde verin.",
+    'Dizini doğrulayın: `ls -1 .claude/agents/` tam olarak dört dosya listelemeli, `head -6 .claude/agents/code-reviewer.md` 1. satırda `---` göstermeli.',
+    'Gerçek bir inceleme devredin: `claude -p "Use the code-reviewer subagent to review src/store.ts." --model sonnet --max-turns 8 --output-format json`',
+    "Zarfta, `subagent_stats.by_type`'ın `{\"code-reviewer\": 1}` okuduğunu, `failed`'in `0` olduğunu ve `permission_denials`'ın `[]` olduğunu kontrol edin.",
+    "`result`'ı okuyun. Her bulguyu dosyaya karşı kontrol edin — bir sorun uyduran bir gözden geçirici, gözden geçirici olmamasından daha kötüdür.",
+    'Diğerlerinden biri için tekrarlayın, ör. `claude -p "Use the researcher subagent to explain how paginate() is used by the CLI." --model sonnet --max-turns 6 --output-format json`, ve `by_type`\'ın `researcher`\'ı adlandırdığını doğrulayın.',
+    'Dört dosyanızı, referans sürümleri barındıran `git checkout lesson/m10-03-solution` ile karşılaştırın.',
+  ]}
+  expected="ls -1 .claude/agents/ dört dosyayı listeler; devredilen inceleme by_type'ı {'code-reviewer': 1}, failed'i 0 ve permission_denials'ı [] olan bir subtype: success döndürür, ayrıca file:line işaretçileriyle önceliklendirilmiş bir bulgu listesi verir."
+  checklist={[
+    'Dört agent dosyası var ve her biri 1. satırda `---` ile başlıyor',
+    "code-reviewer’ın `tools`'unda Edit, Write ya da Bash yok",
+    'test-writer’ın Bash izni `Bash(npm test:*)` ile kapsamı daraltılmış',
+    '`subagent_stats.by_type` her seferinde istediğiniz agent’ı adlandırıyor',
+    '`permission_denials` boş — hiçbir agent sahip olmadığı bir tool’a uzanmadı',
+    'İncelemedeki her bulgu kaynak dosyaya karşı kontrol edilebilir',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/03-agent-lab/01-agents-dir.txt"
+    range="2-12"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m10-subagents/03-agent-lab/02-code-reviewer-json.txt"
+    range="2-20"
+  />
+</Lab>
+
+O kayıttaki inceleme, deponun test paketinin kapsamadığı gerçek bir kusur buldu: `addTask`, `NaN` önceliği kabul ediyor, çünkü `priority ?? 0` yalnızca `null` ve `undefined`'ı yakalıyor ve `NaN < 0` `false`'tur. Bu, salt-okunur bir gözden geçiricinin tam olarak neye iyi olduğunun bir örneğidir — hiçbir maliyeti yoktur, on saniyede kontrol edilebilir ve zaten gözden geçirmeniz gereken sessiz bir düzenleme olarak gelmedi.
+
+O zarfta ayrıca 1. dersteki `Explore` çalıştırmasının `0`'ına karşı `"started_in_background": 1`'e dikkat edin. Aynı komut şekli, farklı yerleştirme — 05. ders kuralı açıklıyor.
+
+## Anti-pattern'ler
+
+**Gözden geçiriciye "ne olur ne olmaz" diye düzenleme erişimi vermek.** `Edit`'i olan bir agent bir şeyleri düzeltir ve incelemeyi okumak yerine düzeltmeyi incelemekle bitirirsiniz. _Düzeltme:_ `Read, Grep, Glob`'ı allowlist'e alın ve neye göre hareket edileceğine çağıranın karar vermesine izin verin.
+
+**Test yazarında kapsamı daraltılmamış `Bash`.** `tools: Bash` bütün kabuğu verir — `git push`, `rm`, her şey. _Düzeltme:_ `Bash(npm test:*)`, ve gerçekten bir derleme adımı gerekiyorsa ikinci bir kapsamlı girdi ekleyin.
+
+**Genel inceleme tavsiyesiyle dolu bir gövde.** "Güvenlik sorunlarına bakın" zaten modelde vardır; token'a mal olur ve hiçbir şey katmaz. _Düzeltme:_ gövdeyi bu projenin kurallarına, muaf dosyalara ve raporun alması gereken şekle harcayın.
+
+**Bulguları kontrol etmeden kabul etmek.** Kendinden emin bir `file:line` iddiaları listesi hâlâ model çıktısıdır. _Düzeltme:_ herhangi birine göre hareket etmeden önce ikisini açın — laboratuvarın kontrol listesi bunu bir sonradan akla gelen değil bir adım yapar.
+
+**Hepsi her tool'u devralan dört agent.** O zaman dosyalar yalnızca metinde farklılaşır ve Claude hiçbir şey mekanik olarak onları ayırt etmediği için aralarında güvenilmez seçim yapar. _Düzeltme:_ iki agent aynı tool'lara ve aynı izinlere sahipse birleştirin.
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/agent-lab"
+  questionId="q1"
+  lang="tr"
+  prompt="code-reviewer agent’ı neden yalnızca Read, Grep ve Glob alıyor?"
+  options={[
+    {
+      text: 'Çalıştırmayı ucuzlatmak için',
+      explanation: 'Maliyet tool listesinin boyutunu değil modeli ve turları izler.',
+    },
+    {
+      text: 'Böylece sessizce düzeltme uygulamak yerine bulgu raporlar, ki bunu daha sonra siz gözden geçirmek zorunda kalırsınız',
+      correct: true,
+      explanation: 'Allowlist, gövdenin yalnızca anlattığı sınırı zorlar.',
+    },
+    {
+      text: 'Çünkü salt-okunur agent’lar CLAUDE.md’yi atlar ve daha hızlı başlar',
+      explanation: 'Yalnızca yerleşik Explore ve Plan agent’ları CLAUDE.md ve git durumunu atlar.',
+    },
+    {
+      text: 'Çünkü Edit erişimi olan agent’lara headless olarak devredilemez',
+      explanation: 'Edilebilir; laboratuvarın test-writer’ı tam olarak bunu yapıyor.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/agent-lab"
+  questionId="q2"
+  lang="tr"
+  prompt="Bir agent’ın tools listesindeki `Bash(npm test:*)` ne anlama gelir?"
+  options={[
+    {
+      text: 'Agent herhangi bir Bash komutunu çalıştırabilir, ama yalnızca npm test geçtikten sonra',
+      explanation: 'Bu bir sıralama kuralı değil bir izin desenidir.',
+    },
+    {
+      text: 'Agent’ın Bash erişimi npm test komutu ve varyantlarıyla sınırlıdır',
+      correct: true,
+      explanation:
+        'Kapsamı daraltılmış bir Bash izni — agent’ın işbirliğiyle değil harness tarafından zorlanır.',
+    },
+    {
+      text: 'Agent başlangıçta npm test’i otomatik olarak çalıştırır',
+      explanation:
+        'Hiçbir şey otomatik çalışmaz; tools listesi yalnızca neyin izin verildiğini söyler.',
+    },
+    {
+      text: 'npm test’i kaldıran bir denylist girdisidir',
+      explanation: "Denylist girdileri `disallowedTools`'a gider.",
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/agent-lab"
+  questionId="q3"
+  lang="tr"
+  prompt="Bir agent’ın izni olmayan bir tool kullanmayı denediğini hangi zarf alanı söyler?"
+  options={[
+    {
+      text: '`permission_denials`',
+      correct: true,
+      explanation:
+        'Boş olması hiçbir şeyin engellenmediği anlamına gelir; girdiler engellenen girişimleri adlandırır.',
+    },
+    {
+      text: '`subagent_stats.failed`',
+      explanation:
+        'Bu, tamamen başarısız olan subagent’ları sayar, engellenen tool çağrılarını değil.',
+    },
+    { text: '`is_error`', explanation: 'Bu, bütün çalıştırmanın hata verip vermediğini bildirir.' },
+    {
+      text: '`stop_reason`',
+      explanation: 'Bu, turun neden bittiğini söyler, neyin reddedildiğini değil.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m10-subagents/agent-lab"
+  questionId="q4"
+  lang="tr"
+  prompt="Özel bir agent’ın gövdesine, devretme prompt’una değil, ne ait olur?"
+  options={[
+    {
+      text: 'Bu sefer incelenecek belirli dosya',
+      explanation: 'Bu her çağrıda değişir — prompt’a aittir.',
+    },
+    {
+      text: 'Projenin kalıcı kuralları ve raporun alması gereken şekil',
+      correct: true,
+      explanation:
+        'Gövde her çağrı için bir system prompt’tur; göreve özel ayrıntı prompt’a gider.',
+    },
+    {
+      text: 'Kullanılacak model',
+      explanation: 'Bu gövde değil `model` frontmatter alanıdır.',
+    },
+    {
+      text: 'Agent’ın kullanabileceği tool’ların listesi',
+      explanation: 'Bu `tools` frontmatter alanıdır; bir gövde bir tool veremez.',
+    },
+  ]}
+/>
+
+**Sırada:** `04-model-per-agent`, bunun maliyetine bir rakam koyar — dört adımlı model çözümleme sırası, `CLAUDE_CODE_SUBAGENT_MODEL` ve hangi agent’ların daha büyük bir modeli hak ettiği.

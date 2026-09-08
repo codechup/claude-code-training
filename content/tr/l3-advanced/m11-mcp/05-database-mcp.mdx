@@ -6,10 +6,10 @@ module: 'm11-mcp'
 order: 5
 duration_min: 20
 difficulty: core
-tags: ['mcp', 'database', 'sqlite', 'postgres', 'least-privilege']
+tags: ['mcp', 'veritabanı', 'sqlite', 'postgres', 'en-az-yetki']
 verified_version: '2.1.263'
 updated: 2026-09-07
-draft: true
+draft: false
 sources:
   - type: official
     title: 'Connect Claude Code to tools via MCP'
@@ -23,7 +23,253 @@ lab:
   repo_tag: 'lesson/m11-05-start'
 ---
 
-Bu ders DBHub (`@bytebase/dbhub`) ile bir veritabanını Claude Code’a bağlar, şema keşfi ve sorgu çalıştırmayı gösterir ve iki ayrı read-only kontrolünü — read-only veritabanı kullanıcısı ve `dbhub.toml` içinde read-only tool yapılandırması — birlikte kullanır. Laboratuvarda [MCP server](/tr/playbook/glossary/#mcp-server) — Claude Code'a dış araçlar ve veri kaynakları sunan program — gönderilen bir `DELETE` ifadesini `READONLY_VIOLATION` ile reddeder.
+## Hedefler ve ön koşullar
 
-> Bu sayfanın Türkçe çevirisi henüz tamamlanmadı. `draft: true` kaldığı sürece gezinmede görünmez.
-> Çeviri için: `/translate-lesson content/en/l3-advanced/m11-mcp/05-database-mcp.mdx` (kurallar: `.claude/rules/i18n.md`, D016, D018).
+Bu dersin sonunda şunları yapabileceksiniz:
+
+- DBHub ile SQLite ya da PostgreSQL'e karşı bir veritabanını Claude Code'a MCP üzerinden bağlamak.
+- İngilizce bir şema sorusu sorup gerçekte çalıştırılan SQL'i geri almak.
+- Server'ı fiziksel olarak yazamayacak şekilde yapılandırmak ve reddettiğini izleyerek kanıtlamak.
+- Salt okunur bir kimlik bilgisi ile salt okunur bir server yapılandırmasının neden iki farklı kontrol olduğunu ve neden ikisini de istediğinizi açıklamak.
+- En yaygın sessiz başarısızlığı teşhis etmek: yanlış veritabanını açan göreli bir SQLite yolu.
+
+**Ön koşullar.** 01, 02 ve 04 (`--allowedTools` için) dersleri. Laboratuvar deposunun `lesson/m11-05-start` etiketinden bir klonu, Node.js 18 ya da üzeri (`@bytebase/dbhub`, `npx` üzerinden çalışır) ve küçük bir SQLite dosyası oluşturabilen Python ya da benzer bir araç.
+
+<WhenNotToUse>
+  Bir veritabanı [MCP server](/tr/playbook/glossary/#mcp-server)'ını (Model Context Protocol ile
+  Claude'a dış araç ve veri sağlayan sunucu) asla yazabilen bir kimlik bilgisiyle üretime
+  yöneltmeyin. Üretime salt okunur erişim bile bir varsayılan değil bir karardır: satırlar bir
+  modelin context'ine geri döner ve içlerindeki her şey artık konuşmanın bir parçasıdır — müşteri
+  e-postaları dahil. [Commit](/tr/playbook/glossary/#commit)'lenmiş (bir git deposundaki değişiklik
+  kümesinin kalıcı, mesajlı kaydı) bir migration ya da kaydedilmiş bir sorgu soruyu yanıtlıyorsa
+  MCP'yi hiç kullanmayın; onlar gözden geçirilebilir ve tekrarlanabilirdir, uydurma bir
+  [agent](/tr/playbook/glossary/#agent) (bir hedefi kendi başına adım adım yürüten, araç çağırabilen
+  yapay zekâ süreci) sorgusu ise ikisi de değildir. İyi durum, "bu şema aslında neye benziyor" gibi
+  bir sorunun gerçek olduğu ve cevabın patlama yarıçapının sıfır olduğu bir geliştirme ya da
+  analitik replikasına karşı keşiftir.
+</WhenNotToUse>
+
+## Kavram
+
+### DBHub
+
+**DBHub** (`@bytebase/dbhub`), Claude Code dokümanlarının PostgreSQL örneğinde kullandığı veritabanı server'ıdır. Claude'u bir bağlantı dizesi üzerinden ilişkisel bir veritabanına bağlar ve birkaç lehçe konuşur — kendi yardımında yazdırdığı DSN biçimleri şunlardır:
+
+```text
+postgres:   postgres://postgres:password@localhost:5432/postgres?sslmode=require
+sqlserver:  sqlserver://username:password@localhost:1433/database?sslmode=disable&instanceName=INSTANCE1
+sqlite:     sqlite:///path/to/database.db
+mysql:      mysql://root:password@localhost:3306/mysql?sslmode=require
+mariadb:    mariadb://root:password@localhost:3306/db?sslmode=require
+```
+
+Dokümanların PostgreSQL örneği, DSN'yi komut satırında geçirir ve onu en önemli kuralla eşleştirir:
+
+<CodeBlock title="the documented PostgreSQL shape">
+
+```bash
+claude mcp add --transport stdio db -- npx -y @bytebase/dbhub \
+  --dsn "postgresql://readonly:pass@prod.db.com:5432/analytics"
+```
+
+</CodeBlock>
+
+Kullanıcı adına dikkat edin. Bağlantı dizesinde **salt okunur bir veritabanı kullanıcısı** kullanın; böylece Claude'un çalıştırdığı sorgular veriyi değiştiremez. Bu, veritabanınızın uyguladığı ve üzerindeki her katmandaki her hatadan sağ çıkan kontroldür.
+
+### İki bağımsız salt okunur kontrol
+
+Veritabanı yerine server'da ikinci bir kontrol daha vardır ve bu ders ikisini de kullanır. DBHub, kaynaklarınızı bildirdiğiniz ve sonra bir [tool](/tr/playbook/glossary/#tool)'u (Claude'un dosya okuma, düzenleme, komut çalıştırma gibi işleri yapmak için çağırdığı yerleşik araç) salt okunur olarak işaretlediğiniz bir TOML yapılandırma dosyası alır:
+
+<CodeBlock title="dbhub.toml — a read-only SQLite source">
+
+```toml
+[[sources]]
+id = "labtrack"
+dsn = "sqlite:///absolute/path/to/labtrack.db"
+
+[[tools]]
+name = "execute_sql"
+source = "labtrack"
+readonly = true
+```
+
+</CodeBlock>
+
+Bu yerindeyken server, kendi allow-list'inin dışındaki her ifadeyi veritabanına ulaşmadan önce reddeder. Kemer ve pantolon askısı: kimlik bilgisi bağlantının _ne yapabileceğini_ söyler, server yapılandırması bu _tool'un_ ne yapabileceğini söyler. Hiçbiri diğerinin yerini tutmaz — yazma-okuma bir kimlik bilgisi üzerindeki salt okunur bir server, bir yapılandırma değişikliğiyle yazma-okuma hâline gelebilir; izinli bir server'a sahip salt okunur bir kimlik bilgisi ise yine de kafası karışmış bir modelin her şey üzerinde pahalı bir `SELECT` çalıştırmasına izin verir.
+
+### Göreli yol tuzağı
+
+SQLite DSN'leri mutlak bir yol alır (`sqlite:///path/to/database.db` — üç eğik çizgi, sonra yol). Göreli bir biçimle, örneğin `sqlite://labtrack.db`, bu dersin kayıt oturumu DBHub'ın seed'lenmiş veritabanı yerine boş bir veritabanına bağlandığını gözlemledi. Hiçbir şey hata vermez: server başlar, `claude mcp list` `✔ Connected` bildirir ve her sorgu sıfır satır döndürür — Claude, `sqlite_master`'ın boş olduğunu ve `tasks`'ın var olmadığını bildirdi. Claude size tablolarınızın var olmadığını söylüyorsa, verinizi kontrol etmeden önce DSN'yi kontrol edin.
+
+### İngilizce sormak, SQL okumak
+
+Bir veritabanı server'ının amacı Claude'un SQL yazması değildir — bir soru sorabilmeniz ve yine de SQL'i görebilmenizdir. Bu dersin örnek [prompt](/tr/playbook/glossary/#prompt)'u (Claude'a verdiğiniz istek metni):
+
+```text
+Use the db MCP server: list the tables, then run
+SELECT title, due_date FROM tasks WHERE done = 0 AND due_date < '2026-09-07'.
+Report the SQL and the rows.
+```
+
+SQL'i geri istemek, edinmeye değer bir alışkanlıktır. Sorduğunuz sorunun cevaplanan soru olduğuna dair tek kontrolünüz budur.
+
+## Uygulamalı laboratuvar
+
+<Lab
+  title="Laboratuvar · MCP üzerinden gerçek bir SQLite veritabanını sorgulayın ve yazmayı reddetmesini sağlayın"
+  lessonId="tr/l3-advanced/m11-mcp/database-mcp"
+  repoTag="lesson/m11-05-start"
+  steps={[
+    '`lesson/m11-05-start`’ı checkout edin. Checkout içinde tek bir `tasks` tablosuyla (id, title, priority, done, due_date) ve dört satırla geçici bir `labtrack.db` oluşturun — ikisi bitmemiş ve geçmişte bir son tarihi olan, biri bitmiş, biri henüz vadesi gelmemiş. Herhangi bir SQLite aracı işe yarar; beş satırlık bir Python betiği yeterlidir.',
+    'Yanına `dbhub.toml` yazın: `dsn`’i `sqlite:///` ve ardından `labtrack.db`’nin **mutlak** yolu olan bir `[[sources]]` girdisi ve `name = "execute_sql"`, `source`’u kaynak id’nize ayarlayan ve `readonly = true` diyen bir `[[tools]]` girdisiyle.',
+    'Server’ı kaydedin: `claude mcp add --scope local db -- npx -y @bytebase/dbhub --config=dbhub.toml`, sonra `claude mcp get db` ve `✔ Connected`’ı doğrulayın.',
+    'Aynı komutu tarif eden tek server’lı bir `mcp-db.json` yazın; böylece sorgu çalıştırmaları `--strict-mcp-config` kullanabilir ve bu tag’in taşıdığı `.mcp.json`’ı yok sayabilir. Bu, kaydı tekrarlanabilir tutar ve deponun `github` girdisinin başlatılmasını engeller.',
+    'Okuma sorgusunu headless çalıştırın: `claude -p "Use the db MCP server: list the tables, then run SELECT title, due_date FROM tasks WHERE done = 0 AND due_date < \'2026-09-07\'. Report the SQL and the rows." --model sonnet --max-turns 10 --output-format text --mcp-config mcp-db.json --strict-mcp-config --allowedTools "mcp__db__execute_sql,ToolSearch"`.',
+    'Satırları seed’lediğiniz veriyle karşılaştırın. Sıfır satır ve "no such table" alırsanız, DSN’niz görelidir — mutlak forma düzeltip yeniden çalıştırın.',
+    'Şimdi salt okunur yapılandırmayı kanıtlayın. Aynı şekilde, `DELETE FROM tasks WHERE done = 1` ifadesinin server üzerinden gönderilmesini ve server’ın tam yanıtıyla birlikte sonrasında bir `SELECT COUNT(*)` isteyin.',
+    'Temizleyin: `claude mcp remove db`, ve geçici veritabanını silin.',
+  ]}
+  expected="claude mcp get db, ✔ Connected bildirir. Okuma sorgusu, iki vadesi geçmiş, bitmemiş satırı döndürür ve onları üreten SQL’i yansıtır. DELETE, izin verilen işlemleri (select, with, explain, pragma) adlandıran bir READONLY_VIOLATION hatasıyla server tarafından reddedilir ve satır sayısı değişmez."
+  checklist={[
+    'DSN, mutlak `sqlite:///…` biçiminde',
+    '`dbhub.toml`, `execute_sql` tool’unda `readonly = true` ayarlıyor',
+    '`claude mcp get db`, ✔ Connected bildirdi',
+    'Sorgu cevabı, gerçekte çalıştırılan SQL’i içeriyor',
+    'Satırlar boş bir veritabanı değil, seed’lediğiniz veriyle eşleşiyor',
+    'DELETE, READONLY_VIOLATION olarak geri geldi ve satır sayısı değişmedi',
+    'Server kaldırıldı ve geçici veritabanı silindi',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/05-database-mcp/01-add-and-status.txt"
+    range="2-15"
+  />
+  <Transcript src="content/_shared/transcripts/m11-mcp/05-database-mcp/02-query.txt" range="5-17" />
+  <Transcript
+    src="content/_shared/transcripts/m11-mcp/05-database-mcp/03-readonly.txt"
+    range="5-18"
+  />
+</Lab>
+
+Orta kayıt, bunu yapmaya değer kılan şeyi yapıyor: cevap hem satırları hem de ifadeyi içeriyor. `SELECT title, due_date FROM tasks WHERE done = 0 AND due_date < '2026-09-07'`, bir bakışta kontrol edilebilir — "bitmemiş"in `done = 0` olarak okunduğunu ve tarih sınırının kastettiğiniz olduğunu görebilirsiniz.
+
+Üçüncü kayıt derstir. Server'ın kendi sözleri:
+
+```json
+{
+  "success": false,
+  "error": "Read-only mode is enabled. Only the following SQL operations are allowed: select, with, explain, pragma",
+  "code": "READONLY_VIOLATION"
+}
+```
+
+Ret, modelin yargısından değil, Claude Code'un permission sisteminden de değil, server'dan geldi. Bu ayrım, bu dersin bütün tasarım ilkesidir: _reddettiğini görebildiğiniz_ bir kontrol, var olduğuna inandırıldığınız bir kontrolden daha değerlidir. (Kayıt için: daha sade bir prompt'la ilk denemede model, `DELETE`'i kendi başına çalıştırmayı reddetti — iyi bir içgüdü ve laboratuvarın, server'ın korumasını görünür kılmadan önce ifadenin gönderilmesini açıkça istemesinin tam nedeni budur.)
+
+İlk kayıtta gözden kaçırılması kolay bir şey daha var: `claude mcp get db`, `--config=dbhub.toml` dahil tam komutu yazdırır. DSN, dokümanların PostgreSQL örneğinde olduğu gibi komut satırında olsaydı, veritabanı şifresi de orada yazdırılırdı — bu da bir yapılandırma dosyasını tercih etmenin bir nedenidir.
+
+## Anti-pattern'ler
+
+**"Sadece bir geliştirme veritabanı olduğu için" yazma-okuma bir kimlik bilgisi.** Geliştirme veritabanları üretimden geri yüklenir. _Düzeltme:_ DSN'de her zaman salt okunur bir veritabanı kullanıcısı, ve server yapılandırmasında da salt okunur.
+
+**DSN'yi şifresiyle birlikte komut satırına koymak.** `~/.claude.json`'a, `claude mcp get` çıktısına ve kabuk geçmişinize düşer. _Düzeltme:_ server'ın okuduğu bir yapılandırma dosyası ya da `.mcp.json`'da `${DB_DSN}` genişletmesi.
+
+**Göreli bir SQLite yoluna güvenmek.** Bağlanır, sağlıklı bildirir ve boş bir veritabanı hakkındaki her soruyu yanıtlar. _Düzeltme:_ mutlak `sqlite:///…` yolları.
+
+**SQL olmadan satırları almak.** Soruyu hiç görmezseniz yanlış bir cevabı doğru bir cevaptan ayıramazsınız. _Düzeltme:_ sonuçla aynı nefeste ifadeyi de isteyin.
+
+**Her şeyi context'e seçmek.** Gerçek bir tablo üzerinde `SELECT * FROM users`, MCP çıktı sınırını fena patlatır — Claude Code 10.000 token üzerinde uyarır ve varsayılan olarak 25.000'de sınırlar — ve kişisel verileri bir [transcript](/tr/playbook/glossary/#transcript)'e (gerçek bir Claude Code oturumunun kaydı) koyar. _Düzeltme:_ toplamlar ve `LIMIT`li örnekler isteyin, `MAX_MCP_OUTPUT_TOKENS`'ı yalnızca bilinçli olarak yükseltin.
+
+<Callout variant="changed">
+  DBHub'ın `--readonly` komut satırı bayrağı kalktı. Onu çalıştırmak artık `ERROR: --readonly flag
+  is no longer supported. Use dbhub.toml with [[tools]] configuration instead:` yazdırıyor, ardından
+  yukarıdaki TOML geliyor. `@bytebase/dbhub`'a karşı 2026-09-07'de doğrulandı; salt okunuru komut
+  satırında değil `dbhub.toml`'da yapılandırın.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/database-mcp"
+  questionId="q1"
+  lang="tr"
+  prompt="SQLite destekli server’ınız ✔ Connected bildiriyor ama her sorgu tablonun var olmadığını söylüyor. En olası neden?"
+  options={[
+    {
+      text: 'DSN göreli, bu yüzden server farklı, boş bir veritabanı açtı',
+      correct: true,
+      explanation:
+        'sqlite:// bir sonraki bölümü host olarak alır. Mutlak `sqlite:///path/to/file.db` biçimini kullanın.',
+    },
+    {
+      text: 'Salt okunur mod SELECT’i engelliyor',
+      explanation: 'Salt okunur mod select, with, explain ve pragma’ya izin verir.',
+    },
+    {
+      text: 'Server OAuth’a ihtiyaç duyuyor',
+      explanation: 'Bir dosyaya karşı yerel bir stdio server’ının oturum açacağı hiçbir şey yok.',
+    },
+    {
+      text: 'Claude Code, çıktı sınırı yüzünden sorguyu sildi',
+      explanation:
+        'Çıktı sınırları büyük sonuçları keser ya da kalıcı hale getirir; tabloları yok etmez.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/database-mcp"
+  questionId="q2"
+  lang="tr"
+  prompt="Bu ders bir veritabanı server’ı için hangi kontrol çiftini önerir?"
+  options={[
+    {
+      text: 'Salt okunur bir veritabanı kullanıcısı VE server’da salt okunur bir tool yapılandırması',
+      correct: true,
+      explanation:
+        'Kimlik bilgisi bağlantıyı sınırlar, server tool’u sınırlar. Her biri diğerinin kapsamadığı bir başarısızlığı kapsar.',
+    },
+    {
+      text: 'Salt okunur bir veritabanı kullanıcısı, ve Claude’a yazmamasını söyleyen bir prompt',
+      explanation: 'Bir talimat bir uygulama mekanizması değildir.',
+    },
+    {
+      text: 'İstemlerin durması için bypassPermissions modu',
+      explanation: 'Bu, bir kontrol eklemek yerine bir kontrolü kaldırır.',
+    },
+    {
+      text: 'Her sorgunun dikkatlice gözden geçirildiği yazma-okuma bir kullanıcı',
+      explanation:
+        'Gözden geçirme değerlidir ama yeterli değildir; bağlantıya istemediğiniz şeyi yapma yeteneği hiç vermeyin.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="tr/l3-advanced/m11-mcp/database-mcp"
+  questionId="q3"
+  lang="tr"
+  prompt="Claude Code, bir MCP tool’unun çıktısının büyük olduğu konusunda sizi uyarıyor. Varsayılan sayılar nedir?"
+  options={[
+    {
+      text: '10.000 token üzerinde bir uyarı ve MAX_MCP_OUTPUT_TOKENS ile ayarlanabilen varsayılan 25.000 maksimum',
+      correct: true,
+      explanation:
+        'Tool’lar ayrıca anthropic/maxResultSizeChars açıklamasıyla metin içeriği için kendi daha büyük sınırlarını da bildirebilir.',
+    },
+    {
+      text: '1.000 token üzerinde bir uyarı ve 4.000 sabit sınır',
+      explanation: 'Dokümante edilen değerler değil.',
+    },
+    {
+      text: 'Uyarı yok; sonuçlar her zaman sessizce kesilir',
+      explanation:
+        'Claude Code uyarır ve aşırı büyük sonuçlar diske kalıcı hale getirilir ve referans verilir.',
+    },
+    {
+      text: '25.000 token üzerinde bir uyarı, maksimum yok',
+      explanation: '25.000, uyarı eşiği değil varsayılan maksimumdur.',
+    },
+  ]}
+/>
+
+**Sırada:** `06-write-your-own-server`, başkalarının server'larını bağlamayı bırakıp bir tane yazar — yaklaşık yüz satırlık TypeScript, bir tool, bir transport.
