@@ -164,6 +164,81 @@ test.describe('M0 release lesson: the D006 template renders end to end', () => {
   }
 });
 
+// Playbook and Meta (P42/P44): the two non-numbered reference trees, whose
+// "modules" are standalone pages rather than lesson groups (see
+// `src/pages/[lang]/[level]/index.astro` and `.../[module]/index.astro`).
+// They shipped after this suite was written, so this covers every EN route
+// in both sections and their TR twins with the same checks the lesson/section
+// tests above already make (200, a visible h1 matching the real title, and
+// the shared shell). Full axe passes are sampled rather than run on every one
+// of these 20 routes — see the dedicated block in a11y.spec.ts.
+test.describe('Playbook and Meta section pages', () => {
+  const routes: { path: string; lang: 'en' | 'tr'; h1: string }[] = [
+    // Playbook (EN) — six routes: the level index plus its five reference pages.
+    { path: '/en/playbook/', lang: 'en', h1: 'Playbook' },
+    { path: '/en/playbook/decision-trees/', lang: 'en', h1: 'Decision trees' },
+    { path: '/en/playbook/best-practices/', lang: 'en', h1: 'Best-practice digest' },
+    { path: '/en/playbook/anti-patterns/', lang: 'en', h1: 'Anti-pattern catalogue' },
+    { path: '/en/playbook/changelog/', lang: 'en', h1: 'Changed since 2025' },
+    { path: '/en/playbook/glossary/', lang: 'en', h1: 'Glossary' },
+    // Playbook (TR twins) — decision-trees, best-practices, anti-patterns and
+    // changelog are draft:true stubs (P44 in progress); sections aren't
+    // subject to the lesson draft mechanism, so they still route and render.
+    { path: '/tr/playbook/', lang: 'tr', h1: 'Playbook' },
+    { path: '/tr/playbook/decision-trees/', lang: 'tr', h1: 'Karar ağaçları' },
+    { path: '/tr/playbook/best-practices/', lang: 'tr', h1: 'En iyi pratikler özeti' },
+    { path: '/tr/playbook/anti-patterns/', lang: 'tr', h1: 'Anti-pattern kataloğu' },
+    { path: '/tr/playbook/changelog/', lang: 'tr', h1: "2025'ten beri değişenler" },
+    { path: '/tr/playbook/glossary/', lang: 'tr', h1: 'Sözlük' },
+    // Meta (EN) — four routes.
+    { path: '/en/meta/', lang: 'en', h1: 'Meta' },
+    { path: '/en/meta/how-this-site-was-built/', lang: 'en', h1: 'How this site was built' },
+    { path: '/en/meta/contributing/', lang: 'en', h1: 'Contributing' },
+    { path: '/en/meta/sources-index/', lang: 'en', h1: 'Sources index' },
+    // Meta (TR twins) — how-this-site-was-built, contributing and
+    // sources-index are draft:true stubs (P44 in progress).
+    { path: '/tr/meta/', lang: 'tr', h1: 'Meta' },
+    { path: '/tr/meta/how-this-site-was-built/', lang: 'tr', h1: 'Bu site nasıl inşa edildi' },
+    { path: '/tr/meta/contributing/', lang: 'tr', h1: 'Katkıda bulunma' },
+    { path: '/tr/meta/sources-index/', lang: 'tr', h1: 'Kaynak dizini' },
+  ];
+
+  for (const { path, lang, h1 } of routes) {
+    test(`${path} renders its title, lang and the shared shell`, async ({ page }) => {
+      const response = await page.goto(path);
+      expect(response?.status()).toBe(200);
+      await expect(page.locator('html')).toHaveAttribute('lang', lang);
+      await expect(page.locator('h1')).toContainText(h1);
+      // The page banner, not the `.cc-head` wrapper these section pages also
+      // render around their own h1/description.
+      await expect(page.getByRole('banner')).toBeVisible();
+      await expect(page.locator('footer')).toBeVisible();
+    });
+  }
+
+  test('the EN playbook index links to all five reference pages', async ({ page }) => {
+    await page.goto('/en/playbook/');
+    for (const slug of [
+      'decision-trees',
+      'best-practices',
+      'anti-patterns',
+      'changelog',
+      'glossary',
+    ]) {
+      // Scoped to the rendered MDX body: the sidebar nav (`Curriculum`) also
+      // links to every section, which would otherwise make this ambiguous.
+      await expect(page.locator(`.cc-prose a[href="/en/playbook/${slug}/"]`)).toBeVisible();
+    }
+  });
+
+  test('the EN meta index links to its three other pages', async ({ page }) => {
+    await page.goto('/en/meta/');
+    for (const slug of ['how-this-site-was-built', 'contributing', 'sources-index']) {
+      await expect(page.locator(`.cc-prose a[href="/en/meta/${slug}/"]`)).toBeVisible();
+    }
+  });
+});
+
 test('a quiz answer is scored instantly and survives a reload', async ({ page }) => {
   await page.goto(EN);
   const quiz = page.locator('.cc-quiz').first();
