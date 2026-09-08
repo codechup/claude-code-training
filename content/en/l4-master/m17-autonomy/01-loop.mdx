@@ -1,0 +1,345 @@
+---
+title: '/loop: running a prompt on repeat'
+description: 'Schedule a prompt inside an open session with /loop — a fixed cron interval or an interval Claude picks each iteration — customise the default with loop.md, and list, bound and cancel every task you create.'
+level: 4
+module: 'm17-autonomy'
+order: 1
+duration_min: 15
+difficulty: core
+tags: ['autonomy', 'loop', 'scheduling', 'cron']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Run prompts on a schedule'
+    url: 'https://code.claude.com/docs/en/scheduled-tasks.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Tools available to Claude'
+    url: 'https://code.claude.com/docs/en/tools-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Automate work with routines'
+    url: 'https://code.claude.com/docs/en/routines.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Environment variables'
+    url: 'https://code.claude.com/docs/en/env-vars.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'codechup/claude-code-lab — the course lab repository'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m17-01-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Run a prompt on a fixed interval with `/loop 15m <prompt>`, and explain how the interval becomes a cron expression.
+- Choose deliberately between a fixed interval and a self-paced loop where Claude picks the next delay after each iteration.
+- Replace the built-in maintenance prompt with your own `.claude/loop.md`, and say which of the two `loop.md` locations wins.
+- List, bound and cancel scheduled tasks, and name the two mechanisms that stop a forgotten loop running forever.
+- Say what a `/loop` task cannot do — survive the session, catch up on missed fires, or fire while Claude is mid-turn.
+
+**Prerequisites.** Level 1–3: an interactive session, permission modes, and headless `claude -p`. A checkout of the [lab repository](https://github.com/codechup/claude-code-lab) for the lab below.
+
+<WhenNotToUse>
+  A `/loop` task lives in one open session and dies with it, so it is the wrong tool for anything
+  that has to run whether or not you are at the keyboard — use a cloud routine or a desktop
+  scheduled task for that. It is also the wrong tool when something can push the event to you
+  instead: polling a webhook endpoint every two minutes burns tokens on every empty check, where a
+  channel delivers the failure the moment it happens. And it is the wrong tool for a task with no
+  cheap, idempotent check behind it — a loop whose prompt does real work on every fire is an
+  unattended agent with no brakes, not a poller.
+</WhenNotToUse>
+
+## Concept
+
+### Three places work can be scheduled
+
+Claude Code schedules recurring work in three different places, and picking the wrong one is the most common mistake in this module. The official comparison:
+
+|                            | Cloud routine                       | Desktop task          | `/loop`                             |
+| -------------------------- | ----------------------------------- | --------------------- | ----------------------------------- |
+| Runs on                    | Cloud, Anthropic-managed by default | Your machine          | Your machine                        |
+| Requires machine on        | No                                  | Yes                   | Yes                                 |
+| Requires open session      | No                                  | No                    | Yes                                 |
+| Persistent across restarts | Yes                                 | Yes                   | Restored on `--resume` if unexpired |
+| Access to local files      | No (fresh clone)                    | Yes                   | Yes                                 |
+| Permission prompts         | No (runs autonomously)              | Configurable per task | Inherits from session               |
+| Minimum interval           | 1 hour                              | 1 minute              | 1 minute                            |
+
+`/loop` is the quick one: it needs no setup, it inherits your session's permissions and MCP servers, and it is gone when the conversation ends. Use it for polling something while you work.
+
+### The three shapes of `/loop`
+
+`/loop` is a bundled skill, and both of its arguments are optional. What you pass decides how it behaves:
+
+| What you provide          | Example                     | What happens                                                          |
+| ------------------------- | --------------------------- | --------------------------------------------------------------------- |
+| Interval and prompt       | `/loop 5m check the deploy` | Your prompt runs on a fixed cron schedule                             |
+| Prompt only               | `/loop check the deploy`    | Your prompt runs at an interval Claude chooses each iteration         |
+| Interval only, or nothing | `/loop`                     | The built-in maintenance prompt runs, or your `loop.md` if one exists |
+
+You can also pass a skill: `/loop 20m /review-pr 1234` re-runs that skill every twenty minutes. A scheduled fire only runs skills Claude is allowed to invoke on its own — built-in commands such as `/permissions`, `/model` or `/clear`, skills marked `disable-model-invocation: true`, skills withheld by a `skillOverrides` setting or a `Skill` deny rule, and MCP prompts all arrive as plain text instead of executing.
+
+Here is this lesson's worked example prompt — a loop target that is cheap, idempotent, and honest about "nothing happened":
+
+```text
+/loop 15m run bash scripts/loop-check.sh. If it exits 0, reply with one line and
+nothing else. If it exits non-zero, show the failing test's output and stop the loop.
+```
+
+### Fixed intervals
+
+When you supply an interval, Claude converts it to a cron expression, schedules the job, and confirms the cadence and job ID. The interval can lead the prompt as a bare token (`30m`) or trail it as a clause (`every 2 hours`). The units are `s`, `m`, `h` and `d`.
+
+Two rounding rules follow from cron's one-minute granularity: seconds round **up** to the nearest minute, and an interval that has no clean cron step — `7m`, `90m` — rounds to the nearest one that does, with Claude telling you what it picked.
+
+### Self-paced loops
+
+Omit the interval and Claude chooses the next delay itself, between one minute and one hour, based on what the iteration just saw: short waits while a build is finishing, longer ones when nothing is pending. The chosen delay and the reason for it print at the end of each iteration.
+
+Under the hood Claude calls the `ScheduleWakeup` tool to book the next iteration. You never call it yourself. Calling it with `stop: true` cancels the pending wakeup, which is how Claude ends a self-paced loop it considers finished; if an iteration ends without either rescheduling or stopping, Claude Code books one fallback wakeup about 20 minutes later and ends the loop if that iteration doesn't reschedule either.
+
+Where the `Monitor` tool is available, Claude may reach for it instead when you ask for a dynamic schedule: a monitor streams each output line of a background script as it appears, which beats re-running a prompt on a timer both in tokens and in latency. That is lesson 5's subject.
+
+<Callout>
+  Dynamically chosen intervals and the built-in maintenance prompt work on every provider. On Amazon
+  Bedrock, Claude Platform on AWS, Google Cloud's Agent Platform and Microsoft Foundry — or with
+  feature-flag fetching turned off — both need Claude Code v2.1.248 or later. On earlier versions in
+  those cases, a prompt with no interval runs on a fixed 10-minute schedule, and a bare `/loop`
+  prints the usage message.
+</Callout>
+
+### The built-in maintenance prompt, and `loop.md`
+
+A bare `/loop` runs a built-in maintenance prompt at a dynamically chosen interval. Each iteration works through, in order: unfinished work from the conversation; the current branch's pull request (review comments, failed CI runs, merge conflicts); then cleanup passes such as bug hunts or simplification when nothing else is pending. It does not start new initiatives outside that scope, and irreversible actions such as pushing or deleting only proceed when they continue something the transcript already authorised.
+
+To replace that prompt with your own, write a `loop.md`:
+
+| Path                | Scope                                                            |
+| ------------------- | ---------------------------------------------------------------- |
+| `.claude/loop.md`   | Project-level. Takes precedence when both files exist.           |
+| `~/.claude/loop.md` | User-level. Applies in any project that does not define its own. |
+
+The file is plain Markdown with no required structure — write it as if you were typing the prompt. It defines the single default prompt for a bare `/loop`, not a list of tasks, and is ignored whenever you supply a prompt on the command line. Edits take effect on the next iteration, so you can refine instructions while a loop runs. Content beyond 25,000 bytes is truncated.
+
+### Listing, bounding and cancelling
+
+Ask in plain language — "what scheduled tasks do I have?", "cancel the deploy check job" — and Claude reaches for three tools:
+
+| Tool         | Purpose                                                                                             |
+| ------------ | --------------------------------------------------------------------------------------------------- |
+| `CronCreate` | Schedule a task: a 5-field cron expression, the prompt to run, and whether it recurs or fires once. |
+| `CronList`   | List all scheduled tasks with their IDs, schedules and prompts.                                     |
+| `CronDelete` | Cancel a task by ID.                                                                                |
+
+Each task has an 8-character ID, and a session can hold up to 50 tasks at once.
+
+Two mechanisms bound a loop you forget about. **Recurring tasks expire seven days after creation**: the task fires one final time, then deletes itself. And **starting a fresh conversation clears every session-scoped task** — `claude --resume` or `--continue` restores recurring tasks that have not expired and one-shot tasks whose time has not passed, but background Bash and monitor tasks are never restored.
+
+For a single fire, skip `/loop` and just say it: "remind me at 3pm to push the release branch", or "in 45 minutes, check whether the integration tests passed". Claude pins the time to a specific minute and hour and confirms when it will fire.
+
+### Timing you should not fight
+
+The scheduler checks every second for due tasks and enqueues them at low priority. A scheduled prompt fires **between turns**, never mid-response: if Claude is busy when a task comes due, it waits until the current turn ends. All times are local — `0 9 * * *` means 9am where you are, not UTC.
+
+Fires are also deliberately jittered so every session does not hit the API on the same wall-clock second. Recurring tasks fire up to 30 minutes after the scheduled time, or up to half the interval for tasks that run more often than hourly; one-shot tasks scheduled for the top or bottom of the hour fire up to 90 seconds early. The offset is derived from the task ID, so a task always gets the same one. If exact timing matters, pick a minute that is not `:00` or `:30` — `3 9 * * *` rather than `0 9 * * *` — and the one-shot jitter does not apply.
+
+`CronCreate` takes standard 5-field cron expressions — `minute hour day-of-month month day-of-week` — with wildcards, single values, steps (`*/15`), ranges (`1-5`) and lists (`1,15,30`):
+
+| Example        | Meaning                  |
+| -------------- | ------------------------ |
+| `*/5 * * * *`  | Every 5 minutes          |
+| `0 * * * *`    | Every hour on the hour   |
+| `0 9 * * 1-5`  | Weekdays at 9am local    |
+| `30 14 15 3 *` | March 15 at 2:30pm local |
+
+Day-of-week is `0` or `7` for Sunday through `6` for Saturday. Extended syntax — `L`, `W`, `?`, and name aliases such as `MON` or `JAN` — is not supported. When both day-of-month and day-of-week are constrained, a date matches if **either** field matches, following vixie-cron semantics.
+
+To turn the whole scheduler off, set `CLAUDE_CODE_DISABLE_CRON=1`: the cron tools and `/loop` become unavailable and already-scheduled tasks stop firing.
+
+## Hands-on lab
+
+<Callout>
+  `/loop` itself is a slash command in the interactive TUI, so it cannot be captured headlessly. The
+  second transcript below records the tools `/loop` drives — `CronCreate`, `CronList`, `CronDelete`
+  — in a real headless run, which is the part that proves a task was created and then cancelled.
+  Step 4 is what you type in the TUI; there is no transcript of it, deliberately.
+</Callout>
+
+<Lab
+  title="Lab · point a loop at a cheap, idempotent check"
+  repoTag="lesson/m17-01-start"
+  lessonId="en/l4-master/m17-autonomy/loop"
+  steps={[
+    'Clone the lab repo and check out the start tag: `git checkout lesson/m17-01-start`, then `npm ci`.',
+    'Write `scripts/loop-check.sh`: run `npm test` and `npm run typecheck`, print one line saying "green — nothing to do" and exit 0 when both pass, and exit non-zero only on a real regression. Run `bash scripts/loop-check.sh` and confirm it exits 0.',
+    'Confirm your script is a fair loop target: run it twice in a row and check the second run changes nothing and still exits 0.',
+    'In an interactive session in that directory, type `/loop 15m run bash scripts/loop-check.sh and reply in one line if it exits 0`. Claude confirms the cadence and an 8-character job ID.',
+    'Ask "what scheduled tasks do I have?", then "cancel that job", then ask again — the second listing must be empty. Leaving the loop running is the failure mode this lab is about.',
+    "Repeat step 5 headlessly to keep a record, driving the three tools directly: `claude -p \"Do exactly this, reporting each tool's raw result verbatim and nothing else: (1) call CronCreate with cron expression '*/5 * * * *', recurring, prompt 'run scripts/loop-check.sh and report whether it exited 0'; (2) call CronList; (3) call CronDelete on the id you just created; (4) call CronList again. Do not run any other tool.\" --allowedTools \"CronCreate,CronList,CronDelete\" --model sonnet --max-turns 8 --output-format text`.",
+  ]}
+  expected="loop-check.sh exits 0 and prints one green line. CronCreate reports a recurring job with an 8-character ID, marked session-only and auto-expiring after 7 days; after CronDelete, CronList reports 'No scheduled jobs.'"
+  checklist={[
+    '`bash scripts/loop-check.sh` exits 0 on a clean checkout',
+    'Running it twice changes nothing — it is idempotent',
+    '`/loop 15m …` confirmed a cadence and a job ID',
+    'The job was cancelled and the final listing is empty',
+    'Nothing scheduled survives the session you created it in',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/01-loop/01-loop-check.txt"
+    range="2-14"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/01-loop/02-cron-tools.txt"
+    range="2-11"
+  />
+</Lab>
+
+Read the `CronCreate` line closely: `Session-only (not written to disk, dies when Claude exits). Auto-expires after 7 days.` Both halves of the bounding story are in one sentence of real output — the task is not durable, and even if it were, seven days is its ceiling.
+
+## Anti-patterns
+
+**Looping something expensive.** A `/loop 5m` whose prompt rebuilds the project costs you a build every five minutes, plus a full turn of tokens, forever. _Fix:_ point the loop at a cheap check that exits fast and says "nothing to do", and let the check decide whether the expensive work is warranted.
+
+**A loop that cannot report "nothing happened".** If the target script exits non-zero when there is simply nothing new, every iteration looks like a failure and you stop reading them. _Fix:_ reserve non-zero for real regressions, as the lab's `loop-check.sh` does.
+
+**Using `/loop` for durable work.** "Run the nightly regression check" in a `/loop` runs only while that terminal is open, and dies at the seven-day expiry regardless. _Fix:_ a cloud routine (lesson 2) or a desktop scheduled task (lesson 4).
+
+**Walking away from a loop you never listed.** A forgotten fixed-interval loop keeps firing until you cancel it or seven days pass. _Fix:_ before you close the laptop, ask "what scheduled tasks do I have?" and cancel what you do not want; treat that as part of finishing, the way you would kill a background server.
+
+**Expecting catch-up.** A task whose time passes while Claude is on a long request fires once when Claude goes idle — not once per missed interval. _Fix:_ write prompts that reason from current state ("check whether CI is green now"), not from an assumed run count.
+
+**Fighting the jitter.** Scheduling a report for exactly `0 9 * * *` and then asking why it ran at 9:17. _Fix:_ accept the offset, or pick a minute that is not `:00` or `:30`.
+
+<Callout>
+  No superseded behaviour to flag here: `research/deprecations.md` lists nothing for scheduled tasks
+  as of Claude Code 2.1.263. Two capabilities are version-gated rather than changed —
+  `ScheduleWakeup` accepts `stop: true` from v2.1.202, and the self-paced interval and built-in
+  maintenance prompt need v2.1.248 on the providers named above.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/loop"
+  questionId="q1"
+  lang="en"
+  prompt="You type `/loop check whether CI passed` with no interval. What happens?"
+  options={[
+    {
+      text: 'Claude picks a delay between one minute and one hour after each iteration, based on what it saw.',
+      correct: true,
+      explanation:
+        'A self-paced loop: short waits while something is in flight, longer ones when nothing is pending, with the delay and its reason printed each iteration.',
+    },
+    {
+      text: 'The command fails, because the interval is required.',
+      explanation: 'Both arguments of /loop are optional.',
+    },
+    {
+      text: 'It runs once and stops.',
+      explanation:
+        'That would be a one-shot reminder, which you ask for in plain language instead.',
+    },
+    {
+      text: 'It defaults to every 5 minutes.',
+      explanation:
+        'There is no 5-minute default. The only fixed fallback is a 10-minute schedule, and only on providers or configurations below v2.1.248.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/loop"
+  questionId="q2"
+  lang="en"
+  prompt="Which statement about a `/loop` task's lifetime is correct?"
+  options={[
+    {
+      text: 'It is session-scoped, is restored by --resume if unexpired, and a recurring task expires 7 days after creation.',
+      correct: true,
+      explanation:
+        'Exactly — and the final fire happens before the task deletes itself, which bounds a forgotten loop.',
+    },
+    {
+      text: 'It is written to disk and keeps firing after you close the terminal.',
+      explanation:
+        'Session-scoped tasks are not durable; tasks only fire while Claude Code is running and idle.',
+    },
+    {
+      text: 'It runs forever until you cancel it.',
+      explanation: 'Recurring tasks expire after 7 days.',
+    },
+    {
+      text: 'Starting a new conversation keeps it, but --resume drops it.',
+      explanation:
+        'That is backwards: a fresh conversation clears tasks, and --resume restores unexpired ones.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/loop"
+  questionId="q3"
+  lang="en"
+  prompt="Both `.claude/loop.md` and `~/.claude/loop.md` exist, and you type a bare `/loop`. Which prompt runs?"
+  options={[
+    {
+      text: 'The project-level `.claude/loop.md`.',
+      correct: true,
+      explanation:
+        'Claude looks in both locations and uses the first it finds; the project file takes precedence.',
+    },
+    {
+      text: 'The user-level `~/.claude/loop.md`.',
+      explanation: 'The project file wins when both exist.',
+    },
+    {
+      text: 'Both, concatenated.',
+      explanation: 'loop.md defines one default prompt, not a list; only one file is used.',
+    },
+    {
+      text: 'The built-in maintenance prompt, because loop.md only applies with an explicit prompt.',
+      explanation:
+        'It is the opposite — loop.md is ignored when you supply a prompt on the command line.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/loop"
+  questionId="q4"
+  lang="en"
+  prompt="A scheduled task comes due while Claude is halfway through a long tool call. What does the scheduler do?"
+  options={[
+    {
+      text: 'Queues it and fires it once the current turn ends.',
+      correct: true,
+      explanation:
+        'Scheduled prompts fire between turns at low priority — never mid-response — and there is no catch-up for intervals missed while Claude was busy.',
+    },
+    {
+      text: 'Interrupts the current turn and runs the prompt immediately.',
+      explanation: 'Nothing interrupts a turn in progress.',
+    },
+    {
+      text: 'Fires it once per missed interval when Claude goes idle.',
+      explanation: 'There is deliberately no catch-up: it fires once.',
+    },
+    {
+      text: 'Drops it silently and waits for the next scheduled time.',
+      explanation: 'It waits for the turn to end rather than being dropped.',
+    },
+  ]}
+/>
+
+**Next:** `02-routines` moves the same idea off your machine — cloud routines that keep running when the laptop is shut, triggered by cron, an HTTP call or a GitHub event.

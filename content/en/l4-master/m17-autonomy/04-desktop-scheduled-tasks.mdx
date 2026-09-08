@@ -1,0 +1,252 @@
+---
+title: 'Scheduled tasks in the desktop app'
+description: 'Local scheduled tasks run on your machine with your real files: how to create one, what the schedule presets offer, how missed runs are caught up, how permissions are saved per task, and where the task lives on disk.'
+level: 4
+module: 'm17-autonomy'
+order: 4
+duration_min: 10
+difficulty: core
+tags: ['autonomy', 'desktop', 'scheduling', 'permissions']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Schedule recurring tasks in Claude Code Desktop'
+    url: 'https://code.claude.com/docs/en/desktop-scheduled-tasks.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Use Claude Code Desktop'
+    url: 'https://code.claude.com/docs/en/desktop.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Automate work with routines'
+    url: 'https://code.claude.com/docs/en/routines.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Connect Claude Code to tools via MCP'
+    url: 'https://code.claude.com/docs/en/mcp.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Create a local scheduled task in the desktop app and pick the right schedule preset — or ask for an interval the presets do not offer.
+- Predict what happens when your machine is asleep at the scheduled time, and write a prompt that survives it.
+- Set up a task's permissions so a run does not stall waiting for approval you are not there to give.
+- Find, edit and delete a task's on-disk `SKILL.md`, and say which settings are _not_ in that file.
+- Choose between a local task and a cloud routine for a given job.
+
+**Prerequisites.** Lesson 2 (routines), and Claude Code Desktop 1.1.5368 or later — local scheduled tasks are not available on earlier builds.
+
+<WhenNotToUse>
+  A local task fires only while the desktop app is running and the computer is awake, so it is the
+  wrong home for anything that must happen on time regardless — a cloud routine is. It is also wrong
+  when the work does not need your machine at all: if the task clones a repo and opens a PR, running
+  it locally buys you nothing but a dependency on your laptop's lid. And it is wrong in Manual
+  permission mode for a job that touches tools you have not pre-approved, because the run will
+  simply sit there waiting for you.
+</WhenNotToUse>
+
+## Concept
+
+### Local task or cloud routine
+
+The desktop app's **Routines** page creates both. **New routine → Local** makes a scheduled task that runs on your machine with direct access to your files and tools; **New routine → Cloud** makes the routine from lesson 2, which runs with your computer off and can fire on API calls or GitHub events too.
+
+|                       | Cloud routine                  | Desktop task                | `/loop`               |
+| --------------------- | ------------------------------ | --------------------------- | --------------------- |
+| Requires machine on   | No                             | Yes                         | Yes                   |
+| Requires open session | No                             | No                          | Yes                   |
+| Access to local files | No (fresh clone)               | Yes                         | Yes                   |
+| MCP servers           | Connectors configured per task | Config files and connectors | Inherits from session |
+| Permission prompts    | No (runs autonomously)         | Configurable per task       | Inherits from session |
+| Minimum interval      | 1 hour                         | 1 minute                    | 1 minute              |
+
+The local task is the only one of the three that combines "no open session" with "your real working directory" — which is exactly its use and exactly its risk.
+
+### Creating one
+
+In the **Code** tab, click **Routines** in the sidebar (or in the sidebar's **More** menu), then **New routine → Local**. Four fields:
+
+| Field        | Description                                                                                                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Name         | Converted to lowercase kebab-case and used as the folder name on disk. Must be unique across your tasks.                                                                 |
+| Description  | Short summary shown in the task list.                                                                                                                                    |
+| Instructions | What Claude should do. The input carries pickers for the permission mode and model, and below it you pick the working folder and whether to run in an isolated worktree. |
+| Schedule     | How often it runs — see the presets below.                                                                                                                               |
+
+A folder is required before you can save, and Desktop asks you to trust it first if you have not. You can also just say it in any session: "set up a daily code review that runs every morning at 9am" creates a recurring task, and "remind me at 3pm tomorrow to check the deploy" creates a one-time task that disables itself after firing.
+
+By default a task runs against whatever state your working directory is in, **uncommitted changes included**. Enable the worktree toggle when you create it and each run gets its own isolated Git worktree instead.
+
+The presets are **Manual** (no schedule — only **Run now**), **Hourly**, **Daily** (time picker, default 9:00 AM local), **Weekdays** (Daily minus the weekend) and **Weekly** (time and day picker). For anything else — every 15 minutes, the first of each month, a single run at a future time — ask Claude in any Desktop session in plain language: "schedule a task to run all the tests every 6 hours."
+
+Here is this lesson's worked example prompt, written for a task that may fire at an unexpected hour:
+
+```text
+Review the commits pushed to this repository today and post a three-bullet summary in the
+session. Only look at today's commits. If it is after 5pm, skip the review and just list
+what was missed. Never push, never edit files.
+```
+
+### How they run, and what happens when the machine sleeps
+
+Desktop checks the schedule every minute while the app is open, and starts a fresh session when a task is due, independent of any manual sessions. Each task gets a small deterministic delay of a few minutes to stagger API traffic. When it fires you get a desktop notification and a new session under a **Scheduled** section in the sidebar; open it to see the work, review changes, or answer permission prompts. Claude can edit files, run commands, commit and open pull requests exactly as in a session you started — but a scheduled session cannot send or receive messages between desktop sessions.
+
+Tasks only run while the app is running and the computer is awake; a machine asleep through the scheduled time simply skips. **Keep computer awake** in Settings → Desktop app → General prevents idle sleep, but closing the lid still sleeps the machine.
+
+Missed runs are then caught up, conservatively: on app start or wake, Desktop checks whether each task missed any runs in the last seven days, and if so starts **exactly one** catch-up run for the most recently missed time, discarding anything older, with a notification. A daily task that missed six days runs once. This is why the prompt above pins itself to "today's commits" and branches on the hour — a 9am task can execute at 11pm.
+
+### Permissions, saved per task
+
+Each task carries its own permission mode, set when you create or edit it, and allow rules from `~/.claude/settings.json` apply to scheduled sessions too. A task in Manual mode that needs an unapproved tool **stalls** until you approve it — the session waits in the sidebar for you.
+
+The documented way to avoid that: click **Run now** after creating the task, watch for prompts, and choose "always allow" for each. Future runs auto-approve the same tools, and you can review or revoke those approvals from the task's detail page. MCP tools marked `requiresUserInteraction` are the exception — they prompt on every call with no always-allow option, so a run that calls one stalls every time.
+
+### Managing tasks, and the file on disk
+
+Click a task in the **Routines** list to open its detail page: **Run now**; **Status** to toggle Active/Paused; **Edit**; **Review history**, which lists every past run including skipped ones (hover a skipped entry for the reason — asleep, previous run still going, or other tasks already running); **Review allowed permissions** in the **Always allowed** panel; and **Delete**, which archives the sessions the task created and offers an **Also delete files on disk** checkbox.
+
+You can also ask in any Desktop session — "pause my dependency-audit task", "show me my scheduled tasks" — though deleting is done from the detail page's button. A running task can even change its own schedule or prompt with the `update_scheduled_task` MCP tool, which is how a task reschedules itself based on what it finds.
+
+The prompt itself lives at `~/.claude/scheduled-tasks/<task-name>/SKILL.md` (or under `CLAUDE_CONFIG_DIR` if set): YAML frontmatter for `name` and `description`, prompt as the body, changes taking effect on the next run. **Schedule, folder, model and enabled state are not in that file** — change those through the Edit form or by asking Claude.
+
+## Hands-on lab
+
+<Callout>
+  Everything in this lesson happens in the desktop app's UI, which cannot be captured as a terminal
+  transcript — so the steps below are a walkthrough from the official documentation, and the one
+  transcript is the part that *is* checkable from a shell: the on-disk location, and the proof that
+  nothing was left scheduled after this module's exercises.
+</Callout>
+
+<Lab
+  title="Lab · one local task, created, watched and removed"
+  repoTag="none"
+  lessonId="en/l4-master/m17-autonomy/desktop-scheduled-tasks"
+  steps={[
+    'In Claude Code Desktop, Code tab → Routines → New routine → Local.',
+    'Name it `lab-daily-summary`, set Instructions to the worked example prompt above, pick your lab checkout as the folder, and enable the worktree toggle so the run cannot touch your uncommitted work.',
+    'Set Schedule to Daily and pick a time a few minutes from now, so you can watch a real fire.',
+    'Click Run now, and approve each permission prompt with "always allow" so a later unattended run does not stall.',
+    'When it fires, open the Scheduled session in the sidebar and read what Claude did.',
+    'From a terminal, look at the task on disk: `cat ~/.claude/scheduled-tasks/lab-daily-summary/SKILL.md` — the frontmatter carries only `name` and `description`, and the body is your prompt.',
+    'Delete the task from its detail page, ticking "Also delete files on disk", then confirm from the terminal that `~/.claude/scheduled-tasks/` no longer holds it. Leaving a scheduled agent behind after an exercise is the failure this step exists to prevent.',
+  ]}
+  expected="The task fires within a minute or two of its scheduled time, a Scheduled session appears in the sidebar, ~/.claude/scheduled-tasks/lab-daily-summary/SKILL.md contains your prompt, and after deletion neither the task nor its folder remains."
+  checklist={[
+    'The task ran in an isolated worktree, not your working tree',
+    'Every tool it needed was approved with "always allow" during Run now',
+    'The prompt still makes sense if the run happens hours late',
+    'The on-disk SKILL.md held the prompt but not the schedule',
+    'The task was deleted, files included, before you left',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/04-desktop-scheduled-tasks/01-nothing-left-scheduled.txt"
+    range="2-4"
+  />
+</Lab>
+
+That capture is deliberately boring: `False` means the machine that wrote this module never had a `~/.claude/scheduled-tasks` directory at all, and no cron task was written to disk by lesson 1's `/loop` work. It is the check to run at the end of any autonomy session — the one thing worse than a task that never fires is one you forgot you created.
+
+## Anti-patterns
+
+**A prompt that assumes it ran on time.** "Summarise the last hour's commits" is wrong when the catch-up run fires at 11pm for a 9am slot. _Fix:_ pin the prompt to an absolute window and branch on the current time, as the worked example does.
+
+**Manual mode plus an unattended schedule.** The run stalls at the first unapproved tool and sits there. _Fix:_ **Run now** once, always-allow what it needs, and review those approvals later on the detail page.
+
+**Running against a dirty working tree.** The default is whatever state your directory is in, uncommitted changes included, so a scheduled refactor can collide with what you are half-way through. _Fix:_ enable the worktree toggle.
+
+**Using a local task for something that must be on time.** Lids close and machines sleep. _Fix:_ a cloud routine for anything the business depends on.
+
+**Editing `SKILL.md` and expecting the schedule to change.** The file holds the prompt, `name` and `description` — nothing else. _Fix:_ change schedule, folder, model and enabled state in the Edit form or by asking Claude.
+
+**Deleting the task but not its files.** Delete without the checkbox leaves `~/.claude/scheduled-tasks/<name>/` behind. _Fix:_ tick **Also delete files on disk**, then verify from a shell.
+
+<Callout>
+  Nothing on this page is superseded behaviour — `research/deprecations.md` carries no desktop
+  scheduled-task entry as of Claude Code 2.1.263. One availability gate is worth remembering
+  instead: on Claude Desktop before 1.1.5368, local scheduled tasks do not exist.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/desktop-scheduled-tasks"
+  questionId="q1"
+  lang="en"
+  prompt="Your daily 9am task missed six days because the laptop was shut. You open the lid. What happens?"
+  options={[
+    {
+      text: 'Exactly one catch-up run starts, for the most recently missed time; everything older is discarded.',
+      correct: true,
+      explanation:
+        'Desktop looks back seven days, runs once, and notifies you that a catch-up started.',
+    },
+    {
+      text: 'Six runs are queued and executed in order.',
+      explanation: 'Nothing is queued per missed slot — only one catch-up run happens.',
+    },
+    {
+      text: 'Nothing runs; the task waits for the next 9am.',
+      explanation: 'There is a catch-up mechanism, bounded to one run.',
+    },
+    {
+      text: 'The task is disabled until you re-enable it.',
+      explanation: 'Missed runs do not disable a task.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/desktop-scheduled-tasks"
+  questionId="q2"
+  lang="en"
+  prompt="Which of these is NOT stored in `~/.claude/scheduled-tasks/<task-name>/SKILL.md`?"
+  options={[
+    {
+      text: 'The schedule.',
+      correct: true,
+      explanation:
+        'Schedule, folder, model and enabled state live outside the file — change them in the Edit form or by asking Claude.',
+    },
+    { text: 'The prompt.', explanation: 'The prompt is the file’s body.' },
+    { text: 'The task name.', explanation: '`name` is one of the two frontmatter fields.' },
+    { text: 'The description.', explanation: '`description` is the other frontmatter field.' },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/desktop-scheduled-tasks"
+  questionId="q3"
+  lang="en"
+  prompt="A task in Manual permission mode fires while you are away and needs a tool it has no permission for. What happens?"
+  options={[
+    {
+      text: 'The run stalls and the session stays open in the sidebar until you approve it.',
+      correct: true,
+      explanation:
+        'Which is why the docs recommend Run now plus "always allow" for each tool before relying on the schedule.',
+    },
+    {
+      text: 'The tool call is denied and the run continues without it.',
+      explanation: 'It waits rather than denying.',
+    },
+    {
+      text: 'The task falls back to the permission mode in ~/.claude/settings.json.',
+      explanation: 'Allow rules from that file apply, but the task’s own mode is not replaced.',
+    },
+    {
+      text: 'The run is cancelled and retried at the next scheduled time.',
+      explanation: 'The session stays open so you can answer later.',
+    },
+  ]}
+/>
+
+**Next:** `05-monitors-and-channels` closes the module with observability — watching work as it happens, and letting the outside world push events into a session that is already open.

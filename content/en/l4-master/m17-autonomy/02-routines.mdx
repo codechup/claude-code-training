@@ -1,0 +1,320 @@
+---
+title: 'Routines: cron, one-off, API and GitHub triggers'
+description: 'Routines run Claude Code on Anthropic-managed cloud infrastructure with no session open: a saved prompt, repositories and connectors, started by a schedule, an authenticated POST to /fire, or a GitHub event.'
+level: 4
+module: 'm17-autonomy'
+order: 2
+duration_min: 20
+difficulty: core
+tags: ['autonomy', 'routines', 'scheduling', 'github', 'api']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Automate work with routines'
+    url: 'https://code.claude.com/docs/en/routines.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run prompts on a schedule'
+    url: 'https://code.claude.com/docs/en/scheduled-tasks.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Cloud environments'
+    url: 'https://code.claude.com/docs/en/cloud-environments.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Connect Claude Code to tools via MCP'
+    url: 'https://code.claude.com/docs/en/mcp.md'
+    verified_at: 2026-09-07
+  - type: repo
+    title: 'codechup/claude-code-lab — the course lab repository'
+    url: 'https://github.com/codechup/claude-code-lab'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m17-02-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Say what a routine is — a saved prompt, repositories, an environment and connectors — and where it runs.
+- Attach each of the three trigger types: a schedule (recurring or one-off), an API endpoint, and a GitHub event with filters.
+- Fire a routine over HTTP with a bearer token and explain how the `text` payload reaches the run.
+- Write a routine prompt that is safe to run unattended, because a routine has no permission prompts at all.
+- Manage routines from the CLI with `/schedule`, and diagnose the common "Unknown command" failure.
+
+**Prerequisites.** Lesson 1 (`/loop`), a claude.ai account on Pro, Max, Team or Enterprise, and the Claude GitHub App if you want a GitHub trigger. Routines are in **research preview**: behaviour, limits and the API surface may change.
+
+<WhenNotToUse>
+  A routine runs in the cloud against a fresh clone, with no permission prompts and every connector
+  you leave attached — so it is the wrong home for anything that needs your local files, your local
+  MCP servers, or a human's judgement mid-run. It is also the wrong tool below an hour: the minimum
+  schedule interval is one hour, and expressions that run more often are rejected. And if the work
+  is already a CI job triggered by a push, GitHub Actions is the simpler place for it; a routine
+  earns its keep when the trigger is a clock, an alert, or a repository event your pipeline does not
+  cover.
+</WhenNotToUse>
+
+## Concept
+
+### What a routine is
+
+A routine is a saved Claude Code configuration — a prompt, one or more repositories, a cloud environment and a set of connectors — packaged once and run automatically. Routines execute on Anthropic-managed cloud infrastructure, or on your organisation's self-hosted environment when routed there, so they keep working with your laptop shut.
+
+They are available on Pro, Max, Team and Enterprise plans, and you create and manage them at `claude.ai/code/routines`, in the Desktop app's **Code** tab, or from the CLI with `/schedule` (also available as `/routines`). All three surfaces write to the same cloud account. Team and Enterprise Owners can disable routines org-wide with the **Routines** toggle in admin settings, which stops existing routines and blocks new ones.
+
+Two properties shape everything else in this lesson:
+
+- **Routines run autonomously.** There is no permission-mode picker and no approval prompts during a run. The session can run shell commands, use skills committed to the cloned repository, and call any connector you included.
+- **Routines act as you.** They belong to your individual claude.ai account, are not shared with teammates, and count against your account's daily run allowance. Commits and pull requests carry your GitHub user; Slack messages or Linear tickets use your linked accounts.
+
+That is the whole guardrail story: what a routine can reach is decided by the repositories you select, the environment's network access and variables, and the connectors you leave attached. Scope each to what the routine actually needs.
+
+### The three triggers
+
+A routine can carry any combination of triggers, added or removed at any time from the **Select a trigger** section of its edit form.
+
+| Trigger      | Starts the routine when                                                                          |
+| ------------ | ------------------------------------------------------------------------------------------------ |
+| **Schedule** | A recurring cadence comes due — hourly, daily, weekdays, weekly — or a one-off timestamp arrives |
+| **API**      | Someone POSTs to the routine's per-routine endpoint with its bearer token                        |
+| **GitHub**   | A pull request or release event matches on a connected repository                                |
+
+**Schedules.** Times are entered in your local zone and converted, so the routine runs at that wall-clock time wherever the infrastructure sits. Runs may start a few minutes late due to a stagger that is consistent per routine. For an interval the presets do not offer — every two hours, the first of each month — pick the closest preset and then run `/schedule update` in the CLI to set a cron expression. The minimum interval is one hour; anything more frequent is rejected. A one-off schedule fires once, then auto-disables and shows as **Ran**; one-off runs do not count against the daily routine cap.
+
+**API triggers.** POSTing to the routine's `/fire` endpoint starts a new session and returns its URL. The body takes an optional `text` field for run-specific context — an alert body, a failing log. It is freeform: send JSON and the routine receives it as a literal string.
+
+<CodeBlock title="fire a routine (the trigger id is a placeholder; the token comes from the environment)">
+
+```bash
+curl -X POST https://api.anthropic.com/v1/claude_code/routines/trig_01ABCDEFGHJKLMNOPQRSTUVW/fire \
+  -H "Authorization: Bearer $CLAUDE_ROUTINE_TOKEN" \
+  -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
+  -H "anthropic-version: 2023-06-01" \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Sentry alert SEN-4521 fired in prod. Stack trace attached."}'
+```
+
+</CodeBlock>
+
+A success returns the new session's ID and URL:
+
+```json
+{
+  "type": "routine_fire",
+  "claude_code_session_id": "session_01HJKLMNOPQRSTUVWXYZ",
+  "claude_code_session_url": "https://claude.ai/code/session_01HJKLMNOPQRSTUVWXYZ"
+}
+```
+
+The token is generated after the routine is saved, shown **once**, and cannot be retrieved later — store it in your alerting tool's secret store, and rotate or revoke it from the same modal. The endpoint ships under the `experimental-cc-routine-2026-04-01` beta header while routines are in research preview; breaking changes ship behind new dated header versions, and the two most recent previous versions keep working.
+
+The security detail worth memorising: **`text` does not reach the routine as instructions.** It arrives wrapped in a `<routine-fire-payload>` block labelled as untrusted data, with Claude told not to follow instructions inside it unless the routine's own prompt says to. So a routine that should act on the payload must opt in — "Investigate the alert described in the routine-fire-payload block" — otherwise the text is inert context. The same wrapping applies to text supplied with **Run now**.
+
+**GitHub triggers.** The Claude GitHub App must be installed on the repository, whichever surface you configure from. Two event categories are supported, and within each you pick a specific action or all of them:
+
+| Event        | Triggers when                                                                 |
+| ------------ | ----------------------------------------------------------------------------- |
+| Pull request | A PR is opened, closed, assigned, labeled, synchronized, or otherwise updated |
+| Release      | A release is created, published, edited, or deleted                           |
+
+Pull-request filters narrow which PRs start a session; **all** conditions must match. The fields are author, title, body, base branch, head branch, labels, is-draft and is-merged, each paired with an operator: equals, contains, starts with, is one of, is not one of, or matches regex. `matches regex` tests the **entire** field, so use `.*hotfix.*` to match a title containing `hotfix`, or use `contains` instead.
+
+Claude Code does not reuse sessions across events: two PR updates produce two independent sessions. During the research preview, webhook events are subject to per-routine and per-account hourly caps, and events beyond the limit are dropped until the window resets.
+
+### Repositories, branches and connectors
+
+Each repository is cloned on every run, starting from its default branch unless the prompt says otherwise. Claude pushes to branches prefixed `claude/`, which are always accepted. When your prompt directs a push elsewhere, Claude Code checks first and rejects it if the branch is protected, if someone else has an open PR from it, or if it carries commits authored by someone other than you.
+
+Connectors are the claude.ai integrations on your account — MCP servers you added locally with `claude mcp add` live on your machine and do not appear. All connected connectors are included by default when you create a routine; remove the ones it does not need, because Claude can use every tool from an included connector, **writes included**, without asking during a run. A server declared in a committed `.mcp.json` travels with the clone instead.
+
+The environment controls network access, environment variables and the setup script. The **Default** environment uses **Trusted** access, allowing only the default allowlist; requests to other hosts fail with `403` and `x-deny-reason: host_not_allowed`. Connector traffic routes through Anthropic's servers, so connectors work without allowlist changes.
+
+### Managing routines from the CLI
+
+`/schedule` creates scheduled routines conversationally, and takes a description directly: `/schedule daily PR review at 9am`, or a one-off like `/schedule in 2 weeks, open a cleanup PR that removes the feature flag`. Then `/schedule list`, `/schedule update` and `/schedule run`. You can also ask about history — "why did my nightly review do nothing this morning?" — and Claude lists recent runs with status and links, and reads a run's log to explain tool errors, permission denials and the final result (v2.1.227 or later). Adding a GitHub trigger from the CLI needs v2.1.225 or later; API triggers must be added on the web, since the CLI cannot create or revoke tokens.
+
+If `/schedule` goes missing, the cause is almost always authentication: routines require a claude.ai subscription login. The command menu shows `No commands match "/schedule"` while you type, and submitting it returns `Unknown command: /schedule` — with one exception. Authenticated with a **Console API key**, or with an **Anthropic profile** that has feature-flag fetching enabled, you get a different message instead: `/schedule is available with Claude for Enterprise — ask your admin about migrating from API-key access`. A cloud-provider login such as Bedrock, Google Cloud's Agent Platform or Microsoft Foundry still gives you `Unknown command`. `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` and `apiKeyHelper` take precedence over a claude.ai login, so remove them first; a profile or federation credential takes precedence too. The remaining causes are being inside a Claude Code on the web session, an organisation policy disabling Claude Code on the web, or an Owner having turned routines off.
+
+### Reading a run
+
+A green status in the run list means the session started and exited without an infrastructure error. **It does not mean the task succeeded.** Blocked network requests, missing connector tools and task-level failures all show up inside the run, not in the status dot. Open the run — it is a full session — to read what Claude actually did.
+
+## Hands-on lab
+
+<Callout>
+  Creating a routine happens in the claude.ai web form, the Desktop app or an interactive
+  `/schedule` conversation, none of which can be captured headlessly — and a course must not leave a
+  scheduled agent running on a reader's account. So this lab builds and reviews the half of a
+  routine that lives in your repository, and the steps that create the routine are given as a step
+  list from the official documentation, with no transcript.
+</Callout>
+
+<Lab
+  title="Lab · write the repo-side half of a nightly routine"
+  repoTag="lesson/m17-02-start"
+  lessonId="en/l4-master/m17-autonomy/routines"
+  steps={[
+    'Check out `lesson/m17-02-start` in the lab repo.',
+    'Create `routines/nightly-regression-check.md` describing one routine: its trigger (cron, nightly at 03:00 UTC), the exact prompt, the tools it may use, why it is a routine rather than a `/loop`, and the failure mode it guards against.',
+    'Write the prompt so it is safe with no permission prompts: it may read, run the check and open one issue; it may not push a fix or edit files; and it must stay silent when the check is green.',
+    'Have Claude audit your own brief: `claude -p "Read routines/nightly-regression-check.md. In English, list (a) every capability the routine\'s prompt grants, (b) every action it explicitly withholds, and (c) the one line that stops it becoming noise. Be terse: three short bullet groups, no preamble." --allowedTools Read --model sonnet --max-turns 4 --output-format text`.',
+    "Create the routine at claude.ai/code/routines: New routine → name and prompt (paste the brief's prompt) → select the repository → keep the Default environment → Select a trigger → Schedule → Daily → set the time → remove every connector the prompt does not need → Create.",
+    'Click **Run now**, open the run session, and read what Claude actually did — do not trust the green dot.',
+    'Delete the routine when you are done with it. A course exercise must not leave a scheduled agent running on your account.',
+  ]}
+  expected="The brief names one trigger, one prompt, an explicit tool list and an explicit refusal to push. The audit run reproduces those three lists from the file alone — if it cannot, the prompt is too vague to run unattended."
+  checklist={[
+    'The routine brief lives next to the repo it targets',
+    'The prompt grants only what the job needs, and says what it must not do',
+    'The prompt stays silent on success, so its output stays worth reading',
+    'The audit run confirms the grants and refusals from the file alone',
+    'Any routine you created for this lab has been deleted',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/02-routines/01-routine-brief-review.txt"
+    range="2-14"
+  />
+</Lab>
+
+Notice what the audit gives you: the grants, the refusals and the anti-noise line all read back out of the file alone, with no one to ask. That is the test a routine prompt has to pass — if a fresh session cannot reconstruct what the routine may and may not do from the text you saved, neither can the unattended run.
+
+## Anti-patterns
+
+**A vague prompt.** A routine has no one to ask. "Improve the codebase" produces a different, unreviewable run every night. _Fix:_ write a self-contained prompt that states the task, the evidence of success, and what must not change.
+
+**Leaving every connector attached.** Every included connector's tools — writes included — are available with no approval during the run. _Fix:_ remove the ones the routine does not need, at creation and at every edit.
+
+**Trusting the green status.** A run that started and exited cleanly still shows green after a blocked network call did nothing useful. _Fix:_ open the run and read the transcript before you believe it.
+
+**Treating fire text as instructions.** Anyone holding the bearer token can send `text`. If your prompt is written to "do what the payload says", a leaked token is a remote-code-execution primitive. _Fix:_ keep the routine's own prompt authoritative and reference the payload as data to investigate.
+
+**Posting on success.** A routine that reports "all good" every night trains the whole team to ignore it, so the one night it says something real gets ignored too. _Fix:_ stay silent when there is nothing to report.
+
+**Expecting sub-hourly schedules.** The minimum interval is one hour, and more frequent expressions are rejected. _Fix:_ use `/loop` inside a session, a desktop task, or a CI schedule for anything faster.
+
+<Callout variant="changed">
+  A fired routine now receives its saved prompt as its assigned task. Before v2.1.213 the same
+  prompt arrived framed as an untrusted background notification, and the session could refuse to act
+  on it. Verified against `routines.md` for Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/routines"
+  questionId="q1"
+  lang="en"
+  prompt="Your alerting tool POSTs to a routine's /fire endpoint with a `text` body containing an attacker-controlled log line. What happens to that text?"
+  options={[
+    {
+      text: 'It arrives wrapped in a <routine-fire-payload> block labelled untrusted, and the routine only acts on it if its own saved prompt says to.',
+      correct: true,
+      explanation:
+        'That wrapping is why a leaked bearer token cannot turn fire text into direct instructions.',
+    },
+    {
+      text: 'It replaces the routine’s saved prompt for that run.',
+      explanation: 'The saved prompt is always the routine’s task; text is extra context.',
+    },
+    {
+      text: 'It is parsed as JSON and merged into the routine configuration.',
+      explanation: 'The value is freeform and is not parsed — JSON arrives as a literal string.',
+    },
+    {
+      text: 'It is ignored entirely; /fire takes no body.',
+      explanation: 'The optional `text` field exists precisely for run-specific context.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/routines"
+  questionId="q2"
+  lang="en"
+  prompt="You need a routine to run every 20 minutes. What does the documentation say?"
+  options={[
+    {
+      text: 'Not possible — the minimum routine interval is one hour, and more frequent expressions are rejected.',
+      correct: true,
+      explanation:
+        'For faster cadences use /loop in a session or a desktop scheduled task (1-minute minimum).',
+    },
+    {
+      text: 'Pick the hourly preset, then set */20 with /schedule update.',
+      explanation:
+        '/schedule update sets custom cron expressions, but anything under an hour is rejected.',
+    },
+    {
+      text: 'Add three schedule triggers 20 minutes apart.',
+      explanation: 'Each trigger is still bound by the same one-hour minimum.',
+    },
+    {
+      text: 'Use an API trigger and a cron job on your laptop.',
+      explanation:
+        'That technically works, but it reintroduces the machine dependency routines exist to remove — and the doc’s answer to sub-hourly work is /loop or a desktop task.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/routines"
+  questionId="q3"
+  lang="en"
+  prompt="`/schedule` returns `Unknown command: /schedule` in your terminal. Which cause is consistent with that exact message?"
+  options={[
+    {
+      text: 'You are logged in through a cloud provider such as Bedrock, Google Cloud’s Agent Platform or Microsoft Foundry.',
+      correct: true,
+      explanation:
+        'Routines require a claude.ai login, and a cloud-provider login gives you exactly this message. A Console API key or an Anthropic profile with feature-flag fetching enabled produces a different one: “/schedule is available with Claude for Enterprise — ask your admin about migrating from API-key access”.',
+    },
+    {
+      text: 'Your Claude Code install is out of date and needs an update.',
+      explanation:
+        'Version matters for CLI GitHub triggers and run history, not for the command existing at all.',
+    },
+    {
+      text: 'You have no routines yet, so the command is hidden.',
+      explanation: 'The command is how you create the first one.',
+    },
+    {
+      text: 'You are not inside a git repository.',
+      explanation:
+        'Routines select repositories from your GitHub account, not from your working directory.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/routines"
+  questionId="q4"
+  lang="en"
+  prompt="Which statement about permissions during a routine run is correct?"
+  options={[
+    {
+      text: 'There is no permission-mode picker and no prompts: the run is bounded by the repositories, environment and connectors you attached.',
+      correct: true,
+      explanation:
+        'That is why scoping connectors and network access at creation time is the real guardrail.',
+    },
+    {
+      text: 'It runs in plan mode until you approve the plan on the web.',
+      explanation: 'Nobody is there to approve anything; runs are autonomous.',
+    },
+    {
+      text: 'It inherits the permission mode of the session that created it.',
+      explanation: 'Routines are cloud sessions of their own and inherit no local session state.',
+    },
+    {
+      text: 'It asks for approval only for writes through connectors.',
+      explanation:
+        'Claude can use every tool of an included connector, writes included, without asking.',
+    },
+  ]}
+/>
+
+**Next:** `03-goal` keeps a session running toward a condition instead of a clock — and shows what happens when the condition can never be met.

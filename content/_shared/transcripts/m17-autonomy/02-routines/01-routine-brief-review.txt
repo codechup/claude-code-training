@@ -1,0 +1,14 @@
+# Captured 2026-09-08, Claude Code 2.1.263, in the lab repo on tag lesson/m17-02-solution: claude -p "Read routines/nightly-regression-check.md. In English, list (a) every capability the routine's prompt grants, (b) every action it explicitly withholds, and (c) the one line that stops it becoming noise. Be terse: three short bullet groups, no preamble." --settings <a one-key file setting "language": "English"> --allowedTools Read --model sonnet --max-turns 4 --output-format text — verbatim stdout; a workspace-trust warning naming a local path was deleted from the top. The --settings override is only there because the capturing machine's user settings ask for Turkish.
+**Grants:**
+- `git pull`, run `scripts/loop-check.sh`
+- `gh issue create` (file a regression issue on non-zero exit)
+- `gh issue list` (check for an already-open duplicate before filing)
+
+**Withholds:**
+- No pushing fixes
+- No editing files
+- No action at all on success (exit 0 → silence)
+
+**Anti-noise line:**
+"If it exits 0, do nothing — a routine that posts 'all good' every night trains everyone to ignore it."
+exit=0

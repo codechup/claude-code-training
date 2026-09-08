@@ -2,7 +2,7 @@
 id: P34
 title: "L4 Master module: Autonomy (m17-autonomy)"
 milestone: M2
-status: in_progress
+status: review
 owner: lead-fable
 branch: plan/34-l4-m17-autonomy
 model_hint: opus
@@ -15,8 +15,12 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T19:26:13Z
-open_questions: []
+updated_at: 2026-09-07T23:36:13Z
+open_questions:
+  - 'research/feature-inventory.md has no rows for /loop, /goal, Monitor, ScheduleWakeup, channels or desktop scheduled tasks — only the doc-slug map (lines 11, 15) names them, and the Routines row (line 45) is a one-line summary that misses the /schedule "Unknown command" nuance the fact-checker caught. This module was therefore written entirely from live doc fetches (2026-09-07), which content.md §6 allows, but it makes this plan''s "no discrepancy against the inventory" acceptance criterion unfalsifiable. P03 owns research/ — backfill rows for these six areas.'
+  - 'Three labs in this module cannot be captured end to end and say so inline: routine creation (02) is a claude.ai/Desktop web form, the desktop scheduled task (04) is entirely the Desktop app UI, and installing/pairing a channel (05) needs Bun plus a third-party bot token. Those halves are taught as step lists from the official docs with no transcript, per the brief. A future plan with access to the Desktop app could capture 04 for real.'
+  - 'The Git Bash / MSYS_NO_PATHCONV=1 behaviour in 03-goal.mdx is observed in this session''s own transcript, not documented in goal.md or headless.md. It is presented as a shell quirk, explicitly not as Claude Code behaviour. Worth re-checking if a Windows-shells page ever lands in the docs.'
+  - 'e2e/lesson.spec.ts (P04/P12) is still hardcoded to the M0 lesson, so this plan verified accessibility with a temporary playwright.p34.config.ts (port 4434) and e2e/p34-m17.spec.ts, both deleted afterwards — the same workaround P19 recorded. Generalising that spec would remove the need.'
 ---
 
 ## Goal
@@ -98,5 +102,21 @@ A reviewer opens `npm run dev`, visits each of the 5 lessons at `/en/l4-master/m
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+Executed by session `opus-p34-2026-09-07` in worktree `../cct-wt-34`.
+
+**Written.** Five EN lessons under `content/en/l4-master/m17-autonomy/` plus five `draft: true` TR stubs at mirrored slugs, and nine transcripts under `content/_shared/transcripts/m17-autonomy/`.
+
+**Slug drift from this plan's Deliverables list.** `docs/CURRICULUM.md` §2 wins (Steps §1), and it names shorter slugs than this plan's deliverable list did. Written as: `01-loop`, `02-routines`, `03-goal`, `04-desktop-scheduled-tasks`, `05-monitors-and-channels` — not `01-loop-command`, `02-routines-cron-api-github-triggers`, `03-goal-command`, `05-monitors`. Lesson 5 also covers channels and wake-ups, per the CURRICULUM title, which the plan's one-word "Monitors" omitted.
+
+**Lab tags.** `lesson/m17-01-start` and `lesson/m17-02-start` exist in `codechup/claude-code-lab` and were used (`01-loop`, `02-routines`). `03-goal` reuses `lesson/m17-01-start` because its goal is proved against lesson 1's `scripts/loop-check.sh`; `04` and `05` carry `repo_tag: 'none'` (Desktop UI and channel-plugin work, no repo state to check out).
+
+**What could and could not be captured.** Real captures: `bash scripts/loop-check.sh`; a headless run driving `CronCreate`/`CronList`/`CronDelete` (the create line is itself the evidence for "session-only … auto-expires after 7 days"); a headless `/goal` whose JSON `modelUsage` names both `claude-sonnet-5` and `claude-haiku-4-5-20251001`, i.e. the evaluator on the bill; a `/goal` that burned every turn against too narrow an allowlist and ended `Error: Reached max turns (6)`; the Git Bash path-conversion pair; a `Monitor` streaming four lines; a `claude --help` scan matching zero lines containing "channel" (which is what `channels.md` says to expect in research preview); an audit of the lab's routine brief; and the end-of-module check that nothing was left scheduled. Not capturable, taught as documented step lists and said so in the lesson: routine creation on claude.ai/Desktop, the whole Desktop scheduled-task UI, and channel plugin install/pairing. **Language of the captures (re-run 2026-09-08).** The capturing machine's user settings carry `"language": "Turkish"`, so five of the original captures came back in Turkish. On review feedback (D016: this is an English-source module, and a learner reproducing the lab would not see Turkish) every one of them was **re-run for real** against the same tags with `--settings` pointing at a one-key file setting `"language": "English"` — an override of the machine preference only, nothing else about the commands changed — and the transcript files replaced with the new verbatim output. Nothing was hand-translated (D070/D093). Re-captured: `01-loop/02-cron-tools.txt`, `02-routines/01-routine-brief-review.txt`, `03-goal/01-goal-json.txt`, `03-goal/03-git-bash-path-conversion.txt`, `05-monitors-and-channels/01-monitor.txt`. `03-goal/02-goal-max-turns.txt` contained no model prose (`Error: Reached max turns (6)`) and was kept; its header now records that the same command resolved on the 2026-09-08 re-run, so the max-turns overrun is non-deterministic — the lesson was reworded to teach the ceiling rather than promise the failure. The re-run also *improved* the Git Bash capture: in English the session explains that `/goal …` reached it as `C:/Program Files/Git/goal …` and refuses it as a likely prompt injection, which is a better illustration than the original.
+
+**Nothing left scheduled.** Every cron task created was deleted in the same run (`CronList` → `No scheduled jobs.`), and that clean-up is itself the second transcript. No routine, desktop task or Windows scheduled task was created. Verified after the fact: `~/.claude/scheduled-tasks` does not exist, zero `*cron*`/`loop.md` files under `~/.claude`, zero Windows scheduled tasks matching "claude".
+
+**Review counts (D071).** fact-checker: 134 claims — 131 confirmed, 3 wrong, 1 unverifiable (at 2 locations); all 4 fixed. The three wrong: the `/schedule` "Unknown command" prose and its quiz both conflated a Console API key / Anthropic profile (which gets the Enterprise-migration message) with a cloud-provider login (which gets `Unknown command`); and `/goal` status gates the **turn count and most recent reason** on the first evaluation, not the token spend. The unverifiable was the MSYS claim, now reframed as an observed shell quirk (see `open_questions`). reviewer: CHANGES REQUESTED, 0 blockers / 3 major / 6 minor — all applied: transcript header and lesson step 6 now carry the verbatim prompt actually sent; the routines and channels-help steps match their transcript headers; `03-goal` frontmatter `repo_tag` corrected from `none` to `lesson/m17-01-start`; the "both halves" claim about the Git Bash transcript softened to what it actually shows; TR frontmatter apostrophes normalised to the straight form `.claude/rules/i18n.md` uses (which required those title/description scalars to move to double quotes). Majors 2 and 3 were the plan file itself — this section and `open_questions`.
+
+**Sources.** Each lesson's `sources[]` carries its official pages with `verified_at: 2026-09-07`. `content/_shared/sources.json` was touched append-only: `m17-autonomy` added to the `modules` array of ten existing entries (`docs-tools-reference`, `docs-hooks`, `docs-env-vars`, `docs-cloud-environments`, `docs-permission-modes`, `docs-plugins-reference`, `docs-headless`, `docs-mcp`, `docs-desktop`, `repo-claude-code-lab`). The four m17-specific doc entries (`docs-scheduled-tasks`, `docs-routines`, `docs-goal`, `docs-desktop-scheduled-tasks`, plus `docs-channels`/`docs-channels-reference`) were already registered by P23 and needed no change.
+
+**Not done here.** TR prose (P25/P26/P40/P41 own it), and no module `index.mdx` edit was needed — the CURRICULUM list matched the stub.
 

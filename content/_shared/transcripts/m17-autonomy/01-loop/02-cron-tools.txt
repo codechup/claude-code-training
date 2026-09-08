@@ -1,0 +1,11 @@
+# Captured 2026-09-08, Claude Code 2.1.263, in the lab repo on tag lesson/m17-01-solution: claude -p "Do exactly this, reporting each tool's raw result verbatim and nothing else: (1) call CronCreate with cron expression '*/5 * * * *', recurring, prompt 'run scripts/loop-check.sh and report whether it exited 0'; (2) call CronList; (3) call CronDelete on the id you just created; (4) call CronList again. Do not run any other tool." --settings <a one-key file setting "language": "English"> --allowedTools "CronCreate,CronList,CronDelete" --model sonnet --max-turns 8 --output-format text — verbatim stdout; a workspace-trust warning naming a local path was deleted from the top. The --settings override is only there because the capturing machine's user settings ask for Turkish; it changes the answer's language, nothing else.
+Raw results, in order:
+
+1. **CronCreate** → `Scheduled recurring job 765792fd (Every 5 minutes). Session-only (not written to disk, dies when Claude exits). Auto-expires after 7 days. Use CronDelete to cancel sooner.`
+
+2. **CronList** → `765792fd — Every 5 minutes (recurring) [session-only]: run scripts/loop-check.sh and report whether it exited 0`
+
+3. **CronDelete** → `Cancelled job 765792fd.`
+
+4. **CronList** → `No scheduled jobs.`
+exit=0

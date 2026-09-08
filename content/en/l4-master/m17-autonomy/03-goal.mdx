@@ -1,0 +1,365 @@
+---
+title: '/goal: working until a condition holds'
+description: 'A goal is a completion condition checked by a small fast model after every turn. Learn how to write one the evaluator can judge, how to bound it, and the four failures that clear it.'
+level: 4
+module: 'm17-autonomy'
+order: 3
+duration_min: 15
+difficulty: core
+tags: ['autonomy', 'goal', 'stop-hook', 'headless']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Keep Claude working toward a goal'
+    url: 'https://code.claude.com/docs/en/goal.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Hooks reference'
+    url: 'https://code.claude.com/docs/en/hooks.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run Claude Code programmatically'
+    url: 'https://code.claude.com/docs/en/headless.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Permission modes'
+    url: 'https://code.claude.com/docs/en/permission-modes.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run prompts on a schedule'
+    url: 'https://code.claude.com/docs/en/scheduled-tasks.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'lesson/m17-01-start'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Set, inspect and clear a goal, and say why only one can be active per session.
+- Write a condition the evaluator can actually judge — one measurable end state, a stated check, and the constraints that matter.
+- Explain the three verdicts, and the four failures that clear a goal without you asking.
+- Bound a goal in an interactive session and in a headless one, and show the evidence that a second model did the evaluating.
+- Choose between `/goal`, `/loop` and a Stop hook for a given job.
+
+**Prerequisites.** Lesson 1, plus level 3's hooks module — `/goal` is a wrapper around a session-scoped prompt-based Stop hook, and inherits hooks' trust rules.
+
+<WhenNotToUse>
+  A goal is a loop with a model deciding when to stop, so it is the wrong tool whenever the stopping
+  condition is not visible in the conversation: the evaluator reads the transcript and runs nothing
+  itself, so "the staging deploy is healthy" is unjudgeable unless Claude has surfaced the health
+  check. It is also wrong for exploratory work with no end state — you will pay for turn after turn
+  of a model deciding "not yet" — and for anything whose per-turn actions you would not approve
+  unattended, since a goal does not change your permission mode and a goal in `bypassPermissions` is
+  an unattended agent with a model as its only brake.
+</WhenNotToUse>
+
+## Concept
+
+### What a goal is
+
+`/goal` sets a completion condition and Claude keeps working toward it without you prompting each step. After each turn a small fast model — Haiku by default on the Claude API — checks whether the condition holds. If not, Claude starts another turn instead of handing control back.
+
+It resolves in exactly four ways: the condition is met, the evaluator judges it impossible, a turn fails on an error you have to fix, or you run `/goal clear`.
+
+Use it for substantial work with a verifiable end state: migrating a module until every call site compiles and tests pass, implementing a design doc until all acceptance criteria hold, splitting a large file until each part is under a size budget, or working a labelled issue backlog until the queue is empty.
+
+### Goal, loop, or Stop hook
+
+All three keep a session running between prompts. The difference is what starts the next turn:
+
+| Approach  | Next turn starts when                                     | Stops when                                                                                        |
+| --------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `/goal`   | The previous turn finishes, or an idle check-in comes due | A model confirms the condition is met or impossible, an unrecoverable error hits, or you clear it |
+| `/loop`   | A time interval elapses                                   | You stop it, or Claude decides the work is done                                                   |
+| Stop hook | The previous turn finishes                                | Your own script or prompt decides                                                                 |
+
+`/goal` and a Stop hook both fire after every turn. `/goal` is the session-scoped shortcut you type; a Stop hook lives in a settings file, applies to every session in its scope, and can run a script for deterministic checks rather than a model for judged ones.
+
+Auto mode is orthogonal: it approves tool calls **within** a turn but never starts a new one. The two compose — auto mode removes per-tool prompts, `/goal` removes per-turn prompts.
+
+### Setting, checking and clearing
+
+One goal can be active per session, and the same command does all three jobs.
+
+```text
+/goal all tests in test/auth pass and the lint step is clean
+```
+
+Setting a goal starts a turn immediately with the condition as the directive — no separate prompt needed. A `◎ /goal active` indicator shows how long it has been running, the transcript shows each verdict, and `Ctrl+O` reveals the reason behind one. Setting a new goal replaces the active one.
+
+`/goal` with no arguments shows the condition, how long it has run, how many turns were evaluated, the current token spend, and the evaluator's most recent reason — with the turn count and the most recent reason appearing only after the first evaluation has run. If no goal is active but one was achieved earlier in the session, the status shows that achieved condition instead.
+
+`/goal clear` removes an active goal, printing `Goal cleared:` and the condition, or `No goal set`. `stop`, `off`, `reset`, `none` and `cancel` are accepted aliases, and `/clear` removes any active goal along with the conversation.
+
+On resume — `--continue`, `--resume` with an ID or name, or the session picker — Claude Code restores a goal that was still active, carrying the condition over but resetting the turn count, timer and token-spend baseline. An achieved or cleared goal is not restored.
+
+### Writing a condition the evaluator can judge
+
+This is the whole skill. The evaluator judges your condition against **what Claude has surfaced in the conversation**: it does not run commands and does not read files. "All tests in `test/auth` pass" works because Claude runs the tests and the result lands in the transcript.
+
+A condition that survives many turns has three parts:
+
+- **One measurable end state** — a test result, a build exit code, a file count, an empty queue.
+- **A stated check** — how Claude should prove it: "`npm test` exits 0", "`git status` is clean".
+- **The constraints that matter** — what must not change on the way there: "no other test file is modified".
+
+Conditions can be up to 4,000 characters. To bound how long a goal runs, put the bound in the condition itself — `or stop after 20 turns` — and Claude reports progress against that clause each turn, with the evaluator judging it from the conversation.
+
+Here is this lesson's worked example prompt, with all three parts and a bound:
+
+```text
+/goal npm test exits 0 and npm run typecheck exits 0, with both commands' output shown
+in this conversation, and no file outside src/store.ts modified — or stop after 12 turns.
+```
+
+### The three verdicts
+
+- **Not yet met** — Claude keeps working, and takes the evaluator's reason as guidance for the next turn.
+- **Met** — the goal clears and an achieved entry is recorded in the transcript.
+- **Impossible** — the evaluator judged the condition unsatisfiable; the goal clears, a failed entry is recorded with the reason, and you do not need to clear it yourself.
+
+There is one more guard: if Claude keeps answering the evaluator without making progress — no tool use for several turns — Claude Code stops the loop, prints a warning, and hands control back with the goal still set. Evaluation resumes after your next prompt.
+
+### The four failures that clear a goal
+
+If a turn fails on something that will not clear until you fix it, Claude Code clears the goal and prints a warning starting `Goal cleared after an unrecoverable error` and ending `Run /goal again to continue`. Four failures do this:
+
+1. An authentication failure, when Claude Code manages its own credentials (when a host manages them — the desktop app, the VS Code extension, a cloud session — the goal stays active, because the host restores access itself).
+2. An exhausted credit balance.
+3. A context overflow that auto-compaction could not clear.
+4. A model that is not available.
+
+Anything else, including rate limits and overloaded servers, leaves the goal active.
+
+### Background work, and the check-ins
+
+If a subagent or a background shell command is still running when a turn ends, that turn's evaluation is skipped; evaluation happens at the end of the next turn that finishes with nothing running in the background. When the background work finishes, its result is delivered to Claude as a new turn, so you do not have to prompt.
+
+Once background work has kept the goal waiting for 30 minutes, a check-in is due: Claude Code lists the running tasks and asks Claude to read their output, keep waiting if they are progressing, and fix or stop anything stuck. After the first check-in the interval doubles each time, up to four times the first — with the default, one hour after the first, then every two hours. Check-ins arrive either at the end of the next turn (the only route in a non-interactive session), or, in an interactive session, on a turn Claude Code starts by itself while idle. At most three idle check-ins happen per goal between your prompts, and the third says idle check-ins are paused until you send another prompt.
+
+`CLAUDE_CODE_GOAL_CHECKIN_MINUTES` replaces the 30-minute first interval and scales the later ones with it; `0` turns check-ins off. Check-ins need v2.1.234 or later, idle check-ins v2.1.236 or later.
+
+### Running a goal headlessly
+
+`/goal` works in non-interactive mode, in the desktop app, and through Remote Control. With `-p`, the loop runs to completion in a single invocation:
+
+```bash
+claude -p "/goal CHANGELOG.md has an entry for every PR merged this week"
+```
+
+With the default text output nothing prints until the run ends, so a long goal can look stuck; add `--output-format stream-json --verbose` to emit each message as the loop runs. `Ctrl+C` interrupts it.
+
+### Requirements
+
+`/goal` is part of the hooks system, so it follows the same workspace-trust rule as hooks in settings files. It is unavailable when `disableAllHooks` is `true` after settings precedence, or when `allowManagedHooksOnly` is set in managed settings. In each case the command tells you why rather than silently doing nothing.
+
+## Hands-on lab
+
+<Callout>
+  This lab reuses lesson 1's tag rather than adding one of its own: it runs against
+  `lesson/m17-01-start` with the `scripts/loop-check.sh` you wrote there, so the goal has a real
+  check to prove itself against.
+</Callout>
+
+<Lab
+  title="Lab · a bounded goal, headless, with the evaluator's fingerprint"
+  repoTag="lesson/m17-01-start"
+  lessonId="en/l4-master/m17-autonomy/goal"
+  steps={[
+    'In your lab checkout with `scripts/loop-check.sh` present, run a bounded goal headlessly: `claude -p "/goal scripts/loop-check.sh has been run once with bash and its exit code stated in this conversation, or stop after 3 turns" --model sonnet --max-turns 8 --allowedTools Bash --output-format json`.',
+    "Pipe the envelope through `jq '{subtype, is_error, num_turns, total_cost_usd, modelUsage: (.modelUsage|keys), result}'` and read `modelUsage`: two models appear, not one.",
+    'Repeat the run with an allowlist too narrow to let the check run — `--allowedTools "Bash(bash scripts/loop-check.sh)"` — and `--max-turns 6`. Run it a few times: some runs resolve, and some burn every turn and exit 1 on `Error: Reached max turns (6)`.',
+    'On Windows in Git Bash only, run the same command once without `MSYS_NO_PATHCONV=1` and see what your shell does to the leading `/goal` before Claude Code ever sees it.',
+    'Set the goal again with the prefix and confirm it resolves.',
+  ]}
+  expected="The first run ends subtype=success with num_turns 2 and a modelUsage list containing both the main model and claude-haiku-4-5 — the evaluator. The narrow-allowlist run can end with `Error: Reached max turns (6)` and exit 1, which is the outcome the transcript records."
+  checklist={[
+    'The goal resolved on its own — no second prompt was sent',
+    'modelUsage names two models: the worker and the evaluator',
+    'A condition the session struggles to satisfy can burn every turn rather than stopping early',
+    'Every headless goal run carried a --max-turns ceiling',
+    'On Git Bash, MSYS_NO_PATHCONV=1 is what stops /goal being rewritten into a path',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/03-goal/01-goal-json.txt"
+    range="2-13"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/03-goal/02-goal-max-turns.txt"
+    range="2-3"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/03-goal/03-git-bash-path-conversion.txt"
+    range="2-10"
+  />
+</Lab>
+
+The first transcript is the lesson in one field. `modelUsage` lists `claude-sonnet-5` — the model doing the work — **and** `claude-haiku-4-5-20251001`, the small fast model that judged the condition after each turn. You are paying two models, and only one of them is reading your code.
+
+The second is the failure mode worth internalising. In that run the narrow allowlist meant no turn produced the evidence the evaluator wanted, so the goal loop kept starting turns until `--max-turns` ended the process. It does not fail that way every time — re-running it, the session sometimes finds a permitted route and resolves — which is the point: an unbounded goal's cost is decided by how the turns happen to go, so the ceiling is what protects you.
+
+<OSTabs>
+  <Fragment slot="macos">
+
+```bash
+claude -p "/goal npm test exits 0, or stop after 8 turns" --max-turns 12 --output-format json
+```
+
+  </Fragment>
+  <Fragment slot="linux">
+
+```bash
+claude -p "/goal npm test exits 0, or stop after 8 turns" --max-turns 12 --output-format json
+```
+
+  </Fragment>
+  <Fragment slot="windows">
+
+```powershell
+claude -p "/goal npm test exits 0, or stop after 8 turns" --max-turns 12 --output-format json
+```
+
+  </Fragment>
+</OSTabs>
+
+One Windows caveat, observed while capturing this lesson's transcripts rather than taken from the documentation: in **Git Bash**, MSYS path conversion rewrote the leading `/goal …` into `C:/Program Files/Git/goal …` before Claude Code ever saw it. The third transcript above is what that looks like from the inside — the session never received a command at all, just a mangled path glued to your words, and it correctly refused the whole thing as a likely prompt injection. Prefixing with `MSYS_NO_PATHCONV=1` fixed it in the same session, shown by the second run in that file (a trivial one-word goal, not the same prompt twice). PowerShell and WSL showed no such rewriting. Treat it as a shell quirk to recognise — and as a small lesson in how a corrupted prompt looks to the model — not a documented Claude Code behaviour.
+
+## Anti-patterns
+
+**A condition the evaluator cannot see.** "The service is healthy" is unjudgeable when nothing in the transcript shows a health check. _Fix:_ name the check — "`curl -s localhost:3000/health` returned `ok` in this conversation".
+
+**An unbounded goal.** With no turn or time clause, a goal keeps starting turns until a model says stop. _Fix:_ end every condition with `or stop after N turns`, and add `--max-turns` headlessly.
+
+**A goal in `bypassPermissions` while you sleep.** `/goal` does not change your permission mode; combining an unbounded goal with a mode that approves everything is an unattended agent with no human in the loop. _Fix:_ bound the goal, use auto mode rather than bypass, and keep the blast radius inside a worktree.
+
+**Chasing an "impossible" verdict.** Re-setting the same condition after the evaluator judged it unsatisfiable just pays for the same conclusion. _Fix:_ read the recorded reason and fix the condition or the world it describes.
+
+**Treating a cleared goal as a bug.** `Goal cleared after an unrecoverable error` names its cause — auth, credits, context overflow, or an unavailable model. _Fix:_ fix the named cause and run `/goal` again.
+
+**Ignoring the second model on the bill.** Evaluation runs on the small fast model every single turn. Usually negligible, but not free, and `ANTHROPIC_DEFAULT_HAIKU_MODEL` changes it **everywhere** Claude Code uses the small fast model — the `haiku` alias and background work such as conversation summarisation included. _Fix:_ change it deliberately, not to tune `/goal` alone.
+
+<Callout variant="changed">
+  Claude Code now restores an active goal on every resume route, the `claude --resume` picker
+  included; before v2.1.239 the picker was the one route that dropped it. Idle check-ins are also
+  capped at three per goal between your prompts — before v2.1.246 they were uncapped. Verified
+  against `goal.md` for Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/goal"
+  questionId="q1"
+  lang="en"
+  prompt="Which condition is written the way the evaluator can judge it?"
+  options={[
+    {
+      text: '“`npm test` exits 0 with its output shown in this conversation, and no file outside src/ is modified — or stop after 10 turns.”',
+      correct: true,
+      explanation:
+        'One measurable end state, a stated check that lands in the transcript, a constraint, and a bound.',
+    },
+    {
+      text: '“The code is production ready.”',
+      explanation: 'No measurable end state and nothing the evaluator can read a verdict from.',
+    },
+    {
+      text: '“The staging deployment is healthy.”',
+      explanation:
+        'The evaluator runs nothing itself — unless Claude surfaces a health check in the conversation, this cannot be judged.',
+    },
+    {
+      text: '“Keep refactoring until it feels clean.”',
+      explanation: 'Unbounded and subjective: exactly the shape that burns turns.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/goal"
+  questionId="q2"
+  lang="en"
+  prompt="Which failure does NOT clear an active goal?"
+  options={[
+    {
+      text: 'A rate-limit or overloaded-server error.',
+      correct: true,
+      explanation:
+        'Transient errors leave the goal active. Only auth failures, exhausted credit, an uncleared context overflow, or an unavailable model clear it.',
+    },
+    {
+      text: 'A context overflow that auto-compaction could not clear.',
+      explanation: 'That is one of the four unrecoverable errors.',
+    },
+    {
+      text: 'An exhausted credit balance.',
+      explanation: 'That is one of the four.',
+    },
+    {
+      text: 'The configured model being unavailable.',
+      explanation: 'That is one of the four.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/goal"
+  questionId="q3"
+  lang="en"
+  prompt="A subagent is still running when a goal turn ends. What does Claude Code do?"
+  options={[
+    {
+      text: 'Skips that turn’s evaluation and evaluates at the end of the next turn that finishes with no background work running.',
+      correct: true,
+      explanation:
+        'And once background work has held the goal for 30 minutes, a check-in asks Claude to read the running tasks’ output.',
+    },
+    {
+      text: 'Evaluates immediately using whatever the subagent has printed so far.',
+      explanation: 'Evaluation is deferred, not run on partial background output.',
+    },
+    {
+      text: 'Cancels the subagent so the evaluation can run.',
+      explanation: 'Background work is left to finish; its result is delivered as a new turn.',
+    },
+    {
+      text: 'Clears the goal, because background work is an unrecoverable state.',
+      explanation: 'Only four specific failures clear a goal, and this is not one of them.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/goal"
+  questionId="q4"
+  lang="en"
+  prompt="What is `/goal` implemented as?"
+  options={[
+    {
+      text: 'A session-scoped prompt-based Stop hook whose evaluator runs on the configured small fast model.',
+      correct: true,
+      explanation:
+        'Which is why it follows the same workspace-trust rule as hooks, and why disableAllHooks or allowManagedHooksOnly makes it unavailable.',
+    },
+    {
+      text: 'A cron task that re-sends your condition on an interval.',
+      explanation: 'That is /loop. A goal fires after each turn, not on a clock.',
+    },
+    {
+      text: 'A permission mode that auto-approves tool calls.',
+      explanation: 'That is auto mode; a goal does not change your permission mode at all.',
+    },
+    {
+      text: 'A subagent that supervises the main session.',
+      explanation:
+        'No subagent is spawned; a small fast model reads the transcript and returns a verdict.',
+    },
+  ]}
+/>
+
+**Next:** `04-desktop-scheduled-tasks` puts a schedule on your own machine, where the run can touch your real files.

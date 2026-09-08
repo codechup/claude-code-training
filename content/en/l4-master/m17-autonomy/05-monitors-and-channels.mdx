@@ -1,0 +1,322 @@
+---
+title: 'Monitors, channels and wake-ups'
+description: 'Stop polling. A monitor streams a background script or WebSocket into the session as lines arrive; a channel is an MCP server that pushes events in from outside. Both make autonomous work observable.'
+level: 4
+module: 'm17-autonomy'
+order: 5
+duration_min: 15
+difficulty: advanced
+tags: ['autonomy', 'monitors', 'channels', 'observability', 'mcp']
+verified_version: '2.1.263'
+updated: 2026-09-07
+draft: false
+sources:
+  - type: official
+    title: 'Tools available to Claude'
+    url: 'https://code.claude.com/docs/en/tools-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Push events into a running session with channels'
+    url: 'https://code.claude.com/docs/en/channels.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Channels reference'
+    url: 'https://code.claude.com/docs/en/channels-reference.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Run prompts on a schedule'
+    url: 'https://code.claude.com/docs/en/scheduled-tasks.md'
+    verified_at: 2026-09-07
+  - type: official
+    title: 'Plugins reference'
+    url: 'https://code.claude.com/docs/en/plugins-reference.md'
+    verified_at: 2026-09-07
+lab:
+  repo_tag: 'none'
+---
+
+## Objectives & prerequisites
+
+By the end of this lesson you can:
+
+- Ask for a monitor instead of a poll, and say when a `Monitor` beats a `/loop` on both tokens and latency.
+- Name what a monitor can watch — a background command or a WebSocket — and the limits on each.
+- Explain what a channel is, install one, and start a session with `--channels`.
+- Describe the two security gates every channel has, and why permission relay is a bigger grant than message delivery.
+- Say where each of this module's five mechanisms leaves an audit trail you can read afterwards.
+
+**Prerequisites.** Lessons 1–4, plus level 3's MCP module — a channel is an MCP server with one extra capability.
+
+<WhenNotToUse>
+  A monitor keeps a background process attached to a session, so it is the wrong shape for anything
+  that should outlive it: monitors are never restored on `--resume`, and a subagent's monitors die
+  with the subagent. It is also unavailable in several environments — Amazon Bedrock, Google Cloud's
+  Agent Platform and Microsoft Foundry, and anywhere `DISABLE_TELEMETRY` or
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` is set — so a lesson or script that depends on it will
+  simply not work for those readers. Channels, meanwhile, are a research preview requiring Anthropic
+  authentication and, in a Team or Enterprise org, an explicit admin opt-in: do not design a team
+  workflow around them yet.
+</WhenNotToUse>
+
+## Concept
+
+### Monitors: watch, don't poll
+
+The `Monitor` tool lets Claude watch something in the background and react when it changes, without pausing the conversation. Ask for it in plain language — tail a log and flag errors as they appear, poll a PR or CI job and report when its status changes, watch a directory for file changes, track output from a long-running script, or connect to a WebSocket feed and report each message.
+
+For most watches Claude writes a small script, runs it in the background, and receives each output line as it arrives. You keep working in the same session, and Claude interjects when an event lands. Stop a monitor by asking Claude to cancel it, or by ending the session; monitors started by a subagent stop when that subagent stops, for example from `/tasks`.
+
+This is why lesson 1 mentioned monitors: where the tool is available, Claude may reach for it when you ask for a self-paced `/loop`, because streaming lines beats re-running a prompt on a timer both in tokens and in responsiveness.
+
+Permissions are not a separate system: when Monitor runs a command it uses the **same permission rules as Bash**, so your `allow` and `deny` patterns for Bash apply. In auto mode, Claude Code sets aside allow rules naming `Monitor` itself along with the other broad allow rules it drops, so the classifier reviews Monitor commands the way it reviews Bash ones.
+
+Plugins can also declare monitors that start automatically when the plugin is active, instead of waiting for Claude to start one.
+
+### The WebSocket source
+
+When a server already pushes events, Claude can connect directly instead of writing a polling script. A WebSocket watch takes a `ws` input in place of `command`, and one Monitor call cannot combine the two (v2.1.195 or later).
+
+| Field       | Required | Description                                                                        |
+| ----------- | -------- | ---------------------------------------------------------------------------------- |
+| `url`       | Yes      | A `ws://` or `wss://` URL, ASCII only, with no embedded credentials or whitespace  |
+| `protocols` | No       | Subprotocol names to offer during the handshake; each a valid token, no duplicates |
+
+Each kind of socket activity either becomes an event or ends the watch: a text message becomes one event even when it spans lines; a binary message is not passed through (Claude sees a placeholder such as `[binary frame, 512 bytes]`); a message larger than 1 MiB ends the watch, so subscribe to a filtered feed where one exists; and a socket close ends the watch with the close code delivered. `timeout_ms` and `persistent` behave as they do for a command — the watch ends at the deadline unless `persistent` is set, and `TaskStop` cancels it early.
+
+Opening a socket prompts for approval, with no "don't ask again for this host" option, and in auto mode the classifier decides. Claude Code denies URLs pointing at private, link-local or cloud-metadata addresses — hostnames that resolve to one included — plus hosts in `sandbox.network.deniedDomains`, and, when `allowManagedDomainsOnly` is set in managed settings, any host outside the managed allowlist.
+
+### Wake-ups
+
+`ScheduleWakeup` is the tool behind a self-paced `/loop`: Claude calls it at the end of each iteration to pick when the next one runs, between one minute and one hour out, and calls it with `stop: true` to end the loop (v2.1.202 or later). You never call it yourself, and it needs no permission. The one place it is worth knowing by name is observability: **the pending wakeup appears in `session_crons` in Stop hook input**, so a Stop hook can see whether the session intends to wake itself again.
+
+### Channels: let the outside push
+
+A channel is an MCP server that pushes events into your running session, so Claude can react to something that happened while you were not at the terminal. Claude Code spawns it as a subprocess and talks to it over stdio. Chat-platform channels poll the platform's API locally, so there is no URL to expose; webhook channels listen on a local HTTP port that CI or your error tracker POSTs to.
+
+Channels can be one-way (forward alerts for Claude to act on) or two-way (also expose a reply tool, so Claude answers back through the same channel, like a chat bridge). Events only arrive while the session is open, so an always-on setup means running Claude in a background process or a persistent terminal.
+
+You install a channel as a plugin — Telegram, Discord, iMessage and the `fakechat` demo are in the research preview, each requiring Bun — and then opt it into a session:
+
+<CodeBlock title="try the fakechat demo channel">
+
+```bash
+claude --channels plugin:fakechat@claude-plugins-official
+```
+
+</CodeBlock>
+
+The startup screen shows a channels notice naming the plugin, and the demo UI runs at `http://localhost:8787`. A message typed there arrives as an inbound line in the terminal — `← fakechat · web: what's in my working directory?` — while the model receives it as a `<channel source="plugin:fakechat:fakechat">` event. You can pass several plugins, space-separated.
+
+When Claude replies through a channel you see the tool call and a confirmation in the terminal, not the reply text; the reply itself appears on the other platform.
+
+Building your own is a small MCP server: declare `capabilities.experimental['claude/channel'] = {}` so Claude Code registers a notification listener, emit `notifications/claude/channel` with a `content` string and an optional `meta` map, and connect over stdio. Each `meta` entry becomes an attribute on the `<channel>` tag for routing context — keys must be letters, digits and underscores, and keys with hyphens are silently dropped. The `source` attribute is set from your server's name. Claude Code does not acknowledge notifications: if the session did not load your server as a channel, or policy blocks it, events are dropped silently with no error back to your server.
+
+### The two gates, and the third grant
+
+Two gates stand between an external system and your session, and neither is optional:
+
+1. **The per-session opt-in.** Being in `.mcp.json` is not enough — a server must also be named in `--channels`. During the research preview that flag only accepts plugins from an Anthropic-maintained allowlist, or your organisation's list if an admin set `allowedChannelPlugins`. A custom channel you are building needs `--dangerously-load-development-channels`, per entry.
+2. **The sender allowlist.** Every approved channel plugin keeps one: only IDs you added can push, everyone else is dropped silently. Telegram and Discord bootstrap it by pairing (message the bot, it replies with a code, approve the code, your ID is added); iMessage lets your own addresses through automatically and takes others by handle. If you write your own, gate on the **sender's** identity, not the room's — in a group chat those differ, and gating on the room lets anyone in an allowlisted group inject text in front of Claude.
+
+Organisations control availability with `channelsEnabled` (the master switch: claude.ai Team and Enterprise are blocked until an Owner enables it; Console API-key orgs are permitted by default unless they deploy managed settings) and `allowedChannelPlugins` (which plugins may register, replacing Anthropic's list). Pro and Max users without an organisation skip both checks.
+
+The third grant is bigger than the first two, and it is opt-in: **permission relay**. A two-way channel that declares `capabilities.experimental['claude/channel/permission']` receives tool-approval prompts in parallel with the local terminal dialog, and whichever answer arrives first wins. The relayed request carries a five-letter `request_id` (drawn from `a`–`z` without `l`, so it never reads as `1` or `I` on a phone), the `tool_name`, a `description` of what the call does, and an `input_preview` of its arguments; Claude Code only accepts a verdict carrying an ID it issued. Project trust and MCP server consent dialogs never relay. The consequence to sit with: **anyone on the sender allowlist can approve tool use in your session**, so relay-capable channels need a shorter allowlist than chat-only ones.
+
+If Claude hits a permission prompt while you are away and the channel does not relay, the session simply pauses until you answer. In `-p` mode, tools that need terminal input — multiple-choice questions, plan-mode approval — are disabled so the session never stalls.
+
+Here is this lesson's worked example prompt, the shape that replaces a poll:
+
+```text
+Monitor the dev server's log at .dev/server.log and interrupt me only when a line
+matches ERROR or "unhandled rejection" — otherwise stay quiet. Stop when I say so.
+```
+
+### Observability, end to end
+
+Each mechanism in this module leaves a different trail, and knowing which to read is the difference between autonomy and superstition:
+
+| Mechanism         | Where you read what happened                                                                                                        |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `/loop`           | The session transcript, plus `CronList` for what is still scheduled                                                                 |
+| Routine           | The run's own session on claude.ai — the green status dot only means the session started and exited without an infrastructure error |
+| `/goal`           | Each verdict in the transcript, `Ctrl+O` for its reason, `/goal` for status                                                         |
+| Desktop task      | The Scheduled session in the sidebar, plus the task's run history including skipped runs and why                                    |
+| Monitor / channel | The interjected lines in the session itself, as they arrive                                                                         |
+
+## Hands-on lab
+
+<Callout>
+  The monitor half of this lab is a real headless capture. The channels half is not: installing a
+  channel plugin needs Bun, a bot token on a third-party platform, and a pairing step in a chat
+  client — none of it capturable as a terminal transcript, and none of it something a course should
+  leave running against your accounts. Those steps come from the official documentation, with the
+  second transcript recording the one channels fact you can check locally.
+</Callout>
+
+<Lab
+  title="Lab · one monitor, and the flag that isn't in --help"
+  repoTag="none"
+  lessonId="en/l4-master/m17-autonomy/monitors-and-channels"
+  steps={[
+    'In your lab checkout, ask for a monitor over a short-lived command: `claude -p "Use the Monitor tool once to watch: bash -c \'for i in 1 2 3; do echo tick-$i; sleep 2; done; echo done\'. Report verbatim every line the monitor streams back, then stop the monitor." --allowedTools "Monitor,TaskStop" --output-format text`.',
+    'Read the answer: the lines arrive as a stream, and stopping a watch whose command already exited reports that there is no such task.',
+    'Confirm the channels flags are absent from the CLI help — they are documented as unlisted during the research preview. PowerShell (what the transcript below records) splits `claude --help` into lines and counts the ones matching "channel" with `Select-String`; on macOS or Linux the same check is `claude --help | grep -ci channel`.',
+    'Install the demo channel: `/plugin install fakechat@claude-plugins-official` (add the marketplace with `/plugin marketplace add anthropics/claude-plugins-official` first if the install reports it is missing), choosing the user scope.',
+    'Exit and restart with `claude --channels plugin:fakechat@claude-plugins-official`, open http://localhost:8787, and type a message. It arrives in the session as a `<channel>` event; approve the first reply when asked.',
+    'Exit that session. A channel only delivers while the session is open, so ending it is the whole cleanup — nothing is left scheduled or listening.',
+  ]}
+  expected="The monitor run reports the streamed lines tick-1, tick-2, tick-3, done, and notes that the watch had already ended. `claude --help` matches zero lines containing 'channel'."
+  checklist={[
+    'The monitor streamed each line as it appeared, without a polling loop',
+    'Stopping an already-finished watch is a no-op, not an error to fix',
+    'Neither --channels nor --dangerously-load-development-channels appears in --help',
+    'A channel needed both the plugin install and the --channels opt-in to deliver anything',
+    'Nothing from this lesson is still running after the session exits',
+  ]}
+>
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/05-monitors-and-channels/01-monitor.txt"
+    range="2-10"
+  />
+  <Transcript
+    src="content/_shared/transcripts/m17-autonomy/05-monitors-and-channels/02-help-no-channels.txt"
+    range="2-3"
+  />
+</Lab>
+
+The second capture is small but load-bearing: `claude --help` matches zero lines containing "channel". Neither `--channels` nor `--dangerously-load-development-channels` is listed while the feature is in research preview — the flags work anyway, which is exactly the kind of claim you should verify rather than take on trust.
+
+## Anti-patterns
+
+**Polling what could push.** A `/loop 2m` against a log file costs a full turn every two minutes and still reports late. _Fix:_ ask for a monitor, or, for an external system, a channel.
+
+**A monitor with no quiet condition.** "Watch the log and tell me what you see" interrupts you on every line. _Fix:_ state the match condition and say explicitly to stay quiet otherwise.
+
+**Expecting a monitor to survive.** Monitors and background Bash tasks are never restored on `--resume`, and a subagent's monitors die with it. _Fix:_ for anything durable, use a routine or a desktop task.
+
+**Assuming `.mcp.json` is enough.** A channel server listed there but not named in `--channels` connects, its tools work, and its events go nowhere. _Fix:_ pass it to `--channels` — and check the startup notice, which names the problem when a plugin is not on the effective allowlist.
+
+**Gating a channel on the room.** An allowlist keyed on a group chat lets every member of that group put text in front of Claude. _Fix:_ gate on the sender ID.
+
+**Handing out relay lightly.** Anyone who can reply through a relay-capable channel can approve tool use in your session. _Fix:_ keep that allowlist to people you would hand your terminal to, and remember that only tool approvals relay — trust and MCP-consent dialogs stay local.
+
+<Callout variant="changed">
+  A channel now opts into permission relay by declaring
+  `capabilities.experimental['claude/channel/permission']`; setting it to `false` opts out. Before
+  v2.1.234, Claude Code treated `false` as declared, and permission requests were not restricted to
+  servers registered as channels for the session. Verified against `channels-reference.md` for
+  Claude Code 2.1.263.
+</Callout>
+
+## Quiz
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/monitors-and-channels"
+  questionId="q1"
+  lang="en"
+  prompt="Which permission rules govern a Monitor that runs a shell command?"
+  options={[
+    {
+      text: 'The same allow and deny rules as the Bash tool.',
+      correct: true,
+      explanation:
+        'And in auto mode, allow rules naming Monitor itself are set aside so the classifier reviews the command.',
+    },
+    {
+      text: 'A dedicated Monitor allowlist in settings.json.',
+      explanation: 'There is no separate rule namespace; Bash rules apply.',
+    },
+    {
+      text: 'None — monitors run unattended by design.',
+      explanation: 'They are permission-checked like any command.',
+    },
+    {
+      text: 'The MCP server permission rules.',
+      explanation: 'That is channels. A monitor is a built-in tool, not an MCP server.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/monitors-and-channels"
+  questionId="q2"
+  lang="en"
+  prompt="Your channel server is in .mcp.json and running, but no event ever reaches Claude. What is the most likely cause?"
+  options={[
+    {
+      text: 'The session was not started with --channels naming that server, so it is connected as a plain MCP server and its events are dropped silently.',
+      correct: true,
+      explanation:
+        'Being in .mcp.json is never enough; the per-session opt-in is a deliberate second gate, and dropped events return no error to your server.',
+    },
+    {
+      text: 'The server must expose a reply tool before it can push.',
+      explanation:
+        'A reply tool is only needed for two-way channels; one-way channels push without one.',
+    },
+    {
+      text: 'Notifications must be acknowledged by Claude Code before more are accepted.',
+      explanation: 'Claude Code never acknowledges notifications.',
+    },
+    {
+      text: 'meta keys with hyphens crash the notification.',
+      explanation: 'Those keys are dropped silently — the event still arrives.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/monitors-and-channels"
+  questionId="q3"
+  lang="en"
+  prompt="What does permission relay let a remote sender do?"
+  options={[
+    {
+      text: 'Approve or deny a tool call in your session, in parallel with the local dialog — first answer wins.',
+      correct: true,
+      explanation:
+        'Which is why the sender allowlist on a relay-capable channel is a much larger grant than chat access. Trust and MCP-consent dialogs never relay.',
+    },
+    {
+      text: 'Send prompts into the session.',
+      explanation: 'That is ordinary message delivery, which every channel does.',
+    },
+    {
+      text: 'Change the session’s permission mode remotely.',
+      explanation: 'Relay answers individual prompts; it does not change modes.',
+    },
+    {
+      text: 'Approve project trust dialogs from a phone.',
+      explanation: 'Project trust and MCP server consent only appear in the local terminal.',
+    },
+  ]}
+/>
+
+<Quiz
+  lessonId="en/l4-master/m17-autonomy/monitors-and-channels"
+  questionId="q4"
+  lang="en"
+  prompt="A routine's run list shows a green status. What have you learned?"
+  options={[
+    {
+      text: 'Only that the session started and exited without an infrastructure error.',
+      correct: true,
+      explanation:
+        'Blocked network requests, missing connector tools and task-level failures all surface inside the run, not in the dot. Open the run.',
+    },
+    {
+      text: 'That the prompt’s task succeeded.',
+      explanation: 'The status says nothing about the task.',
+    },
+    {
+      text: 'That every tool call was approved.',
+      explanation: 'Routines have no approval prompts at all.',
+    },
+    {
+      text: 'That the repository was pushed to successfully.',
+      explanation: 'Nothing about pushes is encoded in the status.',
+    },
+  ]}
+/>
+
+**Next:** `m18-multi-session` scales the same discipline sideways — several Claude Code sessions working one repository at once, coordinated by plan files rather than by luck.
