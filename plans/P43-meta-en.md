@@ -2,7 +2,7 @@
 id: P43
 title: Meta section (EN)
 milestone: M3
-status: in_progress
+status: review
 owner: lead-opus
 branch: plan/43-meta-en
 model_hint: opus
@@ -12,8 +12,10 @@ owned_paths:
   - content/en/meta/**
 shared_paths: []
 estimate: M
-updated_at: 2026-09-08T00:46:06Z
-open_questions: []
+updated_at: 2026-09-08T01:29:00Z
+open_questions:
+  - 'P44: the three content/tr/meta/* stubs P43 created carry `draft: true`, but sectionSchema has no `draft` field, so it is stripped and the stubs route as live pages. Should sectionSchema gain an optional `draft` (and the section routes filter on it), or should section-shaped pages simply never ship as stubs? Owner/P47 call — P43 mitigated with a visible in-page banner.'
+  - '`npm run lint` does not run scripts/check-public-hygiene.mjs or scripts/check-raw-colors.mjs, although CLAUDE.md, .claude/rules/public-hygiene.md and docs/authoring/CONTENT-PLAN-BRIEF.md all state or imply it does (already a P04 open question). Either fix the lint script or fix the three docs — a contributor following the documented local gate today misses both checks.'
 ---
 
 ## Goal
@@ -70,4 +72,74 @@ A reviewer opens all four Meta pages, clicks every internal repository link to c
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+- **Shipped** (session `opus-p43-2026-09-08`, branch `plan/43-meta-en`): four EN Meta pages —
+  `content/en/meta/index.mdx` (rewritten from the P06 placeholder into a real overview linking the
+  three pages), `how-this-site-was-built.mdx`, `contributing.mdx`, `sources-index.mdx` — plus the
+  three TR stubs the content gate's file-level parity rule requires.
+- **Page shape.** Meta standalone pages are *section*-shaped (`sectionSchema`: `title`,
+  `description`, `order`), not lessons, and they route through
+  `src/pages/[lang]/[level]/[module]/index.astro`, which renders `<Content />` **without** an MDX
+  components map. So no `<Callout>`/`<Quiz>`/`<Sources>` component is available on these pages
+  without an explicit import; all four pages are therefore plain MDX (prose, tables, fenced code).
+  Any future plan wanting components here must either import them in the MDX or add a components
+  map to that route (outside P43's `owned_paths`).
+- **Every repo link was verified live.** 45 unique `github.com/codechup/claude-code-training`
+  URLs (blob + tree + `/issues`) all answered HTTP 200 on 2026-09-08; the repository is public
+  (`gh repo view … --json visibility` → `PUBLIC`), so the acceptance criterion's fallback to
+  relative paths was not needed. All 42 internal site links across the seven files were checked
+  against the built `dist/` tree — 0 missing.
+- **`sources-index.mdx` is generated, not hand-written.** A one-off script (scratchpad, not
+  committed) grouped `content/_shared/sources.json` by `modules` tag and **asserted that every one
+  of the 142 registry ids appears at least once** before writing the file. Result: 142 unique
+  sources, 254 listings (a source cited by several modules is listed under each), 23 groups
+  (m01–m21 + `playbook` + `meta`), 121 official / 19 repo / 2 article. Re-run that grouping if
+  `sources.json` changes; the page states all of those numbers in prose.
+- **Review pipeline (D071), both run headless from this worktree, read-only.**
+  - `fact-checker`: 54 claims checked — **51 supported, 3 contradicted, 0 unverifiable**. All
+    three fixed: (a) the page claimed `check-public-hygiene.mjs` runs in `npm run lint` — it does
+    **not** (see next bullet), rewritten to name the three real enforcement points; (b) "288
+    recordings" in `content/_shared/transcripts/` — the real recording count is **261 `.txt`**
+    files, the other 27 are per-lesson `README.md` manifests, corrected in both directions; (c) the
+    `fact-checker` agent's verdict vocabulary is `supported`/`contradicted`/`unverifiable`, not
+    "confirmed/wrong" — fixed in two files.
+  - `reviewer`: 4 findings — 1 blocker, 1 major, 2 minor. The major (transcript count) was the
+    same item as (b) and is fixed. The blocker and both minors are answered in the bullets below.
+    Everything else came back clean: hygiene/D026, internal link shape (no `NN-` prefixes), TR
+    diacritics, PR-template accuracy, and "no duplication of m18-multi-session".
+- **Confirmed pre-existing drift, not fixed here (outside `owned_paths`).** `npm run lint` is
+  `eslint . && prettier --check . && node scripts/check-no-inline-script.mjs` — it does **not**
+  invoke `scripts/check-public-hygiene.mjs` or `scripts/check-raw-colors.mjs`, although
+  `CLAUDE.md`, `.claude/rules/public-hygiene.md` and `docs/authoring/CONTENT-PLAN-BRIEF.md` all say
+  or imply that it does. CI runs both as their own steps, so nothing is unguarded in CI, but the
+  local `npm run lint` a contributor is told to run does not catch a hygiene or raw-colour
+  violation. This is already recorded as a P04 open question in `STATE.md`; P47 (launch hardening)
+  is the natural place to close it. The Meta pages are written to the real behaviour, not the
+  documented one.
+- **TR stubs and the P44 boundary.** `content/tr/meta/**` is P44's `owned_paths`; P43's Scope lists
+  it as Out. Three one-paragraph TR stubs were nevertheless created because
+  `scripts/content-gate.ts` enforces EN↔TR parity at the **file** level and `npm run gate` fails
+  outright without them. They are the minimum the gate needs, each opens with a visible Turkish
+  banner linking to the English original, and P44 replaces them wholesale. P44 is `todo` and
+  unclaimed, so `node tools/plan/cli.ts check` still passes with no overlap; P43's `owned_paths`
+  was deliberately **not** widened, because doing so would collide with P44's.
+- **`draft: true` on those stubs is inert, by design of the schema.** `sectionSchema` has no
+  `draft` field (section pages are deliberately outside the draft mechanism — see the comment in
+  `src/content/schema.ts`), so zod strips the key: the three TR pages build, route and appear in
+  navigation and search like any finished page. The key is kept as an intent marker for P44; the
+  visible "çevirisi hazırlanıyor" banner, not the frontmatter, is what actually tells a reader.
+  See `open_questions`.
+- **`content/tr/meta/index.mdx` is now a stale translation** of the rewritten EN Meta index (the EN
+  version gained links to the three sibling pages). It was left untouched because it is P44's file.
+  P44 must re-translate it, not only the three stubs.
+- **Verification run (real output pasted in the PR):** `npm run gate` → `content gate: OK (300
+  files checked)` · `npm run typecheck` → 0 errors, 0 warnings · `npm run lint` → clean,
+  `check-no-inline-script: OK (73 files scanned)` · `npm test` → 22 files / 187 tests passed ·
+  `npm run build` → Pagefind indexed 234 pages, `check-no-inline-script (dist): OK (237 files
+  scanned)` · `node scripts/check-public-hygiene.mjs` → `public-hygiene: OK (tracked)` ·
+  `node scripts/check-raw-colors.mjs` → `OK (77 files scanned)` · `node tools/plan/cli.ts check` →
+  `ok: 48 plans, …` · Playwright on a temporary `playwright.p43.config.ts` (port 4444) covering all
+  eight new/changed Meta routes plus `e2e/a11y.spec.ts` at 390 px and 1280 px → **30 passed**, zero
+  serious/critical axe violations; the temporary config and spec were deleted afterwards.
+- **Forbidden-content grep** over all seven files (IPv4 literals, `/opt/`, `/var/www`, `/srv/`,
+  `ssh -i`, `root@`, private-key headers) returned no matches, and `check-public-hygiene.mjs`
+  passes. The pages describe the deploy path only as GitHub secret *names*.

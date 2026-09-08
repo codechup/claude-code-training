@@ -1,0 +1,319 @@
+---
+title: 'How this site was built'
+description: "A guided tour of this repository's own CLAUDE.md, rules, hooks, skills, agents, plan files, content gates and deploy pipeline — the course's own worked example."
+order: 1
+---
+
+Every lesson on this site argues for a particular way of working with Claude Code: write the
+context down, automate the guard rails, split the work so several sessions can run at once, and
+prove every claim with real output. This page is the receipt. The site you are reading was built
+that way from the first commit, and because the repository is public and MIT-licensed (D052) you
+can read every file this page mentions.
+
+Two boundaries, so you know what to expect:
+
+- **This is the case study, not the manual.** The mechanics of plan files, `STATE.md`, claims,
+  `owned_paths` and worktrees are taught in [m18 — Coordinating parallel
+  sessions](/en/l4-master/m18-multi-session/), and [This repository as the worked
+  example](/en/l4-master/m18-multi-session/this-repo-as-example/) already walks the `plans/`
+  directory line by line. This page assumes you have read those, or can look them up, and spends
+  its space on the parts that page does not cover: what was decided before any code existed, what
+  the `.claude/` directory actually contains, and what happens between a merge and a served page.
+- **Only this project is on the table.** The course's rule that case studies are anonymous or
+  fictional (D026) is not suspended here. This repository can describe itself in as much detail as
+  it likes; it still never names, describes or hints at any other project, its infrastructure, its
+  hostnames or its paths. Where the pipeline touches a real machine, you will see the shape of the
+  step and the name of a GitHub secret, and nothing more. That is not modesty — it is the same
+  discipline the [security lessons](/en/l3-advanced/m14-security/) ask of you, applied to the
+  repository that teaches them.
+
+Repository: [github.com/codechup/claude-code-training](https://github.com/codechup/claude-code-training).
+
+## The decisions came first
+
+Before there was a repository there was an intake: a hundred questions about audience, scope,
+languages, design, tooling, licensing and release order, answered one at a time and written down
+as [`DECISIONS.md`](https://github.com/codechup/claude-code-training/blob/main/DECISIONS.md) —
+D001 to D100, each a short paragraph, several marked as owner overrides that no session may
+re-litigate.
+
+This is the single highest-leverage thing in the repository, and it is not a Claude Code feature
+at all. It is what makes a plan file possible to execute. A session that reaches an ambiguity
+looks up the decision; if there is no decision, the rule (in `CLAUDE.md`) is to take the most
+conservative reading and write the question into its plan's `open_questions` rather than invent
+one. Product decisions belong to the owner, and the file is the record of them.
+
+Design followed the same order. The visual language was authored first as a Claude Design canvas
+by a single session at high effort, exported to
+[`docs/design/canvas-out/`](https://github.com/codechup/claude-code-training/tree/main/docs/design/canvas-out)
+and written up in
+[`docs/design/CANVAS.md`](https://github.com/codechup/claude-code-training/blob/main/docs/design/CANVAS.md).
+Only then did `src/styles/tokens.css` get written, copying the palette out of the canvas's token
+table. Nine artboards settled brand, tokens, the landing page at 1280 px and at 390 px, the lesson
+page in both themes, the component inventory and the `/design` page — so no later session had to
+decide what a callout looks like. It looked it up.
+
+## `CLAUDE.md`: the file every session reads first
+
+[`CLAUDE.md`](https://github.com/codechup/claude-code-training/blob/main/CLAUDE.md) is deliberately
+short — a maintainer note at the bottom of the file caps it at roughly 120 lines — and it is
+structured as an onboarding script rather than a description of the project:
+
+1. A **reading order**: `STATE.md`, then `plans/README.md`, then `DECISIONS.md`, then the
+   curriculum, then the research inventory, then the design canvas.
+2. The **session protocol** as a copy-pasteable block of shell commands, from `git pull` through
+   claiming a plan to opening the PR.
+3. The **hard rules**, each stated in plain words and then cited by decision number — evidence,
+   no fabricated transcripts, facts from the research inventory, public-repo hygiene, the
+   language policy, design tokens only, stay inside `owned_paths`, `main` is PR-only, never commit
+   secrets, never invent an owner decision.
+4. The **commands**, the **layout** of the repository, and the meaning of the model and effort
+   hints.
+
+What is _not_ in it matters as much. There is no architecture essay, no history, no list of
+lessons — the curriculum document owns that, and duplicating it would guarantee the copy went
+stale. `CLAUDE.md` answers "what do I do next and what must I not do", and delegates everything
+else to a file it names.
+
+The per-area detail lives in
+[`.claude/rules/`](https://github.com/codechup/claude-code-training/tree/main/.claude/rules)
+instead, where each file carries a `paths:` frontmatter block so it only loads when a session is
+working on the files it governs:
+
+| Rule                                                                                                              | Applies to             | What it constrains                                               |
+| ----------------------------------------------------------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------- |
+| [`content.md`](https://github.com/codechup/claude-code-training/blob/main/.claude/rules/content.md)               | `content/**/*.mdx`     | Lesson template order, the evidence rule, the sources block      |
+| [`design.md`](https://github.com/codechup/claude-code-training/blob/main/.claude/rules/design.md)                 | `src/**`, `public/**`  | Tokens only, no raw colour literals, 390 px first, WCAG 2.2 AA   |
+| [`i18n.md`](https://github.com/codechup/claude-code-training/blob/main/.claude/rules/i18n.md)                     | `content/tr/**`        | Which English terms stay English, diacritics, slug parity        |
+| [`plans.md`](https://github.com/codechup/claude-code-training/blob/main/.claude/rules/plans.md)                   | `plans/**`, `STATE.md` | The claim protocol, and the mistakes sessions here actually make |
+| [`public-hygiene.md`](https://github.com/codechup/claude-code-training/blob/main/.claude/rules/public-hygiene.md) | every file             | What may never be committed to a public repository               |
+
+Splitting them this way is the point of [path-scoped
+rules](/en/l1-beginner/m03-memory/rules/): a translation session pays no context for the design
+rules, and a component session pays none for the Turkish terminology list.
+
+## Four hooks, and why each one exists
+
+[`.claude/settings.json`](https://github.com/codechup/claude-code-training/blob/main/.claude/settings.json)
+wires four hook scripts. None of them is clever; each one removes a class of mistake that a
+session would otherwise make at three in the morning.
+
+| Event                                          | Script                                                                                                            | What it does                                                                                                                                                                                                                                                                                                  |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PreToolUse` (`Write\|Edit\|Bash\|PowerShell`) | [`guard-hygiene.mjs`](https://github.com/codechup/claude-code-training/blob/main/.claude/hooks/guard-hygiene.mjs) | Exits 2 — blocking the tool call — if the content being written, or a command being run, carries private infrastructure details or credential material. It shells out to `scripts/check-public-hygiene.mjs` rather than keeping its own pattern list, so the hook and CI can never disagree.                  |
+| `PreToolUse` (`Bash\|PowerShell`)              | [`guard-bash.mjs`](https://github.com/codechup/claude-code-training/blob/main/.claude/hooks/guard-bash.mjs)       | Refuses three commands that are always a mistake here: a recursive force-delete of anything that is not a regenerable build directory, a force-push (and any force-push naming `main`), and a shell write into a `.env*` file. Anything it does not recognise exits 0 — it is a guard rail, not an allowlist. |
+| `PostToolUse` (`Write\|Edit`)                  | [`format.mjs`](https://github.com/codechup/claude-code-training/blob/main/.claude/hooks/format.mjs)               | Runs Prettier on the file just written, so the tree is always in the shape `prettier --check .` expects. Every path exits 0: formatting must never interrupt a session.                                                                                                                                       |
+| `SessionStart`                                 | [`session-start.mjs`](https://github.com/codechup/claude-code-training/blob/main/.claude/hooks/session-start.mjs) | Prints the `TL;DR` line from `STATE.md` plus the output of `node tools/plan/cli.ts next` into the session's context, so a new session knows where the project stands without opening two files first.                                                                                                         |
+
+Three details are worth stealing.
+
+**The guard delegates.** `guard-hygiene.mjs` does not contain a single regex. The patterns live in
+`scripts/check-public-hygiene.mjs`, and the same script runs as the `pre-commit` git hook
+(`scripts/git-hooks/pre-commit`, installed by `sh scripts/install-hooks.sh`) and as its own step in
+CI. One pattern list, three enforcement points — so tightening the rule tightens it everywhere at
+once, and a session cannot pass the hook and then fail CI for the same reason. (`gitleaks` in CI is
+a fourth net, but an independent one with its own rules in `.gitleaks.toml`.)
+
+**Blocking hooks say why twice.** `guard-bash.mjs` writes the documented
+`hookSpecificOutput.permissionDecision: "deny"` object to stdout _and_ the plain reason to stderr,
+because the JSON is what Claude reads and stderr is what a human reads in the terminal.
+
+**The distinction between a blocking and a non-blocking event is a design constraint, not a
+detail.** `PreToolUse` is blocking, so the two guards are allowed to fail. `PostToolUse` and
+`SessionStart` are not, so the formatter and the briefing exit 0 on every path including every
+failure path — a broken Prettier install degrades to "the file is not formatted", never to "the
+session stopped".
+
+## Four skills and five agents
+
+The [skills](https://github.com/codechup/claude-code-training/tree/main/.claude/skills) are the
+repetitive parts of the workflow, written down once:
+
+- [`/plan-next`](https://github.com/codechup/claude-code-training/blob/main/.claude/skills/plan-next/SKILL.md)
+  — a thin wrapper around the plan CLI, so nobody has to remember the `node tools/plan/cli.ts`
+  invocations. It sets `disable-model-invocation: true`: it is for a human to type, not for Claude
+  to reach for.
+- [`/new-lesson`](https://github.com/codechup/claude-code-training/blob/main/.claude/skills/new-lesson/SKILL.md)
+  — scaffolds an English lesson, its Turkish `draft: true` twin at the mirrored path, and the
+  shared transcript folder, after checking the slug against the curriculum. Structure only: it
+  writes no prose and no facts.
+- [`/translate-lesson`](https://github.com/codechup/claude-code-training/blob/main/.claude/skills/translate-lesson/SKILL.md)
+  — refuses to run on an English page that is still moving, then delegates to the `translator`
+  agent.
+- [`/verify-sources`](https://github.com/codechup/claude-code-training/blob/main/.claude/skills/verify-sources/SKILL.md)
+  — re-fetches every URL in a lesson's `sources[]` and refreshes `verified_at`, reporting dead or
+  moved links loudly.
+
+Each carries an `allowed-tools` list narrow enough to describe the job — `/plan-next` can run the
+plan CLI and read files, and nothing else — and a `model`/`effort` pair matched to the work.
+
+The [agents](https://github.com/codechup/claude-code-training/tree/main/.claude/agents) split
+lesson production into roles that can be judged separately:
+
+| Agent                                                                                                                 | Model / effort  | Tools                | Role                                                                                                  |
+| --------------------------------------------------------------------------------------------------------------------- | --------------- | -------------------- | ----------------------------------------------------------------------------------------------------- |
+| [`lesson-researcher`](https://github.com/codechup/claude-code-training/blob/main/.claude/agents/lesson-researcher.md) | sonnet / medium | read + web           | Fetches the official doc and reconciles it against the research inventory; produces a brief, no prose |
+| [`lesson-writer`](https://github.com/codechup/claude-code-training/blob/main/.claude/agents/lesson-writer.md)         | opus / high     | read + write         | Drafts one English lesson from a brief and a real transcript; stops if there is no transcript         |
+| [`translator`](https://github.com/codechup/claude-code-training/blob/main/.claude/agents/translator.md)               | sonnet / medium | read + write, no web | Writes the Turkish twin; never rewrites the argument                                                  |
+| [`fact-checker`](https://github.com/codechup/claude-code-training/blob/main/.claude/agents/fact-checker.md)           | sonnet / high   | read + `WebFetch`    | Reports every claim as supported, contradicted or unverifiable — read-only, it never fixes            |
+| [`reviewer`](https://github.com/codechup/claude-code-training/blob/main/.claude/agents/reviewer.md)                   | sonnet / high   | read only            | Checks template order, evidence, sources completeness, hygiene and parity                             |
+
+The two reviewing agents are deliberately read-only, with `Write`, `Edit` and `Bash` in
+`disallowedTools`. That is the whole trick behind the review step (D071): an agent that can fix
+what it finds is tempted to fix instead of report, and the writing session loses the chance to
+decide whether the finding is right. Every content plan runs both before its PR, and records the
+counts — supported, contradicted, unverifiable — in its Handoff notes.
+
+There is a second reason the reviewers are separate processes rather than a checklist in the
+writer's prompt: they start from an empty context. A session that has spent forty tool calls
+convincing itself a lesson is correct is the worst possible judge of whether it is.
+
+## The plan system, in one paragraph
+
+Work is a directory of Markdown files. Each
+[`plans/PNN-slug.md`](https://github.com/codechup/claude-code-training/tree/main/plans) is a
+self-contained work order with YAML frontmatter — id, milestone, status, owner, branch, model and
+effort hints, `depends_on`, `owned_paths`, `shared_paths`, `open_questions` — and a fixed
+ten-section body (D047). A session claims one, works in its own worktree on branch `plan/NN-slug`,
+touches only its `owned_paths`, opens a PR titled `[PNN] …`, and the PR is squash-merged when CI
+is green. [`STATE.md`](https://github.com/codechup/claude-code-training/blob/main/STATE.md) is
+generated from that frontmatter and never hand-edited, and
+[`tools/plan/cli.ts`](https://github.com/codechup/claude-code-training/blob/main/tools/plan/cli.ts)
+owns both — `state`, `next`, `claim`, `status`, `check`, `show`. The full contract is
+[`plans/README.md`](https://github.com/codechup/claude-code-training/blob/main/plans/README.md);
+the mechanics are the subject of
+[m18](/en/l4-master/m18-multi-session/plan-files/), and this page will not repeat them.
+
+What is worth adding here is the arithmetic. As this page was written the repository held 48 plan
+files across five milestones, and `node tools/plan/cli.ts check` validated the whole set in one
+command:
+
+```text
+$ node tools/plan/cli.ts check
+ok: 48 plans, frontmatter valid, DAG acyclic, no owned_paths overlap, STATE.md fresh
+```
+
+Four things are checked there that no reviewer would reliably catch by reading: that every
+`depends_on` names a plan that exists and that the graph has no cycle; that no two active plans
+claim overlapping `owned_paths`, computed on the static prefix of each glob; that no
+`in_progress` plan has an unfinished dependency; and that `STATE.md` is byte-identical to what
+regenerating it would produce. The last one is why `STATE.md` can be trusted at a glance — a
+stale one fails CI.
+
+## The content pipeline is a set of gates
+
+Lesson content is MDX under `content/en/**` and `content/tr/**`, loaded by two Astro collections
+whose schemas live in
+[`src/content/schema.ts`](https://github.com/codechup/claude-code-training/blob/main/src/content/schema.ts).
+Everything that could go wrong with a lesson is checked by a script rather than by a person:
+
+| Gate          | Command                                                                                                                          | What it refuses                                                                                                                                                                                                                                                                                                                                            |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Content gate  | `npm run gate` ([`scripts/content-gate.ts`](https://github.com/codechup/claude-code-training/blob/main/scripts/content-gate.ts)) | An English page with no Turkish twin at the mirrored path (or the reverse); frontmatter that fails the zod schema; a code fence with no language tag; a lesson whose `level`/`module` frontmatter disagrees with the directory it lives in. With `--no-drafts`, any `draft: true` at all — that is how a release plan asserts nothing half-finished ships. |
+| Hygiene       | `node scripts/check-public-hygiene.mjs`                                                                                          | Infrastructure details or credential material anywhere in the tracked tree.                                                                                                                                                                                                                                                                                |
+| Design tokens | `node scripts/check-raw-colors.mjs`                                                                                              | A hex, `rgb()` or named colour outside `tokens.css`.                                                                                                                                                                                                                                                                                                       |
+| CSP           | `node scripts/check-no-inline-script.mjs`                                                                                        | An inline `<script>` body — the origin serves `script-src 'self'` with no nonces, so it runs against the source _and_ again against `dist/` after the build.                                                                                                                                                                                               |
+| Plans         | `node tools/plan/cli.ts check`                                                                                                   | The plan-set invariants above.                                                                                                                                                                                                                                                                                                                             |
+
+The gate that shaped the writing most is the parity check. English is the source language and
+Turkish is a translation (D016), but parity is enforced at the level of _files_, not finished
+prose: when an English lesson lands, its Turkish twin must exist, and it is allowed to be a
+`draft: true` stub with a one-paragraph summary until the translation wave reaches it. A draft
+gets no route, no navigation entry and no place in the search index, so a half-translated site is
+never a broken site — and the parity gate still fails loudly if a translator is skipped entirely.
+
+The evidence rule (D093) is the part with no automation behind it. Every command a lesson shows
+was run; every transcript under
+[`content/_shared/transcripts/`](https://github.com/codechup/claude-code-training/tree/main/content/_shared/transcripts)
+is a real capture from a real session against the lab repository, with a provenance header giving
+the date, the exact command and the Claude Code version, trimmed but never edited (D070, D099).
+At the time of writing that directory held 261 recordings across 21 modules, alongside 27
+per-lesson `README.md` files documenting how each capture was made. Where a surface
+cannot be captured headlessly — an interactive dialog, a keybinding — the lesson says so in prose
+and shows the commands, rather than inventing a plausible-looking session. Nothing in CI can
+detect a fabricated transcript; the only defence is that the rule is written in four places and
+that fabrication is the one thing a review will not forgive.
+
+## From merge to served page
+
+[`.github/workflows/ci.yml`](https://github.com/codechup/claude-code-training/blob/main/.github/workflows/ci.yml)
+runs on every pull request and every push to `main`, in four jobs:
+
+- **quality** — `npm ci`, typecheck, lint, the hygiene guard, the raw-colour guard, the plan
+  self-check, the content gate, `gitleaks` over the full history, unit tests with a 70 % line
+  coverage floor on `src/lib`, `tools/plan` and `scripts`, and `astro build`. It uploads the built
+  site as the `site-dist` artifact.
+- **e2e** — downloads that artifact and runs Playwright with axe: accessibility, the site shell,
+  lesson pages and search.
+- **links** — on pull requests only, `lychee` over the Markdown and MDX files the PR actually
+  changed, so a new lesson's sources are checked without re-checking the whole site every time.
+  A separate [weekly
+  workflow](https://github.com/codechup/claude-code-training/blob/main/.github/workflows/links-weekly.yml)
+  sweeps every link in the repository and opens an issue when something rots.
+- **lighthouse** — Lighthouse CI against the same artifact.
+
+Every third-party action is pinned to a commit SHA with the version in a trailing comment. That is
+the [supply-chain habit](/en/l3-advanced/m14-security/) the security module argues for, applied
+here.
+
+[`deploy.yml`](https://github.com/codechup/claude-code-training/blob/main/.github/workflows/deploy.yml)
+runs on pushes to `main` and has three properties worth copying:
+
+1. **It does not rebuild.** It calls `ci.yml` as a reusable workflow and downloads the artifact
+   that run produced, so the bytes that were tested are the bytes that ship.
+2. **There is a kill switch.** A `gate` job runs only `if: vars.DEPLOY_ENABLED == 'true'`, and
+   every other job depends on it. With the repository variable unset — the default — the whole
+   workflow finishes green having done nothing.
+3. **The upload is two-phase.** Content-addressed assets and the search index go first without
+   `--delete`; the HTML follows with `--delete`. In that order no page can ever reference an asset
+   that has not been uploaded yet, and files removed from a build disappear from the host.
+
+The destination is a directory on a host reachable over SSH. Its address, its account and its path
+are GitHub secrets — `SSH_HOST`, `SSH_USER`, `SSH_KEY`, `DEPLOY_PATH` — and the hygiene guard
+exists precisely so that none of those values can be written into a file in this repository as a
+"convenient default". Making that directory answer to a URL is a server configuration owned
+elsewhere; this repository's responsibility ends at the `rsync`. The last step is an edge smoke
+test against the live URL, because "the workflow was green" and "the site is up" are different
+claims.
+
+Full write-up:
+[`docs/deploy/README.md`](https://github.com/codechup/claude-code-training/blob/main/docs/deploy/README.md).
+
+## What actually made the difference
+
+Looking back over the build, four things carried most of the weight, and they are not evenly
+weighted with how much work they took.
+
+**Deciding before delegating.** The hundred decisions and the design canvas cost a few days and
+removed the entire class of failure where two parallel sessions make incompatible choices and
+someone has to throw one away.
+
+**Disjoint ownership.** Parallelism here is not clever scheduling. It is that every plan declares
+the files it owns, a command checks that no two active plans overlap, and each session works in
+its own worktree. Merge conflicts on content became rare enough to be surprising.
+
+**Automating the rules that are boring to enforce.** Formatting, colour literals, inline scripts,
+language parity, infrastructure hygiene, `STATE.md` freshness — all of these are things a
+reviewer _can_ catch and reliably stops catching by the fortieth pull request. Every one of them
+is a script that runs in a hook and in CI.
+
+**Writing the hand-off, not just the code.** Every plan ends with Handoff notes, and every session
+fills them in: what changed, what it decided, what it could not verify, what the next session
+should know. The plans a later session found easiest to pick up were never the ones with the
+cleanest code — they were the ones whose predecessor had written down what it was unsure about.
+
+The corresponding honest note: none of this makes a wrong lesson right. The gates catch structure,
+parity, hygiene and staleness. Whether a paragraph is _true_ is checked by fetching the official
+documentation and by a fact-checking agent that reports rather than repairs, and ultimately by a
+human reading it. If you find something wrong on this site, the next page tells you what to do
+about it.
+
+## Where to look next
+
+| If you want                                | Read                                                                                                                      |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| The mechanics of plan files and `STATE.md` | [m18 — Coordinating parallel sessions](/en/l4-master/m18-multi-session/)                                                  |
+| To propose a fix or a lesson               | [Contributing](/en/meta/contributing/)                                                                                    |
+| Every source this site cites               | [Sources index](/en/meta/sources-index/)                                                                                  |
+| What a `.claude/` directory can hold       | [Explore the .claude directory](https://code.claude.com/docs/en/claude-directory.md) (official docs, verified 2026-09-07) |
+| The repository itself                      | [github.com/codechup/claude-code-training](https://github.com/codechup/claude-code-training)                              |
