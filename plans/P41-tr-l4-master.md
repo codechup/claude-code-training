@@ -2,8 +2,8 @@
 id: P41
 title: "TR translation: L4 Master"
 milestone: M3
-status: todo
-owner: null
+status: in_progress
+owner: lead-opus
 branch: plan/41-tr-l4-master
 model_hint: sonnet
 effort_hint: medium
@@ -18,7 +18,7 @@ owned_paths:
 shared_paths:
   - content/tr/playbook/glossary.mdx
 estimate: L
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-08T00:46:05Z
 open_questions: []
 ---
 

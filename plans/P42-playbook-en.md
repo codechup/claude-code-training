@@ -2,8 +2,8 @@
 id: P42
 title: Playbook (EN)
 milestone: M3
-status: todo
-owner: null
+status: in_progress
+owner: lead-opus
 branch: plan/42-playbook-en
 model_hint: opus
 effort_hint: high
@@ -12,7 +12,7 @@ owned_paths:
   - content/en/playbook/**
 shared_paths: []
 estimate: L
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-08T00:46:06Z
 open_questions: []
 ---
 

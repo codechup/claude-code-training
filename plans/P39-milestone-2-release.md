@@ -2,7 +2,7 @@
 id: P39
 title: Milestone M2 release
 milestone: M2
-status: review
+status: done
 owner: sonnet-p39
 branch: plan/39-milestone-2-release
 model_hint: sonnet
@@ -12,7 +12,7 @@ owned_paths:
   - docs/release/M2-release.md
 shared_paths: []
 estimate: S
-updated_at: 2026-09-08T00:37:40Z
+updated_at: 2026-09-08T00:45:56Z
 open_questions:
   - "content/_shared/sources.json is currently `{\"sources\": []}` on main — wiped from ~150 entries by a bad rebase inside P31's merge (commit e785c9d, PR #57), confirmed by `git log -p` (a -1018/+1 diff hidden inside a squash-folded 'STATE.md after rebase' sub-commit). No site code reads this file today, so there is no live-site impact, but the shared cross-lesson registry itself is now useless. Recommended fix: a `chore(content)` PR that reconstructs the union of every P23/P27-P38 append from their Handoff notes (or, better, from each PR's own diff at merge time) and restores it additively. Whoever picks this up should diff PR #57's parent against its merge base to recover the exact pre-wipe file."
   - "10 of the 22 Turkish glossary terms P25's Handoff notes describe adding to content/tr/playbook/glossary.mdx (marketplace, artifact, auto memory, rule, renderer, monorepo, import, compaction, chord, routine) are not present in the file on main (36 headings exist, not ~46), breaking 14 `/tr/playbook/glossary/#<anchor>` links across 8 TR L1 lessons (m02-interact/04-plan-mode, m03-memory/01/02/04/05, m04-commands/01/04/05). Not fixed here (outside this plan's owned_paths; non-goals forbid editing content directly). Recommended fix: whoever owns content/tr/playbook/glossary.mdx re-adds the 10 missing terms with the one-line definitions P25's Handoff notes already drafted."

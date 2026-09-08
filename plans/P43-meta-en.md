@@ -2,8 +2,8 @@
 id: P43
 title: Meta section (EN)
 milestone: M3
-status: todo
-owner: null
+status: in_progress
+owner: lead-opus
 branch: plan/43-meta-en
 model_hint: opus
 effort_hint: high
@@ -12,7 +12,7 @@ owned_paths:
   - content/en/meta/**
 shared_paths: []
 estimate: M
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-08T00:46:06Z
 open_questions: []
 ---
 
