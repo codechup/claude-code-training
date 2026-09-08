@@ -2,7 +2,7 @@
 id: P48
 title: 'Kiln: whole-site visual redesign'
 milestone: M4
-status: review
+status: done
 owner: lead-opus
 branch: plan/48-kiln-redesign
 model_hint: opus
@@ -24,7 +24,7 @@ shared_paths:
   - .claude/rules/design.md
   - scripts/check-raw-colors.mjs
 estimate: L
-updated_at: 2026-09-08T20:03:18Z
+updated_at: 2026-09-08T20:18:11Z
 open_questions: []
 ---
 
