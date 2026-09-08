@@ -2,7 +2,7 @@
 id: P42
 title: Playbook (EN)
 milestone: M3
-status: review
+status: done
 owner: lead-opus
 branch: plan/42-playbook-en
 model_hint: opus
@@ -12,7 +12,7 @@ owned_paths:
   - content/en/playbook/**
 shared_paths: []
 estimate: L
-updated_at: 2026-09-08T01:32:17Z
+updated_at: 2026-09-08T02:39:41Z
 open_questions:
   - 'docs/CURRICULUM.md Playbook section lists seven numbered pages (01-decision-trees ... 07-checklists, with best practices split l1-l2 / l3-l4); this plan Scope named five non-numbered pages plus the index, which is also the set P44 Scope expects. The five were shipped. Does a checklists page (session start / PR / security / release) still ship, and under which plan - and should CURRICULUM.md be corrected to the five-page shape?'
   - 'The a11y acceptance criterion was met with a temporary playwright.p42.config.ts on port 4442 (per the session brief) and the temp files were deleted, so CI does not cover the six Playbook routes: e2e/a11y.spec.ts lists routes explicitly and is outside this plan owned_paths. Appending the six routes to that shared spec is a one-line-per-route change a release or hardening plan should make.'

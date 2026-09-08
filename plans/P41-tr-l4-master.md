@@ -2,7 +2,7 @@
 id: P41
 title: "TR translation: L4 Master"
 milestone: M3
-status: review
+status: done
 owner: lead-opus
 branch: plan/41-tr-l4-master
 model_hint: sonnet
@@ -18,7 +18,7 @@ owned_paths:
 shared_paths:
   - content/tr/playbook/glossary.mdx
 estimate: L
-updated_at: 2026-09-08T02:29:31Z
+updated_at: 2026-09-08T02:39:41Z
 open_questions:
   - "Missing glossary.mdx entries for terms used across this level: routine, artifact, prompt caching, ultracode, agent team, monitor, plan file, handoff, canvas, gateway, devcontainer, teammate, mailbox, connector, channel, environment (cloud environment), CDN, CSP. Owner-shared content/tr/playbook/glossary.mdx was being edited by a sibling session throughout this plan, so per the plan's explicit instruction this session never touched it — every kept-English term above is explained inline in parentheses on first use per page instead of being linked, and NO first-use link was added for these. This is the reviewer subagent's '4 major' finding on its 5-file sample (missing first-use glossary links) — it is an expected consequence of the glossary-hands-off constraint, not an oversight. Once glossary.mdx has entries for these terms, a follow-up pass should add `[term](/tr/playbook/glossary/#term)` links on first use across all 31 lessons in this level."
   - "m16-orchestration/03-agent-teams-messaging.mdx renders 'teammate' as 'takım arkadaşı' (Turkish) with an English parenthetical, rather than keeping 'teammate' in English with a Turkish suffix the way 'agent team' itself is kept. 'teammate' is not on the i18n.md kept-English list, so this is a defensible reading, but it should be confirmed against the eventual glossary entry for consistency with the rest of the site."

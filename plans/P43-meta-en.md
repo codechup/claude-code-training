@@ -2,7 +2,7 @@
 id: P43
 title: Meta section (EN)
 milestone: M3
-status: review
+status: done
 owner: lead-opus
 branch: plan/43-meta-en
 model_hint: opus
@@ -12,7 +12,7 @@ owned_paths:
   - content/en/meta/**
 shared_paths: []
 estimate: M
-updated_at: 2026-09-08T01:29:00Z
+updated_at: 2026-09-08T02:39:42Z
 open_questions:
   - 'P44: the three content/tr/meta/* stubs P43 created carry `draft: true`, but sectionSchema has no `draft` field, so it is stripped and the stubs route as live pages. Should sectionSchema gain an optional `draft` (and the section routes filter on it), or should section-shaped pages simply never ship as stubs? Owner/P47 call — P43 mitigated with a visible in-page banner.'
   - '`npm run lint` does not run scripts/check-public-hygiene.mjs or scripts/check-raw-colors.mjs, although CLAUDE.md, .claude/rules/public-hygiene.md and docs/authoring/CONTENT-PLAN-BRIEF.md all state or imply it does (already a P04 open question). Either fix the lint script or fix the three docs — a contributor following the documented local gate today misses both checks.'

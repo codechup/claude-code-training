@@ -2,7 +2,7 @@
 id: P40
 title: "TR translation: L3 Advanced"
 milestone: M3
-status: review
+status: done
 owner: lead-opus
 branch: plan/40-tr-l3-advanced
 model_hint: sonnet
@@ -18,7 +18,7 @@ owned_paths:
 shared_paths:
   - content/tr/playbook/glossary.mdx
 estimate: L
-updated_at: 2026-09-08T02:23:09Z
+updated_at: 2026-09-08T02:39:40Z
 open_questions:
   - "Missing glossary terms encountered during translation that have no entry yet in content/tr/playbook/glossary.mdx (a sibling session owns that file during this wave, so P40 could not add them): agent view, agent teams/teammate, background (subagent placement sense), advisor, isolation, webhook, GitHub Action/action (distinct from the existing GitHub App entry), Agent SDK, runner, prompt injection, protected path/critical path, managed settings, data retention/ZDR, transport, stdio, scope, marketplace (listed as a kept term in .claude/rules/i18n.md but absent from the glossary file itself), extension, IDE, Remote Control, Claude Tag, routine (also listed as a kept term but absent), cloud environment/cloud session, Desktop app, computer use, Dispatch, teleport, ultrareview, tmux session/multiplexer, Access bundle. Owner should triage and add the genuinely load-bearing ones (marketplace and routine look like real gaps since D-rules already name them as kept terms)."
   - "content/tr/l3-advanced/m10-subagents/index.mdx, m12-plugins/index.mdx, m13-headless-ci/index.mdx and content/tr/l3-advanced/index.mdx all still translate 'agent(s)' as the invented Turkish calque 'ajan/ajanlar' (D018 violation). These files pre-date this plan (not among the 37 draft stubs P40 was scoped to flip) and were flagged by the reviewer subagent as out-of-scope for this PR; a follow-up plan should fix them the same way the 37 lesson files were fixed (ajan -> agent + Turkish suffix)."

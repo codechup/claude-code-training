@@ -2,8 +2,8 @@
 id: P44
 title: "TR translation: Playbook and Meta"
 milestone: M3
-status: todo
-owner: null
+status: in_progress
+owner: sonnet-p44
 branch: plan/44-tr-playbook-meta
 model_hint: sonnet
 effort_hint: medium
@@ -13,7 +13,7 @@ owned_paths:
   - content/tr/meta/**
 shared_paths: []
 estimate: M
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-08T02:39:43Z
 open_questions: []
 ---
 
