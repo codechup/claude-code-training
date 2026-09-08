@@ -169,12 +169,14 @@ echo
 
 # --- immutable caching on hashed assets (nginx only) ------------------------
 if [ "$SKIP_EDGE" = "1" ]; then
-  skip "Cache-Control: immutable on first /_astro/*.css asset"
+  skip "Cache-Control: immutable on the first hashed /_astro/ asset"
 else
   html=$(curl -s --max-time 20 "${BASE_URL}/en/")
-  css_path=$(printf '%s\n' "$html" | grep -oE '/_astro/[A-Za-z0-9_.-]+\.css' | head -n1 || true)
+  # Pages carry their CSS inline by design (see astro.config.ts build.inlineStylesheets),
+  # so the hashed assets under /_astro/ are scripts and fonts; any one proves the rule.
+  css_path=$(printf '%s\n' "$html" | grep -oE '/_astro/[A-Za-z0-9_.-]+[.](css|js|woff2)' | head -n1 || true)
   if [ -z "$css_path" ]; then
-    fail "No /_astro/*.css asset referenced from /en/"
+    fail "No hashed /_astro/ asset referenced from /en/"
   else
     cache_control=$(header_value "$(curl -s -D - -o /dev/null --max-time 20 "${BASE_URL}${css_path}")" "Cache-Control")
     if printf '%s' "$cache_control" | grep -q "immutable"; then
