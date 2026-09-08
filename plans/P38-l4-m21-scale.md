@@ -2,7 +2,7 @@
 id: P38
 title: "L4 Master module: Scale (m21-scale)"
 milestone: M2
-status: review
+status: done
 owner: lead-fable
 branch: plan/38-l4-m21-scale
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T23:45:31Z
+updated_at: 2026-09-08T00:13:07Z
 open_questions:
   - 'research/feature-inventory.md has no facts row for gateways, Amazon Bedrock, Google Cloud''s Agent Platform, Microsoft Foundry, network-config or devcontainer — only the docs-map slug listing on line 18. This module fell through to live docs (correct per the source policy), but P03 should close the coverage gap so the next lesson in this area does not re-fetch eight pages.'
   - 'The lab repository has no lesson/m21-scale-* tags (its README documents this as deliberate: m21 is process/strategy, not a change to that repo). Every lab here therefore uses repo_tag: "none" against a throwaway clone of main. If a later plan tags m21, these five lessons should be revisited.'

@@ -2,7 +2,7 @@
 id: P34
 title: "L4 Master module: Autonomy (m17-autonomy)"
 milestone: M2
-status: review
+status: done
 owner: lead-fable
 branch: plan/34-l4-m17-autonomy
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T23:36:13Z
+updated_at: 2026-09-08T00:13:05Z
 open_questions:
   - 'research/feature-inventory.md has no rows for /loop, /goal, Monitor, ScheduleWakeup, channels or desktop scheduled tasks — only the doc-slug map (lines 11, 15) names them, and the Routines row (line 45) is a one-line summary that misses the /schedule "Unknown command" nuance the fact-checker caught. This module was therefore written entirely from live doc fetches (2026-09-07), which content.md §6 allows, but it makes this plan''s "no discrepancy against the inventory" acceptance criterion unfalsifiable. P03 owns research/ — backfill rows for these six areas.'
   - 'Three labs in this module cannot be captured end to end and say so inline: routine creation (02) is a claude.ai/Desktop web form, the desktop scheduled task (04) is entirely the Desktop app UI, and installing/pairing a channel (05) needs Bun plus a third-party bot token. Those halves are taught as step lists from the official docs with no transcript, per the brief. A future plan with access to the Desktop app could capture 04 for real.'

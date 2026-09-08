@@ -2,8 +2,8 @@
 id: P39
 title: Milestone M2 release
 milestone: M2
-status: todo
-owner: null
+status: in_progress
+owner: sonnet-p39
 branch: plan/39-milestone-2-release
 model_hint: sonnet
 effort_hint: medium
@@ -12,7 +12,7 @@ owned_paths:
   - docs/release/M2-release.md
 shared_paths: []
 estimate: S
-updated_at: 2026-09-06T00:00:00Z
+updated_at: 2026-09-08T00:13:07Z
 open_questions: []
 ---
 

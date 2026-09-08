@@ -2,7 +2,7 @@
 id: P33
 title: "L4 Master module: Orchestration (m16-orchestration)"
 milestone: M2
-status: review
+status: done
 owner: lead-fable
 branch: plan/33-l4-m16-orchestration
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T23:33:43Z
+updated_at: 2026-09-08T00:12:39Z
 open_questions:
   - "The docs do not state how a workflow run's agents are reflected in the headless JSON envelope's `subagent_stats` counters. This run observed `spawned: 0` while three workflow agents demonstrably ran (journal + run directory). 04-pipeline-lab reports this as an observation, explicitly not as documented behaviour."
   - "The exact pre-2.1.203 error text for `--effort ultracode` is not on the live `workflows.md` or `model-config.md`; only the 2.1.203 version gate is. The lesson keeps the version gate and drops the quoted string."

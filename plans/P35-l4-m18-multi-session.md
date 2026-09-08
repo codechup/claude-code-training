@@ -2,7 +2,7 @@
 id: P35
 title: "L4 Master module: Multi-session (m18-multi-session)"
 milestone: M2
-status: review
+status: done
 owner: lead-fable
 branch: plan/35-l4-m18-multi-session
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T23:33:55Z
+updated_at: 2026-09-08T00:13:05Z
 open_questions:
   - "Plan-vs-CURRICULUM drift (P03 owns CURRICULUM). This plan's Deliverables list 4 lessons with working titles; docs/CURRICULUM.md section 2 m18-multi-session lists 6 (01-plan-files ... 06-this-repo-as-example). Followed the doc, per this plan's own Step 1. The plan file's Scope/Deliverables text should be reconciled with CURRICULUM by whoever next edits it."
   - "This plan's Acceptance criteria require a source entry of type 'doc', but src/content/schema.ts's sourceSchema enum only accepts official | video | article | repo. The lessons ship type: official. The plan text should be corrected so a future reader is not misled."

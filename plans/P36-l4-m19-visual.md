@@ -2,7 +2,7 @@
 id: P36
 title: "L4 Master module: Visual (m19-visual)"
 milestone: M2
-status: review
+status: done
 owner: lead-fable
 branch: plan/36-l4-m19-visual
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T23:42:30Z
+updated_at: 2026-09-08T00:13:06Z
 open_questions:
   - 'Lab tag drift (P22): the m19 sample data `artifacts/` (README.md + task-activity.csv) exists only on `lesson/m19-01-solution`, not on `lesson/m19-01-start`. The 01-artifacts lab therefore instructs `git checkout lesson/m19-01-solution -- artifacts/` after checking out the start tag. Move the directory into `lesson/m19-01-start` (and re-cut `lesson/m19-03-start`) and the extra step can be deleted.'
   - 'Lab tag drift (P22): `lesson/m19-03-start` and `lesson/m19-03-solution` are byte-identical (empty diff). Intentional for a browser-only lab? If a solution state was meant to exist, it was never committed.'

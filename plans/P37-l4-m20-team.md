@@ -2,7 +2,7 @@
 id: P37
 title: "L4 Master module: Team (m20-team)"
 milestone: M2
-status: review
+status: done
 owner: lead-fable
 branch: plan/37-l4-m20-team
 model_hint: opus
@@ -15,7 +15,7 @@ owned_paths:
 shared_paths:
   - content/_shared/sources.json
 estimate: L
-updated_at: 2026-09-07T23:41:59Z
+updated_at: 2026-09-08T00:13:06Z
 open_questions:
   - "No lab-repo tags exist for m20-team (P22 owns codechup/claude-code-lab). All six labs run in throwaway scratch projects with repo_tag 'none'. If P22 later adds m20 tags, lessons 01, 03, 05 and 06 are the ones whose labs could be re-pointed at a seeded repo."
   - "Managed settings (lesson 02) are OS-level and were deliberately NOT installed on this machine, so no transcript of an enforced policy exists anywhere on this site. Verifying the /status 'Setting sources' labels and the 'Skipped sources' line against a real deployment needs an owner with an administered fleet or a Team/Enterprise org."
