@@ -2,7 +2,7 @@
 id: P39
 title: Milestone M2 release
 milestone: M2
-status: in_progress
+status: review
 owner: sonnet-p39
 branch: plan/39-milestone-2-release
 model_hint: sonnet
@@ -12,8 +12,11 @@ owned_paths:
   - docs/release/M2-release.md
 shared_paths: []
 estimate: S
-updated_at: 2026-09-08T00:13:07Z
-open_questions: []
+updated_at: 2026-09-08T00:37:40Z
+open_questions:
+  - "content/_shared/sources.json is currently `{\"sources\": []}` on main — wiped from ~150 entries by a bad rebase inside P31's merge (commit e785c9d, PR #57), confirmed by `git log -p` (a -1018/+1 diff hidden inside a squash-folded 'STATE.md after rebase' sub-commit). No site code reads this file today, so there is no live-site impact, but the shared cross-lesson registry itself is now useless. Recommended fix: a `chore(content)` PR that reconstructs the union of every P23/P27-P38 append from their Handoff notes (or, better, from each PR's own diff at merge time) and restores it additively. Whoever picks this up should diff PR #57's parent against its merge base to recover the exact pre-wipe file."
+  - "10 of the 22 Turkish glossary terms P25's Handoff notes describe adding to content/tr/playbook/glossary.mdx (marketplace, artifact, auto memory, rule, renderer, monorepo, import, compaction, chord, routine) are not present in the file on main (36 headings exist, not ~46), breaking 14 `/tr/playbook/glossary/#<anchor>` links across 8 TR L1 lessons (m02-interact/04-plan-mode, m03-memory/01/02/04/05, m04-commands/01/04/05). Not fixed here (outside this plan's owned_paths; non-goals forbid editing content directly). Recommended fix: whoever owns content/tr/playbook/glossary.mdx re-adds the 10 missing terms with the one-line definitions P25's Handoff notes already drafted."
+  - "content/en/playbook/glossary.mdx (the EN twin) is still a placeholder sentence; P25 (22 terms) and P26 (24 terms) both proposed EN mirror entries with no owner assigned yet."
 ---
 
 ## Goal
@@ -74,4 +77,38 @@ A reviewer reads `docs/release/M2-release.md`, opens a translated TR lesson live
 
 ## Handoff notes
 
-- _Filled by the executing session: what changed, decisions, follow-ups, blockers._
+**Session** `sonnet-p39-2026-09-08`, worktree `../cct-wt-39`.
+
+**What was done.** Read every P25–P38 Handoff notes section (all clean of release-blocking
+issues; recurring non-blocking items carried into `docs/release/M2-release.md` §8). Ran the full
+local gate (typecheck, lint, gate, test, build, raw-colors, public-hygiene, plan check) against
+the complete L1–L4 tree — all pass. Verified EN/TR lesson counts on disk directly (120 EN, 120
+TR, 51 TR `draft:false` in L1/L2, 68 TR `draft:true` in L3/L4, 288 transcripts), not from any
+plan's self-reported counts — one plan's grep-based Handoff-notes check would have false-positived
+on lesson prose containing the string `draft: true`. Ran the repo's own Playwright config (port
+4321, free) plus a temporary sampling spec (deleted after the run) covering a real M2 TR
+translation, both LangSwitch directions, the L3-draft LangSwitch case, and one lesson per L3/L4
+module — 116/116 assertions passed, 0 axe serious/critical violations. Ran a full-tree link sweep
+via the same `curl`-loop fallback M1 used (no `lychee` binary available): 172 URLs, 154×200, 18
+triaged (1 apt-repo root, 13 fictional lab placeholders, 4 real auth-gated endpoints demonstrated
+on purpose) — 0 real broken links. Ran LHCI against the full 231-page build — all budgets met.
+Verified the live site directly (content already deployed via each module's own squash merge;
+this plan's own commit is plans-only and triggers no new deploy) and ran
+`scripts/smoke/edge.sh` against `https://cc.codechup.com` — 14/14 passed.
+
+**Two real defects found and disclosed, neither fixed here (outside `owned_paths`/non-goals).**
+Full detail in `docs/release/M2-release.md` §8–9 and this plan's `open_questions`:
+
+1. `content/_shared/sources.json` is `{"sources": []}` on `main` — silently wiped from ~150
+   entries to empty by a bad rebase folded into P31's merge commit (`e785c9d`, PR #57). No live-
+   site impact (nothing in `src/` reads the file), but the registry itself is currently useless.
+2. 10 of the 22 Turkish glossary terms P25 reported adding are not actually in
+   `content/tr/playbook/glossary.mdx`, breaking 14 internal glossary links across 8 TR L1 lessons.
+
+**Not blocking this release.** Neither defect affects what a visitor to `cc.codechup.com` sees
+today (the sources registry is unused by the site; the 14 broken glossary anchors are internal
+links inside already-live TR lesson pages, not TR L3/L4's own draft mechanism, and none of the
+104 real Playwright routes exercised this session touched one of the 8 affected files' anchor
+links directly — the axe/e2e run does not click every in-body link). They are recorded here and
+in `docs/release/M2-release.md` exactly as the M1 release recorded its own plan-bookkeeping
+finding (§9 there), for a follow-up `chore` PR to fix.
