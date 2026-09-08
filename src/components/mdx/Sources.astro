@@ -1,17 +1,17 @@
 ---
-// The per-lesson Sources block (D041–D043): a mandatory official-docs
-// link (visually marked as such), YouTube/video entries as link cards
-// (title + duration + channel, NEVER an embedded player — D042), article
-// and repo links, and each entry's "last verified" date.
-//
-// This is the MDX-usable, standalone version of the inline block already
-// in `src/pages/[lang]/[level]/[module]/[slug]/index.astro` (P06, outside
-// this plan's `owned_paths`) — see this plan's Handoff notes for the
-// one-line swap P12 (or whichever plan next touches that file) can make
-// to replace that inline markup with `<Sources sources={entry.data.sources} lang={lang} />`.
+/**
+ * Sources — KILN §8.7.
+ *
+ * A compact list, not a card grid: one hairline-separated row per source,
+ * carrying a type chip, the title as a link with an `arrow-up-right`, the
+ * host in `small` `--cc-ink-faint`, and the verified date right-aligned.
+ * Video rows add channel and duration (D042: a link, never an embedded
+ * player). The official-docs source is marked with a filled chip (D041).
+ */
 import type { Source } from '../../content/schema.ts';
 import { hostOf, verifiedDate, videoMeta } from './sources.ts';
 import { t } from '../../lib/i18n/ui.ts';
+import Icon from '../ui/Icon.astro';
 
 interface Props {
   sources: Source[];
@@ -20,35 +20,47 @@ interface Props {
 
 const { sources, lang } = Astro.props as Props;
 const strings = t(lang);
+
+const TYPE_LABEL: Record<string, Record<Source['type'], string>> = {
+  en: { official: 'official', video: 'video', article: 'article', repo: 'repo' },
+  tr: { official: 'resmî', video: 'video', article: 'makale', repo: 'depo' },
+};
+const typeLabel = TYPE_LABEL[lang] ?? TYPE_LABEL.en;
 ---
 
-<section class="cc-mdx-sources" aria-labelledby="cc-mdx-sources-heading">
-  <h2 id="cc-mdx-sources-heading">{strings.sources}</h2>
-  <ul>
+<section class="cc-sources" aria-labelledby="cc-sources-heading">
+  <h2 class="cc-sources__heading" id="cc-sources-heading">{strings.sources}</h2>
+  <ul class="cc-sources__list">
     {
       sources.map((source) => {
         const meta = source.type === 'video' ? videoMeta(source) : null;
         return (
-          <li class={source.type === 'official' ? 'cc-mdx-sources-official' : ''}>
-            <span class="mono cc-mdx-sources-chip">
-              {source.type === 'official' && (
-                <span aria-hidden="true" class="cc-mdx-sources-star">
-                  ★{' '}
+          <li class="cc-sources__row">
+            <span class={`cc-sources__chip cc-sources__chip--${source.type}`}>
+              {typeLabel[source.type]}
+            </span>
+            <span class="cc-sources__main">
+              <a
+                class="cc-sources__link"
+                href={source.url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span class="cc-sources__head">
+                  <span class="cc-sources__title">{source.title}</span>
+                  <span class="cc-sources__out">
+                    <Icon name="arrow-up-right" size={15} />
+                  </span>
                 </span>
-              )}
-              {source.type}
-            </span>
-            <span class="cc-mdx-sources-main">
-              <a href={source.url} target="_blank" rel="noopener noreferrer">
-                {source.title}
+                <span class="cc-sources__detail">
+                  {hostOf(source.url)}
+                  {meta ? ` · ${meta}` : ''}
+                </span>
               </a>
-              <span class="mono muted cc-mdx-sources-detail">
-                {hostOf(source.url)}
-                {meta && ` · ${meta}`}
-              </span>
             </span>
-            <span class="mono muted cc-mdx-sources-date">
-              {strings.verifiedOn} {verifiedDate(source)}
+            <span class="cc-sources__date">
+              <span class="cc-sources__date-label">{strings.verifiedOn}</span>{' '}
+              <time datetime={verifiedDate(source)}>{verifiedDate(source)}</time>
             </span>
           </li>
         );
@@ -58,64 +70,149 @@ const strings = t(lang);
 </section>
 
 <style>
-  .cc-mdx-sources h2 {
-    font-size: var(--text-20);
-    margin: 0 0 var(--space-2);
+  .cc-sources {
+    margin-top: var(--cc-space-9);
+    max-width: var(--cc-measure);
   }
 
-  .cc-mdx-sources ul {
+  .cc-sources__heading {
+    margin: 0 0 var(--cc-space-4);
+    font-size: var(--cc-text-h2);
+    letter-spacing: var(--cc-track-h2);
+  }
+
+  .cc-sources__list {
     list-style: none;
     margin: 0;
     padding: 0;
+    border-top: 1px solid var(--cc-line);
   }
 
-  .cc-mdx-sources li {
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    flex-wrap: wrap;
-    padding: 10px 0;
-    border-top: 1px solid var(--color-line);
+  .cc-sources__row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    column-gap: var(--cc-space-3);
+    row-gap: var(--cc-space-1);
+    padding: var(--cc-space-3) 0;
+    border-bottom: 1px solid var(--cc-line);
   }
 
-  .cc-mdx-sources-official {
-    background: var(--color-bg-1);
-  }
-
-  .cc-mdx-sources-star {
-    color: var(--color-accent-text);
-  }
-
-  .cc-mdx-sources-chip {
+  /* Type chip — a shape, not a colour: `official` is the only one that
+     takes the accent, because it is the one D041 makes mandatory. */
+  .cc-sources__chip {
     display: inline-flex;
     align-items: center;
-    height: 26px;
-    padding: 0 10px;
-    border-radius: var(--radius-1);
-    background: var(--color-bg-3);
-    color: var(--color-ink-soft);
-    font-size: var(--text-12);
+    justify-content: center;
+    min-width: 4.5rem;
+    height: 22px;
+    margin-top: 3px;
+    padding: 0 var(--cc-space-2);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-pill);
+    background: var(--cc-paper-sunken);
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
   }
 
-  .cc-mdx-sources-main {
+  .cc-sources__chip--official {
+    background: var(--cc-accent-wash);
+    border-color: var(--cc-accent-line);
+    /* 12px clay on the accent wash is 4.11:1 with `--cc-accent`. */
+    color: var(--cc-accent-text);
+  }
+
+  .cc-sources__main {
     display: flex;
     flex-direction: column;
     gap: 2px;
     min-width: 0;
   }
 
-  .cc-mdx-sources-main a {
-    color: var(--color-ink);
-    font-size: var(--text-14);
+  /* The host line lives INSIDE the anchor: the whole title+host block is
+     one target, at least `--cc-tap` tall, and it reads as one thing to a
+     screen reader ("Quickstart, code.claude.com") rather than as a link
+     followed by an orphan fragment. */
+  .cc-sources__link {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    min-height: var(--cc-tap);
+    padding: var(--cc-space-1) 0;
+    color: var(--cc-ink);
+    text-decoration: none;
+    font-size: var(--cc-text-body);
+    line-height: 1.45;
   }
 
-  .cc-mdx-sources-detail {
-    font-size: var(--text-12);
+  .cc-sources__head {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--cc-space-2);
   }
 
-  .cc-mdx-sources-date {
-    margin-left: auto;
-    font-size: var(--text-11);
+  .cc-sources__title {
+    text-decoration: underline;
+    text-decoration-color: var(--cc-line-strong);
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+  }
+
+  .cc-sources__link:hover .cc-sources__title,
+  .cc-sources__link:focus-visible .cc-sources__title {
+    color: var(--cc-accent);
+    text-decoration-color: var(--cc-accent);
+  }
+
+  .cc-sources__out {
+    display: inline-flex;
+    color: var(--cc-ink-faint);
+  }
+
+  .cc-sources__link:hover .cc-sources__out {
+    color: var(--cc-accent);
+  }
+
+  .cc-sources__detail {
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+    letter-spacing: var(--cc-track-small);
+    color: var(--cc-ink-muted);
+  }
+
+  .cc-sources__date {
+    grid-column: 2;
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+    color: var(--cc-ink-muted);
     white-space: nowrap;
+  }
+
+  .cc-sources__date-label {
+    text-transform: lowercase;
+  }
+
+  /* From the 3-column layout's prose width up, the date returns to its own
+     right-aligned column and the row becomes a single line of hierarchy. */
+  @media (min-width: 640px) {
+    .cc-sources__row {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      padding: var(--cc-space-3) 0;
+    }
+
+    .cc-sources__chip {
+      margin-top: 0;
+    }
+
+    .cc-sources__date {
+      grid-column: 3;
+      justify-self: end;
+      text-align: right;
+    }
   }
 </style>

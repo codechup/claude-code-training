@@ -1,109 +1,155 @@
 ---
-// The lesson-template callout (D006, D019, D044): a mono `//` eyebrow
-// (reuses app.css's `.eyebrow` utility, P05) over one line of prose.
-// Three variants only, matching `docs/design/canvas-out/Components.dc.html`
-// exactly:
-//   - "note"              neutral information the reader should not skip.
-//   - "when-not-to-use"   the D006/D090 lesson-template section (warning
-//                          border) — `WhenNotToUse.astro` is a thin preset
-//                          over this variant.
-//   - "changed"           a deprecated/superseded-feature note (D044),
-//                          caret-red border, one line: old -> new + version.
-//
-// Token-only styling (CLAUDE.md: "Design only through tokens"): the canvas
-// borders warning/changed callouts with a roughly 40%-alpha tint of
-// --color-warning/--color-caret over the dark card background, baked into
-// the canvas's own literal palette as a translucent color function.
-// tokens.css has no pre-mixed alpha variant of those tokens, so this
-// component borders with the solid token color instead — slightly higher
-// contrast than the canvas mock, never a raw literal. Noted in this
-// plan's Handoff notes as a token gap for P05 to consider (an alpha
-// variant of the warning/caret tokens for borders like this one).
-export type CalloutVariant = 'note' | 'when-not-to-use' | 'changed';
+/**
+ * Callout — KILN §8.4.
+ *
+ * Left rule 3 px in the tone colour, a tone wash behind the block, and a
+ * micro label row (icon + uppercase label in Inter) over the body. The
+ * retired `//` eyebrow prefix and the monospace label are gone (KILN §3.3).
+ *
+ * Tones map onto the semantic tokens:
+ *   note              → `--cc-info`    neutral information the reader should not skip
+ *   tip               → `--cc-ok`      a shortcut / good practice
+ *   changed           → `--cc-warn`    a superseded or renamed behaviour (D044)
+ *   warning           → `--cc-danger`  a way to lose work
+ *   when-not-to-use   → `--cc-danger`  the D006/D090 lesson-template section,
+ *                                      shield icon and a stronger label
+ *
+ * `variant` is the historical prop name and stays: 140 lessons already pass
+ * `variant="changed"`, and `content/**` is read-only.
+ */
+import Icon, { type IconName } from '../ui/Icon.astro';
+
+export type CalloutVariant = 'note' | 'tip' | 'changed' | 'warning' | 'when-not-to-use';
 
 interface Props {
   variant?: CalloutVariant;
-  /** Eyebrow text. Defaults to a sensible label per variant. */
+  /** Micro label. Defaults to the tone's own label in `lang`. */
   label?: string;
+  lang?: string;
 }
 
-const DEFAULT_LABEL: Record<CalloutVariant, string> = {
-  note: 'Note',
-  'when-not-to-use': 'When not to use this',
-  changed: 'Changed',
+const ICON: Record<CalloutVariant, IconName> = {
+  note: 'info',
+  tip: 'sparkle',
+  changed: 'alert',
+  warning: 'alert',
+  'when-not-to-use': 'shield',
 };
 
-const { variant = 'note', label = DEFAULT_LABEL[variant] } = Astro.props as Props;
+const LABELS: Record<string, Record<CalloutVariant, string>> = {
+  en: {
+    note: 'Note',
+    tip: 'Tip',
+    changed: 'Changed',
+    warning: 'Warning',
+    'when-not-to-use': 'When NOT to use this',
+  },
+  tr: {
+    note: 'Not',
+    tip: 'İpucu',
+    changed: 'Değişti',
+    warning: 'Uyarı',
+    'when-not-to-use': 'Bunu ne zaman KULLANMAMALI',
+  },
+};
+
+const { variant = 'note', label, lang = 'en' } = Astro.props as Props;
+const strings = LABELS[lang] ?? LABELS.en;
+const text = label ?? strings[variant];
 ---
 
-<aside class={`cc-callout cc-callout--${variant}`} role="note" aria-label={label}>
-  <span class="cc-callout-icon" aria-hidden="true"></span>
-  <div class="cc-callout-body">
-    <span class="eyebrow">{label}</span>
-    <div class="cc-callout-content">
-      <slot />
-    </div>
+<aside class={`cc-callout cc-callout--${variant}`} role="note" aria-label={text}>
+  <p class="cc-callout__label">
+    <Icon name={ICON[variant]} size={16} /><span>{text}</span>
+  </p>
+  <div class="cc-callout__body">
+    <slot />
   </div>
 </aside>
 
 <style>
   .cc-callout {
-    display: flex;
-    gap: var(--space-3);
-    padding: 14px var(--space-4);
-    background: var(--color-bg-1);
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-3);
+    --cc-callout-tone: var(--cc-info);
+    --cc-callout-wash: var(--cc-info-wash);
+    --cc-callout-line: var(--cc-info-line);
+
+    margin: var(--cc-space-6) 0;
+    padding: var(--cc-space-4) var(--cc-space-5);
+    max-width: var(--cc-measure);
+    background: var(--cc-callout-wash);
+    border: 1px solid var(--cc-callout-line);
+    border-left: 3px solid var(--cc-callout-tone);
+    border-radius: 0 var(--cc-radius-md) var(--cc-radius-md) 0;
   }
 
-  .cc-callout--when-not-to-use {
-    border-color: var(--color-warning);
+  .cc-callout--tip {
+    --cc-callout-tone: var(--cc-ok);
+    --cc-callout-wash: var(--cc-ok-wash);
+    --cc-callout-line: var(--cc-ok-line);
   }
 
   .cc-callout--changed {
-    border-color: var(--color-caret);
+    --cc-callout-tone: var(--cc-warn);
+    --cc-callout-wash: var(--cc-warn-wash);
+    --cc-callout-line: var(--cc-warn-line);
   }
 
-  .cc-callout-icon {
-    flex: none;
-    width: 8px;
-    height: 8px;
-    margin-top: 6px;
-    border-radius: var(--radius-1);
-    background: var(--color-ink-muted);
+  .cc-callout--warning,
+  .cc-callout--when-not-to-use {
+    --cc-callout-tone: var(--cc-danger);
+    --cc-callout-wash: var(--cc-danger-wash);
+    --cc-callout-line: var(--cc-danger-line);
   }
 
-  .cc-callout--when-not-to-use .cc-callout-icon {
-    background: var(--color-warning);
-  }
-
-  .cc-callout--changed .cc-callout-icon {
-    background: var(--color-caret);
-  }
-
-  .cc-callout-body {
+  /* The label is the only place the tone colour becomes text. Each tone
+     token clears 4.5:1 against its own wash in both themes; the icon and
+     the left rule repeat the signal so state is never colour alone. */
+  .cc-callout__label {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
-    min-width: 0;
+    align-items: center;
+    gap: var(--cc-space-2);
+    margin: 0 0 var(--cc-space-2);
+    max-width: none;
+    color: var(--cc-callout-tone);
+    font-family: var(--cc-font-sans);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    line-height: 1;
+    text-transform: uppercase;
   }
 
-  .cc-callout-content {
-    font-size: var(--text-14);
-    color: var(--color-ink-soft);
-    line-height: var(--leading-body);
+  .cc-callout--when-not-to-use .cc-callout__label {
+    font-weight: 700;
   }
 
-  .cc-callout-content :global(p) {
+  .cc-callout__body {
+    font-size: var(--cc-text-body);
+    line-height: var(--cc-leading-body);
+    color: var(--cc-ink);
+  }
+
+  .cc-callout__body :global(> :first-child) {
+    margin-top: 0;
+  }
+
+  .cc-callout__body :global(> :last-child) {
+    margin-bottom: 0;
+  }
+
+  .cc-callout__body :global(p) {
     margin: 0;
+    max-width: none;
   }
 
-  .cc-callout-content :global(p + p) {
-    margin-top: var(--space-2);
+  .cc-callout__body :global(p + p),
+  .cc-callout__body :global(ul),
+  .cc-callout__body :global(ol) {
+    margin-top: var(--cc-space-3);
   }
 
-  .cc-callout-content :global(code) {
-    font-family: var(--font-family-mono);
-    font-size: 0.92em;
+  .cc-callout__body :global(code) {
+    font-family: var(--cc-font-mono);
+    font-size: 0.9em;
   }
 </style>

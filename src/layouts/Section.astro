@@ -1,13 +1,29 @@
 ---
 // Level and module index pages (`/[lang]/[level]/`, `/[lang]/[level]/[module]/`)
-// plus the standalone Playbook/Meta pages. Single centred column with the
-// same header/footer chrome as the rest of the site.
+// plus the standalone Playbook and Meta pages.
+//
+// KILN §7.1: a centred reading column with the context column beside it from
+// 1240 up — not the three-column documentation grid, which is the lesson
+// reading surface, but not a lone 920px column in a 1280px viewport either.
+// The column is capped at a comfortable index width rather than the prose
+// measure, because these pages carry card grids and tables as often as they
+// carry paragraphs; anything that is running prose caps itself at
+// `--cc-measure` through app.css.
+//
+// A page that wants a full-bleed band (a tinted level header, say) puts it in
+// the `bleed` slot, which sits outside the column and spans the viewport.
 import Base from './Base.astro';
 import Header from '../components/shell/Header.astro';
 import Footer from '../components/shell/Footer.astro';
-import { t } from '../lib/i18n/ui.ts';
+import SkipLink from '../components/shell/SkipLink.astro';
+import Breadcrumbs from '../components/shell/Breadcrumbs.astro';
+import Sidebar from '../components/lesson/Sidebar.astro';
+import { getCollection } from 'astro:content';
+import { buildNav } from '../lib/nav.ts';
 import { alternatesFor } from '../lib/seo.ts';
+import { t } from '../lib/i18n/ui.ts';
 
+/** Structurally the `Crumb` that `Breadcrumbs.astro` renders. */
 export interface Crumb {
   label: string;
   href?: string;
@@ -20,10 +36,31 @@ interface Props {
   path: string;
   altPath?: string | null;
   crumbs?: Crumb[];
+  /** Which header nav item is current. Playbook/meta pages override it. */
+  active?: 'curriculum' | 'playbook' | 'meta' | 'changelog' | 'design';
 }
 
 const { lang, title, description, path, altPath, crumbs = [] } = Astro.props;
 const strings = t(lang);
+
+// KILN §7.2: the drawer holds the FULL curriculum tree, unqualified — it was
+// slotted only by the lesson layout, so on a phone a reader on the glossary
+// had no route to any lesson and the drawer visibly changed shape between
+// page types.
+const [allSections, allLessons] = await Promise.all([
+  getCollection('sections'),
+  getCollection('lessons'),
+]);
+const tree = buildNav(lang, allSections, allLessons);
+
+// Which header nav item is current. For the two reference trees the ROUTE is
+// authoritative — /{lang}/meta/* used to underline "Curriculum", because the
+// level index maps every non-playbook tree to it, and a header that mislabels
+// where the reader is is worse than no underline at all. Everywhere else the
+// page's own declaration wins.
+const seg = path.split('/')[2];
+const active: Props['active'] =
+  seg === 'playbook' || seg === 'meta' ? seg : (Astro.props.active ?? 'curriculum');
 ---
 
 <Base
@@ -32,92 +69,389 @@ const strings = t(lang);
   lang={lang}
   path={path}
   alternates={alternatesFor(lang, path, altPath)}
+  bodyClass="cc-page-section"
 >
-  <a class="cc-skip" href="#main">{strings.skipToContent}</a>
-  <Header lang={lang} altPath={altPath} active="curriculum" />
-  {
-    crumbs.length > 0 && (
-      <nav class="cc-crumbs mono" aria-label={strings.breadcrumb}>
-        <ol>
-          {crumbs.map((crumb) => (
-            <li>
-              {crumb.href ? <a href={crumb.href}>{crumb.label}</a> : <span>{crumb.label}</span>}
-            </li>
-          ))}
-        </ol>
-      </nav>
-    )
-  }
-  <main id="main" class="cc-section" tabindex="-1">
-    <slot />
-  </main>
+  <SkipLink lang={lang} />
+  <Header lang={lang} altPath={altPath} active={active}>
+    <Sidebar slot="drawer-tree" lang={lang} tree={tree} />
+  </Header>
+
+  <slot name="bleed" />
+
+  <div class="cc-section">
+    {
+      crumbs.length > 0 && (
+        <div class="cc-section__crumbs">
+          <Breadcrumbs lang={lang} crumbs={crumbs} />
+        </div>
+      )
+    }
+
+    {
+      /*
+       * The context column (KILN §7.1/§8.8). These are the site's long
+       * reference pages — anti-patterns runs to twelve h2 sections — and none
+       * of them had any on-page navigation, while the prose stopped short of
+       * the right margin at 1280 with nothing in the gap.
+       *
+       * The list is derived from the h2 anchors the page actually rendered
+       * rather than threaded through every content route as a prop, and the
+       * shell stays `hidden` until it has at least two entries, so a JS-off
+       * reader never meets an empty "On this page". Same one-copy-two-
+       * presentations trick as the lesson layout: the panel is a SIBLING of
+       * the disclosure, so CSS can reveal it unconditionally in the wide
+       * layout and gate it on `[open]` below 1240.
+       */
+    }
+    <aside class="cc-section__context" data-cc-section-toc hidden>
+      <details class="cc-section__ctx-toggle">
+        <summary>{strings.onThisPage}</summary>
+      </details>
+      <div class="cc-section__ctx-panel">
+        <nav class="cc-sectoc" aria-labelledby="cc-sectoc-title" data-pagefind-ignore>
+          <p class="cc-sectoc__label" id="cc-sectoc-title">{strings.onThisPage}</p>
+          <ol class="cc-sectoc__list" data-cc-sectoc-list></ol>
+        </nav>
+      </div>
+    </aside>
+
+    <main id="main" class="cc-section__col" tabindex="-1">
+      <slot />
+    </main>
+  </div>
+
   <Footer lang={lang} />
 </Base>
 
 <style>
-  .cc-skip {
-    position: absolute;
-    left: -9999px;
-    top: 0;
-    z-index: 10;
-    padding: var(--space-2) var(--space-4);
-    background: var(--color-bg-2);
-    color: var(--color-ink);
-    border: 1px solid var(--color-line-strong);
-    border-radius: var(--radius-2);
+  .cc-section {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    padding-block: var(--cc-space-7) var(--cc-space-12);
   }
 
-  .cc-skip:focus {
-    left: var(--space-4);
-    top: var(--space-2);
+  .cc-section__col {
+    width: 100%;
+    max-width: 920px;
+    margin-inline: auto;
+    padding-inline: var(--cc-gutter);
+    /* KILN §4: 48px between blocks on a reading page. */
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-9);
+    min-width: 0;
   }
 
-  .cc-crumbs {
-    padding: 0 var(--space-4);
-    border-bottom: 1px solid var(--color-line);
-    font-size: var(--text-12);
-    color: var(--color-ink-muted);
+  /* The breadcrumb sits ABOVE the title and belongs to it, so it keeps a
+     tighter gap than the block rhythm (KILN §8.8). It is a sibling of the
+     prose rather than its first child so the narrow-screen order can read
+     crumbs -> "On this page" -> prose, the same order a lesson page has. */
+  .cc-section__crumbs {
+    order: -2;
+    width: 100%;
+    max-width: 920px;
+    margin-inline: auto;
+    margin-block-end: var(--cc-space-5);
+    padding-inline: var(--cc-gutter);
   }
 
-  .cc-crumbs ol {
+  /* ---- the context column -------------------------------------------- */
+  .cc-section__context {
+    /* Above the prose on a narrow screen, beside it from 1240 up. */
+    order: -1;
+    width: 100%;
+    max-width: 920px;
+    margin-inline: auto;
+    margin-block-end: var(--cc-space-7);
+    padding-inline: var(--cc-gutter);
+  }
+
+  .cc-section__ctx-toggle {
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-lg);
+    background: var(--cc-paper-raised);
+  }
+
+  .cc-section__ctx-toggle[open] {
+    border-radius: var(--cc-radius-lg) var(--cc-radius-lg) 0 0;
+  }
+
+  .cc-section__ctx-toggle summary {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-2);
+    gap: var(--cc-space-3);
+    min-height: var(--cc-tap);
+    padding-inline: var(--cc-space-5);
+    color: var(--cc-ink);
+    font-size: var(--cc-text-small);
+    font-weight: var(--cc-weight-h3);
+    cursor: pointer;
     list-style: none;
+  }
+
+  .cc-section__ctx-toggle summary::-webkit-details-marker {
+    display: none;
+  }
+
+  /* The chevron is drawn from two borders rather than imported, so the
+     disclosure costs no second DOM node. */
+  .cc-section__ctx-toggle summary::before {
+    content: '';
+    flex: none;
+    width: 0.45em;
+    height: 0.45em;
+    border-right: 2px solid var(--cc-accent);
+    border-bottom: 2px solid var(--cc-accent);
+    transform: translateY(-0.12em) rotate(-45deg);
+  }
+
+  .cc-section__ctx-toggle[open] summary::before {
+    transform: translateY(-0.16em) rotate(45deg);
+  }
+
+  .cc-section__ctx-panel {
+    display: none;
+    /* Now that subsections are listed, the glossary's contents run to 60
+       rows. Opened on a phone that is a 3000px card between the reader and
+       the prose, so the list scrolls inside the disclosure instead. */
+    max-height: 60svh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--cc-line-strong) transparent;
+    padding: var(--cc-space-4) var(--cc-space-5) var(--cc-space-5);
+    border: 1px solid var(--cc-line);
+    border-top: 0;
+    border-radius: 0 0 var(--cc-radius-lg) var(--cc-radius-lg);
+    background: var(--cc-paper-raised);
+  }
+
+  .cc-section__ctx-toggle[open] + .cc-section__ctx-panel {
+    display: block;
+  }
+
+  /* Below 1240 the list sits under a summary already reading "On this page";
+     the column's own label would say it twice. Hidden visually, kept in the
+     accessibility tree because the nav names itself from it — the same
+     treatment `Lesson.astro` gives its context column. */
+  .cc-sectoc__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+    /* `--cc-ink-faint` measures 3.96:1 on paper and fails AA at this size —
+       micro labels take `--cc-ink-muted` site-wide (KILN §10). */
+    color: var(--cc-ink-muted);
+  }
+
+  .cc-sectoc__list {
     margin: 0;
     padding: 0;
-    min-height: 40px;
+    list-style: none;
   }
 
-  .cc-crumbs li + li::before {
-    content: '/';
-    margin-right: var(--space-2);
-    color: var(--color-ink-muted);
+  /* Rows sit clear of each other. Without the block padding a two- or
+     three-line entry filled its 44px box exactly, so its last line butted
+     straight against the next entry's first line and three long labels read
+     as one six-line block. The 44px floor is kept by `min-height`. */
+  .cc-sectoc__list :global(li + li) {
+    margin-block-start: var(--cc-space-1);
   }
 
-  .cc-crumbs a {
-    color: var(--color-ink-muted);
+  /* The rows are built by the hoisted module below, so they carry no scope
+     attribute and the rules reach them through `:global()`. */
+  .cc-sectoc__list :global(a) {
+    display: flex;
+    align-items: center;
+    min-height: var(--cc-tap);
+    padding-block: var(--cc-space-2);
+    padding-inline-start: var(--cc-space-3);
+    border-inline-start: 2px solid var(--cc-line);
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
     text-decoration: none;
   }
 
-  .cc-section {
-    width: 100%;
-    max-width: 900px;
-    margin: 0 auto;
-    padding: var(--space-8) var(--space-4) var(--space-12);
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-8);
+  /* Two ranks: sections in ink, subsections a step in and a step back in
+     `--cc-ink-muted`. Not `--cc-ink-faint` — it measures 3.9:1 on paper and
+     fails AA at 14px, and the glossary alone would have shipped 58 of them.
+     The glossary is 2 h2s and 58 h3s: listing the h2s alone offered an
+     11,000px page exactly two links. */
+  .cc-sectoc__list :global(li[data-depth='2'] a) {
+    color: var(--cc-ink);
+  }
+
+  .cc-sectoc__list :global(li[data-depth='3'] a) {
+    padding-inline-start: var(--cc-space-6);
+  }
+
+  .cc-sectoc__list :global(a:hover) {
+    color: var(--cc-ink);
+    border-inline-start-color: var(--cc-line-strong);
+  }
+
+  /* Never colour alone: the current section takes the weight and the 2px
+     clay marker as well. */
+  .cc-sectoc__list :global(a[aria-current='true']) {
+    color: var(--cc-accent);
+    font-weight: var(--cc-weight-h3);
+    border-inline-start-color: var(--cc-accent);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-section__ctx-toggle summary::before {
+      transition: transform var(--cc-dur-fast) var(--cc-ease);
+    }
+
+    .cc-sectoc__list :global(a) {
+      transition:
+        color var(--cc-dur-fast) var(--cc-ease),
+        border-color var(--cc-dur-fast) var(--cc-ease);
+    }
   }
 
   @media (min-width: 1024px) {
-    .cc-crumbs {
-      padding: 0 var(--space-8);
+    .cc-section {
+      padding-block: var(--cc-space-8) var(--cc-space-14);
+    }
+  }
+
+  /* ---- 1240px: the column takes the empty right margin ---------------- */
+  @media (min-width: 1240px) {
+    .cc-section {
+      display: grid;
+      grid-template-columns: minmax(0, 920px) var(--cc-context-w);
+      grid-template-rows: auto 1fr;
+      justify-content: center;
+      column-gap: var(--cc-space-8);
+      align-items: start;
     }
 
-    .cc-section {
-      padding: var(--space-12) var(--space-8) var(--space-20);
+    /* A page with fewer than two h2 sections has no contents list, so the
+       column is not reserved either — the reading column re-centres rather
+       than sitting off-axis beside a 232px void. */
+    .cc-section:has(.cc-section__context[hidden]) {
+      grid-template-columns: minmax(0, 920px);
+      column-gap: 0;
+    }
+
+    .cc-section__col,
+    .cc-section__crumbs {
+      grid-column: 1;
+      margin-inline: 0;
+      max-width: none;
+    }
+
+    .cc-section__context {
+      order: 0;
+      grid-column: 2;
+      grid-row: 1 / span 2;
+      margin: 0;
+      max-width: none;
+      padding-inline: 0 var(--cc-gutter);
+      padding-block-start: var(--cc-space-4);
+      position: sticky;
+      top: var(--cc-header-h);
+      max-height: calc(100svh - var(--cc-header-h));
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-width: thin;
+      scrollbar-color: var(--cc-line-strong) transparent;
+    }
+
+    /* The disclosure is a small-screen affordance only. */
+    .cc-section__ctx-toggle {
+      display: none;
+    }
+
+    .cc-sectoc__label {
+      position: static;
+      width: auto;
+      height: auto;
+      margin: 0 0 var(--cc-space-3);
+      overflow: visible;
+      clip-path: none;
+    }
+
+    .cc-section__ctx-panel,
+    .cc-section__ctx-toggle[open] + .cc-section__ctx-panel {
+      display: block;
+      max-height: none;
+      overflow: visible;
+      padding: 0;
+      border: 0;
+      border-radius: 0;
+      background: none;
     }
   }
 </style>
+
+<script>
+  // The pages this layout wraps are content routes owned by other plans, so
+  // the contents list is derived from what they actually rendered rather than
+  // threaded through each of them as a prop. Hoisted (CSP: no inline script).
+  const aside = document.querySelector<HTMLElement>('[data-cc-section-toc]');
+  const list = aside?.querySelector<HTMLOListElement>('[data-cc-sectoc-list]');
+  const main = document.getElementById('main');
+
+  if (aside && list && main) {
+    // h2 AND h3: the reference pages this layout wraps are mostly h3s under
+    // one or two h2s (the glossary is 58 terms under 2 headings), so an h2-only
+    // list left the longest pages on the site the least navigable.
+    const headings = Array.from(main.querySelectorAll<HTMLElement>('h2[id], h3[id]')).filter(
+      (h) => (h.textContent ?? '').trim().length > 0,
+    );
+
+    // One section is not a table of contents.
+    if (headings.length >= 2) {
+      const links = headings.map((heading) => {
+        const item = document.createElement('li');
+        item.dataset.depth = heading.tagName === 'H3' ? '3' : '2';
+        const link = document.createElement('a');
+        link.href = `#${heading.id}`;
+        link.textContent = (heading.textContent ?? '').trim();
+        item.appendChild(link);
+        list.appendChild(item);
+        return link;
+      });
+
+      aside.hidden = false;
+
+      // Active section: the last heading whose top has passed under the
+      // header — which is what a reader means by "where am I".
+      let ticking = false;
+      const sync = () => {
+        ticking = false;
+        const offset =
+          parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop || '') || 80;
+        let index = 0;
+        headings.forEach((heading, i) => {
+          if (heading.getBoundingClientRect().top - offset <= 1) index = i;
+        });
+        links.forEach((link, i) => {
+          if (i === index) link.setAttribute('aria-current', 'true');
+          else link.removeAttribute('aria-current');
+        });
+      };
+      sync();
+      window.addEventListener(
+        'scroll',
+        () => {
+          if (ticking) return;
+          ticking = true;
+          window.requestAnimationFrame(sync);
+        },
+        { passive: true },
+      );
+    }
+  }
+</script>

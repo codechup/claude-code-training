@@ -1,0 +1,96 @@
+---
+/**
+ * Mark — the Kiln brand mark (KILN §5.1). THE one implementation.
+ *
+ * A rounded-square tile filled `--cc-accent` carrying two glyphs in
+ * `--cc-on-accent`: a chevron drawn as two strokes meeting at a point, and a
+ * solid cursor block one unit to its right. It reads as a prompt waiting for
+ * input — the whole course in one glyph.
+ *
+ * Geometry is drawn on the 32-unit grid the spec names, so the `viewBox`
+ * does all the scaling and every size is the same drawing:
+ *   - tile: 0 0 32 32, `rx` 10 (= `--cc-radius-md` at 32 px, so the corner
+ *     radius scales proportionally at every size);
+ *   - chevron: `M10.7 9.8 L16.7 16 L10.7 22.2`, stroke 2.8, round caps and
+ *     joins;
+ *   - cursor: 3 × 9 units at x 19.7, ~1.5 units of gap after the chevron's
+ *     stroke edge, vertically centred.
+ * Optical centring: the glyph pair spans x 9.3 → 22.7, centred on 16.
+ *
+ * Never rotates, never gains a gradient, never changes hue. Minimum size
+ * 20 px — at which the strokes land at ~1.75 device px, which is why the
+ * stroke is 2.8 units and not the 2 the prose sketch suggests.
+ *
+ * ## API (imported by Header, Footer, the OG renderer's own redraw, and
+ * `/design`)
+ *
+ * @example
+ *   <Mark />                        // 32px clay tile, decorative
+ *   <Mark size={20} />              // minimum size
+ *   <Mark variant="plain" />        // one-colour, no tile, inherits currentColor
+ *   <Mark size={64} label="Claude Code Academy" />   // role="img" + name
+ *
+ * `variant="plain"` is the dense-context variant: the glyphs are drawn in
+ * `currentColor` with no tile, so it inherits whatever colour its container
+ * sets and works on either theme with no branching.
+ */
+
+interface Props {
+  /** Rendered box in px. Minimum 20 (KILN §5.1). */
+  size?: number | string;
+  /** `tile` = clay square (default); `plain` = one-colour glyphs, no tile. */
+  variant?: 'tile' | 'plain';
+  /**
+   * Accessible name. Omit for a decorative mark (the default) — including
+   * inside a link or button that already carries its own name.
+   */
+  label?: string;
+  class?: string;
+}
+
+const { size = 32, variant = 'tile', label, class: className } = Astro.props;
+
+const CHEVRON = 'M10.7 9.8 16.7 16l-6 6.2';
+---
+
+<svg
+  class:list={['cc-mark', `cc-mark--${variant}`, className]}
+  width={size}
+  height={size}
+  viewBox="0 0 32 32"
+  fill="none"
+  role={label ? 'img' : undefined}
+  aria-label={label}
+  aria-hidden={label ? undefined : 'true'}
+  focusable="false"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  {label && <title>{label}</title>}
+  {variant === 'tile' && <rect class="cc-mark__tile" width="32" height="32" rx="10" />}
+  <path
+    class="cc-mark__glyph"
+    d={CHEVRON}
+    stroke="currentColor"
+    stroke-width="2.8"
+    stroke-linecap="round"
+    stroke-linejoin="round"></path>
+  <rect class="cc-mark__glyph" x="19.7" y="11.5" width="3" height="9" rx="1.5" fill="currentColor"
+  ></rect>
+</svg>
+
+<style>
+  .cc-mark {
+    display: block;
+    flex: none;
+  }
+
+  /* The tile variant sets its own ink so the glyphs read on clay in either
+     theme; the plain variant inherits `currentColor` from its container. */
+  .cc-mark--tile {
+    color: var(--cc-on-accent);
+  }
+
+  .cc-mark__tile {
+    fill: var(--cc-accent);
+  }
+</style>

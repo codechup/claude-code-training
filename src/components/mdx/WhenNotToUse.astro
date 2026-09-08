@@ -1,18 +1,20 @@
 ---
-// The D006/D090 "When NOT to use" lesson-template section: a literal
-// `Callout` preset (`variant="when-not-to-use"`, warning border) so lesson
-// authors don't have to remember the variant name for a section every
-// lesson has exactly once.
+/**
+ * The D006/D090 "When NOT to use" lesson-template section (KILN §8.4): the
+ * `danger` tone with the `shield` icon and a stronger label. A thin preset
+ * over `Callout` so a lesson author never has to remember the variant name
+ * for a section every lesson has exactly once.
+ */
 import Callout from './Callout.astro';
 
 interface Props {
-  /** Defaults to the exact copy shown in `Lesson1280.dc.html`. */
   label?: string;
+  lang?: string;
 }
 
-const { label = 'When not to use this' } = Astro.props as Props;
+const { label, lang = 'en' } = Astro.props as Props;
 ---
 
-<Callout variant="when-not-to-use" label={label}>
+<Callout variant="when-not-to-use" label={label} lang={lang}>
   <slot />
 </Callout>

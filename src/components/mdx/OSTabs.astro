@@ -47,7 +47,7 @@ const hasWsl = Astro.slots.has('wsl');
           aria-controls={`cc-ostabs-panel-${tab}`}
           aria-selected={tab === initialTab ? 'true' : 'false'}
           tabindex={tab === initialTab ? 0 : -1}
-          class="mono cc-ostabs-tab"
+          class="cc-ostabs-tab"
           data-os-tab={tab}
         >
           {TAB_LABELS[tab]}
@@ -92,28 +92,78 @@ const hasWsl = Astro.slots.has('wsl');
 </div>
 
 <style>
+  /* KILN §8.3: a segmented control in a pill track, 44px targets, and a
+     panel that actually has a surface — the active tab used to draw
+     connecting chrome onto nothing. */
+  .cc-ostabs {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-3);
+  }
+
   .cc-ostabs-list {
     display: flex;
-    gap: 2px;
     flex-wrap: wrap;
+    gap: var(--cc-space-1);
+    align-self: flex-start;
+    max-width: 100%;
+    padding: var(--cc-space-1);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-pill);
+    background: var(--cc-paper-sunken);
   }
 
   .cc-ostabs-tab {
-    height: 32px;
-    padding: 0 var(--space-3);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--cc-tap);
+    padding: 0 var(--cc-space-4);
     border: 1px solid transparent;
-    border-bottom: none;
-    border-radius: var(--radius-2) var(--radius-2) 0 0;
+    border-radius: var(--cc-radius-pill);
     background: transparent;
-    color: var(--color-ink-muted);
-    font-size: var(--text-12);
+    color: var(--cc-ink-muted);
+    font-family: var(--cc-font-sans);
+    font-size: var(--cc-text-small);
+    font-weight: var(--cc-weight-small);
+    line-height: var(--cc-leading-small);
     cursor: pointer;
+    white-space: nowrap;
   }
 
+  .cc-ostabs-tab:hover {
+    color: var(--cc-ink);
+  }
+
+  /* Selection is carried by the raised fill, the hairline AND the weight —
+     never by colour alone; `aria-selected` carries it for assistive tech. */
   .cc-ostabs-tab[aria-selected='true'] {
-    color: var(--color-ink);
-    background: var(--color-bg-1);
-    border-color: var(--color-line);
+    color: var(--cc-ink);
+    font-weight: var(--cc-weight-micro);
+    background: var(--cc-paper-raised);
+    border-color: var(--cc-line-strong);
+    box-shadow: var(--cc-shadow-1);
+  }
+
+  .cc-ostabs-panels {
+    padding: var(--cc-space-5);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-lg);
+    background: var(--cc-paper-raised);
+  }
+
+  /* A panel is a flex column with its own gap, and its children give up
+     their block margins. Margin collapsing here is unreliable: in dev
+     Astro appends a <script> as the panel's last child, so `:last-child`
+     never lands on the block a reader can see. */
+  .cc-ostabs [data-os-panel] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-5);
+  }
+
+  .cc-ostabs :global([data-os-panel] > *) {
+    margin-block: 0;
   }
 
   /* Before JS runs every panel is visible (progressive enhancement); once
@@ -124,11 +174,21 @@ const hasWsl = Astro.slots.has('wsl');
   }
 
   .cc-ostabs[data-os-ready] [data-os-panel][data-os-active] {
-    display: block;
+    display: flex;
   }
 
   .cc-ostabs:not([data-os-ready]) .cc-ostabs-panels > div + div {
-    margin-top: var(--space-2);
+    margin-top: var(--cc-space-5);
+    padding-top: var(--cc-space-5);
+    border-top: 1px solid var(--cc-line);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-ostabs-tab {
+      transition:
+        color var(--cc-dur-fast) var(--cc-ease),
+        background-color var(--cc-dur-fast) var(--cc-ease);
+    }
   }
 </style>
 

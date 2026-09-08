@@ -1,0 +1,257 @@
+---
+/**
+ * Icon — the one icon set (KILN §6).
+ *
+ * No icon library: the CSP forbids external scripts, and the set has to be
+ * theme-aware, so every glyph is an inline SVG path drawn here. Rules the
+ * whole set obeys: 24×24 viewBox, 1.75 stroke, round caps and joins,
+ * `stroke="currentColor"`, `fill="none"` unless the glyph is intrinsically
+ * solid (`github`, and the dot of `rss`), and optically balanced at 20 px —
+ * which is why most glyphs live inside a ~17-unit optical square rather
+ * than filling the viewBox.
+ *
+ * Accessibility: decorative by default (`aria-hidden="true"`, no focus). An
+ * icon that is the only content of a control should stay decorative and let
+ * the control carry the name (`aria-label` on the button); pass `label` only
+ * when the icon itself is the content, which turns it into `role="img"`
+ * with an `aria-label`.
+ *
+ * PATH DATA IS WRITTEN LONG-HAND ON PURPOSE: every number space-separated,
+ * every decimal carrying its leading zero. SVG's shorthand form drops the
+ * separator between consecutive decimals, and four such numbers in a row
+ * are indistinguishable from a dotted-quad IP address —
+ * `scripts/check-public-hygiene.mjs` and the pre-commit hook both refuse
+ * the file when one appears. Long-hand draws the same path and can never
+ * trip that rule.
+ *
+ * @example
+ *   <Icon name="search" />
+ *   <button aria-label={t.search}><Icon name="search" /></button>
+ *   <Icon name="check-circle" label="Verified" size={16} />
+ */
+
+interface Glyph {
+  /** Paths drawn with the shared stroke settings. */
+  stroke?: readonly string[];
+  /** Paths drawn as solid fills (logos, dots). */
+  fill?: readonly string[];
+}
+
+const GLYPHS = {
+  search: {
+    stroke: ['M11 4.5 a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0 -13 Z', 'M15.7 15.7 20 20'],
+  },
+  menu: { stroke: ['M4 7 h16', 'M4 12 h16', 'M4 17 h16'] },
+  close: { stroke: ['M6.2 6.2 17.8 17.8', 'M17.8 6.2 6.2 17.8'] },
+  sun: {
+    stroke: [
+      'M12 7.8 a4.2 4.2 0 1 0 0 8.4 4.2 4.2 0 0 0 0 -8.4 Z',
+      'M12 2.6 v2.2',
+      'M12 19.2 v2.2',
+      'M2.6 12 h2.2',
+      'M19.2 12 h2.2',
+      'M5.35 5.35 6.9 6.9',
+      'M17.1 17.1 l1.55 1.55',
+      'M18.65 5.35 17.1 6.9',
+      'M6.9 17.1 l-1.55 1.55',
+    ],
+  },
+  moon: { stroke: ['M20.3 14.4 A8.6 8.6 0 0 1 9.6 3.7 a8.6 8.6 0 1 0 10.7 10.7 Z'] },
+  system: {
+    stroke: [
+      'M4.5 4.5 h15 a1.5 1.5 0 0 1 1.5 1.5 v9 a1.5 1.5 0 0 1 -1.5 1.5 h-15 A1.5 1.5 0 0 1 3 15 V6 a1.5 1.5 0 0 1 1.5 -1.5 Z',
+      'M9 20.5 h6',
+      'M12 16.5 v4',
+    ],
+  },
+  language: {
+    stroke: [
+      'M12 3.5 a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0 -17 Z',
+      'M3.7 12 h16.6',
+      'M12 3.5 a13 13 0 0 1 0 17',
+      'M12 3.5 a13 13 0 0 0 0 17',
+    ],
+  },
+  copy: {
+    stroke: [
+      'M10.5 8.5 h8 a1.5 1.5 0 0 1 1.5 1.5 v8 a1.5 1.5 0 0 1 -1.5 1.5 h-8 A1.5 1.5 0 0 1 9 18 v-8 a1.5 1.5 0 0 1 1.5 -1.5 Z',
+      'M6.2 15.5 H5.5 A1.5 1.5 0 0 1 4 14 V6 a1.5 1.5 0 0 1 1.5 -1.5 h8 A1.5 1.5 0 0 1 15 6 v0.7',
+    ],
+  },
+  check: { stroke: ['M4.8 12.4 9.6 17.2 19.2 6.8'] },
+  'chevron-right': { stroke: ['M9.5 5.5 16 12 l-6.5 6.5'] },
+  'chevron-down': { stroke: ['M5.5 9.5 12 16 l6.5 -6.5'] },
+  'arrow-right': { stroke: ['M4 12 h15.2', 'M13.2 5.8 19.4 12 l-6.2 6.2'] },
+  'arrow-up-right': { stroke: ['M6.8 17.2 17.2 6.8', 'M8.6 6.8 h8.6 v8.6'] },
+  external: {
+    stroke: [
+      'M18 13.6 v4.9 A1.5 1.5 0 0 1 16.5 20 h-11 A1.5 1.5 0 0 1 4 18.5 v-11 A1.5 1.5 0 0 1 5.5 6 h4.9',
+      'M14 4 h6 v6',
+      'M20 4 l-8.6 8.6',
+    ],
+  },
+  terminal: { stroke: ['M4.8 6.6 9.8 11.6 4.8 16.6', 'M12.4 17.4 h6.8'] },
+  book: {
+    stroke: [
+      'M7 3 h12.5 v18 H7 a2.5 2.5 0 0 1 -2.5 -2.5 v-13 A2.5 2.5 0 0 1 7 3 Z',
+      'M4.5 18.5 A2.5 2.5 0 0 1 7 16 h12.5',
+    ],
+  },
+  clock: { stroke: ['M12 3.5 a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0 -17 Z', 'M12 7.2 V12 l3.4 2'] },
+  gauge: { stroke: ['M3.5 17 a8.5 8.5 0 1 1 17 0', 'M12 17 l4 -5.2', 'M3.5 17 h3', 'M17.5 17 h3'] },
+  lab: {
+    stroke: [
+      'M9.6 3 v6.4 L4.9 17.7 A2 2 0 0 0 6.6 20.8 h10.8 a2 2 0 0 0 1.7 -3.1 L14.4 9.4 V3',
+      'M8.2 3 h7.6',
+      'M7.3 14.6 h9.4',
+    ],
+  },
+  quiz: {
+    stroke: [
+      'M12 3.5 a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0 -17 Z',
+      'M9.6 9.5 a2.5 2.5 0 1 1 3.4 2.4 c-0.7 0.3 -1 0.8 -1 1.5 v0.5',
+      'M12 17.2 v0.01',
+    ],
+  },
+  hook: {
+    stroke: [
+      'M16.6 6.4 v7.2 a4.6 4.6 0 0 1 -9.2 0 v-1',
+      'M14.1 6.4 a2.5 2.5 0 0 1 5 0',
+      'M7.4 13.2 4.6 16',
+    ],
+  },
+  skill: {
+    stroke: [
+      'M6.8 4 h10.4 a2.8 2.8 0 0 1 2.8 2.8 v10.4 a2.8 2.8 0 0 1 -2.8 2.8 H6.8 A2.8 2.8 0 0 1 4 17.2 V6.8 A2.8 2.8 0 0 1 6.8 4 Z',
+      'M12 9 c0.4 1.85 0.9 2.35 2.75 2.75 -1.85 0.4 -2.35 0.9 -2.75 2.75 -0.4 -1.85 -0.9 -2.35 -2.75 -2.75 C11.1 11.35 11.6 10.85 12 9 Z',
+    ],
+  },
+  agent: {
+    stroke: [
+      'M7.4 7.4 h9.2 a3.2 3.2 0 0 1 3.2 3.2 v5.2 a3.2 3.2 0 0 1 -3.2 3.2 H7.4 a3.2 3.2 0 0 1 -3.2 -3.2 v-5.2 a3.2 3.2 0 0 1 3.2 -3.2 Z',
+      'M12 4.2 v3.2',
+      'M8.8 12.4 v0.01',
+      'M15.2 12.4 v0.01',
+      'M10 16.2 h4',
+    ],
+  },
+  mcp: {
+    stroke: [
+      'M8.8 3 v4',
+      'M15.2 3 v4',
+      'M6.4 7 h11.2 v3.6 a5.6 5.6 0 0 1 -11.2 0 Z',
+      'M12 16.2 V21',
+    ],
+  },
+  plugin: {
+    stroke: [
+      'M5.9 4.9 h4 a2.1 2.1 0 1 1 4.2 0 h4 a0.9 0.9 0 0 1 0.9 0.9 v12.4 a0.9 0.9 0 0 1 -0.9 0.9 H5.9 a0.9 0.9 0 0 1 -0.9 -0.9 v-4 a2.1 2.1 0 1 0 0 -4.2 v-4 a0.9 0.9 0 0 1 0.9 -0.9 Z',
+    ],
+  },
+  shield: {
+    stroke: ['M12 3.2 19.4 6 v5.5 c0 4.5 -3 8.4 -7.4 10 -4.4 -1.6 -7.4 -5.5 -7.4 -10 V6 Z'],
+  },
+  sparkle: {
+    stroke: [
+      'M11.2 3.4 c0.8 3.9 1.7 4.8 5.6 5.6 -3.9 0.8 -4.8 1.7 -5.6 5.6 -0.8 -3.9 -1.7 -4.8 -5.6 -5.6 3.9 -0.8 4.8 -1.7 5.6 -5.6 Z',
+      'M17.8 14.6 c0.4 1.9 0.9 2.4 2.8 2.8 -1.9 0.4 -2.4 0.9 -2.8 2.8 -0.4 -1.9 -0.9 -2.4 -2.8 -2.8 1.9 -0.4 2.4 -0.9 2.8 -2.8 Z',
+    ],
+  },
+  github: {
+    fill: [
+      'M12 1.6 a10.6 10.6 0 0 0 -3.35 20.66 c0.53 0.1 0.72 -0.23 0.72 -0.51 l-0.01 -1.8 c-2.95 0.64 -3.57 -1.42 -3.57 -1.42 -0.48 -1.23 -1.18 -1.55 -1.18 -1.55 -0.96 -0.66 0.08 -0.65 0.08 -0.65 1.07 0.08 1.63 1.1 1.63 1.1 0.95 1.62 2.48 1.15 3.09 0.88 0.1 -0.69 0.37 -1.16 0.67 -1.42 -2.36 -0.27 -4.84 -1.18 -4.84 -5.25 0 -1.16 0.41 -2.11 1.09 -2.85 -0.11 -0.27 -0.48 -1.34 0.1 -2.81 0 0 0.9 -0.28 2.92 1.09 a10.2 10.2 0 0 1 5.31 0 c2.02 -1.37 2.91 -1.09 2.91 -1.09 0.59 1.47 0.22 2.54 0.11 2.81 0.68 0.74 1.09 1.69 1.09 2.85 0 4.08 -2.49 4.98 -4.86 5.24 0.38 0.33 0.72 0.98 0.72 1.97 l-0.01 2.92 c0 0.28 0.19 0.62 0.73 0.51 A10.6 10.6 0 0 0 12 1.6 Z',
+    ],
+  },
+  rss: {
+    stroke: ['M4.6 11 a8.4 8.4 0 0 1 8.4 8.4', 'M4.6 5.2 a14.2 14.2 0 0 1 14.2 14.2'],
+    fill: ['M5.9 17.2 a1.7 1.7 0 1 0 0 3.4 1.7 1.7 0 0 0 0 -3.4 Z'],
+  },
+  link: {
+    stroke: [
+      'M10.2 13.8 a4.4 4.4 0 0 0 6.2 0 l2.8 -2.8 a4.4 4.4 0 0 0 -6.2 -6.2 l-1.5 1.5',
+      'M13.8 10.2 a4.4 4.4 0 0 0 -6.2 0 l-2.8 2.8 a4.4 4.4 0 0 0 6.2 6.2 l1.5 -1.5',
+    ],
+  },
+  alert: {
+    stroke: [
+      'M10.7 4.6 a1.5 1.5 0 0 1 2.6 0 l7.4 13.1 a1.5 1.5 0 0 1 -1.3 2.3 H4.6 a1.5 1.5 0 0 1 -1.3 -2.3 Z',
+      'M12 9.6 v4.2',
+      'M12 17.3 v0.01',
+    ],
+  },
+  info: {
+    stroke: ['M12 3.5 a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0 -17 Z', 'M12 11.2 v5.2', 'M12 7.8 v0.01'],
+  },
+  'check-circle': {
+    stroke: ['M12 3.5 a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0 -17 Z', 'M8.2 12.2 10.9 15 l5 -5.8'],
+  },
+  'x-circle': {
+    stroke: [
+      'M12 3.5 a8.5 8.5 0 1 0 0 17 8.5 8.5 0 0 0 0 -17 Z',
+      'M9.3 9.3 14.7 14.7',
+      'M14.7 9.3 9.3 14.7',
+    ],
+  },
+  play: { stroke: ['M9.2 6.3 18 12 l-8.8 5.7 Z'] },
+  list: {
+    stroke: [
+      'M9 6.6 h11',
+      'M9 12 h11',
+      'M9 17.4 h11',
+      'M4.6 6.6 v0.01',
+      'M4.6 12 v0.01',
+      'M4.6 17.4 v0.01',
+    ],
+  },
+} as const satisfies Record<string, Glyph>;
+
+export type IconName = keyof typeof GLYPHS;
+
+interface Props {
+  name: IconName;
+  /** Rendered box in px. The set is drawn to read at 20; 16–28 all hold. */
+  size?: number | string;
+  /**
+   * Accessible name. Omit for a decorative icon (the default) — including an
+   * icon-only control, where the name belongs on the control itself.
+   */
+  label?: string;
+  /** Alias for `label`, for callers that think in terms of a `<title>`. */
+  title?: string;
+  class?: string;
+}
+
+const { name, size = 20, label, title, class: className } = Astro.props;
+
+const glyph: Glyph = GLYPHS[name];
+if (!glyph) throw new Error(`Icon: unknown name "${name}"`);
+
+const accessibleName = label ?? title;
+---
+
+<svg
+  class:list={['cc-icon', className]}
+  width={size}
+  height={size}
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.75"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  role={accessibleName ? 'img' : undefined}
+  aria-label={accessibleName}
+  aria-hidden={accessibleName ? undefined : 'true'}
+  focusable="false"
+  >{(glyph.stroke ?? []).map((d) => <path d={d} />)}{
+    (glyph.fill ?? []).map((d) => <path d={d} fill="currentColor" stroke="none" />)
+  }</svg
+>
+
+<style>
+  .cc-icon {
+    display: inline-block;
+    flex: none;
+    vertical-align: -0.15em;
+  }
+</style>

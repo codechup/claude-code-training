@@ -1,7 +1,18 @@
 ---
-// Site footer, per `docs/design/canvas-out/Main.dc.html` (mono lockup left,
-// "MIT · verified on Claude Code <version> · edit on GitHub" right) and
-// `Landing390.dc.html` (stacked on phone).
+/**
+ * Site footer (KILN §7.3).
+ *
+ * Three groups on desktop, stacked on mobile: the lockup with its publisher
+ * line and the licence; course links; project links. The verified-version
+ * line closes the footer in `small` / `--cc-ink-faint`.
+ *
+ * Every destination here is a page the build actually emits (lychee runs in
+ * CI): the playbook and meta sections are `sections`, which are deliberately
+ * not subject to the lesson draft mechanism, so both locales have all of
+ * them.
+ */
+import Lockup from '../brand/Lockup.astro';
+import Icon from '../ui/Icon.astro';
 import { t } from '../../lib/i18n/ui.ts';
 import { VERIFIED_VERSION } from '../../lib/changes.ts';
 import { REPO_URL } from '../../lib/repo.ts';
@@ -12,81 +23,219 @@ interface Props {
 
 const { lang } = Astro.props;
 const strings = t(lang);
+const home = `/${lang}/`;
 
-const SIGIL_CELLS: [number, number][] = [
-  [1, 1],
-  [9, 1],
-  [1, 9],
-  [9, 9],
-  [17, 9],
-  [1, 17],
-  [9, 17],
-  [17, 17],
+const COPY: Record<
+  string,
+  {
+    course: string;
+    project: string;
+    glossary: string;
+    contributing: string;
+    sourcesIndex: string;
+    repository: string;
+    feed: string;
+    licence: string;
+  }
+> = {
+  en: {
+    course: 'Course',
+    project: 'Project',
+    glossary: 'Glossary',
+    contributing: 'Contributing',
+    sourcesIndex: 'Sources index',
+    repository: 'Repository',
+    feed: 'RSS feed',
+    licence: 'MIT licence',
+  },
+  tr: {
+    course: 'Kurs',
+    project: 'Proje',
+    glossary: 'Sözlük',
+    contributing: 'Katkıda bulun',
+    sourcesIndex: 'Kaynak dizini',
+    repository: 'Depo',
+    feed: 'RSS akışı',
+    licence: 'MIT lisansı',
+  },
+};
+const c = COPY[lang] ?? COPY.en;
+
+const course = [
+  { href: `${home}#curriculum-map`, label: strings.curriculumMap },
+  { href: `${home}playbook/`, label: strings.playbook },
+  { href: `${home}playbook/changelog/`, label: strings.changelog },
+  { href: `${home}playbook/glossary/`, label: c.glossary },
+];
+
+const project = [
+  { href: REPO_URL, label: c.repository, external: true },
+  { href: `${home}meta/contributing/`, label: c.contributing },
+  { href: `${home}meta/sources-index/`, label: c.sourcesIndex },
+  { href: `${home}rss.xml`, label: c.feed },
+  { href: '/design/', label: strings.design },
 ];
 ---
 
 <footer class="cc-footer">
-  <div class="cc-footer-brand">
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      viewBox="0 0 24 24"
-      width="18"
-      height="18"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <g fill="currentColor">
-        {SIGIL_CELLS.map(([x, y]) => <rect x={x} y={y} width="6" height="6" rx="1" />)}
-      </g>
-      <rect x="17" y="1" width="6" height="6" rx="1" fill="var(--color-accent)"></rect>
-    </svg>
-    <span class="mono">codechup · {strings.brandAcademy}</span>
+  <div class="cc-footer__inner">
+    <div class="cc-footer__groups">
+      <div class="cc-footer__brand">
+        <Lockup lang={lang} size="lg" publisher />
+        <a class="cc-footer__licence small" href={`${REPO_URL}/blob/main/LICENSE`}>
+          <Icon name="shield" size={16} />
+          <span>{c.licence}</span>
+        </a>
+      </div>
+
+      <nav class="cc-footer__group" aria-label={c.course}>
+        <h2 class="cc-footer__heading eyebrow">{c.course}</h2>
+        <ul class="cc-footer__list">
+          {
+            course.map((link) => (
+              <li>
+                <a href={link.href}>{link.label}</a>
+              </li>
+            ))
+          }
+        </ul>
+      </nav>
+
+      <nav class="cc-footer__group" aria-label={c.project}>
+        <h2 class="cc-footer__heading eyebrow">{c.project}</h2>
+        <ul class="cc-footer__list">
+          {
+            project.map((link) => (
+              <li>
+                <a href={link.href}>
+                  <span>{link.label}</span>
+                  {link.external && <Icon name="arrow-up-right" size={14} />}
+                </a>
+              </li>
+            ))
+          }
+        </ul>
+      </nav>
+    </div>
+
+    <p class="cc-footer__verified small">
+      {strings.verifiedOn} Claude Code <span class="mono">{VERIFIED_VERSION}</span>
+    </p>
   </div>
-  <p class="mono cc-footer-meta">
-    <span>MIT</span>
-    <span aria-hidden="true">·</span>
-    <span>{strings.verifiedOn} Claude Code {VERIFIED_VERSION}</span>
-    <span aria-hidden="true">·</span>
-    <a href={REPO_URL}>GitHub</a>
-  </p>
 </footer>
 
 <style>
+  /* AA over the token name (KILN §10 and .claude/rules/design.md): the spec
+     names `--cc-ink-faint` for these micro labels, but that value measures
+     3.6:1 on `--cc-paper-sunken` and axe flags every one of them. They are
+     text, so they take `--cc-ink-muted`, which clears 4.5:1 in both themes.
+     `--cc-ink-faint` stays for non-text uses only. */
   .cc-footer {
+    margin-top: var(--cc-space-9);
+    border-top: 1px solid var(--cc-line);
+    background: var(--cc-paper-sunken);
+    color: var(--cc-ink-muted);
+  }
+
+  .cc-footer__inner {
+    max-width: var(--cc-max-page);
+    margin: 0 auto;
+    padding: var(--cc-space-9) var(--cc-space-6) var(--cc-space-7);
+  }
+
+  .cc-footer__groups {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--cc-space-8);
+  }
+
+  /* Capped to its content: the lockup, the publisher line and the licence
+     run to about 30ch, so a 2fr track left a 500px hole between the brand
+     and the first link column and crowded the other two into the right
+     third (KILN §7.3 wants three groups, not two plus a gap). */
+  .cc-footer__brand {
+    max-width: 34ch;
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
-    padding: var(--space-5) var(--space-4);
-    border-top: 1px solid var(--color-line);
-    color: var(--color-ink-muted);
+    align-items: flex-start;
+    gap: var(--cc-space-3);
   }
 
-  .cc-footer-brand {
-    display: flex;
+  .cc-footer__licence {
+    display: inline-flex;
     align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-11);
+    gap: var(--cc-space-2);
+    min-height: var(--cc-tap);
+    color: var(--cc-ink-muted);
+    text-decoration: none;
   }
 
-  .cc-footer-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+  .cc-footer__licence:hover {
+    color: var(--cc-accent);
+  }
+
+  .cc-footer__heading {
+    margin: 0 0 var(--cc-space-2);
+    /* `.eyebrow` (app.css) is `--cc-ink-faint`, which fails AA as text. */
+    color: var(--cc-ink-muted);
+  }
+
+  .cc-footer__list {
+    list-style: none;
     margin: 0;
-    max-width: none;
-    font-size: var(--text-12);
+    padding: 0;
   }
 
-  .cc-footer-meta a {
-    color: var(--color-accent-text);
+  .cc-footer__list a {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-space-2);
+    min-height: var(--cc-tap);
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-small);
+    text-decoration: none;
+  }
+
+  .cc-footer__list a:hover {
+    color: var(--cc-accent);
+    text-decoration: underline;
+    text-underline-offset: 0.16em;
+  }
+
+  .cc-footer__verified {
+    max-width: none;
+    margin: var(--cc-space-8) 0 0;
+    padding-top: var(--cc-space-5);
+    border-top: 1px solid var(--cc-line);
+    color: var(--cc-ink-muted);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-footer__list a,
+    .cc-footer__licence {
+      transition: color var(--cc-dur-fast) var(--cc-ease);
+    }
+  }
+
+  @media (min-width: 768px) {
+    .cc-footer__groups {
+      /* Three equal tracks, and the brand capped at its own measure. A 2fr
+         brand track left a 500px hole beside a 410px lockup and crowded
+         COURSE and PROJECT into the right third; even thirds put the three
+         groups on a regular rhythm, which is what §7.3 asks for. */
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      column-gap: var(--cc-space-8);
+      row-gap: var(--cc-space-8);
+    }
   }
 
   @media (min-width: 1024px) {
-    .cc-footer {
-      flex-direction: row;
-      align-items: center;
-      justify-content: space-between;
-      padding: var(--space-6) var(--space-16);
+    .cc-footer__inner {
+      padding: var(--cc-space-11) var(--cc-space-8) var(--cc-space-8);
+    }
+
+    .cc-footer__groups {
+      column-gap: var(--cc-space-10);
     }
   }
 </style>

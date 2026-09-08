@@ -105,56 +105,60 @@ const decisionListLabel = lang === 'tr' ? 'Karar adımları' : 'Decision steps';
 ---
 
 <figure class="cc-dt" data-cc-decision-tree>
-  <svg
-    class="cc-dt-svg"
-    role="img"
-    aria-labelledby={titleId}
-    aria-describedby={descId}
-    viewBox={`0 0 ${viewW} ${viewH}`}
-    preserveAspectRatio="xMidYMid meet"
-  >
-    <title id={titleId}>{title}</title>
-    {desc && <desc id={descId}>{desc}</desc>}
-    <g class="cc-dt-edges">
-      {edgeGeoms.map((e) => <path class="cc-dt-edge" d={e.d} />)}
-    </g>
-    <g class="cc-dt-nodes">
-      {
-        nodes.map((n) => {
-          const b = box(n);
-          const cx = b.x + b.w / 2;
-          const startY = b.y + b.h / 2 - ((n.lines.length - 1) * LINE_HEIGHT) / 2 + 4;
-          return (
-            <g>
-              <rect class="cc-dt-node" x={b.x} y={b.y} width={b.w} height={b.h} rx="6" />
-              {n.lines.map((line, i) => (
-                <text
-                  class="cc-dt-node-text"
-                  x={cx}
-                  y={startY + i * LINE_HEIGHT}
-                  text-anchor="middle"
-                >
-                  {line}
-                </text>
-              ))}
-            </g>
-          );
-        })
-      }
-    </g>
-    <g class="cc-dt-edge-labels">
-      {
-        edgeGeoms
-          .filter((e) => e.label)
-          .map((e) => (
-            <text class="cc-dt-edge-label" x={e.labelX} y={e.labelY} text-anchor="middle">
-              {e.label}
-            </text>
-          ))
-      }
-    </g>
-  </svg>
-  <figcaption class="cc-dt-sr-list">
+  <div class="cc-dt-scroll" tabindex="0" role="group" aria-label={title}>
+    <svg
+      class="cc-dt-svg"
+      role="img"
+      aria-labelledby={titleId}
+      aria-describedby={descId}
+      viewBox={`0 0 ${viewW} ${viewH}`}
+      width={viewW}
+      height={viewH}
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <title id={titleId}>{title}</title>
+      {desc && <desc id={descId}>{desc}</desc>}
+      <g class="cc-dt-edges">
+        {edgeGeoms.map((e) => <path class="cc-dt-edge" d={e.d} />)}
+      </g>
+      <g class="cc-dt-nodes">
+        {
+          nodes.map((n) => {
+            const b = box(n);
+            const cx = b.x + b.w / 2;
+            const startY = b.y + b.h / 2 - ((n.lines.length - 1) * LINE_HEIGHT) / 2 + 4;
+            return (
+              <g>
+                <rect class="cc-dt-node" x={b.x} y={b.y} width={b.w} height={b.h} rx="6" />
+                {n.lines.map((line, i) => (
+                  <text
+                    class="cc-dt-node-text"
+                    x={cx}
+                    y={startY + i * LINE_HEIGHT}
+                    text-anchor="middle"
+                  >
+                    {line}
+                  </text>
+                ))}
+              </g>
+            );
+          })
+        }
+      </g>
+      <g class="cc-dt-edge-labels">
+        {
+          edgeGeoms
+            .filter((e) => e.label)
+            .map((e) => (
+              <text class="cc-dt-edge-label" x={e.labelX} y={e.labelY} text-anchor="middle">
+                {e.label}
+              </text>
+            ))
+        }
+      </g>
+    </svg>
+  </div>
+  <figcaption class="cc-dt-sr-list sr-only">
     <span>{decisionListLabel}:</span>
     <ul>
       {
@@ -170,50 +174,59 @@ const decisionListLabel = lang === 'tr' ? 'Karar adımları' : 'Decision steps';
 
 <style>
   .cc-dt {
-    margin: 0;
+    margin: var(--cc-space-6) 0;
+  }
+
+  /* The tree keeps its drawn size and scrolls inside its own container
+     rather than shrinking its labels below legibility at 390 px
+     (KILN §7.1: wide content scrolls in place, the page never does). */
+  .cc-dt-scroll {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    padding: var(--cc-space-4);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-lg);
+    background: var(--cc-paper-raised);
   }
 
   .cc-dt-svg {
     display: block;
-    width: 100%;
     height: auto;
-    font-family: var(--font-family-sans);
+    font-family: var(--cc-font-sans);
   }
 
   .cc-dt-node {
-    fill: var(--color-bg-3);
-    stroke: var(--color-line-strong);
+    fill: var(--cc-paper-sunken);
+    stroke: var(--cc-line-strong);
     stroke-width: 1;
   }
 
   .cc-dt-node-text {
-    fill: var(--color-ink);
+    fill: var(--cc-ink);
     font-size: 12px;
+    font-weight: 500;
   }
 
   .cc-dt-edge {
     fill: none;
-    stroke: var(--color-ink-muted);
+    stroke: var(--cc-line-strong);
     stroke-width: 1.5;
+    stroke-linecap: round;
   }
 
+  /* The one place the accent is spent in the diagram: the branch labels,
+     which are what the reader actually follows. */
   .cc-dt-edge-label {
-    fill: var(--color-accent-text);
-    font-family: var(--font-family-mono);
+    fill: var(--cc-accent);
+    font-family: var(--cc-font-mono);
     font-size: 11px;
   }
 
-  /* Visually hidden, but present for screen readers and Ctrl+F: a plain
-     linear list of every decision the SVG draws graphically. */
+  /* Present for screen readers and Ctrl+F: a plain linear list of every
+     decision the SVG draws graphically. Visual hiding comes from the one
+     global `.sr-only` in app.css; this rule only resets list chrome. */
   .cc-dt-sr-list {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
+    margin: 0;
   }
 </style>

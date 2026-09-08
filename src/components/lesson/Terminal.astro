@@ -1,108 +1,188 @@
 ---
-// The hero terminal from `docs/design/canvas-out/Main.dc.html` /
-// `Landing390.dc.html` — a static, pre-rendered frame, not an animation
-// engine: the only thing that moves is the caret, and `prefers-reduced-
-// motion` stops even that (app.css `.caret`).
-//
-// P07 owns the real `Transcript` MDX component (lesson bodies, captured from
-// genuine sessions — D093). This is the landing-page decoration only, and it
-// reproduces the exact lines the approved canvas draws.
+/**
+ * The landing hero terminal — decoration only, `aria-hidden`.
+ *
+ * It is not a recording: `Transcript.astro` owns real captured sessions
+ * (D070, D093, D099) and this frame is deliberately given no "Real
+ * recording" badge, no copy button and no caption, so it can never be
+ * mistaken for evidence. What it *does* do is look exactly like the real
+ * component — same `--cc-term-*` surface in both themes, same bar, same
+ * `--cc-radius-lg` frame, same mono size and leading, same role colours —
+ * because a hero that advertises the course with a different terminal than
+ * the course actually uses is a lie about the product.
+ *
+ * KILN §9.4: the old frame overflowed the viewport at 390 px. The body is
+ * now `white-space: pre` inside its own `overflow-x: auto` scroller with a
+ * right-edge fade, so the page never scrolls sideways — matching §8.1.
+ *
+ * The body scroller carries an explicit `tabindex="-1"`. Chrome makes an
+ * overflowing scroll container keyboard-focusable on its own, which put a
+ * focus ring on a node inside this `aria-hidden` subtree — a focus stop with
+ * no accessible name. KILN §8.1 gives `tabindex="0"` to the *Transcript*
+ * body, where the recording is real content worth scrolling; this frame is
+ * decoration and duplicates nothing, so it stays out of the tab order.
+ *
+ * KILN §8.11.1: the body markup is built as ONE string here and handed to
+ * `set:html`. Per-line JSX across several source lines is what leaked
+ * literal newlines and source indentation into the `<pre>`.
+ */
 interface Props {
-  /** Window title in the frame's title bar. */
+  /** Window title in the frame's bar. */
   title: string;
   /** Compact variant used at 390px. */
   compact?: boolean;
 }
 
 const { title, compact = false } = Astro.props;
+
+const CHEVRON = '›';
+const DOT = '●';
+const CHECK = '✓';
+const ARROW = '→';
+
+// Each entry is one physical line. Roles are coloured, never restyled
+// (KILN §8.1): the prompt sigil, tool lines, success, failure and paths
+// each take their own `--cc-term-*` token.
+const LINES = [
+  `<span class="p">${CHEVRON}</span> <span class="u">claude</span>`,
+  `<span class="d">Claude Code v2.1.263 &middot; Fable 5.1 &middot; effort high &middot; plan mode off</span>`,
+  '',
+  `<span class="p">${CHEVRON}</span> <span class="u">add a PreToolUse hook that blocks rm -rf outside /tmp</span>`,
+  '',
+  `<span class="t">${DOT}</span> <span class="d">Read</span> <span class="f">.claude/settings.json</span>`,
+  `<span class="t">${DOT}</span> <span class="d">Write</span> <span class="f">.claude/hooks/guard-bash.mjs</span>`,
+  `<span class="t">${DOT}</span> <span class="d">Edit</span> <span class="f">.claude/settings.json</span> <span class="d">+9 &minus;0</span>`,
+  `<span class="ok">${CHECK}</span> Hook registered. Try it: <span class="f">rm -rf ./build</span> ${ARROW} <span class="e">blocked (exit 2)</span>`,
+  '',
+  `<span class="p">${CHEVRON}</span> <span class="caret"></span>`,
+].join('\n');
 ---
 
-<div class:list={['cc-term', compact && 'cc-term-compact']} aria-hidden="true">
-  <div class="cc-term-bar">
-    <span class="cc-term-dot"></span>
-    <span class="cc-term-dot"></span>
-    <span class="cc-term-dot"></span>
-    <span class="cc-term-title">{title}</span>
+<div class:list={['cc-hero-term', compact && 'cc-hero-term--compact']} aria-hidden="true">
+  <div class="cc-hero-term__bar">
+    <span class="cc-hero-term__dots"><span></span><span></span><span></span></span>
+    <span class="cc-hero-term__title">{title}</span>
   </div>
-  <pre
-    class="cc-term-body"><span class="cc-p">&#10095;</span> <span class="cc-u">claude</span>
-<span class="cc-d">Claude Code v2.1.263 · Fable 5.1 · effort high · plan mode off</span>
-
-<span class="cc-p">&#8250;</span> <span class="cc-u">add a PreToolUse hook that blocks rm -rf outside /tmp</span>
-
-<span class="cc-d">&#9679; Read .claude/settings.json</span>
-<span class="cc-d">&#9679; Write .claude/hooks/guard-bash.mjs</span>
-<span class="cc-d">&#9679; Edit .claude/settings.json  +9 &#8722;0</span>
-<span class="cc-ok">&#10003;</span> Hook registered. Try it: <span class="cc-g">rm -rf ./build</span> &#8594; <span class="cc-r">blocked (exit 2)</span>
-
-<span class="cc-p">&#8250;</span> <span class="caret" /></pre>
+  <pre class="cc-hero-term__body" tabindex="-1"><code set:html={LINES} /></pre>
 </div>
 
 <style>
-  .cc-term {
-    background: var(--color-bg-1);
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-3);
-    font-family: var(--font-family-mono);
-    font-size: var(--text-13);
-    line-height: 1.6;
-    color: var(--color-ink-soft);
+  .cc-hero-term {
+    display: flex;
+    flex-direction: column;
+    max-width: 100%;
+    border: 1px solid var(--cc-term-line);
+    border-radius: var(--cc-radius-lg);
+    background: var(--cc-term-bg);
     overflow: hidden;
+    /* Dark in BOTH themes — a terminal is a terminal (KILN §1.2, §2.2). */
+    color-scheme: dark;
   }
 
-  .cc-term-compact {
-    font-size: var(--text-12);
-  }
-
-  .cc-term-bar {
+  .cc-hero-term__bar {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    height: 36px;
-    padding: 0 14px;
-    border-bottom: 1px solid var(--color-line);
-    color: var(--color-ink-muted);
-    font-size: var(--text-12);
+    gap: var(--cc-space-3);
+    min-height: 38px;
+    padding: 0 var(--cc-space-4);
+    border-bottom: 1px solid var(--cc-term-line);
+    background: var(--cc-term-bar);
   }
 
-  .cc-term-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 999px;
-    background: var(--color-bg-3);
+  .cc-hero-term__dots {
+    display: flex;
+    flex: none;
+    gap: 6px;
   }
 
-  .cc-term-title {
-    margin-left: var(--space-2);
+  .cc-hero-term__dots span {
+    width: 9px;
+    height: 9px;
+    border-radius: var(--cc-radius-pill);
+    background: var(--cc-term-line);
   }
 
-  .cc-term-body {
+  /* Truncates rather than wrapping, so the bar stays one line at 390 px. */
+  .cc-hero-term__title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--cc-font-mono);
+    font-size: var(--cc-text-micro);
+    font-variant-ligatures: none;
+    color: var(--cc-term-dim);
+  }
+
+  /* `white-space: pre` + its own scroller: a long command scrolls, it never
+     re-wraps and it never widens the page (KILN §8.11.3, §9.4). The right
+     edge carries a fade that disappears at the end of the scroll, drawn
+     with `background-attachment: local` — no script. */
+  .cc-hero-term__body {
     margin: 0;
-    padding: 14px 16px;
+    padding: 0;
     overflow-x: auto;
-    font: inherit;
+    overscroll-behavior-x: contain;
+    white-space: pre;
+    background-color: var(--cc-term-bg);
+    background-image: linear-gradient(to left, var(--cc-term-bg), transparent);
+    background-position: right center;
+    background-size: 40px 100%;
+    background-repeat: no-repeat;
+    background-attachment: local;
+    font-family: var(--cc-font-mono);
+    font-size: 0.8125rem;
+    line-height: var(--cc-leading-code);
+    tab-size: 2;
+    font-variant-ligatures: none;
+    color: var(--cc-term-fg);
+    scrollbar-width: thin;
+    scrollbar-color: var(--cc-term-line) transparent;
   }
 
-  .cc-p {
-    color: var(--color-prompt);
+  .cc-hero-term--compact .cc-hero-term__body {
+    font-size: 0.75rem;
   }
-  .cc-u {
-    color: var(--color-ink);
+
+  .cc-hero-term__body code {
+    display: block;
+    width: max-content;
+    min-width: 100%;
+    padding: var(--cc-space-4) var(--cc-space-5);
+    border: 0;
+    border-radius: 0;
+    background: none;
+    font: inherit;
+    color: inherit;
   }
-  .cc-g {
-    color: var(--color-accent-text);
+
+  /* Role palette (KILN §8.1) — colour on the text, not a decorated glyph. */
+  .cc-hero-term__body :global(.p) {
+    color: var(--cc-term-prompt);
   }
-  /* Mixed toward --color-ink so the success/danger greens and reds clear
-     4.5:1 against --color-bg-1 in BOTH themes at this 12–13px size (D036,
-     WCAG 2.2 AA): the raw semantic tokens are tuned for larger UI text and
-     land at ~3.9:1 here in the light theme. */
-  .cc-ok {
-    color: color-mix(in srgb, var(--color-success) 70%, var(--color-ink));
+
+  .cc-hero-term__body :global(.u) {
+    color: var(--cc-term-fg);
   }
-  .cc-d {
-    color: var(--color-ink-muted);
+
+  .cc-hero-term__body :global(.d) {
+    color: var(--cc-term-dim);
   }
-  .cc-r {
-    color: color-mix(in srgb, var(--color-caret) 70%, var(--color-ink));
+
+  .cc-hero-term__body :global(.t) {
+    color: var(--cc-term-tool);
+  }
+
+  .cc-hero-term__body :global(.f) {
+    color: var(--cc-term-path);
+  }
+
+  .cc-hero-term__body :global(.ok) {
+    color: var(--cc-term-ok);
+  }
+
+  .cc-hero-term__body :global(.e) {
+    color: var(--cc-term-err);
   }
 </style>

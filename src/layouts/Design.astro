@@ -1,26 +1,90 @@
 ---
-// Layout for `/design/` — the living component library (D033/D034), which is
-// EN-only and sits OUTSIDE the locale prefix, so it gets no Header nav, no
-// LangSwitch and no hreflang alternates: just the Base document shell plus
-// the page container the design page draws itself into.
+// `/design/` — the living component library (D033/D034).
 //
-// P05 owns `src/pages/design/index.astro` and it currently composes `Base`
-// directly with its own sticky TOC and `ThemeToggle`. This layout is the
-// prop-compatible home for that chrome so P05 can switch to it in a
-// one-line change (`import Base` -> `import Design`) whenever convenient —
-// it deliberately does NOT wrap anything P05's page already provides.
+// EN-only and outside the locale prefix, so it takes no `lang` prop, gets no
+// hreflang alternates and no OG card. It was previously a pass-through that
+// nothing imported, while the design page composed `Base` and hand-rolled its
+// own skip link and container. It is now the real shell: skip link, the site
+// header (so `/design/` is reachable from the same chrome as every other
+// page and its own nav item can go current), a wide single column sized for
+// side-by-side component specimens, and the footer.
+//
+// The column is wider than `Section`'s: a component library shows states in
+// a row, and 68ch of prose measure is the wrong cap for a swatch grid. Prose
+// inside it still caps itself through app.css.
 import Base from './Base.astro';
+import Header from '../components/shell/Header.astro';
+import Footer from '../components/shell/Footer.astro';
+import SkipLink from '../components/shell/SkipLink.astro';
+import Sidebar from '../components/lesson/Sidebar.astro';
+import { getCollection } from 'astro:content';
+import { buildNav } from '../lib/nav.ts';
 
 interface Props {
   title: string;
   description: string;
   /** Absolute path, e.g. "/design/". */
   path?: string;
+  /** Set false for a page that draws its own header (nothing does today). */
+  chrome?: boolean;
 }
 
-const { title, description, path = '/design/' } = Astro.props;
+const { title, description, path = '/design/', chrome = true } = Astro.props;
+
+// Same drawer on every route (KILN §7.2) — see the note in Section.astro.
+const [allSections, allLessons] = await Promise.all([
+  getCollection('sections'),
+  getCollection('lessons'),
+]);
+const tree = buildNav('en', allSections, allLessons);
 ---
 
-<Base title={title} description={description} lang="en" path={path}>
-  <slot />
+<Base
+  title={title}
+  description={description}
+  lang="en"
+  path={path}
+  ogImage={null}
+  bodyClass="cc-page-design"
+>
+  <SkipLink />
+  {
+    chrome && (
+      <Header lang="en" altPath={null} active="design">
+        <Sidebar slot="drawer-tree" lang="en" tree={tree} />
+      </Header>
+    )
+  }
+
+  <main id="main" class="cc-design" tabindex="-1">
+    <div class="cc-design__col">
+      <slot />
+    </div>
+  </main>
+
+  {chrome && <Footer lang="en" />}
 </Base>
+
+<style>
+  .cc-design {
+    width: 100%;
+    padding-block: var(--cc-space-7) var(--cc-space-12);
+  }
+
+  .cc-design__col {
+    width: 100%;
+    max-width: var(--cc-max-page);
+    margin-inline: auto;
+    padding-inline: var(--cc-gutter);
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-11);
+    min-width: 0;
+  }
+
+  @media (min-width: 1024px) {
+    .cc-design {
+      padding-block: var(--cc-space-8) var(--cc-space-14);
+    }
+  }
+</style>

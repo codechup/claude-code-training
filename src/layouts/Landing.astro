@@ -1,12 +1,19 @@
 ---
-// The locale landing page shell (`/[lang]/`): header, full-bleed sections,
-// footer. Section order and gutters follow `docs/design/canvas-out/
-// Main.dc.html` (1280) and `Landing390.dc.html` (390).
+// The locale landing page shell (`/[lang]/`).
+//
+// KILN §7.1: landing pages are a stack of FULL-BLEED bands. The layout
+// therefore imposes no width at all — a band spans the viewport and is
+// responsible for centring its own `.cc-container` inside itself, so a
+// band can carry a tinted ground edge to edge without the shell fighting
+// it with a max-width and a horizontal padding it did not ask for.
 import Base from './Base.astro';
 import Header from '../components/shell/Header.astro';
 import Footer from '../components/shell/Footer.astro';
-import { t } from '../lib/i18n/ui.ts';
+import SkipLink from '../components/shell/SkipLink.astro';
 import { alternatesFor } from '../lib/seo.ts';
+import Sidebar from '../components/lesson/Sidebar.astro';
+import { getCollection } from 'astro:content';
+import { buildNav } from '../lib/nav.ts';
 
 interface Props {
   lang: string;
@@ -17,7 +24,14 @@ interface Props {
 }
 
 const { lang, title, description, path, altPath } = Astro.props;
-const strings = t(lang);
+
+// The mobile drawer carries the same curriculum tree on every route (KILN
+// §7.2) — see the note in Section.astro.
+const [allSections, allLessons] = await Promise.all([
+  getCollection('sections'),
+  getCollection('lessons'),
+]);
+const tree = buildNav(lang, allSections, allLessons);
 ---
 
 <Base
@@ -26,9 +40,12 @@ const strings = t(lang);
   lang={lang}
   path={path}
   alternates={alternatesFor(lang, path, altPath)}
+  bodyClass="cc-page-landing"
 >
-  <a class="cc-skip" href="#main">{strings.skipToContent}</a>
-  <Header lang={lang} altPath={altPath} />
+  <SkipLink lang={lang} />
+  <Header lang={lang} altPath={altPath}>
+    <Sidebar slot="drawer-tree" lang={lang} tree={tree} />
+  </Header>
   <main id="main" class="cc-landing" tabindex="-1">
     <slot />
   </main>
@@ -36,27 +53,24 @@ const strings = t(lang);
 </Base>
 
 <style>
-  .cc-skip {
-    position: absolute;
-    left: -9999px;
-    top: 0;
-    z-index: 10;
-    padding: var(--space-2) var(--space-4);
-    background: var(--color-bg-2);
-    color: var(--color-ink);
-    border: 1px solid var(--color-line-strong);
-    border-radius: var(--radius-2);
-  }
-
-  .cc-skip:focus {
-    left: var(--space-4);
-    top: var(--space-2);
-  }
-</style>
-
-<style>
   .cc-landing {
-    display: flex;
-    flex-direction: column;
+    display: flow-root;
+    width: 100%;
+  }
+
+  /*
+   * Band rhythm (KILN §4: 80px between major sections) is published as a
+   * default a band can read, NOT imposed as padding — the landing page owns
+   * its own bands and a layout-level `padding-block` here would silently
+   * outrank the page's own shorthand.
+   */
+  .cc-landing {
+    --cc-band-py: var(--cc-space-11);
+  }
+
+  @media (min-width: 1024px) {
+    .cc-landing {
+      --cc-band-py: var(--cc-space-12);
+    }
   }
 </style>

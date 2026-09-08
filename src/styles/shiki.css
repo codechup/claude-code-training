@@ -1,21 +1,19 @@
 /*
- * Dual-theme Shiki output (astro.config.mjs sets
- * `markdown.shikiConfig.themes = { light: 'github-light', dark:
- * 'github-dark-dimmed' }` with `defaultColor: false`). With
- * `defaultColor: false`, Shiki does NOT pick one theme's colors inline —
- * every highlighted token instead carries BOTH sets of colors as CSS
- * custom properties (`--shiki-light[-bg]`, `--shiki-dark[-bg]`), and it is
- * the page's job to say which one is currently showing. That selection
- * follows the exact same two-block pattern as tokens.css (system
- * preference, then the explicit `data-theme` toggle winning last) so code
- * blocks always match the rest of the site's theme, never Shiki's own
- * class-based switch.
+ * Dual-theme Shiki output.
  *
- * The block chrome (background, border, radius, font, padding) comes from
- * our own tokens — `--color-bg-1` ("code, terminal"), `--color-line`,
- * `--radius-3` — not from Shiki's theme background, so a code block reads
- * as one of our terminal frames regardless of which Shiki theme lit its
- * syntax colors.
+ * `astro.config.ts` builds two TextMate themes — `kiln-light` and
+ * `kiln-dark` — from the Kiln ramp in tokens.css, and sets
+ * `defaultColor: false`. With that flag Shiki does NOT bake one theme's
+ * colours in; every highlighted token instead carries BOTH sets as custom
+ * properties (`--shiki-light[-bg]`, `--shiki-dark[-bg]`), and it is the
+ * page's job to say which one is currently showing. That selection follows
+ * the exact same two-block pattern as tokens.css — system preference first,
+ * the explicit `data-theme` toggle winning last — so code always matches the
+ * rest of the site rather than Shiki's own class-based switch.
+ *
+ * The block chrome (surface, hairline, radius, font, padding) comes from our
+ * own tokens, never from the theme's background, so a code block reads as a
+ * Kiln surface no matter which palette lit its syntax.
  */
 
 .astro-code,
@@ -45,22 +43,64 @@
   text-decoration: var(--shiki-dark-text-decoration, none);
 }
 
+/* -- block chrome (KILN §8.2) -------------------------------------------
+   Never wraps: a command line scrolls inside its own box rather than
+   folding mid-token. `overscroll-behavior-x: contain` keeps a horizontal
+   flick inside the block instead of navigating the page back. */
 .astro-code {
   display: block;
   margin: 0;
-  padding: var(--space-4);
+  padding: var(--cc-space-5) var(--cc-space-6);
   overflow-x: auto;
-  background-color: var(--color-bg-1);
-  border: 1px solid var(--color-line);
-  border-radius: var(--radius-3);
-  font-family: var(--font-family-mono);
-  font-size: var(--text-13);
-  line-height: 1.6;
+  overscroll-behavior-x: contain;
+  background-color: var(--cc-code-bg);
+  border: 1px solid var(--cc-line);
+  border-radius: var(--cc-radius-lg);
+  font-family: var(--cc-font-mono);
+  font-size: 0.8125rem;
+  line-height: var(--cc-leading-code);
+  tab-size: 2;
+  font-variant-ligatures: none;
+  white-space: pre;
+  scrollbar-width: thin;
+  scrollbar-color: var(--cc-line-strong) transparent;
+}
+
+/* Keyboard users must be able to scroll a wide block, and see that they can. */
+.astro-code:focus-visible {
+  outline: var(--cc-focus-width) solid var(--cc-focus-color);
+  outline-offset: var(--cc-focus-offset);
 }
 
 .astro-code code {
+  display: block;
+  min-width: max-content;
+  padding: 0;
+  background: none;
   font-family: inherit;
   font-size: inherit;
-  background: none;
-  padding: 0;
+}
+
+.astro-code .line {
+  display: block;
+  min-height: var(--cc-leading-code);
+}
+
+/* Highlighted lines: a clay left marker plus a wash, so the emphasis is not
+   carried by colour alone (KILN §8.2). */
+.astro-code .line.highlighted {
+  box-shadow: inset 2px 0 0 var(--cc-accent);
+  background-color: var(--cc-accent-wash);
+  margin: 0 calc(var(--cc-space-6) * -1);
+  padding: 0 calc(var(--cc-space-6) - 2px) 0 var(--cc-space-6);
+}
+
+.astro-code .line.diff.add {
+  background-color: var(--cc-ok-wash);
+  box-shadow: inset 2px 0 0 var(--cc-ok);
+}
+
+.astro-code .line.diff.remove {
+  background-color: var(--cc-danger-wash);
+  box-shadow: inset 2px 0 0 var(--cc-danger);
 }

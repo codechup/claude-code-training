@@ -1,10 +1,27 @@
 /*
- * Self-hosted fonts (D031). Each of these files already bundles the latin
- * AND latin-ext unicode-range subsets in one @font-face set (fontsource
- * ships subsets as unicode-range blocks within a single file, not as
- * separate "-latin-ext" files) — latin-ext covers the Turkish glyphs
- * ş ğ ı İ (U+015F, U+011F, U+0131, U+0130).
+ * Self-hosted faces (KILN §3.1, D031). Three faces, no more:
+ *
+ *   display  Fraunces Variable   headings, hero, wordmark, level names
+ *   UI/body  Inter Variable      everything else that is prose or chrome
+ *   code     JetBrains Mono      code, paths, commands, terminal output
+ *
+ * Every fontsource file below bundles the latin AND latin-ext unicode-range
+ * subsets in one @font-face set (fontsource ships subsets as unicode-range
+ * blocks inside a single stylesheet, not as separate "-latin-ext" files), so
+ * the Turkish glyphs ş ğ ı İ ç ö ü (U+015F, U+011F, U+0131, U+0130, U+00E7,
+ * U+00F6, U+00FC) render in every face at every weight. All of them declare
+ * `font-display: swap` at source.
+ *
+ * Fraunces: the `standard` axis group is deliberate — it varies `wght` and
+ * `opsz` only, with SOFT and WONK pinned at their 0 defaults (KILN §3.1: no
+ * softness, no wonky glyph swaps). `opsz` is left to `font-optical-sizing:
+ * auto` in app.css so the optical size follows the rendered size instead of
+ * being frozen by a `font-variation-settings` override — which would also
+ * break `font-weight` on the variable face.
  */
+
+@import '@fontsource-variable/fraunces/standard.css';
+
 @import '@fontsource-variable/inter/wght.css';
 
 @import '@fontsource/jetbrains-mono/400.css';

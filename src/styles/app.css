@@ -4,45 +4,45 @@
 @import './shiki.css';
 
 /*
- * Tailwind v4 @theme mapping (D029–D036).
+ * Kiln globals. Everything here is the page's *ground floor*: the reset, the
+ * body, the heading scale, links, the one focus ring, and the handful of
+ * global utilities (`.sr-only`, `.eyebrow`, `.caret`) that components are
+ * expected to reuse rather than redefine.
  *
- * Every token from the canvas already exists as a plain CSS custom
- * property in tokens.css (`--color-bg-0`, `--color-ink`, `--font-family-
- * sans`, `--text-16`, `--radius-1`, `--space-4`, …) and is usable directly
- * anywhere via `var(--color-bg-0)` or a Tailwind arbitrary value
- * (`bg-[var(--color-bg-0)]`) with no @theme entry required — an @theme
- * entry is only needed to make a *bare* utility class exist (`bg-bg`
- * instead of `bg-[var(--color-bg)]`).
+ * Colour, size, spacing and motion values all come from tokens.css — this
+ * file contains no literal of its own (scripts/check-raw-colors.mjs).
+ */
+
+/*
+ * Tailwind v4 @theme mapping.
  *
- * This block therefore only re-exposes the small set of names already
- * relied on by Tailwind utilities in shell components from earlier plans
- * (`bg-bg`, `text-fg`, `text-fg-muted`, `border-border`, `text-link`,
- * `font-mono` — see src/components/shell/Header.astro, Footer.astro,
- * LangSwitch.astro, src/layouts/Base.astro, src/pages/404.astro,
- * src/pages/[lang]/**), which are outside this plan's owned_paths and
- * must keep resolving to the approved canvas palette. Deliberately NOT
- * mapped 1:1 under the identical canvas names (`--color-bg-0: var(--color-
- * bg-0)` etc.) — that would be a self-referencing CSS variable (a real
- * cycle, invalid at computed-value time per the CSS spec, not something
- * Tailwind resolves specially), because tokens.css already defines a
- * property of that exact name. Every alias below intentionally maps to a
- * DIFFERENTLY-named source property so no cycle exists.
+ * Every Kiln token is already a plain custom property in tokens.css and is
+ * usable directly (`var(--cc-paper)`, or `bg-[var(--cc-paper)]`) with no
+ * @theme entry required — an @theme entry only makes a *bare* utility class
+ * exist (`bg-bg` instead of `bg-[var(--cc-paper)]`).
+ *
+ * This block therefore only re-exposes the small set of alias names the
+ * shell already consumes as bare utilities (Base.astro, Header/Footer,
+ * LangSwitch, 404, the [lang] routes). The names are unchanged across the
+ * redesign; only what they point at moved. Each alias maps to a
+ * DIFFERENTLY-named source property, so no self-referencing var() cycle
+ * exists.
  */
 @theme {
-  --color-bg: var(--color-bg-0);
-  --color-bg-raised: var(--color-bg-3);
-  --color-fg: var(--color-ink);
-  --color-fg-muted: var(--color-ink-muted);
-  --color-border: var(--color-line);
-  --color-accent-fg: var(--color-accent-ink);
-  --color-link: var(--color-accent-text);
-  --color-code-bg: var(--color-bg-1);
+  --color-bg: var(--cc-paper);
+  --color-bg-raised: var(--cc-paper-raised);
+  --color-fg: var(--cc-ink);
+  --color-fg-muted: var(--cc-ink-muted);
+  --color-border: var(--cc-line);
+  --color-accent-fg: var(--cc-on-accent);
+  --color-link: var(--cc-accent);
+  --color-code-bg: var(--cc-code-bg);
 
-  --font-sans: var(--font-family-sans);
-  --font-mono: var(--font-family-mono);
+  --font-sans: var(--cc-font-sans);
+  --font-mono: var(--cc-font-mono);
 }
 
-/* -- base resets -------------------------------------------------------- */
+/* -- reset --------------------------------------------------------------- */
 *,
 *::before,
 *::after {
@@ -52,120 +52,222 @@
 html {
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  /* the sticky header must not cover an anchored heading */
+  scroll-padding-top: calc(var(--cc-header-h) + var(--cc-space-4));
 }
 
 body {
   margin: 0;
-  background-color: var(--color-bg-0);
-  color: var(--color-ink);
-  font-family: var(--font-family-sans);
-  font-size: var(--text-16);
-  line-height: var(--leading-body);
+  background-color: var(--cc-paper);
+  color: var(--cc-ink);
+  font-family: var(--cc-font-sans);
+  font-size: var(--cc-text-body);
+  line-height: var(--cc-leading-body);
+  font-optical-sizing: auto;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-/* -- typography scale ---------------------------------------------------- */
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+}
+
+/* -- type scale (KILN §3.2) ---------------------------------------------
+   Display face for the hero, h1 and h2; Inter takes over at h3 so a
+   subsection heading sits with the prose instead of above it. */
 h1,
 h2,
 h3,
-h4 {
+h4,
+h5,
+h6 {
   margin: 0;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+h1,
+h2,
+.cc-display {
+  font-family: var(--cc-font-display);
+  font-weight: var(--cc-weight-display);
+  font-optical-sizing: auto;
+  line-height: var(--cc-leading-tight);
+}
+
+.cc-display {
+  font-size: var(--cc-text-display);
+  letter-spacing: var(--cc-track-display);
 }
 
 h1 {
-  font-size: var(--text-56);
-  font-weight: 700;
-  line-height: 1.02;
-  letter-spacing: -0.02em;
+  font-size: var(--cc-text-h1);
+  letter-spacing: var(--cc-track-h1);
 }
 
 h2 {
-  font-size: var(--text-32);
-  line-height: 1.1;
-  letter-spacing: -0.015em;
+  font-size: var(--cc-text-h2);
+  letter-spacing: var(--cc-track-h2);
 }
 
 h3 {
-  font-size: var(--text-20);
-  line-height: 1.3;
-  letter-spacing: -0.01em;
+  font-family: var(--cc-font-sans);
+  font-size: var(--cc-text-h3);
+  font-weight: var(--cc-weight-h3);
+  line-height: var(--cc-leading-h3);
+  letter-spacing: var(--cc-track-h3);
+}
+
+h4,
+h5,
+h6 {
+  font-family: var(--cc-font-sans);
+  font-size: var(--cc-text-body);
+  font-weight: var(--cc-weight-h3);
+  line-height: var(--cc-leading-h3);
 }
 
 p {
-  max-width: var(--measure-body);
+  max-width: var(--cc-measure);
+}
+
+.cc-lead {
+  max-width: var(--cc-measure);
+  font-size: var(--cc-text-lead);
+  line-height: var(--cc-leading-body);
+  color: var(--cc-ink-muted);
 }
 
 .soft {
-  color: var(--color-ink-soft);
+  color: var(--cc-ink-muted);
 }
 
 .muted {
-  color: var(--color-ink-muted);
+  color: var(--cc-ink-faint);
+}
+
+.small {
+  font-size: var(--cc-text-small);
+  line-height: var(--cc-leading-small);
+  letter-spacing: var(--cc-track-small);
 }
 
 .mono {
-  font-family: var(--font-family-mono);
+  font-family: var(--cc-font-mono);
   font-variant-numeric: tabular-nums;
+  font-variant-ligatures: none;
 }
 
-/* mono eyebrow: `// ` prefix in caret red, uppercase, tracked */
+/*
+ * Eyebrow / micro label (KILN §3.3). The `//` pseudo-prefix and the
+ * letter-spaced monospace label are retired; the class survives as a plain
+ * uppercase micro label in Inter so pages that already use it keep working.
+ */
 .eyebrow {
   display: inline-flex;
   align-items: center;
-  gap: 0.35em;
-  font-family: var(--font-family-mono);
-  font-size: var(--text-12);
-  letter-spacing: var(--tracking-eyebrow);
+  gap: var(--cc-space-2);
+  font-family: var(--cc-font-sans);
+  font-size: var(--cc-text-micro);
+  font-weight: var(--cc-weight-micro);
+  letter-spacing: var(--cc-track-micro);
+  line-height: var(--cc-leading-small);
   text-transform: uppercase;
-  color: var(--color-ink-muted);
+  color: var(--cc-ink-faint);
 }
 
-.eyebrow::before {
-  content: '// ';
-  color: var(--color-caret);
-}
-
+/* -- links --------------------------------------------------------------- */
 a {
-  color: var(--color-ink);
+  color: inherit;
+  text-underline-offset: 0.16em;
+  text-decoration-thickness: from-font;
 }
 
 a:hover {
-  color: var(--color-accent-text);
+  color: var(--cc-accent);
 }
 
-/* Links inside lesson prose must be distinguishable without relying on colour
-   (WCAG 1.4.1 / axe link-in-text-block): underline them. Chrome/nav links elsewhere
-   are separated from text by layout, not colour, so they keep the plain style. */
-.cc-body a:not(.btn),
-.cc-prose a:not(.btn) {
-  text-decoration: underline;
-  text-underline-offset: 0.15em;
-  text-decoration-thickness: 1px;
+a:active {
+  color: var(--cc-accent-hover);
 }
+
+/* Prose links live in src/styles/prose.css, under the 0-1-0 specificity
+   contract that file documents. They used to sit here as
+   `.cc-body a:not(.btn)` — 0-2-1, which outranks a component's own
+   Astro-scoped 0-2-0 rule and repainted the terminal's "raw recording"
+   link and the code block's links in the page accent, on a dark terminal
+   bar, at 3.5:1 (KILN §8.11.2 all over again). */
 
 hr {
   height: 1px;
+  margin: var(--cc-space-9) 0;
   border: 0;
-  background: var(--color-line);
+  background: var(--cc-line);
 }
 
-/* -- focus ring (D036): 2px accent outline, 2px offset, always visible on
-      keyboard focus, never on mouse focus ----------------------------------*/
+::selection {
+  background: var(--cc-accent-wash);
+  color: var(--cc-ink);
+}
+
+/* -- focus ring (KILN §4): one ring everywhere, keyboard only ------------- */
 :focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring-color);
-  outline-offset: var(--focus-ring-offset);
+  outline: var(--cc-focus-width) solid var(--cc-focus-color);
+  outline-offset: var(--cc-focus-offset);
 }
 
-/* -- motion: only the terminal caret blinks -------------------------------- */
+/* -- global utilities ----------------------------------------------------
+   `.sr-only` is defined ONCE, here. Components must not redefine it. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Visible again on focus — for skip links. */
+.sr-only-focusable:focus,
+.sr-only-focusable:focus-visible {
+  position: fixed;
+  top: var(--cc-space-3);
+  left: var(--cc-space-3);
+  z-index: 100;
+  width: auto;
+  height: auto;
+  padding: var(--cc-space-3) var(--cc-space-5);
+  margin: 0;
+  overflow: visible;
+  clip: auto;
+  clip-path: none;
+  background: var(--cc-paper-raised);
+  color: var(--cc-ink);
+  border: 1px solid var(--cc-line-strong);
+  border-radius: var(--cc-radius-md);
+  box-shadow: var(--cc-shadow-2);
+}
+
+/* -- motion: only the terminal caret blinks (KILN §1.6) ------------------- */
 .caret {
   display: inline-block;
   width: 0.55em;
   height: 1em;
-  background: var(--color-caret);
+  background: var(--cc-term-prompt);
   vertical-align: -0.15em;
-  animation: cc-caret-blink var(--dur-3) steps(1, end) infinite;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .caret {
+    animation: cc-caret-blink 1.1s steps(1, end) infinite;
+  }
 }
 
 @keyframes cc-caret-blink {

@@ -8,6 +8,13 @@
 // page-level one): `getStaticPaths` filters them, so a `draft: true` TR twin
 // simply has no page until its translation wave lands, and `LangSwitch`
 // renders "Türkçesi hazırlanıyor" instead of linking into a 404.
+// Prose typography (KILN §8.11.2). It lives in its own stylesheet, scoped
+// so it can never reach inside a component: what used to be
+// `.cc-body :global(pre)` / `:global(code)` here compiled to a higher
+// specificity than the components' own rules and drew a second border
+// inside the terminal frame, double-padded code blocks and forced 14px
+// code against a 13px line height. See src/styles/prose.css.
+import '../../../../../styles/prose.css';
 import type { InferGetStaticParamsType } from 'astro';
 import { getCollection, render, type CollectionEntry } from 'astro:content';
 import LessonLayout from '../../../../../layouts/Lesson.astro';
@@ -96,9 +103,22 @@ const editHref = editUrl(entry.filePath ?? `content/${entry.id}.mdx`);
   activeModule={module}
   activeLessonId={entry.id}
   headings={headings}
+  contextMeta={{
+    durationMin: entry.data.duration_min,
+    difficulty: strings.difficulty[entry.data.difficulty],
+    updated: entry.data.updated,
+    verifiedVersion: entry.data.verified_version,
+  }}
+  contextProgress={{
+    ids: (neighbours?.module.lessons ?? []).map((l) => l.id),
+    moduleId: neighbours?.module.shortId ?? module,
+  }}
   crumbs={[
     {
-      label: levelNumber ? `L${levelNumber}` : (neighbours?.level.title ?? level),
+      /* The level NAME, not the "L3" code: a two-character crumb is a 17px
+         hit area against a 44px floor (KILN §4), and the code means nothing
+         to a reader who has not memorised it. */
+      label: neighbours?.level.title ?? (levelNumber ? `L${levelNumber}` : level),
       href: `/${lang}/${level}/`,
     },
     {
@@ -109,30 +129,40 @@ const editHref = editUrl(entry.filePath ?? `content/${entry.id}.mdx`);
   ]}
 >
   {
-    isPlaceholder && (
-      <aside class="cc-placeholder" role="note">
-        <span class="mono cc-placeholder-badge" style={levelBadgeStyle(null)}>
-          {strings.placeholderBadge}
-        </span>
-        <p>{strings.placeholderNote}</p>
-      </aside>
-    )
+    /*
+     * The lesson's identity block goes into the layout's `head` slot so the
+     * "On this page" disclosure can sit after it: at 390px the collapsed
+     * contents list used to land between the breadcrumb and the level chip,
+     * ahead of the title it belongs to.
+     */
   }
+  <Fragment slot="head">
+    {
+      isPlaceholder && (
+        <aside class="cc-placeholder" role="note">
+          <span class="mono cc-placeholder-badge" style={levelBadgeStyle(null)}>
+            {strings.placeholderBadge}
+          </span>
+          <p>{strings.placeholderNote}</p>
+        </aside>
+      )
+    }
 
-  <LessonMeta
-    lang={lang}
-    title={entry.data.title}
-    level={levelNumber}
-    moduleShortId={neighbours?.module.shortId ?? module}
-    moduleTitle={neighbours?.module.title ?? ''}
-    position={neighbours?.position ?? 1}
-    moduleTotal={neighbours?.moduleTotal ?? 1}
-    durationMin={entry.data.duration_min}
-    difficulty={entry.data.difficulty}
-    tags={entry.data.tags}
-    updated={entry.data.updated}
-    verifiedVersion={entry.data.verified_version}
-  />
+    <LessonMeta
+      lang={lang}
+      title={entry.data.title}
+      level={levelNumber}
+      moduleShortId={neighbours?.module.shortId ?? module}
+      moduleTitle={neighbours?.module.title ?? ''}
+      position={neighbours?.position ?? 1}
+      moduleTotal={neighbours?.moduleTotal ?? 1}
+      durationMin={entry.data.duration_min}
+      difficulty={entry.data.difficulty}
+      tags={entry.data.tags}
+      updated={entry.data.updated}
+      verifiedVersion={entry.data.verified_version}
+    />
+  </Fragment>
 
   {/* The MDX body, with P07/P08's component vocabulary registered above. */}
   <article class="cc-body">
@@ -144,7 +174,7 @@ const editHref = editUrl(entry.filePath ?? `content/${entry.id}.mdx`);
 
   <div class="cc-footer-row">
     <Helpful lessonId={entry.id} lang={lang} />
-    <a class="mono muted cc-edit" href={editHref}>{strings.editOnGitHub}</a>
+    <a class="cc-edit" href={editHref}>{strings.editOnGitHub}</a>
   </div>
 
   <Giscus lang={lang} />
@@ -167,18 +197,18 @@ const editHref = editUrl(entry.filePath ?? `content/${entry.id}.mdx`);
   .cc-placeholder {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
-    padding: 14px 16px;
-    margin-bottom: var(--space-5);
-    border: 1px dashed var(--color-line-strong);
-    border-radius: var(--radius-3);
-    background: var(--color-bg-1);
+    gap: var(--cc-space-2);
+    padding: var(--cc-space-3) var(--cc-space-4);
+    margin-bottom: var(--cc-space-5);
+    border: 1px dashed var(--cc-line-strong);
+    border-radius: var(--cc-radius-md);
+    background: var(--cc-paper-sunken);
   }
 
   .cc-placeholder p {
     margin: 0;
-    font-size: var(--text-14);
-    color: var(--color-ink-soft);
+    font-size: var(--cc-text-small);
+    color: var(--cc-ink-muted);
   }
 
   .cc-placeholder-badge {
@@ -186,65 +216,42 @@ const editHref = editUrl(entry.filePath ?? `content/${entry.id}.mdx`);
     display: inline-flex;
     align-items: center;
     height: 22px;
-    padding: 0 8px;
-    border-radius: var(--radius-1);
-    font-size: var(--text-11);
-    letter-spacing: 0.06em;
+    padding: 0 var(--cc-space-2);
+    border-radius: var(--cc-radius-sm);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
     text-transform: uppercase;
   }
 
+  /* Everything the body's own typography needs now lives in
+     src/styles/prose.css, imported above — deliberately NOT here, where
+     Astro's scoping would give it enough specificity to reach inside a
+     component and redraw its surfaces (KILN §8.11.2). This block owns the
+     page's layout only. */
   .cc-body {
-    margin: var(--space-6) 0;
-  }
-
-  .cc-body :global(h2) {
-    margin-top: var(--space-8);
-    font-size: var(--text-24);
-  }
-
-  .cc-body :global(h3) {
-    margin-top: var(--space-6);
-  }
-
-  .cc-body :global(p),
-  .cc-body :global(ul),
-  .cc-body :global(ol) {
-    margin: var(--space-4) 0;
-  }
-
-  .cc-body :global(a) {
-    color: var(--color-accent-text);
-  }
-
-  .cc-body :global(pre) {
-    padding: var(--space-4);
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-3);
-    background: var(--color-bg-1);
-    overflow-x: auto;
-  }
-
-  .cc-body :global(code) {
-    font-family: var(--font-family-mono);
-    font-size: var(--text-14);
+    margin: var(--cc-space-9) 0;
   }
 
   .cc-footer-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--space-4);
+    gap: var(--cc-space-4);
     flex-wrap: wrap;
-    margin-top: var(--space-6);
-    font-size: var(--text-14);
+    margin-top: var(--cc-space-6);
+    font-size: var(--cc-text-small);
   }
 
   .cc-edit {
-    font-size: var(--text-12);
-    color: var(--color-ink-muted);
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--cc-tap);
+    font-size: var(--cc-text-small);
+    color: var(--cc-ink-muted);
   }
 
   hr {
-    margin: var(--space-5) 0;
+    margin: var(--cc-space-5) 0;
   }
 </style>

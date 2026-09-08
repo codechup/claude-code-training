@@ -14,9 +14,10 @@ import { getCollection } from 'astro:content';
 import { levelNumber } from '../../../lib/slugs.ts';
 import { renderOgCard } from '../_render.ts';
 
-const WORDMARK_SUB: Record<string, string> = {
-  en: 'claude code academy',
-  tr: 'claude code akademisi',
+// The Kiln wordmark (KILN §5.2), sentence case, per locale.
+const WORDMARK: Record<string, string> = {
+  en: 'Claude Code Academy',
+  tr: 'Claude Code Akademisi',
 };
 
 const SITE_NAME: Record<string, string> = {
@@ -88,7 +89,7 @@ export const GET: APIRoute<OgPageProps> = async ({ props }) => {
   const png = await renderOgCard({
     eyebrow,
     title,
-    wordmarkSub: WORDMARK_SUB[lang] ?? WORDMARK_SUB.en,
+    brand: WORDMARK[lang] ?? WORDMARK.en,
   });
 
   return new Response(new Uint8Array(png), {

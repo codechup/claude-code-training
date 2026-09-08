@@ -1,21 +1,25 @@
 ---
-// Multiple-choice quiz question with instant feedback (D064). Results are
-// stored in `localStorage['cc:quiz:<lessonId>']` via `src/lib/progress.ts`
-// (P06) — no accounts (D020).
-//
-// Authoring: pass `options` as a plain array (works from MDX's `{}` prop
-// syntax) with exactly one `correct: true` entry; the question prompt is
-// either the `prompt` string prop or, for richer markup (code, emphasis),
-// the component's default slot/children — "props or MDX children" per this
-// plan's brief. A lesson can use several `<Quiz>` blocks; each needs its
-// own stable `questionId` — all of a lesson's quizzes on the page combine
-// into one `{ answers, score, total }` record for that `lessonId`.
-//
-// Accessibility: options are real `<input type="radio">`s inside a
-// `<fieldset>`/`<legend>` — native keyboard support (Tab, Arrow keys,
-// Space/Enter), grouped and labelled for assistive tech without any custom
-// ARIA widget. No inline script body: the behaviour below is a normal
-// hoisted `<script>`, bundled by Astro into an external file (CSP-clean).
+/**
+ * Quiz — KILN §8.6.
+ *
+ * One card per question: the prompt at h3 scale, answers as full-width
+ * pills at least `--cc-tap` (44 px) tall. Choosing turns the correct answer
+ * `--cc-ok-wash` with a check and, when wrong, the chosen answer
+ * `--cc-danger-wash` with an x, revealing the explanation. The verdict is
+ * announced through an `aria-live="polite"` status line, and a reset link
+ * clears the question. State per lesson lives in
+ * `localStorage['cc:quiz:<lessonId>']` (D064, D020 — no accounts).
+ *
+ * The prompt is a real `<legend>` over a `<fieldset>` of native
+ * `<input type="radio">`s: full keyboard support and a properly grouped,
+ * labelled control without a hand-rolled ARIA widget. It is styled at h3
+ * scale rather than being an `<h3>`, so a page of quizzes does not inject a
+ * heading level into the lesson outline.
+ *
+ * No inline script body (CSP): the behaviour below is a hoisted module.
+ */
+import Icon from '../ui/Icon.astro';
+
 export interface QuizOption {
   text: string;
   correct?: boolean;
@@ -47,13 +51,20 @@ if (correctIndex === -1) {
 
 const groupName = `cc-quiz-${lessonId}-${questionId}`.replace(/[^a-zA-Z0-9_-]/g, '-');
 
-const strings = {
-  correct: lang === 'tr' ? 'Doğru.' : 'Correct.',
-  incorrect:
-    lang === 'tr'
-      ? 'Doğru değil — doğru cevap işaretlendi.'
-      : 'Not quite — the correct answer is highlighted.',
-};
+const strings =
+  lang === 'tr'
+    ? {
+        eyebrow: 'Kendini sına',
+        correct: 'Doğru.',
+        incorrect: 'Doğru değil — doğru cevap işaretlendi.',
+        reset: 'Sıfırla',
+      }
+    : {
+        eyebrow: 'Check yourself',
+        correct: 'Correct.',
+        incorrect: 'Not quite — the correct answer is highlighted.',
+        reset: 'Reset',
+      };
 ---
 
 <div
@@ -65,22 +76,32 @@ const strings = {
   data-label-correct={strings.correct}
   data-label-incorrect={strings.incorrect}
 >
-  <fieldset class="cc-quiz-fieldset">
-    <legend class="cc-quiz-prompt">{prompt ?? <slot />}</legend>
-    <div class="cc-quiz-options">
+  <p class="cc-quiz__eyebrow"><Icon name="quiz" size={16} /><span>{strings.eyebrow}</span></p>
+
+  <fieldset class="cc-quiz__set">
+    <legend class="cc-quiz__prompt">{prompt ?? <slot />}</legend>
+    <div class="cc-quiz__options">
       {
         options.map((opt, i) => (
-          <label class="cc-quiz-option" data-cc-quiz-option>
+          <label class="cc-quiz__option" data-cc-quiz-option>
             <input
-              class="cc-quiz-radio"
+              class="cc-quiz__radio"
               type="radio"
               name={groupName}
               value={i}
               data-cc-quiz-input
             />
-            <span class="cc-quiz-option-text">{opt.text}</span>
+            <span class="cc-quiz__dot" aria-hidden="true">
+              <span class="cc-quiz__dot-mark cc-quiz__dot-mark--ok">
+                <Icon name="check" size={14} />
+              </span>
+              <span class="cc-quiz__dot-mark cc-quiz__dot-mark--no">
+                <Icon name="close" size={14} />
+              </span>
+            </span>
+            <span class="cc-quiz__text">{opt.text}</span>
             {opt.explanation && (
-              <span class="mono cc-quiz-explanation" data-cc-quiz-explanation hidden>
+              <span class="cc-quiz__why" data-cc-quiz-explanation hidden>
                 {opt.explanation}
               </span>
             )}
@@ -89,114 +110,235 @@ const strings = {
       }
     </div>
   </fieldset>
-  <p class="cc-quiz-status" data-cc-quiz-status aria-live="polite"></p>
+
+  <div class="cc-quiz__foot">
+    <p class="cc-quiz__status" data-cc-quiz-status aria-live="polite"></p>
+    <button class="cc-quiz__reset" type="button" data-cc-quiz-reset hidden>{strings.reset}</button>
+  </div>
 </div>
 
 <style>
   .cc-quiz {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    padding: var(--space-4);
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-3);
-    background: var(--color-bg-2);
+    margin: var(--cc-space-9) 0;
+    max-width: var(--cc-measure);
+    padding: var(--cc-space-6);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-lg);
+    background: var(--cc-paper-raised);
   }
 
-  .cc-quiz-fieldset {
+  .cc-quiz__eyebrow {
     display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
+    align-items: center;
+    gap: var(--cc-space-2);
+    margin: 0 0 var(--cc-space-3);
+    max-width: none;
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  .cc-quiz__set {
     margin: 0;
     padding: 0;
     border: 0;
   }
 
-  .cc-quiz-prompt {
+  /* Styled at h3 scale, not an <h3>: a lesson's outline stays the author's. */
+  .cc-quiz__prompt {
     padding: 0;
-    font-size: var(--text-16);
-    font-weight: 600;
-    color: var(--color-ink);
+    margin-bottom: var(--cc-space-4);
+    font-family: var(--cc-font-sans);
+    font-size: var(--cc-text-h3);
+    font-weight: var(--cc-weight-h3);
+    line-height: var(--cc-leading-h3);
+    letter-spacing: var(--cc-track-h3);
+    color: var(--cc-ink);
   }
 
-  .cc-quiz-options {
+  .cc-quiz__options {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
+    gap: var(--cc-space-2);
   }
 
-  .cc-quiz-option {
-    display: flex;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: var(--space-3);
-    padding: 12px 14px;
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-2);
+  .cc-quiz__option {
+    position: relative;
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    align-items: center;
+    column-gap: var(--cc-space-3);
+    row-gap: var(--cc-space-2);
+    min-height: var(--cc-tap);
+    padding: var(--cc-space-3) var(--cc-space-5);
+    border: 1px solid var(--cc-line);
+    /* KILN §8.6 asks for pill answers, but a pill only works while the row
+       is one line: once an answer wraps at 390px, or grows to ~140px with
+       its explanation, the pill turns into a stadium capsule whose ends are
+       pure curve — a silhouette nothing else on the site has. `--cc-radius-lg`
+       holds at every height and matches the card idiom in §8.9. */
+    border-radius: var(--cc-radius-lg);
+    background: var(--cc-paper);
     cursor: pointer;
   }
 
-  .cc-quiz-option:hover {
-    border-color: var(--color-line-strong);
+  .cc-quiz__option:hover {
+    border-color: var(--cc-line-strong);
+    background: var(--cc-paper-sunken);
   }
 
-  .cc-quiz-radio {
-    appearance: none;
-    flex: 0 0 auto;
-    width: 18px;
-    height: 18px;
+  /* The real radio is kept (native keyboard + grouping) and visually
+     replaced by `.cc-quiz__dot`, which the focus ring follows. It fills the
+     whole answer row: the row was always the hit area (it is a `<label>`),
+     but the control measured 22×22 and read as a sub-44px target. Absolute
+     positioning takes it out of the grid — the dot keeps cell 1/1, the text
+     1/2 — while leaving it the dot's previous sibling for `:checked` and
+     `:focus-visible`. */
+  .cc-quiz__radio {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
     margin: 0;
-    border: 2px solid var(--color-line-strong);
-    border-radius: 999px;
-    align-self: center;
+    opacity: 0;
+    cursor: pointer;
   }
 
-  .cc-quiz-radio:checked {
-    border-color: var(--color-accent);
+  .cc-quiz__dot {
+    grid-area: 1 / 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border: 2px solid var(--cc-line-strong);
+    border-radius: var(--cc-radius-pill);
+    background: var(--cc-paper-raised);
+    pointer-events: none;
   }
 
-  .cc-quiz-option-text {
-    font-size: var(--text-14);
-    color: var(--color-ink);
+  .cc-quiz__radio:checked + .cc-quiz__dot {
+    border-color: var(--cc-accent);
+    box-shadow: inset 0 0 0 4px var(--cc-paper-raised);
+    background: var(--cc-accent);
   }
 
-  .cc-quiz-explanation {
-    margin-left: auto;
-    font-size: var(--text-12);
-    color: var(--color-ink-muted);
+  .cc-quiz__radio:focus-visible + .cc-quiz__dot {
+    outline: var(--cc-focus-width) solid var(--cc-focus-color);
+    outline-offset: var(--cc-focus-offset);
   }
 
-  .cc-quiz-option.is-correct {
-    border-color: var(--color-success);
+  .cc-quiz__dot-mark {
+    display: none;
+    align-items: center;
+    justify-content: center;
   }
 
-  .cc-quiz-option.is-correct .cc-quiz-radio {
-    border-color: var(--color-success);
-    background: var(--color-success);
-    box-shadow: inset 0 0 0 3px var(--color-bg-2);
+  .cc-quiz__text {
+    grid-column: 2;
+    /* An answer can carry an env-var name longer than a 390px column
+       (CLAUDE_CODE_PACKAGE_MANAGER_AUTO_UPDATE); without this it ran off
+       the card edge instead of breaking. */
+    overflow-wrap: anywhere;
+    font-size: var(--cc-text-body);
+    line-height: var(--cc-leading-body);
+    color: var(--cc-ink);
   }
 
-  .cc-quiz-option.is-correct .cc-quiz-explanation {
-    color: var(--color-success);
+  .cc-quiz__why {
+    grid-column: 2;
+    overflow-wrap: anywhere;
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+    color: var(--cc-ink-muted);
   }
 
-  .cc-quiz-option.is-wrong {
-    border-color: var(--color-danger);
+  /* -- answered states. Never colour alone: the disc swaps to a check or an
+     x, and the explanation spells the verdict out. --------------------- */
+  .cc-quiz__option.is-correct {
+    border-color: var(--cc-ok-line);
+    background: var(--cc-ok-wash);
   }
 
-  .cc-quiz-option.is-wrong .cc-quiz-radio {
-    border-color: var(--color-danger);
+  .cc-quiz__option.is-correct .cc-quiz__dot,
+  .cc-quiz__option.is-correct .cc-quiz__radio:checked + .cc-quiz__dot {
+    border-color: var(--cc-ok);
+    background: var(--cc-ok);
+    box-shadow: none;
+    color: var(--cc-paper-raised);
   }
 
-  .cc-quiz-option.is-wrong .cc-quiz-explanation {
-    color: var(--color-danger);
+  .cc-quiz__option.is-correct .cc-quiz__dot-mark--ok {
+    display: flex;
   }
 
-  .cc-quiz-status {
+  .cc-quiz__option.is-wrong {
+    border-color: var(--cc-danger-line);
+    background: var(--cc-danger-wash);
+  }
+
+  .cc-quiz__option.is-wrong .cc-quiz__dot,
+  .cc-quiz__option.is-wrong .cc-quiz__radio:checked + .cc-quiz__dot {
+    border-color: var(--cc-danger);
+    background: var(--cc-danger);
+    box-shadow: none;
+    color: var(--cc-paper-raised);
+  }
+
+  .cc-quiz__option.is-wrong .cc-quiz__dot-mark--no {
+    display: flex;
+  }
+
+  /* -- foot ------------------------------------------------------------- */
+  .cc-quiz__foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--cc-space-4);
+    min-height: var(--cc-tap);
+    margin-top: var(--cc-space-3);
+  }
+
+  .cc-quiz__status {
     margin: 0;
-    min-height: 1em;
-    font-size: var(--text-13);
-    color: var(--color-ink-soft);
+    max-width: none;
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+    color: var(--cc-ink-muted);
+  }
+
+  .cc-quiz__reset {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--cc-tap);
+    padding: 0 var(--cc-space-4);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-pill);
+    background: transparent;
+    color: var(--cc-ink-muted);
+    font-family: inherit;
+    font-size: var(--cc-text-small);
+    cursor: pointer;
+  }
+
+  .cc-quiz__reset:hover {
+    border-color: var(--cc-accent-line);
+    color: var(--cc-accent);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-quiz__option,
+    .cc-quiz__dot,
+    .cc-quiz__reset {
+      transition:
+        background var(--cc-dur-fast) var(--cc-ease),
+        border-color var(--cc-dur-fast) var(--cc-ease),
+        color var(--cc-dur-fast) var(--cc-ease);
+    }
   }
 </style>
 
@@ -207,6 +349,17 @@ const strings = {
     return typeof CSS !== 'undefined' && CSS.escape
       ? CSS.escape(value)
       : value.replace(/"/g, '\\"');
+  }
+
+  function clearFeedback(root: HTMLElement): void {
+    for (const opt of root.querySelectorAll<HTMLElement>('[data-cc-quiz-option]')) {
+      opt.classList.remove('is-correct', 'is-wrong');
+      const explanation = opt.querySelector<HTMLElement>('[data-cc-quiz-explanation]');
+      if (explanation) explanation.hidden = true;
+    }
+    const status = root.querySelector<HTMLElement>('[data-cc-quiz-status]');
+    if (status) status.textContent = '';
+    root.querySelector<HTMLElement>('[data-cc-quiz-reset]')?.setAttribute('hidden', '');
   }
 
   function applyFeedback(root: HTMLElement, chosenIndex: number): void {
@@ -228,6 +381,7 @@ const strings = {
           ? (root.dataset.labelCorrect ?? '')
           : (root.dataset.labelIncorrect ?? '');
     }
+    root.querySelector<HTMLElement>('[data-cc-quiz-reset]')?.removeAttribute('hidden');
   }
 
   function recomputeScoreTotal(lessonId: string, state: QuizState): void {
@@ -246,12 +400,13 @@ const strings = {
     state.total = total;
   }
 
-  function persist(root: HTMLElement, chosenIndex: number): void {
+  function persist(root: HTMLElement, chosenIndex: number | null): void {
     const lessonId = root.dataset.lessonId ?? '';
     const questionId = root.dataset.questionId ?? '';
     if (!lessonId || !questionId) return;
     const state: QuizState = readQuiz(lessonId) ?? { answers: {}, score: 0, total: 0 };
-    state.answers[questionId] = chosenIndex;
+    if (chosenIndex === null) delete state.answers[questionId];
+    else state.answers[questionId] = chosenIndex;
     recomputeScoreTotal(lessonId, state);
     writeQuiz(lessonId, state);
   }
@@ -277,6 +432,13 @@ const strings = {
         applyFeedback(root, i);
         persist(root, i);
       });
+    });
+
+    root.querySelector<HTMLButtonElement>('[data-cc-quiz-reset]')?.addEventListener('click', () => {
+      for (const input of inputs) input.checked = false;
+      clearFeedback(root);
+      persist(root, null);
+      inputs[0]?.focus();
     });
   }
 </script>

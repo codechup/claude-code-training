@@ -1,4 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <rect width="32" height="32" rx="6" fill="#0d0f13"/>
-  <text x="16" y="22" font-family="monospace" font-size="18" font-weight="700" fill="#60a5fa" text-anchor="middle">&gt;_</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Claude Code Academy">
+  <!--
+    Kiln brand mark (docs/design/KILN.md §5.1): a clay tile carrying a chevron
+    and a cursor block — a prompt waiting for input.
+
+    This file is one of the two places in the repo allowed to spell out colour
+    literals (scripts/check-raw-colors.mjs ALLOWED_PATHS): a favicon is fetched
+    outside any document, so it cannot reference tokens.css custom properties.
+    Keep the values in sync with tokens.css by hand:
+      #faf8f3 --cc-paper (light)   #12100e --cc-paper (dark)
+      #b75434 --cc-accent (light)  #e08a66 --cc-accent (dark)
+      #ffffff --cc-on-accent (light)  #1b0f09 --cc-on-accent (dark)
+
+    The geometry is identical to src/components/brand/Mark.astro, drawn on the
+    same 32-unit grid and inset by 2 units so the paper ground reads as clear
+    space against a dark browser tab strip.
+  -->
+  <style>
+    .ground { fill: #faf8f3; }
+    .tile { fill: #b75434; }
+    .ink-stroke { fill: none; stroke: #ffffff; }
+    .ink-fill { fill: #ffffff; }
+    @media (prefers-color-scheme: dark) {
+      .ground { fill: #12100e; }
+      .tile { fill: #e08a66; }
+      .ink-stroke { stroke: #1b0f09; }
+      .ink-fill { fill: #1b0f09; }
+    }
+  </style>
+  <rect class="ground" width="32" height="32" rx="7" />
+  <g transform="translate(2 2) scale(0.875)">
+    <rect class="tile" width="32" height="32" rx="10" />
+    <path
+      class="ink-stroke"
+      d="M10.7 9.8 16.7 16l-6 6.2"
+      stroke-width="2.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+    <rect class="ink-fill" x="19.7" y="11.5" width="3" height="9" rx="1.5" />
+  </g>
 </svg>

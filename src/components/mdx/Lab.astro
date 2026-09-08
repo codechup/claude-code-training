@@ -1,26 +1,27 @@
 ---
-// The D006 hands-on-lab section wrapper: numbered steps, an expected
-// result line, a checklist (persisted per lesson in `localStorage['cc:lab:<lessonId>']`,
-// D020), and room for an embedded `<Transcript>` of the real run (D099).
-//
-// MDX components render standalone — they cannot read the enclosing
-// lesson's frontmatter (`lab.repo_tag`, `src/content/schema.ts`, P06) — so
-// the lesson body passes it explicitly:
-//
-//   <Lab
-//     repoTag={frontmatter.lab.repo_tag}
-//     steps={['git checkout lesson/m07-02-start', '…']}
-//     expected="exit 2, Claude picks an alternative"
-//     checklist={['Hook registered in .claude/settings.json', '…']}
-//   >
-//     <Transcript src="content/_shared/transcripts/m07-hooks/block-dangerous-commands.txt" />
-//   </Lab>
-//
-// `lessonId` (the `cc:lab:<lessonId>` suffix) defaults to the current
-// page's path at runtime (`location.pathname`) so no lesson needs to wire
-// it by hand; pass it explicitly for a stable id outside a real lesson
-// route (e.g. this component's `/design/` gallery entry).
+/**
+ * Lab — KILN §8.5. The heart of the course, so it is built like a piece of
+ * apparatus rather than a generic card.
+ *
+ * A numbered step list runs down a 2 px rail, each step's number in a clay
+ * disc. The header carries the repo tag (or "no repo needed"), and — when
+ * the caller supplies them — the estimated time and a difficulty gauge. An
+ * "Expected result" panel tinted `--cc-ok-wash` closes the lab, and the
+ * checklist persists per lesson in `localStorage['cc:lab:<lessonId>']`
+ * (D020 — no accounts).
+ *
+ * Steps and checklist items arrive as plain strings from MDX props and
+ * routinely contain Markdown inline code (`claude --version`). MDX does not
+ * process a prop string, so before Kiln those backticks rendered literally.
+ * `segments()` below turns them into real `<code>` — a rendering fix in the
+ * component, never a content edit (KILN §9, `content/**` is read-only).
+ *
+ * `lessonId` defaults at runtime to `location.pathname` so no lesson has to
+ * wire it by hand; pass it explicitly for a stable id outside a lesson route
+ * (the `/design` gallery does).
+ */
 import { labRepoTreeUrl } from './lab.ts';
+import Icon from '../ui/Icon.astro';
 
 interface Props {
   repoTag: string;
@@ -29,208 +30,496 @@ interface Props {
   expected: string;
   checklist: string[];
   lessonId?: string;
+  lang?: string;
+  /** Estimated minutes, shown in the header when given. */
+  minutes?: number;
+  /** Difficulty gauge, shown in the header when given. */
+  difficulty?: 'intro' | 'core' | 'advanced';
 }
+
+const STRINGS: Record<string, Record<string, string>> = {
+  en: {
+    lab: 'Lab',
+    defaultTitle: 'Run it against the sandbox repo',
+    noRepo: 'no repo needed',
+    expected: 'Expected result',
+    checklist: 'Checklist',
+    min: 'min',
+    intro: 'Intro',
+    core: 'Core',
+    advanced: 'Advanced',
+  },
+  tr: {
+    lab: 'Laboratuvar',
+    defaultTitle: 'Örnek depoda çalıştırın',
+    noRepo: 'depo gerekmiyor',
+    expected: 'Beklenen sonuç',
+    checklist: 'Kontrol listesi',
+    min: 'dk',
+    intro: 'Giriş',
+    core: 'Temel',
+    advanced: 'İleri',
+  },
+};
 
 const {
   repoTag,
-  title = 'Lab · run it against the sandbox repo',
+  title,
   steps,
   expected,
   checklist,
   lessonId,
+  lang = 'en',
+  minutes,
+  difficulty,
 } = Astro.props as Props;
 
-const repoHref = labRepoTreeUrl(repoTag);
+const s = STRINGS[lang] ?? STRINGS.en;
+const heading = title ?? s.defaultTitle;
+const hasRepo = Boolean(repoTag) && repoTag !== 'none';
+const repoHref = hasRepo ? labRepoTreeUrl(repoTag) : null;
+const gaugeLevel = difficulty ? { intro: 1, core: 2, advanced: 3 }[difficulty] : 0;
+
+/** Split a prop string on Markdown inline code so backticks become `<code>`. */
+function segments(text: string): { code?: string; text?: string }[] {
+  return text
+    .split(/(`[^`]+`)/g)
+    .filter((part) => part.length > 0)
+    .map((part) =>
+      part.length > 2 && part.startsWith('`') && part.endsWith('`')
+        ? { code: part.slice(1, -1) }
+        : { text: part },
+    );
+}
 ---
 
-<div class="cc-lab" data-cc-lab data-lesson-id={lessonId}>
-  <div class="cc-lab-header">
-    <svg
-      aria-hidden="true"
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="1.75"
-      stroke-linecap="round"
-    >
-      <path d="M9 3v7L4 19a2 2 0 0 0 2 3h12a2 2 0 0 0 2-3l-5-9V3M8 3h8"></path>
-    </svg>
-    <h3 class="cc-lab-title">{title}</h3>
-  </div>
+<section class="cc-lab" data-cc-lab data-lesson-id={lessonId}>
+  <header class="cc-lab__head">
+    <p class="cc-lab__eyebrow"><Icon name="lab" size={16} /><span>{s.lab}</span></p>
+    <h3 class="cc-lab__title">{heading}</h3>
+    <ul class="cc-lab__facts">
+      <li class="cc-lab__fact">
+        {
+          hasRepo && repoHref ? (
+            <a class="cc-lab__repo" href={repoHref} target="_blank" rel="noopener noreferrer">
+              <Icon name="github" size={14} />
+              <code>{repoTag}</code>
+            </a>
+          ) : (
+            <span class="cc-lab__norepo">
+              <Icon name="terminal" size={14} />
+              <span>{s.noRepo}</span>
+            </span>
+          )
+        }
+      </li>
+      {
+        typeof minutes === 'number' && (
+          <li class="cc-lab__fact">
+            <Icon name="clock" size={14} />
+            <span>
+              {minutes} {s.min}
+            </span>
+          </li>
+        )
+      }
+      {
+        difficulty && (
+          <li class="cc-lab__fact">
+            <span class="cc-lab__gauge" aria-hidden="true">
+              <span class="cc-lab__gauge-bar" data-on={gaugeLevel >= 1 ? 'true' : undefined} />
+              <span class="cc-lab__gauge-bar" data-on={gaugeLevel >= 2 ? 'true' : undefined} />
+              <span class="cc-lab__gauge-bar" data-on={gaugeLevel >= 3 ? 'true' : undefined} />
+            </span>
+            <span>{s[difficulty]}</span>
+          </li>
+        )
+      }
+    </ul>
+  </header>
 
-  {
-    /* `repoTag="none"` (or empty) = a self-contained exercise that needs no lab repository
-       (the M0 sample lesson, before codechup/claude-code-lab exists — P22). */
-    repoTag && repoTag !== 'none' && (
-      <p class="cc-lab-tag">
-        <span class="mono muted">git checkout {repoTag}</span>
-        <a class="mono cc-lab-repo-link" href={repoHref} target="_blank" rel="noopener noreferrer">
-          codechup/claude-code-lab
-        </a>
-      </p>
-    )
-  }
-
-  <ol class="cc-lab-steps">
+  <ol class="cc-lab__steps">
     {
       steps.map((step, i) => (
-        <li>
-          <span class="mono cc-lab-step-index" aria-hidden="true">
+        <li class="cc-lab__step">
+          <span class="cc-lab__num" aria-hidden="true">
             {i + 1}
           </span>
-          <span>{step}</span>
+          <div class="cc-lab__step-body">
+            {segments(step).map((part) => (part.code ? <code>{part.code}</code> : part.text))}
+          </div>
         </li>
       ))
     }
   </ol>
 
-  <div class="cc-lab-slot">
-    <slot />
+  <div class="cc-lab__slot"><slot /></div>
+
+  <div class="cc-lab__expected">
+    <p class="cc-lab__expected-label">
+      <Icon name="check-circle" size={16} /><span>{s.expected}</span>
+    </p>
+    <p class="cc-lab__expected-text">
+      {segments(expected).map((part) => (part.code ? <code>{part.code}</code> : part.text))}
+    </p>
   </div>
 
-  <p class="cc-lab-expected">
-    <span class="cc-lab-expected-icon" aria-hidden="true">
-      <svg
-        width="14"
-        height="14"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="2"
-        stroke-linecap="round"
-      >
-        <path d="M5 12l5 5L20 7"></path>
-      </svg>
-    </span>
-    <span><strong>Expected:</strong> {expected}</span>
-  </p>
-
-  <fieldset class="cc-lab-checklist">
-    <legend class="mono eyebrow">Checklist</legend>
-    {
-      checklist.map((item, i) => (
-        <label class="cc-lab-check">
-          <input type="checkbox" data-cc-lab-check value={String(i)} />
-          <span>{item}</span>
-        </label>
-      ))
-    }
-  </fieldset>
-</div>
+  {
+    checklist.length > 0 && (
+      <fieldset class="cc-lab__checklist">
+        <legend class="cc-lab__checklist-legend">{s.checklist}</legend>
+        {checklist.map((item, i) => (
+          <label class="cc-lab__check">
+            <input class="cc-lab__box" type="checkbox" data-cc-lab-check value={String(i)} />
+            <span class="cc-lab__tick" aria-hidden="true">
+              <Icon name="check" size={14} />
+            </span>
+            <span class="cc-lab__check-text">
+              {segments(item).map((part) => (part.code ? <code>{part.code}</code> : part.text))}
+            </span>
+          </label>
+        ))}
+      </fieldset>
+    )
+  }
+</section>
 
 <style>
   .cc-lab {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    padding: 18px;
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-3);
-    background: var(--color-bg-2);
+    margin: var(--cc-space-9) 0;
+    max-width: var(--cc-measure);
+    padding: var(--cc-space-6);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-lg);
+    background: var(--cc-paper-raised);
   }
 
-  .cc-lab-header {
+  /* -- header ----------------------------------------------------------- */
+  .cc-lab__head {
+    padding-bottom: var(--cc-space-5);
+    border-bottom: 1px solid var(--cc-line);
+  }
+
+  .cc-lab__eyebrow {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    color: var(--color-ink);
+    gap: var(--cc-space-2);
+    margin: 0 0 var(--cc-space-2);
+    max-width: none;
+    color: var(--cc-accent);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    line-height: 1;
+    text-transform: uppercase;
   }
 
-  .cc-lab-title {
+  .cc-lab__title {
     margin: 0;
+    font-family: var(--cc-font-display);
+    font-size: var(--cc-text-h3);
+    font-weight: var(--cc-weight-display);
+    line-height: var(--cc-leading-h3);
+    letter-spacing: var(--cc-track-h3);
+    color: var(--cc-ink);
   }
 
-  .cc-lab-tag {
+  .cc-lab__facts {
     display: flex;
-    align-items: center;
-    gap: var(--space-3);
     flex-wrap: wrap;
-    margin: 0;
-    font-size: var(--text-13);
-  }
-
-  .cc-lab-repo-link {
-    color: var(--color-ink-muted);
-  }
-
-  .cc-lab-repo-link:hover {
-    color: var(--color-accent-text);
-  }
-
-  .cc-lab-steps {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    margin: 0;
+    align-items: center;
+    gap: var(--cc-space-2) var(--cc-space-4);
+    margin: var(--cc-space-3) 0 0;
     padding: 0;
     list-style: none;
-    font-size: var(--text-14);
   }
 
-  .cc-lab-steps li {
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-  }
-
-  .cc-lab-step-index {
+  .cc-lab__fact {
     display: inline-flex;
+    align-items: center;
+    gap: var(--cc-space-2);
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+    color: var(--cc-ink-muted);
+  }
+
+  .cc-lab__repo,
+  .cc-lab__norepo {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-space-2);
+    /* The repo chip is a link, so it takes the 44px floor (KILN §4); the
+       "no repo needed" chip is static text and keeps the compact pill. */
+    min-height: 28px;
+    padding: 0 var(--cc-space-3);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-pill);
+    background: var(--cc-paper-sunken);
+    color: var(--cc-ink-muted);
+    text-decoration: none;
+  }
+
+  .cc-lab__repo {
+    min-height: var(--cc-tap);
+  }
+
+  .cc-lab__repo code {
+    font-family: var(--cc-font-mono);
+    font-size: var(--cc-text-micro);
+  }
+
+  .cc-lab__repo:hover {
+    border-color: var(--cc-accent-line);
+    background: var(--cc-accent-wash);
+    color: var(--cc-accent);
+  }
+
+  .cc-lab__gauge {
+    display: inline-flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 12px;
+  }
+
+  .cc-lab__gauge-bar {
+    width: 3px;
+    border-radius: 1px;
+    background: var(--cc-line-strong);
+  }
+
+  .cc-lab__gauge-bar:nth-child(1) {
+    height: 5px;
+  }
+  .cc-lab__gauge-bar:nth-child(2) {
+    height: 8px;
+  }
+  .cc-lab__gauge-bar:nth-child(3) {
+    height: 12px;
+  }
+
+  .cc-lab__gauge-bar[data-on] {
+    background: var(--cc-accent);
+  }
+
+  /* -- steps: a 2px rail with clay number discs ------------------------- */
+  .cc-lab__steps {
+    position: relative;
+    list-style: none;
+    margin: var(--cc-space-6) 0 0;
+    padding: 0;
+  }
+
+  /* The rail sits behind the discs and stops at the last disc's centre so
+     the sequence reads as finished rather than trailing off. */
+  .cc-lab__steps::before {
+    content: '';
+    position: absolute;
+    top: 14px;
+    bottom: 14px;
+    left: 13px;
+    width: 2px;
+    background: var(--cc-line);
+  }
+
+  .cc-lab__step {
+    position: relative;
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    column-gap: var(--cc-space-4);
+    padding-bottom: var(--cc-space-5);
+  }
+
+  .cc-lab__step:last-child {
+    padding-bottom: 0;
+  }
+
+  .cc-lab__num {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--cc-radius-pill);
+    background: var(--cc-accent);
+    color: var(--cc-on-accent);
+    font-family: var(--cc-font-mono);
+    font-size: var(--cc-text-micro);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cc-lab__step-body {
+    padding-top: 3px;
+    font-size: var(--cc-text-body);
+    line-height: var(--cc-leading-body);
+    color: var(--cc-ink);
+  }
+
+  .cc-lab__step-body code {
+    padding: 0.1em 0.35em;
+    border-radius: var(--cc-radius-sm);
+    background: var(--cc-paper-sunken);
+    font-family: var(--cc-font-mono);
+    font-size: 0.875em;
+    word-break: break-word;
+  }
+
+  /* Anything the lesson nests inside the lab — a Transcript, a CodeBlock,
+     an OSTabs — sits full width under the steps with the section rhythm. */
+  .cc-lab__slot {
+    margin-top: var(--cc-space-6);
+  }
+
+  .cc-lab__slot:empty {
+    display: none;
+  }
+
+  /* -- expected result -------------------------------------------------- */
+  .cc-lab__expected {
+    margin-top: var(--cc-space-6);
+    padding: var(--cc-space-4) var(--cc-space-5);
+    border: 1px solid var(--cc-ok-line);
+    border-left: 3px solid var(--cc-ok);
+    border-radius: 0 var(--cc-radius-md) var(--cc-radius-md) 0;
+    background: var(--cc-ok-wash);
+  }
+
+  .cc-lab__expected-label {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-space-2);
+    margin: 0 0 var(--cc-space-2);
+    max-width: none;
+    color: var(--cc-ok);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    line-height: 1;
+    text-transform: uppercase;
+  }
+
+  .cc-lab__expected-text {
+    margin: 0;
+    max-width: none;
+    font-size: var(--cc-text-body);
+    line-height: var(--cc-leading-body);
+    color: var(--cc-ink);
+  }
+
+  .cc-lab__expected-text code {
+    padding: 0.1em 0.35em;
+    border-radius: var(--cc-radius-sm);
+    background: var(--cc-paper-raised);
+    font-family: var(--cc-font-mono);
+    font-size: 0.875em;
+  }
+
+  /* -- checklist -------------------------------------------------------- */
+  .cc-lab__checklist {
+    margin: var(--cc-space-6) 0 0;
+    padding: var(--cc-space-5) 0 0;
+    border: 0;
+    border-top: 1px solid var(--cc-line);
+  }
+
+  .cc-lab__checklist-legend {
+    padding: 0;
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+  }
+
+  .cc-lab__check {
+    position: relative;
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    align-items: start;
+    column-gap: var(--cc-space-3);
+    min-height: var(--cc-tap);
+    padding: var(--cc-space-2) 0;
+    cursor: pointer;
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-body);
+    line-height: var(--cc-leading-body);
+  }
+
+  /* A real checkbox, visually replaced by `.cc-lab__tick` — kept in the
+     accessibility tree and focusable, so the focus ring lands on the box.
+     It is stretched over the whole label rather than left at 22×22: the
+     row was already the hit area (a `<label>` forwards its clicks), but the
+     control itself measured 22×22 and read as a sub-44px target in every
+     audit. Taking it out of the grid leaves `.cc-lab__tick` alone in cell
+     1/1 and the text in 1/2, and it stays the tick's previous sibling, so
+     `:checked` and `:focus-visible` still reach it. */
+  .cc-lab__box {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+
+  .cc-lab__tick {
+    grid-area: 1 / 1;
+    display: flex;
     align-items: center;
     justify-content: center;
     width: 22px;
     height: 22px;
-    flex: none;
-    border-radius: var(--radius-1);
-    background: var(--color-bg-3);
-    font-size: var(--text-11);
+    margin-top: 2px;
+    border: 1.5px solid var(--cc-line-strong);
+    border-radius: var(--cc-radius-sm);
+    background: var(--cc-paper);
+    color: transparent;
+    pointer-events: none;
   }
 
-  .cc-lab-slot:empty {
-    display: none;
+  .cc-lab__box:checked + .cc-lab__tick {
+    border-color: var(--cc-ok);
+    background: var(--cc-ok);
+    color: var(--cc-paper-raised);
   }
 
-  .cc-lab-expected {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 0;
-    /* Text stays --color-ink-soft (not --color-success): the success
-       token fails WCAG 2.2 AA 4.5:1 as body text against the light
-       theme's card backgrounds (measured ~3.9-4.2:1) — see this plan's
-       Handoff notes. The checkmark icon alone carries the success color. */
-    color: var(--color-ink-soft);
-    font-size: var(--text-13);
+  .cc-lab__box:focus-visible + .cc-lab__tick {
+    outline: var(--cc-focus-width) solid var(--cc-focus-color);
+    outline-offset: var(--cc-focus-offset);
   }
 
-  .cc-lab-expected-icon {
-    display: inline-flex;
-    color: var(--color-success);
+  .cc-lab__check-text {
+    padding-top: 1px;
   }
 
-  .cc-lab-checklist {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    margin: 0;
-    padding: var(--space-3) 0 0;
-    border: 0;
-    border-top: 1px solid var(--color-line);
+  .cc-lab__check-text code {
+    font-family: var(--cc-font-mono);
+    font-size: 0.875em;
+    word-break: break-word;
   }
 
-  .cc-lab-check {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    font-size: var(--text-14);
-    color: var(--color-ink-soft);
+  .cc-lab__box:checked ~ .cc-lab__check-text {
+    color: var(--cc-ink-muted);
+    text-decoration: line-through;
+    text-decoration-color: var(--cc-line-strong);
   }
 
-  .cc-lab-check input {
-    width: 18px;
-    height: 18px;
-    accent-color: var(--color-success);
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-lab__tick,
+    .cc-lab__repo {
+      transition:
+        background var(--cc-dur-fast) var(--cc-ease),
+        border-color var(--cc-dur-fast) var(--cc-ease),
+        color var(--cc-dur-fast) var(--cc-ease);
+    }
+  }
+
+  @media (min-width: 640px) {
+    .cc-lab {
+      padding: var(--cc-space-7);
+    }
   }
 </style>
 
@@ -245,8 +534,8 @@ const repoHref = labRepoTreeUrl(repoTag);
     try {
       checked = readLabChecklist(lessonId, window.localStorage);
     } catch {
-      // localStorage unavailable — the checklist still works for this
-      // page load, it just starts unchecked and won't persist.
+      // localStorage unavailable — the checklist still works for this page
+      // load, it just starts unchecked and won't persist.
     }
     for (const box of boxes) {
       box.checked = checked.includes(box.value);

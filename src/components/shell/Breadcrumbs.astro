@@ -1,0 +1,122 @@
+---
+/**
+ * Breadcrumbs — level › module › lesson (KILN §8.8).
+ *
+ * One copy, shared by Section and Lesson (both had a verbatim duplicate of
+ * the old `.cc-crumbs` strip, in a monospace face the redesign retired).
+ * Kiln sets it in Inter `small`, separated by a chevron from the one icon
+ * set, with the current page as plain text carrying `aria-current`.
+ */
+import Icon from '../ui/Icon.astro';
+import { t } from '../../lib/i18n/ui.ts';
+
+export interface Crumb {
+  label: string;
+  href?: string;
+}
+
+interface Props {
+  lang: string;
+  crumbs: Crumb[];
+  /** Extra class, so a layout can place the strip in its grid. */
+  class?: string;
+}
+
+// `data-pagefind-ignore` on the strip: Pagefind indexes everything inside
+// `main`, and the crumb trail sits there, so every search excerpt opened with
+// "L3 › m10 Subagents and custom agents ›" — adjacent spans concatenated
+// without whitespace. The trail is chrome, not content.
+const { lang, crumbs, class: className } = Astro.props;
+const strings = t(lang);
+---
+
+{
+  crumbs.length > 0 && (
+    <nav class:list={['cc-crumbs', className]} aria-label={strings.breadcrumb} data-pagefind-ignore>
+      <ol>
+        {crumbs.map((crumb, i) => (
+          <li>
+            {/* The separator LEADS its crumb and shares the crumb's inline-flex
+                box, so it can never be stranded at the end of a wrapped line
+                pointing at nothing. A wrapped line opens "› Lab: ...", which
+                reads as continuation; a line ending in "›" reads as
+                truncation. */}
+            {i > 0 && <Icon name="chevron-right" size={14} class="cc-crumbs__sep" />}
+            {crumb.href ? (
+              <a href={crumb.href}>{crumb.label}</a>
+            ) : (
+              <span class="cc-crumbs__current" aria-current="page">
+                {crumb.label}
+              </span>
+            )}
+          </li>
+        ))}
+      </ol>
+    </nav>
+  )
+}
+
+<style>
+  .cc-crumbs {
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+    letter-spacing: var(--cc-track-small);
+    color: var(--cc-ink-muted);
+  }
+
+  .cc-crumbs ol {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0 var(--cc-space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .cc-crumbs li {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-space-2);
+    min-width: 0;
+  }
+
+  .cc-crumbs__sep {
+    flex: none;
+    color: var(--cc-ink-faint);
+  }
+
+  .cc-crumbs a {
+    /*
+     * KILN §4/§10: 44px is the floor for the first interactive row on every
+     * lesson and section page. The label keeps `small`; the row is padded to
+     * the target size, not scaled up to it. A stretched pseudo-element was
+     * used here before and it overflowed the column by 4px at 320px, so the
+     * padding is real box padding now.
+     */
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--cc-tap);
+    color: var(--cc-ink-muted);
+    text-decoration: none;
+    border-radius: var(--cc-radius-sm);
+    min-width: 0;
+  }
+
+  .cc-crumbs a:hover {
+    color: var(--cc-accent);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  /* The current page: never a link, and never the only colour-carried signal —
+     it is the last item and it is the only one in full ink. */
+  .cc-crumbs__current {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--cc-tap);
+    color: var(--cc-ink);
+    font-weight: var(--cc-weight-small);
+    min-width: 0;
+  }
+</style>

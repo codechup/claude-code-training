@@ -1,16 +1,33 @@
 ---
-// The locale landing page (D062): hero + CTA, level cards with progress,
-// curriculum map, "what changed" feed, playbook card — in the order
-// `docs/design/canvas-out/Main.dc.html` draws them, collapsing to
-// `Landing390.dc.html`'s single column on phone.
+/**
+ * The locale landing page (`/[lang]/`, D062) — rebuilt on Kiln.
+ *
+ * KILN §7.1: a landing page is a stack of FULL-BLEED bands, each centring
+ * its own `.cc-container`. `Landing.astro` therefore imposes no width; the
+ * bands below alternate `--cc-paper` and `--cc-paper-sunken` so the page
+ * reads as five deliberate movements rather than one long scroll:
+ *
+ *   1. hero        — what the course is, plus a real-looking terminal (§8.1)
+ *   2. levels      — four cards, progress ring, honest counts (§8.9)
+ *   3. map         — every module, scannable in one screen  (#curriculum-map)
+ *   4. what changed— the release feed                        (#what-changed)
+ *   5. next        — the closing call to action + playbook   (#playbook)
+ *
+ * The three ids are load-bearing: `Header.astro` and `Footer.astro` link at
+ * `#curriculum-map`, `#what-changed` and `#playbook` from every page.
+ *
+ * Counts are never decorative. Every "21 lessons · 4.9 h" on this page is
+ * summed from the nav tree, which already excludes drafts, so a number here
+ * cannot drift from what the reader will actually find.
+ */
 import type { InferGetStaticParamsType } from 'astro';
 import { getCollection } from 'astro:content';
 import Landing from '../../layouts/Landing.astro';
-import ProgressBar from '../../components/lesson/ProgressBar.astro';
 import Terminal from '../../components/lesson/Terminal.astro';
+import Icon from '../../components/ui/Icon.astro';
 import { buildNav, startHref } from '../../lib/nav.ts';
 import { changesFor, VERIFIED_VERSION } from '../../lib/changes.ts';
-import { hoursFromMinutes, levelBadgeStyle } from '../../lib/levels.ts';
+import { hoursFromMinutes, levelBadgeStyle, levelColorVar } from '../../lib/levels.ts';
 import { t } from '../../lib/i18n/ui.ts';
 import { LANGS, swapLangInPath, type Lang } from '../../lib/slugs.ts';
 
@@ -32,11 +49,69 @@ const path = `/${lang}/`;
 const altPath = swapLangInPath(path, lang === 'en' ? 'tr' : 'en');
 
 const start = startHref(tree);
+
 // D062's "level cards" are the four numbered levels; `playbook` and `meta`
-// are section trees, not levels (they carry no lessons and no level badge),
-// so they appear in the curriculum map and the header, not here.
+// are section trees, not levels (no lessons, no level badge), so they get
+// their own strip in the map and the closing band, never a level card.
 const cardLevels = tree.levels.filter((level) => level.number !== null);
+const referenceLevels = tree.levels.filter((level) => level.number === null);
 const changes = changesFor(lang as Lang);
+
+const totalMinutes = cardLevels.reduce((sum, level) => sum + level.durationMin, 0);
+const totalModules = cardLevels.reduce((sum, level) => sum + level.modules.length, 0);
+
+// Composed in the frontmatter, not as adjacent JSX expressions: two
+// expressions separated by a newline lose the space between them once the
+// formatter reflows the line, which is exactly the `updated2026-09-07`
+// defect KILN §9.1 records.
+// Page-local chrome copy, in the pattern Header/Footer already use: strings
+// that exist only on this page do not belong in the shared `UiStrings`
+// contract. Turkish is written with full diacritics (D016/D018).
+const COPY: Record<
+  string,
+  {
+    modules: string;
+    ofLessons: (done: string, total: number) => string;
+    readingOrder: string;
+    reference: string;
+    allChanges: string;
+    nextEyebrow: string;
+    nextTitle: string;
+    nextBody: string;
+  }
+> = {
+  en: {
+    modules: 'modules',
+    ofLessons: (done, total) => `${done} of ${total} done`,
+    readingOrder: 'Read them in order — each level assumes the one before it.',
+    reference: 'Reference',
+    allChanges: 'All tracked changes',
+    nextEyebrow: 'Start',
+    nextTitle: 'Open a terminal and begin.',
+    nextBody:
+      'Level 1 starts from an empty machine: install, sign in, and finish your first real session in about an hour. No account here, no sign-up — progress is kept in this browser.',
+  },
+  tr: {
+    modules: 'modül',
+    ofLessons: (done, total) => `${total} dersin ${done} tanesi tamam`,
+    readingOrder: 'Sırayla ilerleyin — her seviye bir öncekini varsayar.',
+    reference: 'Başvuru',
+    allChanges: 'İzlenen tüm değişiklikler',
+    nextEyebrow: 'Başla',
+    nextTitle: 'Bir terminal açın ve başlayın.',
+    nextBody:
+      'Seviye 1 sıfırdan başlar: kurun, giriş yapın ve yaklaşık bir saatte ilk gerçek oturumunuzu tamamlayın. Hesap yok, kayıt yok — ilerlemeniz bu tarayıcıda saklanır.',
+  },
+};
+const c = COPY[lang] ?? COPY.en;
+
+const mapCount = `${totalModules} ${c.modules} · ${tree.lessonCount} ${strings.lessons}`;
+const feedNote = `(${strings.verifiedOn} ${VERIFIED_VERSION}).`;
+
+// Ring geometry (KILN §8.9). 56px box, 4px stroke, so r = 26 and the
+// circumference the dash offset animates against is 2πr.
+const RING_R = 26;
+const RING_C = 2 * Math.PI * RING_R;
 ---
 
 <Landing
@@ -46,369 +121,785 @@ const changes = changesFor(lang as Lang);
   path={path}
   altPath={altPath}
 >
-  {/* ---- hero -------------------------------------------------------- */}
-  <section class="cc-hero">
-    <div class="cc-hero-copy">
-      <span class="eyebrow">{strings.heroEyebrow}</span>
-      <h1>{strings.heroTitle}</h1>
-      <p class="soft cc-hero-lead">{strings.heroBody}</p>
-      <div class="cc-hero-actions">
-        <a class="cc-btn cc-btn-primary" href={start}>{strings.startLevel1}</a>
-        <a class="cc-btn cc-btn-ghost" href="#curriculum-map">{strings.seeCurriculumMap}</a>
-      </div>
-      <p class="mono muted cc-hero-facts">
-        <span>{strings.verifiedOn} v{VERIFIED_VERSION}</span>
-        <span aria-hidden="true">·</span>
-        <span>EN / TR</span>
-        <span aria-hidden="true">·</span>
-        <span>{strings.free}</span>
-      </p>
-    </div>
-    <Terminal title="~/my-app — claude" />
-  </section>
-
-  {/* ---- level cards ------------------------------------------------- */}
-  <section class="cc-block" aria-labelledby="levels-heading">
-    <div class="cc-block-head">
-      <div>
-        <span class="eyebrow">{strings.fourLevels}</span>
-        <h2 id="levels-heading">{strings.fourLevelsLead}</h2>
-      </div>
-      <p class="muted cc-block-note">{strings.progressNote}</p>
-    </div>
-    <ul class="cc-level-grid">
-      {
-        cardLevels.map((level) => (
-          <li class="cc-card">
-            <div class="cc-card-top">
-              <span class="mono cc-badge" style={levelBadgeStyle(level.number)}>
-                {level.number ? strings.levelLabel(level.number) : level.title}
-              </span>
-              <span class="mono muted cc-card-count">
-                {level.lessonCount} {strings.lessons} · {hoursFromMinutes(level.durationMin)}{' '}
-                {strings.hours}
-              </span>
-            </div>
-            <h3>
-              <a href={level.path}>{level.title}</a>
-            </h3>
-            <p class="soft cc-card-body">{level.description}</p>
-            <ProgressBar
-              lang={lang}
-              ids={level.modules.flatMap((m) => m.lessons.map((l) => l.id))}
-              level={level.number}
-            />
+  {/* ---- 1. hero ------------------------------------------------------ */}
+  <section class="cc-band cc-band--hero" aria-labelledby="hero-heading">
+    <div class="cc-container cc-hero">
+      <div class="cc-hero__copy">
+        <span class="eyebrow">{strings.heroEyebrow}</span>
+        <h1 id="hero-heading" class="cc-display">{strings.heroTitle}</h1>
+        <p class="cc-lead cc-hero__lead">{strings.heroBody}</p>
+        <div class="cc-hero__actions">
+          <a class="cc-btn cc-btn--primary" href={start}>
+            {strings.startLevel1}
+            <Icon name="arrow-right" size={18} />
+          </a>
+          <a class="cc-btn cc-btn--ghost" href="#curriculum-map">{strings.seeCurriculumMap}</a>
+        </div>
+        <ul class="cc-hero__facts small">
+          <li>
+            <Icon name="book" size={16} />
+            <span>{tree.lessonCount} {strings.lessons}</span>
           </li>
-        ))
-      }
-    </ul>
-  </section>
-
-  {/* ---- curriculum map ---------------------------------------------- */}
-  <section class="cc-block" id="curriculum-map" aria-labelledby="map-heading">
-    <div class="cc-block-head">
-      <div>
-        <span class="eyebrow">{strings.curriculumMap}</span>
-        <h2 id="map-heading">{strings.curriculumMapLead}</h2>
+          <li>
+            <Icon name="clock" size={16} />
+            <span>{hoursFromMinutes(totalMinutes)} {strings.hours}</span>
+          </li>
+          <li>
+            <Icon name="check-circle" size={16} />
+            <span>{strings.verifiedOn} v{VERIFIED_VERSION}</span>
+          </li>
+          <li>
+            <Icon name="language" size={16} />
+            <span>EN / TR · {strings.free}</span>
+          </li>
+        </ul>
+      </div>
+      <div class="cc-hero__term">
+        <Terminal title="~/my-app — claude" />
       </div>
     </div>
-    <div class="cc-card cc-map">
+  </section>
+
+  {/* ---- 2. level cards ----------------------------------------------- */}
+  <section class="cc-band cc-band--sunken" aria-labelledby="levels-heading">
+    <div class="cc-container">
+      <div class="cc-head">
+        <div class="cc-head__text">
+          <span class="eyebrow">{strings.fourLevels}</span>
+          <h2 id="levels-heading">{strings.fourLevelsLead}</h2>
+          <p class="cc-head__note small soft">{c.readingOrder}</p>
+        </div>
+        <p class="cc-head__aside small soft">{strings.progressNote}</p>
+      </div>
+
+      <ol class="cc-levels">
+        {
+          cardLevels.map((level) => (
+            <li class="cc-card cc-level">
+              <div class="cc-level__top">
+                <span class="cc-chip" style={levelBadgeStyle(level.number)}>
+                  {strings.levelLabel(level.number ?? 0)}
+                </span>
+                <div
+                  class="cc-ring"
+                  data-cc-ring
+                  data-lang={lang}
+                  data-ids={JSON.stringify(
+                    level.modules.flatMap((m) => m.lessons.map((l) => l.id)),
+                  )}
+                  aria-hidden="true"
+                >
+                  <svg viewBox="0 0 56 56" width="56" height="56">
+                    <circle class="cc-ring__track" cx="28" cy="28" r={RING_R} />
+                    <circle
+                      class="cc-ring__fill"
+                      cx="28"
+                      cy="28"
+                      r={RING_R}
+                      style={`stroke: ${levelColorVar(level.number)}; stroke-dasharray: ${RING_C}; stroke-dashoffset: ${RING_C};`}
+                    />
+                  </svg>
+                  <span class="cc-ring__pct mono" data-cc-ring-pct>
+                    0%
+                  </span>
+                </div>
+              </div>
+
+              <h3 class="cc-level__title">
+                <a href={level.path}>{level.title}</a>
+              </h3>
+              <p class="cc-level__body small soft">{level.description}</p>
+
+              <p class="cc-level__meta small soft">
+                <span>
+                  {level.lessonCount} {strings.lessons}
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>
+                  {level.modules.length} {c.modules}
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>
+                  {hoursFromMinutes(level.durationMin)} {strings.hours}
+                </span>
+              </p>
+              <p
+                class="cc-level__done small"
+                data-cc-ring-count
+                data-total={level.lessonCount}
+                data-template={c.ofLessons('{done}', level.lessonCount)}
+              >
+                {c.ofLessons('0', level.lessonCount)}
+              </p>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+  </section>
+
+  {/* ---- 3. curriculum map -------------------------------------------- */}
+  <section class="cc-band" id="curriculum-map" aria-labelledby="map-heading">
+    <div class="cc-container">
+      <div class="cc-head">
+        <div class="cc-head__text">
+          <span class="eyebrow">{strings.curriculumMap}</span>
+          <h2 id="map-heading">{strings.curriculumMapLead}</h2>
+          <p class="cc-head__note small soft">{mapCount}</p>
+        </div>
+      </div>
+
+      <div class="cc-map">
+        {
+          cardLevels.map((level) => (
+            <section class="cc-map__col" aria-labelledby={`map-${level.slug}`}>
+              <h3 class="cc-map__title" id={`map-${level.slug}`}>
+                <span
+                  class="cc-map__marker"
+                  style={`background: ${levelColorVar(level.number)}`}
+                  aria-hidden="true"
+                />
+                <a href={level.path}>
+                  <span class="cc-map__level">{strings.levelLabel(level.number ?? 0)}</span>
+                  <span class="cc-map__name">{level.title}</span>
+                </a>
+              </h3>
+              <ul class="cc-map__list">
+                {level.modules.map((mod) => (
+                  <li>
+                    <a href={mod.path}>
+                      <span class="cc-map__id mono">{mod.shortId}</span>
+                      <span class="cc-map__label">{mod.title}</span>
+                      <span class="cc-map__count mono">
+                        {mod.lessons.length}
+                        <span class="sr-only"> {strings.lessons}</span>
+                      </span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))
+        }
+      </div>
+
       {
-        tree.levels.map((level) => (
-          <div class="cc-map-col">
-            <span class="mono cc-map-title">
-              {level.number ? strings.levelLabel(level.number) : level.title}
-            </span>
-            <ul>
-              {level.modules.map((mod) => (
-                <li>
-                  <a href={mod.path}>
-                    {mod.shortId} {mod.title}
+        referenceLevels.length > 0 && (
+          <div class="cc-map cc-map--reference">
+            {referenceLevels.map((level) => (
+              <section class="cc-map__col" aria-labelledby={`map-${level.slug}`}>
+                <h3 class="cc-map__title" id={`map-${level.slug}`}>
+                  <span class="cc-map__marker cc-map__marker--faint" aria-hidden="true" />
+                  <a href={level.path}>
+                    <span class="cc-map__level">{c.reference}</span>
+                    <span class="cc-map__name">{level.title}</span>
                   </a>
-                </li>
-              ))}
-            </ul>
+                </h3>
+                <ul class="cc-map__list">
+                  {level.modules.map((mod) => (
+                    <li>
+                      <a href={mod.path}>
+                        <span class="cc-map__label">{mod.title}</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
           </div>
-        ))
+        )
       }
     </div>
   </section>
 
-  {/* ---- what changed + playbook card -------------------------------- */}
-  <section class="cc-block cc-changed" aria-labelledby="changed-heading">
-    <div id="what-changed">
-      <span class="eyebrow">{strings.whatChanged}</span>
-      <h2 id="changed-heading">{strings.whatChangedLead}</h2>
+  {/* ---- 4. what changed ---------------------------------------------- */}
+  <section class="cc-band cc-band--sunken" id="what-changed" aria-labelledby="changed-heading">
+    <div class="cc-container">
+      <div class="cc-head">
+        <div class="cc-head__text">
+          <span class="eyebrow">{strings.whatChanged}</span>
+          <h2 id="changed-heading">{strings.whatChangedLead}</h2>
+        </div>
+        <a class="cc-head__link small" href={`/${lang}/playbook/changelog/`}>
+          {c.allChanges}
+          <Icon name="arrow-right" size={16} />
+        </a>
+      </div>
+
       <ul class="cc-feed">
         {
           changes.map((change) => (
-            <li>
-              <span class="mono cc-chip">{change.version}</span>
-              <span class="cc-feed-title">{change.title}</span>
-              <span class="mono muted cc-feed-where">{change.where}</span>
+            <li class="cc-feed__row">
+              <span class="cc-feed__version mono">{change.version}</span>
+              <span class="cc-feed__title">{change.title}</span>
+              <span class="cc-feed__where small soft">{change.where}</span>
             </li>
           ))
         }
       </ul>
-      <p class="muted cc-feed-source">
-        {strings.feedSource}
-        <code class="mono">research/deprecations.md</code> ({strings.verifiedOn}
-        {' '}{VERIFIED_VERSION}).
+
+      <p class="cc-feed__source small soft">
+        {strings.feedSource}{' '}
+        <code class="mono">research/deprecations.md</code>{' '}
+        {feedNote}
       </p>
     </div>
-    <div class="cc-card cc-playbook" id="playbook">
-      <span class="eyebrow">{strings.playbook}</span>
-      <h3>{strings.playbookCardTitle}</h3>
-      <p class="soft cc-card-body">{strings.playbookCardBody}</p>
-      <a class="cc-btn cc-btn-soft" href={`/${lang}/playbook/`}>{strings.openThePlaybook}</a>
+  </section>
+
+  {/* ---- 5. closing call to action ------------------------------------ */}
+  <section class="cc-band cc-band--close" aria-labelledby="next-heading">
+    <div class="cc-container cc-next">
+      <div class="cc-next__main">
+        <span class="eyebrow">{c.nextEyebrow}</span>
+        <h2 id="next-heading">{c.nextTitle}</h2>
+        <p class="cc-lead">{c.nextBody}</p>
+        <div class="cc-hero__actions">
+          <a class="cc-btn cc-btn--primary" href={start}>
+            {strings.startLevel1}
+            <Icon name="arrow-right" size={18} />
+          </a>
+        </div>
+      </div>
+
+      <div class="cc-card cc-next__card" id="playbook">
+        <span class="eyebrow">{strings.playbook}</span>
+        <h3>{strings.playbookCardTitle}</h3>
+        <p class="small soft">{strings.playbookCardBody}</p>
+        <a class="cc-btn cc-btn--ghost cc-next__cta" href={`/${lang}/playbook/`}>
+          {strings.openThePlaybook}
+          <Icon name="arrow-right" size={18} />
+        </a>
+      </div>
     </div>
   </section>
 </Landing>
 
 <style>
-  .cc-hero {
-    display: grid;
-    gap: var(--space-6);
-    padding: var(--space-10) var(--space-4) var(--space-8);
+  /* ==== bands (KILN §7.1) ============================================== */
+  .cc-band {
+    padding-block: var(--cc-band-py);
   }
 
-  .cc-hero-copy {
+  .cc-band--sunken {
+    background: var(--cc-paper-sunken);
+    border-block: 1px solid var(--cc-line);
+  }
+
+  .cc-band--hero {
+    padding-block: var(--cc-space-9) var(--cc-space-11);
+  }
+
+  .cc-band--close {
+    padding-block: var(--cc-space-11) var(--cc-space-12);
+  }
+
+  /* app.css sets `.eyebrow` in `--cc-ink-faint`, which measures under 4.5:1
+     on paper and fails axe as running text; `--cc-ink-muted` clears it. The
+     same AA override `Lockup.astro` already makes for its publisher line. */
+  .eyebrow {
+    color: var(--cc-ink-muted);
+  }
+
+  /* ==== shared section head ============================================ */
+  .cc-head {
     display: flex;
     flex-direction: column;
-    gap: var(--space-5);
+    gap: var(--cc-space-3);
+    margin-block-end: var(--cc-space-8);
   }
 
-  .cc-hero-copy h1 {
-    margin: 0;
-    font-size: var(--text-40);
-    text-wrap: balance;
-  }
-
-  .cc-hero-lead {
-    margin: 0;
-    font-size: var(--text-16);
-    max-width: 52ch;
-  }
-
-  .cc-hero-actions {
+  .cc-head__text {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
+    gap: var(--cc-space-2);
   }
 
-  .cc-hero-facts {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
+  .cc-head__note,
+  .cc-head__aside {
     margin: 0;
-    max-width: none;
-    font-size: var(--text-13);
+    max-width: 46ch;
   }
 
+  /* Ink, not clay: `--cc-accent` measures 4.4:1 on `--cc-paper-sunken`,
+     just under AA at this size. The underline and the accent arrow carry
+     the affordance instead, so nothing depends on the colour. */
+  .cc-head__link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-space-2);
+    align-self: flex-start;
+    min-height: var(--cc-tap);
+    color: var(--cc-ink);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.25em;
+    font-weight: var(--cc-weight-small);
+  }
+
+  .cc-head__link :global(svg) {
+    color: var(--cc-accent);
+  }
+
+  .cc-head__link:hover {
+    color: var(--cc-accent-hover);
+    text-decoration-thickness: 2px;
+  }
+
+  .cc-head__link:hover :global(svg) {
+    color: var(--cc-accent-hover);
+  }
+
+  /* ==== buttons ======================================================== */
   .cc-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: var(--space-2);
-    min-height: var(--tap-target);
-    padding: 0 18px;
+    gap: var(--cc-space-2);
+    min-height: var(--cc-tap);
+    padding-inline: var(--cc-space-6);
     border: 1px solid transparent;
-    border-radius: var(--radius-2);
-    font-weight: 500;
-    font-size: var(--text-16);
+    border-radius: var(--cc-radius-md);
+    font-weight: 550;
+    font-size: var(--cc-text-body);
+    line-height: 1.2;
+    text-align: center;
     text-decoration: none;
+  }
+
+  .cc-btn--primary {
+    background: var(--cc-accent);
+    color: var(--cc-on-accent);
+  }
+
+  .cc-btn--primary:hover {
+    background: var(--cc-accent-hover);
+    color: var(--cc-on-accent);
+  }
+
+  .cc-btn--ghost {
+    border-color: var(--cc-line-strong);
+    background: var(--cc-paper-raised);
+    color: var(--cc-ink);
+  }
+
+  .cc-btn--ghost:hover {
+    border-color: var(--cc-accent-line);
+    color: var(--cc-accent);
+  }
+
+  /* ==== 1. hero ======================================================== */
+  .cc-hero {
+    display: grid;
+    gap: var(--cc-space-9);
+    align-items: center;
+  }
+
+  .cc-hero__copy {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--cc-space-5);
+    min-width: 0;
+  }
+
+  .cc-hero__copy h1 {
+    margin: 0;
+    /* A display line wants a shorter measure than prose. */
+    max-width: 20ch;
+  }
+
+  .cc-hero__lead {
+    margin: 0;
+    max-width: 52ch;
+  }
+
+  .cc-hero__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--cc-space-3);
+  }
+
+  /* On a phone the two calls to action are full-width rows: ragged
+     content-width buttons read as an unfinished form. */
+  @media (max-width: 519px) {
+    .cc-hero__actions {
+      align-self: stretch;
+      flex-direction: column;
+      align-items: stretch;
+    }
+  }
+
+  .cc-hero__facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--cc-space-2) var(--cc-space-6);
+    margin: var(--cc-space-2) 0 0;
+    padding: 0;
+    list-style: none;
+    color: var(--cc-ink-muted);
+  }
+
+  .cc-hero__facts li {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-space-2);
     white-space: nowrap;
   }
 
-  .cc-btn-primary {
-    background: var(--color-accent);
-    color: var(--color-accent-ink);
+  .cc-hero__facts :global(svg) {
+    flex: none;
+    color: var(--cc-ink-muted);
   }
 
-  .cc-btn-ghost {
-    border-color: var(--color-line-strong);
-    color: var(--color-ink);
+  /* The frame is a flex/grid child; `min-width: 0` is what stops a `pre`
+     inside it from widening the whole page at 390px (KILN §9.4). */
+  .cc-hero__term {
+    min-width: 0;
   }
 
-  .cc-btn-soft {
-    background: var(--color-bg-3);
-    color: var(--color-ink);
-    align-self: flex-start;
-  }
-
-  .cc-block {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-5);
-    padding: 0 var(--space-4) var(--space-12);
-  }
-
-  .cc-block-head {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .cc-block-head h2 {
-    margin: var(--space-1) 0 0;
-    font-size: var(--text-24);
-  }
-
-  .cc-block-note {
-    margin: 0;
-    font-size: var(--text-14);
-  }
-
-  .cc-level-grid,
-  .cc-feed,
-  .cc-map ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-
-  .cc-level-grid {
-    display: grid;
-    gap: var(--space-4);
-  }
-
+  /* ==== card idiom (KILN §8.9) ========================================= */
   .cc-card {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
-    padding: 18px;
-    background: var(--color-bg-2);
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-3);
+    padding: var(--cc-space-6);
+    background: var(--cc-paper-raised);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-lg);
   }
 
-  .cc-card h3 {
+  /* ==== 2. level cards ================================================= */
+  .cc-levels {
+    display: grid;
+    gap: var(--cc-space-4);
     margin: 0;
+    padding: 0;
+    list-style: none;
   }
 
-  .cc-card h3 a {
-    color: var(--color-ink);
-    text-decoration: none;
+  .cc-level {
+    gap: var(--cc-space-3);
   }
 
-  .cc-card-top {
+  .cc-level__top {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
-    gap: var(--space-2);
-    flex-wrap: wrap;
-  }
-
-  .cc-card-count {
-    font-size: var(--text-12);
-  }
-
-  .cc-card-body {
-    margin: 0;
-    font-size: var(--text-14);
-  }
-
-  .cc-badge {
-    display: inline-flex;
-    align-items: center;
-    height: 22px;
-    padding: 0 8px;
-    border-radius: var(--radius-1);
-    font-size: var(--text-11);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    gap: var(--cc-space-3);
   }
 
   .cc-chip {
     display: inline-flex;
     align-items: center;
-    height: 26px;
-    padding: 0 10px;
-    border-radius: var(--radius-1);
-    background: var(--color-bg-3);
-    color: var(--color-ink-soft);
-    font-size: var(--text-12);
-    letter-spacing: 0.04em;
-    flex-shrink: 0;
+    height: 24px;
+    padding-inline: var(--cc-space-3);
+    border-radius: var(--cc-radius-pill);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+    white-space: nowrap;
   }
 
+  .cc-ring {
+    position: relative;
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 56px;
+  }
+
+  .cc-ring svg {
+    position: absolute;
+    inset: 0;
+    transform: rotate(-90deg);
+  }
+
+  .cc-ring__track,
+  .cc-ring__fill {
+    fill: none;
+    stroke-width: 4;
+    stroke-linecap: round;
+  }
+
+  .cc-ring__track {
+    stroke: var(--cc-line);
+  }
+
+  .cc-ring__pct {
+    position: relative;
+    font-size: var(--cc-text-micro);
+    font-weight: 600;
+    color: var(--cc-ink-muted);
+  }
+
+  .cc-level__title {
+    margin: 0;
+    font-family: var(--cc-font-display);
+    font-weight: var(--cc-weight-display);
+    font-size: var(--cc-text-h3);
+    letter-spacing: var(--cc-track-h2);
+  }
+
+  .cc-level__title a {
+    text-decoration: none;
+    background-image: linear-gradient(var(--cc-accent), var(--cc-accent));
+    background-repeat: no-repeat;
+    background-position: 0 100%;
+    background-size: 0 2px;
+  }
+
+  .cc-level:hover .cc-level__title a,
+  .cc-level__title a:focus-visible {
+    color: var(--cc-accent);
+    background-size: 100% 2px;
+  }
+
+  /* The whole card is the target: a 44px+ hit area that keeps one link per
+     card in the tab order (WCAG 2.5.8 without duplicating the destination). */
+  .cc-level__title a::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: var(--cc-radius-lg);
+  }
+
+  .cc-level {
+    position: relative;
+  }
+
+  .cc-level__body {
+    margin: 0;
+    flex: 1 1 auto;
+  }
+
+  .cc-level__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--cc-space-2);
+    margin: 0;
+    padding-block-start: var(--cc-space-3);
+    border-block-start: 1px solid var(--cc-line);
+  }
+
+  /* Progress is never carried by the ring's colour alone — this line states
+     it in words, and it is what a screen reader gets. */
+  .cc-level__done {
+    margin: 0;
+    color: var(--cc-ink-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ==== 3. curriculum map ============================================== */
   .cc-map {
     display: grid;
-    gap: var(--space-5);
-    padding: var(--space-6);
+    gap: var(--cc-space-8) var(--cc-space-7);
   }
 
-  .cc-map-col {
+  .cc-map--reference {
+    margin-block-start: var(--cc-space-8);
+    padding-block-start: var(--cc-space-8);
+    border-block-start: 1px solid var(--cc-line);
+  }
+
+  .cc-map__col {
+    min-width: 0;
+  }
+
+  .cc-map__title {
     display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
+    align-items: center;
+    gap: var(--cc-space-3);
+    margin: 0 0 var(--cc-space-2);
+    padding-block-end: var(--cc-space-2);
+    border-block-end: 1px solid var(--cc-line);
+    font-size: var(--cc-text-body);
   }
 
-  .cc-map-title {
-    font-size: var(--text-12);
-    letter-spacing: var(--tracking-eyebrow);
-    text-transform: uppercase;
-    color: var(--color-ink-muted);
+  .cc-map__marker {
+    flex: none;
+    width: 3px;
+    height: 18px;
+    border-radius: var(--cc-radius-pill);
   }
 
-  .cc-map ul {
+  .cc-map__marker--faint {
+    background: var(--cc-ink-faint);
+  }
+
+  /*
+   * The heading link is the level's entry point, so it carries the 44px target
+   * (KILN §4) rather than the 21px the text alone would occupy. The block
+   * padding is negative-margined back out so the map's vertical rhythm is
+   * unchanged — the target grows, the layout does not.
+   */
+  .cc-map__title a {
     display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-  }
-
-  .cc-map a {
-    font-size: var(--text-14);
-    color: var(--color-ink-soft);
+    align-items: baseline;
+    gap: var(--cc-space-2);
+    flex-wrap: wrap;
+    min-height: var(--cc-tap);
+    align-content: center;
+    padding-block: var(--cc-space-3);
+    margin-block: calc(var(--cc-space-3) * -1);
     text-decoration: none;
   }
 
-  .cc-map a:hover {
-    color: var(--color-accent-text);
+  .cc-map__level {
+    font-family: var(--cc-font-sans);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+    color: var(--cc-ink-muted);
   }
 
-  .cc-changed {
-    gap: var(--space-8);
+  .cc-map__name {
+    font-family: var(--cc-font-display);
+    font-weight: var(--cc-weight-display);
+    letter-spacing: var(--cc-track-h3);
   }
 
-  .cc-changed h2 {
-    margin: var(--space-1) 0 var(--space-4);
-    font-size: var(--text-24);
+  .cc-map__list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
   }
 
-  .cc-feed li {
+  .cc-map__list a {
     display: flex;
     align-items: center;
-    gap: var(--space-3);
-    flex-wrap: wrap;
-    padding: var(--space-3) 0;
-    border-top: 1px solid var(--color-line);
+    gap: var(--cc-space-3);
+    min-height: var(--cc-tap);
+    padding-inline: var(--cc-space-2);
+    margin-inline: calc(var(--cc-space-2) * -1);
+    border-radius: var(--cc-radius-sm);
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+    color: var(--cc-ink-muted);
+    text-decoration: none;
   }
 
-  .cc-feed-title {
-    font-size: var(--text-15, var(--text-16));
+  /* `--cc-accent-hover` rather than `--cc-accent`: clay-on-clay-wash is the
+     one pairing in this page that would land under 4.5:1. */
+  .cc-map__list a:hover {
+    background: var(--cc-accent-wash);
+    color: var(--cc-accent-hover);
   }
 
-  .cc-feed-where {
-    margin-left: auto;
-    font-size: var(--text-12);
+  .cc-map__id {
+    flex: none;
+    width: 3ch;
+    font-size: var(--cc-text-micro);
+    color: var(--cc-ink-muted);
   }
 
-  .cc-feed-source {
-    margin: var(--space-3) 0 0;
-    font-size: var(--text-12);
+  .cc-map__list a:hover .cc-map__id {
+    color: var(--cc-accent-hover);
   }
 
-  .cc-playbook h3 {
+  .cc-map__label {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .cc-map__count {
+    flex: none;
+    font-size: var(--cc-text-micro);
+    color: var(--cc-ink-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ==== 4. what changed ================================================ */
+  .cc-feed {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-block-start: 1px solid var(--cc-line);
+  }
+
+  .cc-feed__row {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: baseline;
+    gap: var(--cc-space-1) var(--cc-space-4);
+    padding-block: var(--cc-space-4);
+    border-block-end: 1px solid var(--cc-line);
+  }
+
+  .cc-feed__version {
+    grid-row: 1;
+    font-size: var(--cc-text-micro);
+    color: var(--cc-ink-muted);
+    padding: var(--cc-space-1) var(--cc-space-3);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-pill);
+    background: var(--cc-paper-raised);
+    white-space: nowrap;
+  }
+
+  .cc-feed__title {
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .cc-feed__where {
+    grid-column: 2;
+  }
+
+  .cc-feed__source {
+    margin: var(--cc-space-5) 0 0;
+  }
+
+  .cc-feed__source code {
+    font-size: 0.9em;
+  }
+
+  /* ==== 5. closing call to action ====================================== */
+  .cc-next {
+    display: grid;
+    gap: var(--cc-space-9);
+    align-items: center;
+  }
+
+  .cc-next__main {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--cc-space-4);
+  }
+
+  .cc-next__main h2 {
+    margin: 0;
+    max-width: 18ch;
+  }
+
+  .cc-next__main p {
     margin: 0;
   }
 
-  @media (min-width: 640px) {
-    .cc-hero-actions {
-      flex-direction: row;
-    }
+  .cc-next__card {
+    gap: var(--cc-space-3);
+    background: var(--cc-accent-wash);
+    border-color: var(--cc-accent-line);
+  }
 
-    .cc-level-grid {
+  .cc-next__card h3 {
+    margin: 0;
+  }
+
+  .cc-next__card p {
+    margin: 0;
+  }
+
+  .cc-next__cta {
+    align-self: flex-start;
+    margin-block-start: var(--cc-space-2);
+  }
+
+  /* ==== breakpoints ==================================================== */
+  @media (min-width: 640px) {
+    .cc-levels {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
@@ -418,45 +909,114 @@ const changes = changesFor(lang as Lang);
   }
 
   @media (min-width: 1024px) {
+    .cc-band--hero {
+      padding-block: var(--cc-space-10) var(--cc-space-12);
+    }
+
     .cc-hero {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: var(--space-12);
-      align-items: center;
-      padding: var(--space-20) var(--space-16) var(--space-16);
+      grid-template-columns: minmax(0, 1.02fr) minmax(0, 1fr);
+      gap: var(--cc-space-10);
     }
 
-    .cc-hero-copy h1 {
-      font-size: var(--text-56);
-    }
-
-    .cc-hero-lead {
-      font-size: var(--text-18);
-    }
-
-    .cc-block {
-      padding: 0 var(--space-16) var(--space-16);
-    }
-
-    .cc-block-head {
+    .cc-head {
       flex-direction: row;
       align-items: flex-end;
       justify-content: space-between;
+      gap: var(--cc-space-8);
     }
 
-    .cc-level-grid {
+    .cc-head__aside {
+      text-align: right;
+    }
+
+    .cc-levels {
       grid-template-columns: repeat(4, minmax(0, 1fr));
     }
 
     .cc-map {
       grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: var(--space-6);
     }
 
-    .cc-changed {
-      display: grid;
-      grid-template-columns: 1.2fr 1fr;
-      gap: var(--space-8);
-      align-items: start;
+    .cc-map--reference {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+
+    .cc-feed__row {
+      grid-template-columns: auto 1fr auto;
+      gap: var(--cc-space-5);
+    }
+
+    .cc-feed__where {
+      grid-column: 3;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .cc-next {
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+      gap: var(--cc-space-10);
     }
   }
+
+  /* ==== motion (KILN §4) =============================================== */
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-card,
+    .cc-btn,
+    .cc-map__list a,
+    .cc-level__title a {
+      transition:
+        background-color var(--cc-dur-fast) var(--cc-ease),
+        background-size var(--cc-dur) var(--cc-ease),
+        border-color var(--cc-dur-fast) var(--cc-ease),
+        box-shadow var(--cc-dur) var(--cc-ease),
+        color var(--cc-dur-fast) var(--cc-ease);
+    }
+
+    .cc-ring__fill {
+      transition: stroke-dashoffset var(--cc-dur-slow) var(--cc-ease);
+    }
+  }
+
+  .cc-level:hover {
+    box-shadow: var(--cc-shadow-1);
+    border-color: var(--cc-line-strong);
+  }
 </style>
+
+<script>
+  // The level cards' progress rings. Progress lives only in `localStorage`
+  // (D020: no accounts), so the server renders the empty state and this
+  // hoisted module — bundled by Astro into an external file, so the CSP's
+  // `script-src 'self'` is satisfied — fills it in. `src/lib/progress.ts`
+  // owns the storage contract; nothing about it is re-implemented here.
+  import { completedCount } from '../../lib/progress.ts';
+
+  const RING_C = 2 * Math.PI * 26;
+
+  for (const ring of document.querySelectorAll<HTMLElement>('[data-cc-ring]')) {
+    let ids: string[] = [];
+    try {
+      const parsed: unknown = JSON.parse(ring.dataset.ids ?? '[]');
+      if (Array.isArray(parsed)) ids = parsed.filter((v): v is string => typeof v === 'string');
+    } catch {
+      ids = [];
+    }
+
+    const total = ids.length;
+    const done = completedCount(ring.dataset.lang ?? 'en', ids);
+    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+    const fill = ring.querySelector<SVGCircleElement>('.cc-ring__fill');
+    if (fill) fill.style.strokeDashoffset = String(RING_C * (1 - pct / 100));
+
+    const label = ring.querySelector<HTMLElement>('[data-cc-ring-pct]');
+    if (label) label.textContent = `${pct}%`;
+
+    // The words beside the ring are the accessible signal; the ring itself
+    // is decorative (KILN §10: never state by colour alone).
+    const count = ring.closest('li')?.querySelector<HTMLElement>('[data-cc-ring-count]');
+    if (count) {
+      count.textContent = (count.dataset.template ?? '{done}').replace('{done}', String(done));
+    }
+  }
+</script>

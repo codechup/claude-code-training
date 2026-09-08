@@ -24,6 +24,8 @@ interface Props {
   thumbnailUrl?: string;
 }
 
+import Icon from '../ui/Icon.astro';
+
 const { videoId, title, channel, duration, lang = 'en', thumbnailUrl } = Astro.props;
 
 const href = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
@@ -52,94 +54,125 @@ const videoChip = lang === 'tr' ? 'video' : 'video';
     decoding="async"
   />
   <span class="cc-yt-body">
-    <span class="mono cc-yt-chip">{videoChip}</span>
+    <span class="cc-yt-chip">{videoChip}</span>
     <span class="cc-yt-title">{title}</span>
-    <span class="mono cc-yt-meta">{channel} · {duration}</span>
+    <span class="cc-yt-meta">{channel} · {duration}</span>
   </span>
-  <svg
-    class="cc-yt-external"
-    aria-hidden="true"
-    width="16"
-    height="16"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    stroke-width="1.75"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  >
-    <path d="M14 3h7v7"></path>
-    <path d="M10 14 21 3"></path>
-    <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"></path>
-  </svg>
+  <span class="cc-yt-external">
+    <Icon name="arrow-up-right" size={16} />
+  </span>
 </a>
 
 <style>
+  /* Card idiom (KILN §8.9): raised paper, hairline, `--cc-radius-lg`, and a
+     hover that raises to `--cc-shadow-1` and moves the accent underline of
+     the title. Never an embedded player (D042). */
   .cc-yt {
-    display: flex;
+    display: grid;
+    grid-template-columns: 128px minmax(0, 1fr) auto;
     align-items: center;
-    gap: var(--space-4);
-    padding: var(--space-3);
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-3);
-    background: var(--color-bg-2);
-    color: var(--color-ink);
+    gap: var(--cc-space-4);
+    margin: var(--cc-space-6) 0;
+    max-width: var(--cc-measure);
+    min-height: var(--cc-tap);
+    padding: var(--cc-space-3);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-lg);
+    background: var(--cc-paper-raised);
+    color: var(--cc-ink);
     text-decoration: none;
   }
 
   .cc-yt:hover {
-    border-color: var(--color-line-strong);
-  }
-
-  .cc-yt:hover .cc-yt-title {
-    color: var(--color-accent-text);
+    border-color: var(--cc-line-strong);
+    box-shadow: var(--cc-shadow-1);
   }
 
   .cc-yt-thumb {
-    flex: 0 0 auto;
-    width: 120px;
-    height: 68px;
-    border-radius: var(--radius-2);
+    width: 128px;
+    height: 72px;
+    border-radius: var(--cc-radius-md);
     object-fit: cover;
-    background: var(--color-bg-3);
+    background: var(--cc-paper-sunken);
   }
 
   .cc-yt-body {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
+    align-items: flex-start;
+    gap: var(--cc-space-1);
     min-width: 0;
   }
 
   .cc-yt-chip {
-    align-self: flex-start;
     display: inline-flex;
     align-items: center;
-    height: 22px;
-    padding: 0 8px;
-    border-radius: var(--radius-1);
-    background: var(--color-bg-3);
-    color: var(--color-ink-soft);
-    font-size: var(--text-11);
-    letter-spacing: 0.04em;
+    height: 20px;
+    padding: 0 var(--cc-space-2);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-pill);
+    background: var(--cc-paper-sunken);
+    color: var(--cc-ink-muted);
+    font-family: var(--cc-font-sans);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
   }
 
   .cc-yt-title {
-    font-size: var(--text-14);
-    color: var(--color-ink);
+    max-width: 100%;
+    font-size: var(--cc-text-body);
+    line-height: 1.4;
+    color: var(--cc-ink);
+    border-bottom: 1px solid transparent;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
+  .cc-yt:hover .cc-yt-title {
+    color: var(--cc-accent);
+    border-bottom-color: var(--cc-accent);
+  }
+
   .cc-yt-meta {
-    font-size: var(--text-12);
-    color: var(--color-ink-muted);
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+    color: var(--cc-ink-muted);
   }
 
   .cc-yt-external {
-    flex: 0 0 auto;
-    margin-left: auto;
-    color: var(--color-ink-muted);
+    display: inline-flex;
+    align-self: center;
+    padding-right: var(--cc-space-2);
+    color: var(--cc-ink-faint);
+  }
+
+  .cc-yt:hover .cc-yt-external {
+    color: var(--cc-accent);
+  }
+
+  /* At 390px the thumbnail is a full-width still above the text rather than
+     a 128px sliver beside it. */
+  @media (max-width: 519px) {
+    .cc-yt {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .cc-yt-thumb {
+      grid-column: 1 / -1;
+      width: 100%;
+      height: auto;
+      aspect-ratio: 16 / 9;
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-yt {
+      transition:
+        border-color var(--cc-dur-fast) var(--cc-ease),
+        box-shadow var(--cc-dur-fast) var(--cc-ease);
+    }
   }
 </style>

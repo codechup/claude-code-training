@@ -1,0 +1,153 @@
+---
+/**
+ * Lockup — mark + wordmark (KILN §5.2). THE one implementation.
+ *
+ * Wordmark: **Claude Code Academy** (TR: *Claude Code Akademisi*) in Fraunces
+ * 600 at `--cc-track-display`, sentence case. Mark and wordmark are separated
+ * by `--cc-space-3`.
+ *
+ * The publisher line — `by CodeChup` in Inter `small`, `--cc-ink-faint` —
+ * is deliberately NOT part of the desktop-header lockup (§5.2: the header
+ * carries the lockup alone). Pass `publisher` to add it, which is what the
+ * footer and the mobile drawer do.
+ *
+ * ## API
+ *
+ * @example
+ *   <Lockup lang={lang} href={`/${lang}/`} />          // link, mark + wordmark
+ *   <Lockup lang={lang} href={home} wordmark="sm-up" /> // mark alone <640px
+ *   <Lockup lang={lang} size="lg" publisher />          // footer / drawer
+ *   <Lockup lang={lang} size="sm" wordmark="never" />   // mark only
+ *
+ * With `href` it renders an `<a>` carrying the site name as its accessible
+ * name (the mark inside stays decorative); without one it renders a `<span>`,
+ * for places that are already inside a link or are purely presentational.
+ */
+import Mark from './Mark.astro';
+import { t } from '../../lib/i18n/ui.ts';
+
+interface Props {
+  lang: string;
+  /** Render as a link to this href. Omit for a presentational lockup. */
+  href?: string;
+  /** Mark size step: sm 24, md 28, lg 32 px. */
+  size?: 'sm' | 'md' | 'lg';
+  /** `sm-up` hides the wordmark below 640px (KILN §5.2, mobile header). */
+  wordmark?: 'always' | 'sm-up' | 'never';
+  /** Add the `by CodeChup` publisher line under the wordmark. */
+  publisher?: boolean;
+  class?: string;
+}
+
+const {
+  lang,
+  href,
+  size = 'md',
+  wordmark = 'always',
+  publisher = false,
+  class: className,
+} = Astro.props as Props;
+
+const strings = t(lang);
+const MARK_PX: Record<string, number> = { sm: 24, md: 28, lg: 32 };
+const Tag = href ? 'a' : 'span';
+---
+
+<Tag
+  class:list={['cc-lockup', `cc-lockup--${size}`, `cc-lockup--wm-${wordmark}`, className]}
+  href={href}
+  aria-label={href ? strings.brandName : undefined}
+>
+  <Mark size={MARK_PX[size] ?? 28} />
+  <span class="cc-lockup__text" aria-hidden={href ? 'true' : undefined}>
+    <span class="cc-lockup__name">{strings.brandName}</span>
+    {publisher && <span class="cc-lockup__publisher">{strings.brandPublisher}</span>}
+  </span>
+</Tag>
+
+<style>
+  /* AA over the token name (KILN §10 and .claude/rules/design.md): the spec
+     names `--cc-ink-faint` for these micro labels, but that value measures
+     3.6:1 on `--cc-paper-sunken` and axe flags every one of them. They are
+     text, so they take `--cc-ink-muted`, which clears 4.5:1 in both themes.
+     `--cc-ink-faint` stays for non-text uses only. */
+  .cc-lockup {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-space-3);
+    color: var(--cc-ink);
+    text-decoration: none;
+  }
+
+  /* KILN §4 — 44x44 is the floor for anything tappable, and a linked lockup
+     is the primary route home. Below 640px the header hides the wordmark
+     (§5.2), so the target would otherwise be the 28px mark alone. The padding
+     grows the hit area only; the mark keeps its drawn size and its optical
+     left edge, which the matching negative margin preserves. */
+  a.cc-lockup {
+    min-height: var(--cc-tap);
+    min-width: var(--cc-tap);
+    justify-content: flex-start;
+    padding-inline: var(--cc-space-2);
+    margin-inline-start: calc(var(--cc-space-2) * -1);
+    border-radius: var(--cc-radius-md);
+  }
+
+  a.cc-lockup:hover {
+    color: var(--cc-ink);
+  }
+
+  .cc-lockup__text {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .cc-lockup__name {
+    font-family: var(--cc-font-display);
+    font-weight: var(--cc-weight-display);
+    font-optical-sizing: auto;
+    letter-spacing: var(--cc-track-display);
+    line-height: 1.15;
+    white-space: nowrap;
+  }
+
+  .cc-lockup--sm .cc-lockup__name {
+    font-size: 0.9375rem;
+  }
+
+  .cc-lockup--md .cc-lockup__name {
+    font-size: 1.0625rem;
+  }
+
+  .cc-lockup--lg .cc-lockup__name {
+    font-size: var(--cc-text-h3);
+  }
+
+  .cc-lockup__publisher {
+    font-family: var(--cc-font-sans);
+    font-size: var(--cc-text-small);
+    font-weight: var(--cc-weight-small);
+    letter-spacing: var(--cc-track-small);
+    line-height: var(--cc-leading-small);
+    color: var(--cc-ink-muted);
+  }
+
+  /* KILN §5.2 — under 640px the header shows the mark alone; the wordmark
+     returns in the drawer. */
+  .cc-lockup--wm-never .cc-lockup__text {
+    display: none;
+  }
+
+  .cc-lockup--wm-sm-up .cc-lockup__text {
+    display: none;
+  }
+
+  @media (min-width: 640px) {
+    .cc-lockup--wm-sm-up .cc-lockup__text {
+      display: flex;
+    }
+  }
+</style>

@@ -1,14 +1,31 @@
 ---
-// Level index (`/[lang]/[level]/`) — also serves the two non-numbered trees,
-// `playbook` and `meta`, whose "modules" are standalone reference pages.
+/**
+ * Level index (`/[lang]/[level]/`) — rebuilt on Kiln.
+ *
+ * The same route also serves the two non-numbered trees, `playbook` and
+ * `meta`, whose "modules" are standalone reference pages rather than lesson
+ * groups. They are deliberately rendered differently: their own MDX body
+ * already introduces and links every page in the tree with a description,
+ * so printing a card grid underneath it would list the same five pages
+ * twice. A numbered level's cards, by contrast, carry what its prose cannot
+ * — lesson counts, durations and stored progress — so they earn their place.
+ *
+ * Card idiom: KILN §8.9 (raised paper, hairline, 14px radius, 24px padding,
+ * shadow + accent title underline on hover).
+ */
 import type { InferGetStaticParamsType } from 'astro';
 import { getCollection, render, type CollectionEntry } from 'astro:content';
 import Section from '../../../layouts/Section.astro';
 import ProgressBar from '../../../components/lesson/ProgressBar.astro';
+import Icon from '../../../components/ui/Icon.astro';
 import { buildNav, findLevel } from '../../../lib/nav.ts';
-import { hoursFromMinutes, levelBadgeStyle } from '../../../lib/levels.ts';
+import { hoursFromMinutes, levelBadgeStyle, levelColorVar } from '../../../lib/levels.ts';
 import { t } from '../../../lib/i18n/ui.ts';
 import { swapLangInPath } from '../../../lib/slugs.ts';
+// Running MDX prose needs the shared prose rules; they used to reach this
+// page only on lesson routes, so a section body rendered with no list
+// markers and no rhythm (KILN §8.11.2, §9.2).
+import '../../../styles/prose.css';
 
 export async function getStaticPaths() {
   const sections = await getCollection('sections');
@@ -36,7 +53,30 @@ const path = `/${lang}/${level}/`;
 const altPath = swapLangInPath(path, lang === 'en' ? 'tr' : 'en');
 
 const { Content } = await render(section);
-const lessonIds = navLevel?.modules.flatMap((m) => m.lessons.map((l) => l.id)) ?? [];
+
+const modules = navLevel?.modules ?? [];
+const lessonIds = modules.flatMap((m) => m.lessons.map((l) => l.id));
+const isCourseLevel = navLevel?.number != null;
+const firstLesson = modules.flatMap((m) => m.lessons).find((l) => !l.tags.includes('placeholder'));
+
+const COPY: Record<string, { modules: string; start: string; inThisLevel: string }> = {
+  en: {
+    modules: 'modules',
+    start: 'Start the first lesson',
+    inThisLevel: 'Modules, in reading order',
+  },
+  tr: {
+    modules: 'modül',
+    start: 'İlk dersle başla',
+    inThisLevel: 'Modüller, okuma sırasıyla',
+  },
+};
+const c = COPY[lang] ?? COPY.en;
+
+/** A module's own duration — NavModule carries lessons, not a total. */
+function moduleMinutes(mod: (typeof modules)[number]): number {
+  return mod.lessons.reduce((sum, l) => sum + l.durationMin, 0);
+}
 ---
 
 <Section
@@ -45,133 +85,319 @@ const lessonIds = navLevel?.modules.flatMap((m) => m.lessons.map((l) => l.id)) ?
   description={section.data.description}
   path={path}
   altPath={altPath}
+  active={level === 'playbook' ? 'playbook' : 'curriculum'}
   crumbs={[{ label: strings.curriculum, href: `/${lang}/` }, { label: section.data.title }]}
 >
   <header class="cc-head">
-    {
-      navLevel?.number && (
-        <span class="mono cc-badge" style={levelBadgeStyle(navLevel.number)}>
-          {strings.levelLabel(navLevel.number)}
-        </span>
-      )
-    }
+    <div class="cc-head__id">
+      {
+        navLevel?.number != null && (
+          <span class="cc-chip" style={levelBadgeStyle(navLevel.number)}>
+            {strings.levelLabel(navLevel.number)}
+          </span>
+        )
+      }
+      <span
+        class="cc-head__rule"
+        style={`background: ${levelColorVar(navLevel?.number ?? null)}`}
+        aria-hidden="true"></span>
+    </div>
+
     <h1>{section.data.title}</h1>
-    <p class="soft">{section.data.description}</p>
+    <p class="cc-lead">{section.data.description}</p>
+
     {
       lessonIds.length > 0 && (
-        <p class="mono muted cc-head-count">
-          {lessonIds.length} {strings.lessons} · {hoursFromMinutes(navLevel?.durationMin ?? 0)}{' '}
-          {strings.hours}
+        <p class="cc-head__meta small soft">
+          <span>
+            {lessonIds.length} {strings.lessons}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>
+            {modules.length} {c.modules}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>
+            {hoursFromMinutes(navLevel?.durationMin ?? 0)} {strings.hours}
+          </span>
         </p>
       )
     }
+
     {lessonIds.length > 0 && <ProgressBar lang={lang} ids={lessonIds} level={navLevel?.number} />}
+
+    {
+      firstLesson && (
+        <a class="cc-btn cc-btn--primary cc-head__cta" href={firstLesson.path}>
+          {c.start}
+          <Icon name="arrow-right" size={18} />
+        </a>
+      )
+    }
   </header>
 
   <div class="cc-prose">
     <Content />
   </div>
 
-  <ul class="cc-module-list">
-    {
-      (navLevel?.modules ?? []).map((mod) => (
-        <li class="cc-card">
-          <h2>
-            <a href={mod.path}>
-              <span class="mono muted">{mod.shortId}</span> {mod.title}
-            </a>
-          </h2>
-          <p class="soft cc-card-body">{mod.description}</p>
-          {(mod.lessons.length > 0 || navLevel?.number !== null) && (
-            <p class="mono muted cc-card-count">
-              {mod.lessons.length > 0
-                ? `${mod.lessons.length} ${strings.lessons}`
-                : strings.noLessonsYet}
-            </p>
-          )}
-        </li>
-      ))
-    }
-  </ul>
+  {
+    isCourseLevel && modules.length > 0 && (
+      <section class="cc-modules" aria-labelledby="modules-heading">
+        <h2 class="cc-modules__heading" id="modules-heading">
+          {c.inThisLevel}
+        </h2>
+        <ol class="cc-modules__grid">
+          {modules.map((mod, i) => (
+            <li class="cc-card cc-module">
+              <div class="cc-module__top">
+                <span class="cc-module__step mono" aria-hidden="true">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <span class="cc-module__id mono">{mod.shortId}</span>
+              </div>
+              <h3 class="cc-module__title">
+                <a href={mod.path}>{mod.title}</a>
+              </h3>
+              <p class="cc-module__body small soft">{mod.description}</p>
+              <p class="cc-module__meta small soft">
+                {mod.lessons.length > 0 ? (
+                  <>
+                    <span>
+                      {mod.lessons.length} {strings.lessons}
+                    </span>
+                    <span aria-hidden="true">·</span>
+                    <span>
+                      {moduleMinutes(mod)} {strings.min}
+                    </span>
+                  </>
+                ) : (
+                  <span>{strings.noLessonsYet}</span>
+                )}
+              </p>
+            </li>
+          ))}
+        </ol>
+      </section>
+    )
+  }
 </Section>
 
 <style>
+  /* ==== header ========================================================= */
   .cc-head {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
+    align-items: flex-start;
+    gap: var(--cc-space-4);
+  }
+
+  .cc-head__id {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-space-3);
+    align-self: stretch;
+  }
+
+  /* A hairline in the level hue, running out from the chip: wayfinding, and
+     never larger than a chip's worth of colour (KILN §2.3). */
+  .cc-head__rule {
+    flex: 1 1 auto;
+    height: 2px;
+    border-radius: var(--cc-radius-pill);
+    opacity: 0.35;
   }
 
   .cc-head h1 {
     margin: 0;
-    font-size: var(--text-32);
   }
 
-  .cc-head p {
+  .cc-head :global(p) {
     margin: 0;
   }
 
-  .cc-head-count,
-  .cc-card-count {
-    font-size: var(--text-12);
-  }
-
-  .cc-badge {
-    align-self: flex-start;
+  .cc-chip {
     display: inline-flex;
     align-items: center;
-    height: 22px;
-    padding: 0 8px;
-    border-radius: var(--radius-1);
-    font-size: var(--text-11);
-    letter-spacing: 0.06em;
+    height: 24px;
+    padding-inline: var(--cc-space-3);
+    border-radius: var(--cc-radius-pill);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
     text-transform: uppercase;
+    white-space: nowrap;
   }
 
-  .cc-prose {
-    color: var(--color-ink-soft);
+  /* ProgressBar is a flex child of a column header, so it collapses to its
+     140px basis unless it is told to fill the row. */
+  .cc-head :global(.cc-progress-row) {
+    width: 100%;
+    max-width: 460px;
+    margin-block-start: 0;
   }
 
-  .cc-module-list {
-    list-style: none;
+  .cc-head__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--cc-space-2);
+  }
+
+  .cc-head__cta {
+    margin-block-start: var(--cc-space-2);
+  }
+
+  .cc-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--cc-space-2);
+    min-height: var(--cc-tap);
+    padding-inline: var(--cc-space-6);
+    border: 1px solid transparent;
+    border-radius: var(--cc-radius-md);
+    font-weight: 550;
+    line-height: 1.2;
+    text-decoration: none;
+  }
+
+  .cc-btn--primary {
+    background: var(--cc-accent);
+    color: var(--cc-on-accent);
+  }
+
+  .cc-btn--primary:hover {
+    background: var(--cc-accent-hover);
+    color: var(--cc-on-accent);
+  }
+
+  /* ==== module cards (KILN §8.9) ======================================= */
+  .cc-modules {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-5);
+  }
+
+  .cc-modules__heading {
+    margin: 0;
+    font-family: var(--cc-font-sans);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+    color: var(--cc-ink-muted);
+    padding-block-end: var(--cc-space-3);
+    border-block-end: 1px solid var(--cc-line);
+  }
+
+  .cc-modules__grid {
+    display: grid;
+    gap: var(--cc-space-4);
     margin: 0;
     padding: 0;
-    display: grid;
-    gap: var(--space-4);
+    list-style: none;
   }
 
   .cc-card {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
-    padding: 18px;
-    background: var(--color-bg-2);
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-3);
+    gap: var(--cc-space-3);
+    padding: var(--cc-space-6);
+    background: var(--cc-paper-raised);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-lg);
   }
 
-  .cc-card h2 {
+  .cc-module {
+    position: relative;
+  }
+
+  .cc-module__top {
+    display: flex;
+    align-items: baseline;
+    gap: var(--cc-space-3);
+  }
+
+  /* The reading-order number is the card's loudest mark — the page is a
+     sequence, not a menu. */
+  .cc-module__step {
+    font-size: var(--cc-text-h3);
+    font-weight: 600;
+    color: var(--cc-accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .cc-module__id {
+    font-size: var(--cc-text-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+    color: var(--cc-ink-muted);
+  }
+
+  .cc-module__title {
     margin: 0;
-    font-size: var(--text-20);
+    font-family: var(--cc-font-display);
+    font-weight: var(--cc-weight-display);
+    font-size: var(--cc-text-h3);
+    letter-spacing: var(--cc-track-h2);
   }
 
-  .cc-card h2 a {
-    color: var(--color-ink);
+  .cc-module__title a {
     text-decoration: none;
+    background-image: linear-gradient(var(--cc-accent), var(--cc-accent));
+    background-repeat: no-repeat;
+    background-position: 0 100%;
+    background-size: 0 2px;
   }
 
-  .cc-card-body {
+  .cc-module:hover .cc-module__title a,
+  .cc-module__title a:focus-visible {
+    color: var(--cc-accent);
+    background-size: 100% 2px;
+  }
+
+  /* One link per card, the whole card as its target (WCAG 2.5.8). */
+  .cc-module__title a::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: var(--cc-radius-lg);
+  }
+
+  .cc-module__body {
     margin: 0;
-    font-size: var(--text-14);
+    flex: 1 1 auto;
+  }
+
+  .cc-module__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--cc-space-2);
+    margin: 0;
+    padding-block-start: var(--cc-space-3);
+    border-block-start: 1px solid var(--cc-line);
+  }
+
+  .cc-module:hover {
+    border-color: var(--cc-line-strong);
+    box-shadow: var(--cc-shadow-1);
   }
 
   @media (min-width: 768px) {
-    .cc-module-list {
+    .cc-modules__grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+  }
 
-    .cc-head h1 {
-      font-size: var(--text-40);
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-card,
+    .cc-btn,
+    .cc-module__title a {
+      transition:
+        background-color var(--cc-dur-fast) var(--cc-ease),
+        background-size var(--cc-dur) var(--cc-ease),
+        border-color var(--cc-dur-fast) var(--cc-ease),
+        box-shadow var(--cc-dur) var(--cc-ease),
+        color var(--cc-dur-fast) var(--cc-ease);
     }
   }
 </style>

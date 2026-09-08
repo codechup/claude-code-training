@@ -1,11 +1,23 @@
 ---
-// The right-hand "On this page" rail (D061), per `Lesson1280.dc.html`'s
-// `aside.toc`: 200–220px, mono eyebrow, hairline left border, gold border on
-// the current entry.
-//
-// Headings come from Astro's `render(entry)` — it auto-generates the `id`
-// attributes the anchors point at, so nothing here has to parse the MDX.
+/**
+ * The context column — KILN §8.8.
+ *
+ * Three stacked blocks, in this order: "On this page" with active-section
+ * highlighting, then the lesson's own meta, then a progress ring for the
+ * module. Headings come from Astro's `render(entry)`, which has already
+ * generated the ids the anchors point at, so nothing here parses MDX.
+ *
+ * `meta` and `progress` are optional. The lesson layout does not pass them
+ * yet — `src/layouts/Lesson.astro` is outside this component's ownership,
+ * and wiring them is the one-line change noted in this plan's report. Until
+ * then the column renders the "On this page" block alone, exactly as before.
+ *
+ * Active-section highlighting and the ring are hoisted modules (CSP: no
+ * inline script body). The ring reads `localStorage` (D020), so it is filled
+ * after load; with JS off the column is still a correct table of contents.
+ */
 import { t } from '../../lib/i18n/ui.ts';
+import Icon from '../ui/Icon.astro';
 
 export interface TocHeading {
   depth: number;
@@ -13,67 +25,345 @@ export interface TocHeading {
   text: string;
 }
 
+export interface TocMeta {
+  durationMin: number;
+  difficulty: string;
+  updated: Date;
+  verifiedVersion: string;
+}
+
+export interface TocProgress {
+  /** Lesson entry ids in this module. */
+  ids: string[];
+  /** Short module id, e.g. "m07". */
+  moduleId: string;
+}
+
 interface Props {
   lang: string;
   headings: TocHeading[];
   /** Deepest heading level to list (default: h3). */
   maxDepth?: number;
+  meta?: TocMeta;
+  progress?: TocProgress;
 }
 
-const { lang, headings, maxDepth = 3 } = Astro.props;
+const { lang, headings, maxDepth = 3, meta, progress } = Astro.props;
 const strings = t(lang);
 const items = headings.filter((h) => h.depth >= 2 && h.depth <= maxDepth);
+
+const labels =
+  lang === 'tr'
+    ? { meta: 'Bu ders', updated: 'güncellendi', verified: 'doğrulandı', progress: 'İlerleme' }
+    : { meta: 'This lesson', updated: 'updated', verified: 'verified', progress: 'Progress' };
+
+const updatedIso = meta ? meta.updated.toISOString().slice(0, 10) : null;
+
+// r=16 on a 40-unit box: circumference 100.53, so the dash array is a
+// percentage the client script can set straight from `done / total`.
+const RING_R = 16;
+const RING_C = 2 * Math.PI * RING_R;
 ---
 
-{
-  items.length > 0 && (
-    <nav class="cc-toc" aria-labelledby="cc-toc-title">
-      <span class="eyebrow" id="cc-toc-title">
-        {strings.onThisPage}
-      </span>
-      <ul>
-        {items.map((heading) => (
-          <li data-depth={heading.depth}>
-            <a href={`#${heading.slug}`}>{heading.text}</a>
-          </li>
-        ))}
-      </ul>
-    </nav>
-  )
-}
-
-<style>
-  .cc-toc {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    padding: var(--space-6) 0 0 var(--space-5);
+<div class="cc-ctx" data-pagefind-ignore>
+  {
+    items.length > 0 && (
+      <nav class="cc-ctx__block cc-ctx__toc" aria-labelledby="cc-toc-title" data-cc-toc>
+        <p class="cc-ctx__label" id="cc-toc-title">
+          {strings.onThisPage}
+        </p>
+        <ul class="cc-ctx__list">
+          {items.map((heading) => (
+            <li data-depth={heading.depth}>
+              <a class="cc-ctx__link" href={`#${heading.slug}`} data-cc-toc-link={heading.slug}>
+                {heading.text}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </nav>
+    )
   }
 
-  .cc-toc ul {
+  {
+    meta && updatedIso && (
+      <div class="cc-ctx__block cc-ctx__meta">
+        <p class="cc-ctx__label">{labels.meta}</p>
+        <ul class="cc-ctx__facts">
+          <li>
+            <Icon name="clock" size={14} />
+            <span>{`${meta.durationMin} ${strings.min}`}</span>
+          </li>
+          <li>
+            <Icon name="gauge" size={14} />
+            <span>{meta.difficulty}</span>
+          </li>
+          <li>
+            <Icon name="check-circle" size={14} />
+            <span>
+              {`${labels.updated} `}
+              <time datetime={updatedIso}>{updatedIso}</time>
+            </span>
+          </li>
+          <li>
+            <Icon name="shield" size={14} />
+            <span>{`${labels.verified} v${meta.verifiedVersion}`}</span>
+          </li>
+        </ul>
+      </div>
+    )
+  }
+
+  {
+    progress && progress.ids.length > 0 && (
+      <div class="cc-ctx__block cc-ctx__progress">
+        <p class="cc-ctx__label">{labels.progress}</p>
+        <div
+          class="cc-ctx__ring-row"
+          data-cc-ring
+          data-lang={lang}
+          data-ids={JSON.stringify(progress.ids)}
+          data-circumference={RING_C.toFixed(2)}
+        >
+          <svg class="cc-ctx__ring" viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+            <circle class="cc-ctx__ring-track" cx="20" cy="20" r={RING_R} />
+            <circle
+              class="cc-ctx__ring-fill"
+              cx="20"
+              cy="20"
+              r={RING_R}
+              stroke-dasharray={RING_C.toFixed(2)}
+              stroke-dashoffset={RING_C.toFixed(2)}
+              data-cc-ring-fill
+            />
+          </svg>
+          {/* A count, and only a count: the module is already named by the
+              breadcrumb and the rail two columns away, so repeating its raw
+              id here would leak an internal identifier into reader copy —
+              the same call `ProgressBar.astro` makes at the foot of the
+              page. `moduleId` stays on the prop for callers that key off it. */}
+          <span class="cc-ctx__ring-text" data-cc-ring-text>
+            {`0 / ${progress.ids.length}`}
+          </span>
+        </div>
+      </div>
+    )
+  }
+</div>
+
+<style>
+  .cc-ctx {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-7);
+    padding: var(--cc-space-6) var(--cc-space-4) var(--cc-space-10) var(--cc-space-5);
+  }
+
+  .cc-ctx__label {
+    margin: 0 0 var(--cc-space-3);
+    max-width: none;
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+  }
+
+  .cc-ctx__list {
     list-style: none;
     margin: 0;
     padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+    border-left: 1px solid var(--cc-line);
   }
 
-  .cc-toc a {
+  .cc-ctx__link {
     display: block;
-    padding: 4px 0 4px 12px;
-    border-left: 1px solid var(--color-line);
-    font-size: var(--text-13);
-    color: var(--color-ink-muted);
+    padding: var(--cc-space-2) 0 var(--cc-space-2) var(--cc-space-3);
+    margin-left: -1px;
+    border-left: 2px solid transparent;
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+    color: var(--cc-ink-muted);
     text-decoration: none;
   }
 
-  .cc-toc a:hover {
-    color: var(--color-ink);
-    border-left-color: var(--color-accent);
+  .cc-ctx__list li[data-depth='3'] .cc-ctx__link {
+    padding-left: var(--cc-space-6);
   }
 
-  .cc-toc li[data-depth='3'] a {
-    padding-left: 24px;
+  .cc-ctx__link:hover {
+    color: var(--cc-ink);
+    border-left-color: var(--cc-line-strong);
+  }
+
+  /* Active section: clay rule plus ink and weight, never colour alone. */
+  .cc-ctx__link[data-active] {
+    color: var(--cc-ink);
+    font-weight: 550;
+    border-left-color: var(--cc-accent);
+  }
+
+  /* -- lesson meta ------------------------------------------------------ */
+  .cc-ctx__facts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .cc-ctx__facts li {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-space-2);
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+    color: var(--cc-ink-muted);
+  }
+
+  /* -- module progress ring --------------------------------------------- */
+  .cc-ctx__ring-row {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-space-3);
+  }
+
+  .cc-ctx__ring {
+    flex: none;
+    width: 40px;
+    height: 40px;
+    transform: rotate(-90deg);
+  }
+
+  .cc-ctx__ring-track,
+  .cc-ctx__ring-fill {
+    fill: none;
+    stroke-width: 3;
+  }
+
+  .cc-ctx__ring-track {
+    stroke: var(--cc-line);
+  }
+
+  .cc-ctx__ring-fill {
+    stroke: var(--cc-accent);
+    stroke-linecap: round;
+  }
+
+  .cc-ctx__ring-text {
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+    color: var(--cc-ink-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-ctx__link {
+      transition:
+        color var(--cc-dur-fast) var(--cc-ease),
+        border-color var(--cc-dur-fast) var(--cc-ease);
+    }
+
+    .cc-ctx__ring-fill {
+      transition: stroke-dashoffset var(--cc-dur-slow) var(--cc-ease);
+    }
   }
 </style>
+
+<script>
+  import { completedCount } from '../../lib/progress.ts';
+
+  // -- "On this page": highlight the section the reader is actually in. ----
+  const toc = document.querySelector<HTMLElement>('[data-cc-toc]');
+  if (toc && 'IntersectionObserver' in window) {
+    const links = new Map<string, HTMLElement>();
+    for (const link of toc.querySelectorAll<HTMLElement>('[data-cc-toc-link]')) {
+      const slug = link.dataset.ccTocLink;
+      if (slug) links.set(slug, link);
+    }
+
+    const targets = [...links.keys()]
+      .map((slug) => document.getElementById(slug))
+      .filter((el): el is HTMLElement => el !== null);
+
+    const visible = new Set<string>();
+
+    function paint(): void {
+      // The topmost heading currently on screen wins; when none is (the
+      // reader is mid-section) the last one passed stays lit.
+      let active: string | null = null;
+      for (const el of targets) {
+        if (visible.has(el.id)) {
+          active = el.id;
+          break;
+        }
+        if (el.getBoundingClientRect().top < 120) active = el.id;
+      }
+      // At the top of the page no heading qualifies yet, and a twelve-item
+      // list with nothing marked tells the reader nothing. The list always
+      // has exactly one current item; before the first heading, it is the
+      // first one.
+      if (!active && targets.length > 0) active = targets[0].id;
+      for (const [slug, link] of links) {
+        if (slug === active) link.setAttribute('data-active', '');
+        else link.removeAttribute('data-active');
+      }
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) visible.add(entry.target.id);
+          else visible.delete(entry.target.id);
+        }
+        paint();
+      },
+      { rootMargin: '-72px 0px -70% 0px', threshold: 0 },
+    );
+
+    for (const el of targets) observer.observe(el);
+
+    // The observer alone only repaints when a heading crosses the band, so a
+    // jump (an in-page anchor, a restored scroll position) could leave the
+    // list marking a section the reader has long since passed. A throttled
+    // scroll listener keeps it honest; `paint()` is a few `getBoundingClientRect`
+    // reads and does nothing when the answer has not changed.
+    let ticking = false;
+    window.addEventListener(
+      'scroll',
+      () => {
+        if (ticking) return;
+        ticking = true;
+        window.requestAnimationFrame(() => {
+          ticking = false;
+          paint();
+        });
+      },
+      { passive: true },
+    );
+
+    paint();
+  }
+
+  // -- module progress ring -------------------------------------------------
+  const ring = document.querySelector<HTMLElement>('[data-cc-ring]');
+  if (ring) {
+    let ids: string[] = [];
+    try {
+      const parsed: unknown = JSON.parse(ring.dataset.ids ?? '[]');
+      if (Array.isArray(parsed)) ids = parsed.filter((v): v is string => typeof v === 'string');
+    } catch {
+      ids = [];
+    }
+    const circumference = Number(ring.dataset.circumference ?? '0');
+    const done = completedCount(ring.dataset.lang ?? 'en', ids);
+    const fraction = ids.length > 0 ? done / ids.length : 0;
+
+    const fill = ring.querySelector<SVGCircleElement>('[data-cc-ring-fill]');
+    if (fill) fill.style.strokeDashoffset = String(circumference * (1 - fraction));
+
+    const text = ring.querySelector<HTMLElement>('[data-cc-ring-text]');
+    if (text) text.textContent = text.textContent?.replace(/^\d+/, String(done)) ?? '';
+  }
+</script>

@@ -1,21 +1,31 @@
 ---
-// Pagefind-backed search (D061): Ctrl/Cmd+K opens, Esc closes, results
-// filtered to the current page's language by Pagefind's own per-`<html
-// lang>` index split (each page's build output carries its own detected
-// language, and `/pagefind/pagefind.js` — loaded here at runtime from the
-// same origin, allowed by `script-src 'self' 'wasm-unsafe-eval'` — scopes
-// `search()` to it automatically).
-//
-// Mount note (Handoff): `Header.astro` (P06's aria-hidden search
-// placeholder) is outside this plan's `owned_paths`, so this component is
-// exported ready-to-mount rather than wired into the header itself — see
-// this plan's Handoff notes for the one-line change whoever next touches
-// `Header.astro` needs (adding `data-search-trigger` to the placeholder
-// button; this component already listens for clicks on any such element).
-//
-// No inline script body: the `<script>` below has no `is:inline`, so Astro
-// bundles it to an external, hashed, same-origin file — CSP-safe, and it
-// dynamically `import()`s Pagefind's own runtime only once, on first open.
+/**
+ * Command palette (KILN §8.10, D061).
+ *
+ * The header's search button — and Ctrl/Cmd+K anywhere — opens a centred
+ * 640px card on `--cc-shadow-2`: an input with the `search` icon, results
+ * grouped into lesson / playbook / meta with a level chip on each lesson
+ * row, arrow-key navigation, Enter to follow, Esc to close. Under 640px it
+ * becomes a full-screen sheet.
+ *
+ * It is a native `<dialog>` opened with `showModal()`, which is what gives
+ * the focus trap, the Escape handling and the focus restore for free —
+ * correct behaviour we would otherwise have to reimplement badly. The arrow
+ * keys move real DOM focus between the result anchors, so the trap and the
+ * keyboard path stay honest.
+ *
+ * Results come from Pagefind, filtered to the current page's language by
+ * Pagefind's own per-`<html lang>` index split. `/pagefind/pagefind.js` is a
+ * real static file written by the `pagefind --site dist` postbuild step and
+ * is imported at runtime from the same origin (allowed by `script-src 'self'
+ * 'wasm-unsafe-eval'`). It 404s under `astro dev`; that is caught and shown
+ * as a status line, never an uncaught error.
+ *
+ * No inline script body: the `<script>` below has no `is:inline`, so Astro
+ * bundles it to an external, hashed, same-origin module (CSP-safe).
+ */
+import Icon from '../ui/Icon.astro';
+
 interface Props {
   lang: string;
 }
@@ -31,6 +41,9 @@ const strings: Record<
     unavailable: string;
     resultsLabel: string;
     closeLabel: string;
+    hint: string;
+    empty: string;
+    groups: { lesson: string; playbook: string; meta: string; other: string };
   }
 > = {
   en: {
@@ -38,16 +51,22 @@ const strings: Record<
     noResults: 'No results.',
     loading: 'Searching…',
     unavailable: 'Search is unavailable in this preview.',
-    resultsLabel: 'Search results',
+    resultsLabel: 'Search',
     closeLabel: 'Close search',
+    hint: '↑↓ to move · Enter to open · Esc to close',
+    empty: 'Type to search the lessons, the playbook and the meta pages.',
+    groups: { lesson: 'Lessons', playbook: 'Playbook', meta: 'Meta', other: 'Pages' },
   },
   tr: {
     placeholder: 'Derslerde ara…',
     noResults: 'Sonuç bulunamadı.',
     loading: 'Aranıyor…',
     unavailable: 'Arama bu önizlemede kullanılamıyor.',
-    resultsLabel: 'Arama sonuçları',
+    resultsLabel: 'Arama',
     closeLabel: 'Aramayı kapat',
+    hint: '↑↓ gezin · Enter aç · Esc kapat',
+    empty: 'Dersler, playbook ve meta sayfalarında aramak için yazmaya başlayın.',
+    groups: { lesson: 'Dersler', playbook: 'Playbook', meta: 'Meta', other: 'Sayfalar' },
   },
 };
 
@@ -56,167 +75,331 @@ const t = strings[lang] ?? strings.en;
 
 <dialog
   id="cc-search-dialog"
-  class="cc-search-dialog"
+  class="cc-palette"
   aria-label={t.resultsLabel}
   data-strings={JSON.stringify({
     unavailable: t.unavailable,
     loading: t.loading,
     noResults: t.noResults,
+    groups: t.groups,
   })}
 >
-  <div class="cc-search-input-row">
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="1.75"
-      stroke-linecap="round"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <circle cx="11" cy="11" r="7"></circle>
-      <path d="M20 20l-3.5-3.5"></path>
-    </svg>
-    <input
-      type="text"
-      id="cc-search-input"
-      class="cc-search-input"
-      placeholder={t.placeholder}
-      aria-label={t.placeholder}
-      autocomplete="off"
-      spellcheck="false"
-    />
-    <button type="button" id="cc-search-close" class="cc-search-close" aria-label={t.closeLabel}>
-      Esc
-    </button>
+  <div class="cc-palette__card">
+    <div class="cc-palette__row">
+      <span class="cc-palette__icon"><Icon name="search" size={20} /></span>
+      <input
+        type="text"
+        id="cc-search-input"
+        class="cc-palette__input"
+        placeholder={t.placeholder}
+        aria-label={t.placeholder}
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <button
+        type="button"
+        id="cc-search-close"
+        class="cc-palette__close"
+        aria-label={t.closeLabel}
+      >
+        <Icon name="close" size={20} />
+      </button>
+    </div>
+
+    <div id="cc-search-results" class="cc-palette__results"></div>
+
+    <p id="cc-search-status" class="cc-palette__status" role="status" aria-live="polite"></p>
+
+    {
+      /* The resting state. Without it the mobile sheet opened as an input over
+        ~780px of blank paper, which reads as broken rather than as waiting.
+        Pure CSS: it steps aside as soon as results or a status line exist. */
+    }
+    <p class="cc-palette__empty small">{t.empty}</p>
+
+    <p class="cc-palette__hint small">{t.hint}</p>
   </div>
-  <ul id="cc-search-results" class="cc-search-results"></ul>
-  <p id="cc-search-status" class="cc-search-status" role="status" aria-live="polite"></p>
 </dialog>
 
 <style>
-  .cc-search-dialog {
-    width: min(560px, calc(100vw - 2 * var(--space-4)));
-    max-height: min(70vh, 560px);
-    margin: 10vh auto auto;
+  /* AA over the token name (KILN §10 and .claude/rules/design.md): the spec
+     names `--cc-ink-faint` for these micro labels, but that value measures
+     3.6:1 on `--cc-paper-sunken` and axe flags every one of them. They are
+     text, so they take `--cc-ink-muted`, which clears 4.5:1 in both themes.
+     `--cc-ink-faint` stays for non-text uses only. */
+  /* The <dialog> itself is only the positioner; the card inside carries the
+     surface, so the full-screen sheet at <640px is one rule, not a rewrite. */
+  .cc-palette {
+    width: min(640px, calc(100vw - 2 * var(--cc-space-4)));
+    max-width: none;
+    max-height: none;
     padding: 0;
-    border: 1px solid var(--color-line-strong);
-    border-radius: var(--radius-4);
-    background: var(--color-bg-2);
-    color: var(--color-ink);
-    /* A keyword color-mix, not a raw literal — scripts/check-raw-colors.mjs
-       bans those outside tokens.css, and the tokens don't define a plain
-       shadow-scrim color. */
-    box-shadow: 0 20px 60px color-mix(in srgb, black 35%, transparent);
+    margin: 12vh auto auto;
+    border: 0;
+    background: transparent;
+    color: var(--cc-ink);
+    overflow: visible;
+  }
+
+  .cc-palette::backdrop {
+    /* The scrim must DARKEN the page in both themes, so it is mixed from the
+       theme-independent terminal ground rather than from `--cc-ink` — which
+       is near-white in dark mode and would wash the page out instead. */
+    background: color-mix(in srgb, var(--cc-term-bg) 58%, transparent);
+  }
+
+  .cc-palette__card {
+    display: flex;
+    flex-direction: column;
+    max-height: min(72vh, 34rem);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-lg);
+    background: var(--cc-paper-raised);
+    box-shadow: var(--cc-shadow-2);
     overflow: hidden;
   }
 
-  .cc-search-dialog::backdrop {
-    background: color-mix(in srgb, black 50%, transparent);
-  }
-
-  .cc-search-input-row {
+  /* -- input row -------------------------------------------------------- */
+  .cc-palette__row {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-3) var(--space-4);
-    border-bottom: 1px solid var(--color-line);
-    color: var(--color-ink-muted);
+    flex: none;
+    gap: var(--cc-space-1);
+    padding-right: var(--cc-space-2);
+    border-bottom: 1px solid var(--cc-line);
+    color: var(--cc-ink-muted);
   }
 
-  .cc-search-input {
+  .cc-palette__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: var(--cc-space-10);
+    height: var(--cc-space-10);
+  }
+
+  .cc-palette__input {
     flex: 1;
-    height: var(--tap-target);
-    border: none;
+    min-width: 0;
+    height: var(--cc-space-10);
+    padding: 0;
+    border: 0;
     background: transparent;
-    color: var(--color-ink);
-    font-size: var(--text-16);
+    color: var(--cc-ink);
+    font-family: var(--cc-font-sans);
+    font-size: var(--cc-text-lead);
+  }
+
+  .cc-palette__input:focus {
     outline: none;
   }
 
-  .cc-search-input::placeholder {
-    color: var(--color-ink-muted);
+  .cc-palette__input::placeholder {
+    color: var(--cc-ink-muted);
   }
 
-  .cc-search-close {
-    border: 1px solid var(--color-line-strong);
-    border-bottom-width: 2px;
-    border-radius: var(--radius-1);
+  .cc-palette__close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: var(--cc-tap);
+    height: var(--cc-tap);
+    border: 0;
+    border-radius: var(--cc-radius-md);
     background: transparent;
-    color: var(--color-ink-soft);
-    font-size: var(--text-11);
-    padding: 2px 6px;
+    color: var(--cc-ink-muted);
     cursor: pointer;
   }
 
-  .cc-search-results {
-    list-style: none;
-    margin: 0;
-    padding: var(--space-2);
-    max-height: 50vh;
-    overflow-y: auto;
+  .cc-palette__close:hover {
+    background: var(--cc-paper-sunken);
+    color: var(--cc-ink);
   }
 
-  .cc-search-results:empty {
+  /* -- results ---------------------------------------------------------- */
+  .cc-palette__results {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 0;
   }
 
-  .cc-search-result {
-    margin: 0 0 var(--space-1);
+  .cc-palette__results:empty {
+    display: none;
   }
 
-  .cc-search-result a {
-    display: block;
-    padding: var(--space-2) var(--space-3);
-    border-radius: var(--radius-2);
-    color: var(--color-ink);
+  /* Everything below is built by the client script, so it never carries
+     Astro's scope attribute: the rules are written as `:global()` children
+     of the scoped results container, which keeps them scoped to this
+     component without relying on an attribute the DOM nodes cannot have. */
+  .cc-palette__results :global(.cc-palette__group) {
+    padding: var(--cc-space-3) var(--cc-space-3) var(--cc-space-2);
+  }
+
+  .cc-palette__results :global(.cc-palette__group + .cc-palette__group) {
+    border-top: 1px solid var(--cc-line);
+  }
+
+  .cc-palette__results :global(.cc-palette__group-label) {
+    margin: 0 0 var(--cc-space-1);
+    padding: 0 var(--cc-space-3);
+    font-family: var(--cc-font-sans);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+    color: var(--cc-ink-muted);
+  }
+
+  .cc-palette__results :global(.cc-palette__hit) {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--cc-space-3);
+    min-height: var(--cc-tap);
+    padding: var(--cc-space-2) var(--cc-space-3);
+    border-radius: var(--cc-radius-md);
+    color: var(--cc-ink);
     text-decoration: none;
   }
 
-  .cc-search-result a:hover,
-  .cc-search-result a:focus-visible {
-    background: var(--color-bg-3);
+  .cc-palette__results :global(.cc-palette__hit:hover),
+  .cc-palette__results :global(.cc-palette__hit:focus-visible) {
+    background: var(--cc-accent-wash);
+    color: var(--cc-ink);
   }
 
-  .cc-search-result-title {
-    font-size: var(--text-14);
-    font-weight: 500;
+  .cc-palette__results :global(.cc-palette__hit-body) {
+    flex: 1;
+    min-width: 0;
   }
 
-  .cc-search-result-excerpt {
+  .cc-palette__results :global(.cc-palette__hit-title) {
+    font-size: var(--cc-text-small);
+    font-weight: var(--cc-weight-h3);
+    line-height: var(--cc-leading-h3);
+  }
+
+  .cc-palette__results :global(.cc-palette__hit-excerpt) {
     margin-top: 2px;
-    font-size: var(--text-13);
-    color: var(--color-ink-muted);
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+    color: var(--cc-ink-muted);
+    /* Two lines, never more — a palette row is a signpost, not a summary. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
   }
 
-  .cc-search-result-excerpt mark {
-    background: none;
-    color: var(--color-accent-text);
-    font-weight: 600;
+  .cc-palette__results :global(.cc-palette__hit-excerpt mark) {
+    background: transparent;
+    color: var(--cc-accent);
+    font-weight: var(--cc-weight-h3);
   }
 
-  .cc-search-status {
+  /* Level chip (KILN §2.3): wayfinding only, never a large fill. Paired with
+     the group label and the row text, so colour is never the only signal. */
+  .cc-palette__results :global(.cc-palette__chip) {
+    flex: none;
+    margin-top: 1px;
+    padding: 2px var(--cc-space-2);
+    border: 1px solid currentColor;
+    border-radius: var(--cc-radius-pill);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    color: var(--cc-ink-muted);
+  }
+
+  .cc-palette__results :global(.cc-palette__chip[data-level='1']) {
+    color: var(--cc-level-1);
+  }
+
+  .cc-palette__results :global(.cc-palette__chip[data-level='2']) {
+    color: var(--cc-level-2);
+  }
+
+  .cc-palette__results :global(.cc-palette__chip[data-level='3']) {
+    color: var(--cc-level-3);
+  }
+
+  .cc-palette__results :global(.cc-palette__chip[data-level='4']) {
+    color: var(--cc-level-4);
+  }
+
+  /* -- status + hint ---------------------------------------------------- */
+  .cc-palette__status {
+    flex: none;
+    max-width: none;
     margin: 0;
-    padding: var(--space-2) var(--space-4) var(--space-4);
-    font-size: var(--text-13);
-    color: var(--color-ink-muted);
+    padding: var(--cc-space-4) var(--cc-space-6);
+    font-size: var(--cc-text-small);
+    color: var(--cc-ink-muted);
   }
 
-  .cc-search-status:empty {
+  .cc-palette__status:empty {
     display: none;
+  }
+
+  .cc-palette__empty {
+    flex: 1;
+    max-width: none;
+    margin: 0;
+    padding: var(--cc-space-6);
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-small);
+  }
+
+  /* Results and the status line both come after the input and before this,
+     so a plain sibling combinator is enough — no script has to know about
+     the empty state. */
+  .cc-palette__results:not(:empty) ~ .cc-palette__empty,
+  .cc-palette__status:not(:empty) ~ .cc-palette__empty {
+    display: none;
+  }
+
+  .cc-palette__hint {
+    flex: none;
+    max-width: none;
+    margin: 0;
+    padding: var(--cc-space-2) var(--cc-space-6);
+    border-top: 1px solid var(--cc-line);
+    background: var(--cc-paper-sunken);
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-micro);
+  }
+
+  /* -- full-screen sheet under 640px ------------------------------------ */
+  @media (max-width: 639px) {
+    .cc-palette {
+      width: 100%;
+      height: 100%;
+      max-height: 100%;
+      margin: 0;
+    }
+
+    .cc-palette__card {
+      height: 100%;
+      max-height: none;
+      border: 0;
+      border-radius: 0;
+    }
+
+    /* The hint bar is the same affordance on both surfaces (KILN §1.5:
+       every affordance survives at 390px) — it just sits at the foot of the
+       full-height sheet instead of under a 34rem card. */
+    .cc-palette__hint {
+      padding-block: var(--cc-space-3);
+      padding-bottom: max(var(--cc-space-3), env(safe-area-inset-bottom));
+    }
   }
 </style>
 
 <script>
-  // Pagefind's built bundle lives at `/pagefind/pagefind.js` in the emitted
-  // site (a real static file, written by the `pagefind --site dist`
-  // postbuild step) — not a package this file can statically import, so
-  // this loads it at runtime with a plain string specifier. It 404s in
-  // `astro dev` (Pagefind only runs against `dist/`); that failure is
-  // caught below and surfaced as a status message, never an uncaught
-  // console error.
   type PagefindResult = { data: () => Promise<PagefindResultData> };
   interface PagefindResultData {
     url: string;
@@ -227,19 +410,27 @@ const t = strings[lang] ?? strings.en;
     init: () => Promise<void>;
     search: (term: string) => Promise<{ results: PagefindResult[] }>;
   }
+  type GroupKey = 'lesson' | 'playbook' | 'meta' | 'other';
 
   const dialog = document.getElementById('cc-search-dialog') as HTMLDialogElement | null;
   const input = document.getElementById('cc-search-input') as HTMLInputElement | null;
   const closeButton = document.getElementById('cc-search-close');
+  // The header button that opens the palette. `showModal()` restores focus to
+  // whatever held it when the dialog opened — and the Ctrl/Cmd+K path holds
+  // nothing, so Escape used to drop the reader on <body> at the top of the
+  // document (KILN §8.10 wants focus trapped AND restored).
+  const trigger = document.querySelector<HTMLElement>('[data-search-trigger]');
   const resultsEl = document.getElementById('cc-search-results');
   const statusEl = document.getElementById('cc-search-status');
-  // Localized strings rendered server-side (Astro's `t()`), passed to this
-  // external script via a data attribute — the script itself has no access
-  // to the component's frontmatter scope.
+
+  // Localized strings rendered server-side and handed to this external module
+  // through a data attribute — the script has no access to the component's
+  // frontmatter scope.
   const strings = JSON.parse(dialog?.dataset.strings ?? '{}') as {
     unavailable: string;
     loading: string;
     noResults: string;
+    groups: Record<GroupKey, string>;
   };
 
   let pagefind: PagefindModule | null = null;
@@ -250,11 +441,18 @@ const t = strings[lang] ?? strings.en;
     if (pagefind || pagefindLoadFailed) return pagefind;
     try {
       // Same-origin runtime import — allowed by `script-src 'self'
-      // 'wasm-unsafe-eval'` (Pagefind's search runs via WebAssembly). This
-      // file only exists in `dist/` after the `pagefind` postbuild step, so
-      // TS can never resolve it as a module.
-      // @ts-expect-error -- runtime-only path, not a module on disk
-      const mod = (await import(/* @vite-ignore */ '/pagefind/pagefind.js')) as PagefindModule;
+      // 'wasm-unsafe-eval'` (Pagefind searches via WebAssembly). The file
+      // only exists in `dist/` after the `pagefind` postbuild step, so TS can
+      // never resolve it as a module.
+      // The specifier is held in a variable, not written inline: with a
+      // literal string Vite still tries to resolve the path at transform
+      // time and fails the dev server ("Failed to resolve import
+      // /pagefind/pagefind.js"), because the file only exists in `dist/`
+      // after the postbuild step. A variable specifier plus @vite-ignore
+      // leaves the import to the browser, which is the only place it can
+      // be resolved.
+      const specifier = '/pagefind/pagefind.js';
+      const mod = (await import(/* @vite-ignore */ specifier)) as PagefindModule;
       await mod.init();
       pagefind = mod;
     } catch {
@@ -263,12 +461,95 @@ const t = strings[lang] ?? strings.en;
     return pagefind;
   }
 
+  /**
+   * Which group a hit belongs to, and (for a lesson) which level, read from
+   * the URL the site's own routing produced: `/<lang>/<level>/<module>/<slug>/`
+   * where `<level>` is `l1-beginner` … `l4-master`, `playbook` or `meta`.
+   */
+  function classify(url: string): { group: GroupKey; level: string | null } {
+    const parts = url.split('#')[0].split('?')[0].split('/').filter(Boolean);
+    const section = parts[1] ?? '';
+    if (section === 'playbook') return { group: 'playbook', level: null };
+    if (section === 'meta') return { group: 'meta', level: null };
+    const level = /^l([1-4])-/.exec(section)?.[1] ?? null;
+    if (level) return { group: 'lesson', level };
+    return { group: 'other', level: null };
+  }
+
+  function hits(): HTMLAnchorElement[] {
+    return Array.from(resultsEl?.querySelectorAll<HTMLAnchorElement>('.cc-palette__hit') ?? []);
+  }
+
   function clearResults() {
-    if (resultsEl) resultsEl.innerHTML = '';
+    if (resultsEl) resultsEl.replaceChildren();
   }
 
   function setStatus(text: string) {
     if (statusEl) statusEl.textContent = text;
+  }
+
+  function renderHit(entry: PagefindResultData): HTMLAnchorElement {
+    const a = document.createElement('a');
+    a.className = 'cc-palette__hit';
+    a.href = entry.url;
+
+    const body = document.createElement('div');
+    body.className = 'cc-palette__hit-body';
+
+    const title = document.createElement('div');
+    title.className = 'cc-palette__hit-title';
+    title.textContent = entry.meta.title ?? entry.url;
+
+    const excerpt = document.createElement('div');
+    excerpt.className = 'cc-palette__hit-excerpt';
+    // Pagefind's own excerpt HTML — the only markup it emits is <mark> around
+    // the matched term, from this build's own indexed pages.
+    excerpt.innerHTML = entry.excerpt;
+
+    body.append(title, excerpt);
+    a.append(body);
+
+    const { level } = classify(entry.url);
+    if (level) {
+      const chip = document.createElement('span');
+      chip.className = 'cc-palette__chip';
+      chip.dataset.level = level;
+      chip.textContent = `L${level}`;
+      a.append(chip);
+    }
+    return a;
+  }
+
+  function render(entries: PagefindResultData[]) {
+    clearResults();
+    if (!resultsEl) return;
+
+    const order: GroupKey[] = ['lesson', 'playbook', 'meta', 'other'];
+    const buckets = new Map<GroupKey, PagefindResultData[]>();
+    for (const entry of entries) {
+      const { group } = classify(entry.url);
+      const bucket = buckets.get(group);
+      if (bucket) bucket.push(entry);
+      else buckets.set(group, [entry]);
+    }
+
+    for (const key of order) {
+      const bucket = buckets.get(key);
+      if (!bucket?.length) continue;
+      const section = document.createElement('div');
+      section.className = 'cc-palette__group';
+      section.setAttribute('role', 'group');
+
+      const label = document.createElement('p');
+      label.className = 'cc-palette__group-label';
+      label.textContent = strings.groups?.[key] ?? key;
+      label.id = `cc-search-group-${key}`;
+      section.setAttribute('aria-labelledby', label.id);
+
+      section.append(label);
+      for (const entry of bucket) section.append(renderHit(entry));
+      resultsEl.append(section);
+    }
   }
 
   async function runSearch(term: string) {
@@ -292,50 +573,55 @@ const t = strings[lang] ?? strings.en;
     const search = await pf.search(term);
     if (id !== requestId) return;
 
-    const entries = await Promise.all(search.results.slice(0, 8).map((r) => r.data()));
+    const entries = await Promise.all(search.results.slice(0, 10).map((r) => r.data()));
     if (id !== requestId) return;
 
-    clearResults();
     if (entries.length === 0) {
+      clearResults();
       setStatus(strings.noResults);
       return;
     }
     setStatus('');
-
-    if (!resultsEl) return;
-    for (const entry of entries) {
-      const li = document.createElement('li');
-      li.className = 'cc-search-result';
-      const a = document.createElement('a');
-      a.href = entry.url;
-      const title = document.createElement('div');
-      title.className = 'cc-search-result-title';
-      title.textContent = entry.meta.title ?? entry.url;
-      const excerpt = document.createElement('div');
-      excerpt.className = 'cc-search-result-excerpt';
-      // Pagefind's own excerpt HTML — the only markup it emits is `<mark>`
-      // around the matched term, from this build's own indexed pages.
-      excerpt.innerHTML = entry.excerpt;
-      a.append(title, excerpt);
-      li.append(a);
-      resultsEl.append(li);
-    }
+    render(entries);
   }
 
-  function openDialog() {
+  function open() {
     if (!dialog) return;
+    // showModal() traps focus inside the dialog, wires Escape, and restores
+    // focus to the element that had it when the dialog closes — so when the
+    // shortcut opens the palette out of nowhere, give it something real to
+    // restore to first.
+    const active = document.activeElement;
+    if (!active || active === document.body || active === document.documentElement) {
+      trigger?.focus();
+    }
     if (!dialog.open) dialog.showModal();
     input?.focus();
+    input?.select();
   }
 
-  function closeDialog() {
+  function close() {
     if (dialog?.open) dialog.close();
+  }
+
+  /** Move focus through the result rows; from the input, down enters them. */
+  function move(delta: number) {
+    const rows = hits();
+    if (rows.length === 0) return;
+    const current = rows.indexOf(document.activeElement as HTMLAnchorElement);
+    if (current === -1) {
+      (delta > 0 ? rows[0] : rows[rows.length - 1]).focus();
+      return;
+    }
+    const next = current + delta;
+    if (next < 0) input?.focus();
+    else rows[Math.min(next, rows.length - 1)].focus();
   }
 
   document.addEventListener('keydown', (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault();
-      openDialog();
+      open();
     }
   });
 
@@ -343,16 +629,32 @@ const t = strings[lang] ?? strings.en;
     const target = event.target as HTMLElement | null;
     if (target?.closest('[data-search-trigger]')) {
       event.preventDefault();
-      openDialog();
+      open();
     }
   });
 
-  closeButton?.addEventListener('click', closeDialog);
+  closeButton?.addEventListener('click', close);
 
-  // Clicking the ::backdrop (a click that lands on the <dialog> element
-  // itself, not one of its children) closes it, matching common dialog UX.
+  dialog?.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      move(1);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      move(-1);
+    } else if (event.key === 'Home' && document.activeElement !== input) {
+      event.preventDefault();
+      hits()[0]?.focus();
+    } else if (event.key === 'End' && document.activeElement !== input) {
+      event.preventDefault();
+      hits().at(-1)?.focus();
+    }
+  });
+
+  // Clicking the ::backdrop lands on the <dialog> element itself rather than
+  // on the card, which is the conventional "click outside to dismiss".
   dialog?.addEventListener('click', (event) => {
-    if (event.target === dialog) closeDialog();
+    if (event.target === dialog) close();
   });
 
   let debounceHandle: ReturnType<typeof setTimeout> | undefined;
@@ -366,5 +668,8 @@ const t = strings[lang] ?? strings.en;
     if (input) input.value = '';
     clearResults();
     setStatus('');
+    // Belt and braces: if the restore target had gone away, land on the
+    // trigger rather than on <body>.
+    if (document.activeElement === document.body) trigger?.focus();
   });
 </script>

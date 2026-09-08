@@ -1,6 +1,45 @@
 ---
+// The document shell every page shares: head, metadata, the theme init
+// script, and the font preloads (KILN §3.1).
+//
+// It renders nothing visible of its own — chrome belongs to Landing,
+// Section, Lesson and Design, which all wrap this one.
 import '../styles/app.css';
 import { ogImagePath } from '../lib/seo.ts';
+
+/*
+ * Font preloads (KILN §3.1, §8.11.5).
+ *
+ * The faces are bundled by `src/styles/fonts.css`, but a face referenced only
+ * from an @import'ed stylesheet is not discovered until that CSS has parsed,
+ * which is one round-trip too late for the hero and — worse — for a terminal
+ * recording, whose box-drawing characters collapse if JetBrains Mono has not
+ * landed. Importing the .woff2 with `?url` hands Vite the same hashed asset
+ * the stylesheet resolves to, so the preload can never point at a stale name.
+ *
+ * WHAT IS PRELOADED, and why it is only two faces (KILN §3.1: "preloaded
+ * for the display and body faces"). A preload is a highest-priority fetch
+ * that competes with the render-blocking CSS for the same link, so every
+ * file added here costs first paint. The set was six files on a Turkish
+ * page — 287 kB, more than the whole rest of the document — and it showed:
+ * `/tr/` scored 0.92 against `/en/`'s 0.98 on the same layout.
+ *
+ * So: the display face and the body face, which draw the first screen, and
+ * nothing else. JetBrains Mono is deliberately NOT preloaded — code and
+ * terminals sit below the fold on effectively every page, the face is
+ * `font-display: swap` like the others, and it is still discovered from
+ * `fonts.css` on the same load.
+ *
+ * latin-ext is preloaded only for Turkish: it carries ş ğ ı İ (the latin
+ * subset does not), and an English page must not pay for requests it will
+ * never draw a glyph from. Both subsets are still *linked* from the
+ * stylesheet in every locale, so a Turkish word inside an English lesson
+ * still renders — one round-trip later.
+ */
+import fraunces from '@fontsource-variable/fraunces/files/fraunces-latin-standard-normal.woff2?url';
+import frauncesExt from '@fontsource-variable/fraunces/files/fraunces-latin-ext-standard-normal.woff2?url';
+import inter from '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url';
+import interExt from '@fontsource-variable/inter/files/inter-latin-ext-wght-normal.woff2?url';
 
 export interface HrefLangAlternate {
   /** BCP-47 language tag, e.g. "en" or "tr". Use "x-default" for the fallback. */
@@ -28,14 +67,18 @@ interface Props {
    * generated.
    */
   ogImage?: string | null;
+  /** Extra classes for `<body>`, so a layout can name its own page shape. */
+  bodyClass?: string;
 }
 
-const { title, description, lang, path, alternates, ogImage } = Astro.props;
+const { title, description, lang, path, alternates, ogImage, bodyClass } = Astro.props;
 
 const site = Astro.site ?? new URL('https://cc.codechup.com/');
 const canonicalUrl = new URL(path, site).toString();
 const ogImageRelative = ogImage === undefined ? ogImagePath(lang, path) : ogImage;
 const ogImageUrl = ogImageRelative ? new URL(ogImageRelative, site).toString() : null;
+
+const preloadFonts = lang === 'tr' ? [fraunces, frauncesExt, inter, interExt] : [fraunces, inter];
 ---
 
 <!doctype html>
@@ -49,6 +92,11 @@ const ogImageUrl = ogImageRelative ? new URL(ogImageRelative, site).toString() :
     {
       alternates?.map((alt) => (
         <link rel="alternate" hreflang={alt.lang} href={new URL(alt.path, site).toString()} />
+      ))
+    }
+    {
+      preloadFonts.map((href) => (
+        <link rel="preload" href={href} as="font" type="font/woff2" crossorigin />
       ))
     }
     <meta property="og:type" content="article" />
@@ -88,7 +136,64 @@ const ogImageUrl = ogImageRelative ? new URL(ogImageRelative, site).toString() :
       )
     }
   </head>
-  <body class="min-h-screen bg-bg text-fg">
+  <body class:list={['cc-shell', bodyClass]}>
     <slot />
   </body>
 </html>
+
+<style is:global>
+  /*
+   * The page shape, not the page style: header, one growing main, footer.
+   * Colour, face and rhythm all come from app.css and tokens.css — this
+   * block owns geometry only, which is why it can live here without
+   * competing with the global stylesheet.
+   */
+  .cc-shell {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    min-height: 100svh;
+  }
+
+  .cc-shell > main {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /*
+   * `<main tabindex="-1">` exists so the skip link actually moves focus.
+   * It must never paint a ring when the pointer lands in the prose, so the
+   * ring is granted on `:focus-visible` only — which a programmatic focus
+   * from a keyboard-activated skip link does satisfy, and a mouse click
+   * does not.
+   */
+  .cc-shell main:focus {
+    outline: none;
+  }
+
+  .cc-shell main:focus-visible {
+    outline: var(--cc-focus-width) solid var(--cc-focus-color);
+    outline-offset: calc(var(--cc-focus-offset) * -1);
+  }
+
+  /*
+   * Page container. `--cc-max-page` (1360) plus the gutter that rises from
+   * 24 to 40 above 1024 (KILN §7.1). Every layout builds on these two.
+   */
+  .cc-container {
+    width: 100%;
+    max-width: var(--cc-max-page);
+    margin-inline: auto;
+    padding-inline: var(--cc-gutter);
+  }
+
+  :root {
+    --cc-gutter: var(--cc-space-6);
+  }
+
+  @media (min-width: 1024px) {
+    :root {
+      --cc-gutter: var(--cc-space-8);
+    }
+  }
+</style>

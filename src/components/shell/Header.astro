@@ -1,16 +1,36 @@
 ---
-// Site header, drawn from `docs/design/canvas-out/Main.dc.html` /
-// `Lesson1280.dc.html` (64px bar, 32px gutter desktop / 16px phone) and
-// `Landing390.dc.html` (phone: 44px targets).
-//
-// Slots left for other plans:
-//   * Search  — P09 owns the Pagefind-backed `Search` component and its
-//     Ctrl+K binding (D061). Mounted here by P12: the canvas placeholder is
-//     now a real `data-search-trigger` button (the selector Search.astro
-//     listens for) and `<Search>` renders its dialog at the end of the
-//     header. It stays desktop-only in the bar, exactly as the canvas draws
-//     it; Ctrl/Cmd+K opens it at every width.
-//   * ThemeToggle — P05's component, imported as-is, never re-implemented.
+/**
+ * Site header (KILN §7.2).
+ *
+ * 56px tall (`--cc-header-h`), sticky, `--cc-paper` at 88% with a backdrop
+ * blur where supported and a solid fallback where it is not, and a hairline
+ * bottom border that only appears once the page has scrolled.
+ *
+ * Desktop (≥900px): lockup left, nav centred in its own grid column, right
+ * cluster of search / language / theme. The nav's current section carries a
+ * 2px clay underline.
+ *
+ * Mobile (<900px): mark (wordmark returns at ≥640px), search, menu. The
+ * drawer is a plain `<details>` — no inline script, works with JS off — and
+ * holds the nav, the curriculum tree, language, theme and the publisher
+ * line, so nothing is unreachable on a phone. The pre-Kiln mobile header
+ * dropped the brand name entirely and stacked the menu on a second row;
+ * both are gone.
+ *
+ * ### Slot for other plans
+ * `<slot name="drawer-tree" />` — the full curriculum tree in the mobile
+ * drawer (KILN §7.2/§8.8). The rail owner renders its tree into it:
+ *
+ * ```astro
+ * <Header lang={lang} altPath={altPath} active="curriculum">
+ *   <Rail slot="drawer-tree" … />
+ * </Header>
+ * ```
+ *
+ * When nothing is slotted the drawer simply omits that section.
+ */
+import Lockup from '../brand/Lockup.astro';
+import Icon from '../ui/Icon.astro';
 import Search from './Search.astro';
 import ThemeToggle from './ThemeToggle.astro';
 import LangSwitch from './LangSwitch.astro';
@@ -21,70 +41,56 @@ interface Props {
   /** Absolute path of the sibling-language page, or null when it is a draft. */
   altPath?: string | null;
   /** Which top-level nav item is current, if any. */
-  active?: 'curriculum' | 'playbook' | 'changelog' | 'design';
+  active?: 'curriculum' | 'playbook' | 'meta' | 'changelog' | 'design';
 }
 
-const { lang, altPath, active } = Astro.props;
+const { lang, altPath, active } = Astro.props as Props;
 const strings = t(lang);
 const home = `/${lang}/`;
 
-// Every top-level destination is an anchor on the locale landing page: the
-// Playbook and Changelog PAGES are content plans P42/P43's, and linking at
-// them before they exist would be a dead link (lychee.toml runs in CI).
+const COPY: Record<string, { close: string; browse: string; settings: string; meta: string }> = {
+  en: { close: 'Close menu', browse: 'Browse', settings: 'Settings', meta: 'Meta' },
+  tr: { close: 'Menüyü kapat', browse: 'Gezin', settings: 'Ayarlar', meta: 'Meta' },
+};
+const c = COPY[lang] ?? COPY.en;
+
+// KILN §7.2 names exactly three nav items: Curriculum, Playbook, Meta. The
+// Playbook and Meta sections are real routes now, so the header points at the
+// pages rather than at landing anchors; Curriculum has no page of its own, so
+// it keeps the landing map anchor. Changelog (a page inside the Playbook) and
+// Design (component documentation) live in the footer's Project group — they
+// were promoted into the nav while Meta was unreachable from the header at
+// all, which is the disagreement this restores.
 const links = [
   { key: 'curriculum', href: `${home}#curriculum-map`, label: strings.curriculum },
-  { key: 'playbook', href: `${home}#playbook`, label: strings.playbook },
-  { key: 'changelog', href: `${home}#what-changed`, label: strings.changelog },
-  { key: 'design', href: '/design/', label: strings.design },
+  { key: 'playbook', href: `${home}playbook/`, label: strings.playbook },
+  { key: 'meta', href: `${home}meta/`, label: c.meta },
 ] as const;
 
-// Sigil geometry copied from docs/design/canvas-src/build.mjs `sigil()`
-// (24-unit grid, 6-unit cells, gold cell top-right), with `currentColor`
-// for the ink cells so one markup works in both themes.
-const SIGIL_CELLS: [number, number][] = [
-  [1, 1],
-  [9, 1],
-  [1, 9],
-  [9, 9],
-  [17, 9],
-  [1, 17],
-  [9, 17],
-  [17, 17],
-];
+// Routes that live inside a section but pass their own name: the changelog is
+// a Playbook page, so it lights the Playbook link.
+//
+// `/design/` is NOT one of them. It used to alias to Meta, which underlined
+// "Meta" while the reader was on a page that is neither in Meta nor anywhere
+// in the locale tree — a current marker pointing at a section you are not in
+// is worse than none, and KILN §7.2 names exactly three nav items. `/design/`
+// is reachable from the footer's Project group; on it, nothing goes current.
+const ALIAS: Record<string, string> = { changelog: 'playbook' };
+const NO_CURRENT = new Set(['design']);
+const current = active && !NO_CURRENT.has(active) ? (ALIAS[active] ?? active) : undefined;
 ---
 
-<header class="cc-header">
-  <div class="cc-header-bar">
-    <a class="cc-lockup" href={home} aria-label={strings.siteName}>
-      <svg
-        class="cc-sigil"
-        xmlns="http://www.w3.org/2000/svg"
-        viewBox="0 0 24 24"
-        width="28"
-        height="28"
-        aria-hidden="true"
-        focusable="false"
-      >
-        <g fill="currentColor">
-          {SIGIL_CELLS.map(([x, y]) => <rect x={x} y={y} width="6" height="6" rx="1" />)}
-        </g>
-        <rect x="17" y="1" width="6" height="6" rx="1" fill="var(--color-accent)"></rect>
-      </svg>
-      <span class="cc-wordmark" aria-hidden="true">
-        <span class="mono cc-wordmark-name">
-          {strings.brandWordmark}<span class="caret"></span>
-        </span>
-        <span class="mono cc-wordmark-academy">{strings.brandAcademy}</span>
-      </span>
-    </a>
+<header class="cc-header" data-cc-header>
+  <div class="cc-header__inner">
+    <Lockup lang={lang} href={home} size="md" wordmark="sm-up" class="cc-header__brand" />
 
-    <nav class="cc-nav" aria-label={strings.mainNav}>
+    <nav class="cc-header__nav" aria-label={strings.mainNav}>
       {
         links.map((link) => (
           <a
             href={link.href}
-            class="cc-nav-link"
-            aria-current={active === link.key ? 'page' : undefined}
+            class="cc-header__link"
+            aria-current={current === link.key ? 'page' : undefined}
           >
             {link.label}
           </a>
@@ -92,223 +98,527 @@ const SIGIL_CELLS: [number, number][] = [
       }
     </nav>
 
-    <div class="cc-actions">
+    <div class="cc-header__cluster">
       <button
         type="button"
-        class="cc-search-placeholder"
+        class="cc-header__search"
         data-search-trigger
         aria-label={strings.searchLessons}
       >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.75"
-          stroke-linecap="round"
-          aria-hidden="true"
-          focusable="false"
-        >
-          <circle cx="11" cy="11" r="7"></circle>
-          <path d="M20 20l-3.5-3.5"></path>
-        </svg>
-        <span>{strings.searchLessons}</span>
-        <span class="cc-kbd mono" aria-hidden="true">{strings.searchHint}</span>
+        <span class="cc-header__search-icon"><Icon name="search" size={20} /></span>
+        <span class="cc-header__search-text">{strings.searchLessons}</span>
+        <kbd class="cc-kbd mono" aria-hidden="true">{strings.searchHint}</kbd>
       </button>
-      <LangSwitch currentLang={lang} targetPath={altPath} />
-      <ThemeToggle />
+
+      <div class="cc-header__prefs">
+        <LangSwitch id="cc-lang-switch" currentLang={lang} targetPath={altPath} />
+        <ThemeToggle id="cc-theme-toggle" lang={lang} />
+      </div>
+
+      <details class="cc-drawer" data-cc-drawer>
+        <summary
+          class="cc-drawer__button"
+          aria-label={strings.openMenu}
+          data-label-open={strings.openMenu}
+          data-label-close={c.close}
+        >
+          <span class="cc-drawer__glyph cc-drawer__glyph--open"><Icon name="menu" size={22} /></span
+          >
+          <span class="cc-drawer__glyph cc-drawer__glyph--close"
+            ><Icon name="close" size={22} /></span
+          >
+        </summary>
+
+        <div class="cc-drawer__sheet">
+          <div class="cc-drawer__scroll">
+            <nav class="cc-drawer__nav" aria-label={`${strings.mainNav} — ${strings.openMenu}`}>
+              <p class="cc-drawer__eyebrow eyebrow">{c.browse}</p>
+              {
+                links.map((link) => (
+                  <a
+                    href={link.href}
+                    class="cc-drawer__link"
+                    aria-current={current === link.key ? 'page' : undefined}
+                  >
+                    <span>{link.label}</span>
+                    <Icon name="chevron-right" size={18} />
+                  </a>
+                ))
+              }
+            </nav>
+
+            {
+              Astro.slots.has('drawer-tree') && (
+                <div class="cc-drawer__tree">
+                  <p class="cc-drawer__eyebrow eyebrow">{strings.curriculum}</p>
+                  <slot name="drawer-tree" />
+                </div>
+              )
+            }
+
+            <div class="cc-drawer__prefs">
+              <p class="cc-drawer__eyebrow eyebrow">{c.settings}</p>
+              <LangSwitch currentLang={lang} targetPath={altPath} variant="row" />
+              <ThemeToggle lang={lang} variant="row" />
+            </div>
+          </div>
+
+          <div class="cc-drawer__foot">
+            <Lockup lang={lang} size="sm" publisher />
+          </div>
+        </div>
+      </details>
     </div>
   </div>
-
-  <details class="cc-menu">
-    <summary class="cc-menu-summary" aria-label={strings.openMenu}>
-      <svg
-        width="20"
-        height="20"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.75"
-        stroke-linecap="round"
-        aria-hidden="true"
-      >
-        <path d="M4 7h16M4 12h16M4 17h16"></path>
-      </svg>
-    </summary>
-    <nav class="cc-menu-nav" aria-label={`${strings.mainNav} (${strings.openMenu})`}>
-      {links.map((link) => <a href={link.href}>{link.label}</a>)}
-    </nav>
-  </details>
 
   <Search lang={lang} />
 </header>
 
 <style>
+  /* AA over the token name (KILN §10 and .claude/rules/design.md): the spec
+     names `--cc-ink-faint` for these micro labels, but that value measures
+     3.6:1 on `--cc-paper-sunken` and axe flags every one of them. They are
+     text, so they take `--cc-ink-muted`, which clears 4.5:1 in both themes.
+     `--cc-ink-faint` stays for non-text uses only. */
+  /* -- the bar ---------------------------------------------------------- */
   .cc-header {
-    border-bottom: 1px solid var(--color-line);
-    background: var(--color-bg-0);
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    /* Solid fallback first; the translucent version is opted into below
+       only where a backdrop filter actually exists. */
+    background: var(--cc-paper);
+    border-bottom: 1px solid transparent;
   }
 
-  .cc-header-bar {
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .cc-header {
+      background: color-mix(in srgb, var(--cc-paper) 88%, transparent);
+      -webkit-backdrop-filter: blur(14px) saturate(1.4);
+      backdrop-filter: blur(14px) saturate(1.4);
+    }
+  }
+
+  /* The hairline only appears once the page has scrolled (KILN §7.2). */
+  .cc-header[data-scrolled] {
+    border-bottom-color: var(--cc-line);
+  }
+
+  .cc-header__inner {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-3);
-    min-height: 64px;
-    padding: var(--space-2) var(--space-4);
+    gap: var(--cc-space-3);
+    height: var(--cc-header-h);
+    max-width: var(--cc-max-page);
+    margin: 0 auto;
+    padding: 0 var(--cc-space-6);
   }
 
-  .cc-lockup {
+  /* The 44x44 tap target lives on `a.cc-lockup` in Lockup.astro — a class
+     handed to a component does not carry this file's scope attribute, so a
+     rule written here would never match it. */
+  .cc-header__brand {
+    flex: none;
+  }
+
+  /* -- centre nav ------------------------------------------------------- */
+  .cc-header__nav {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    gap: var(--cc-space-6);
+  }
+
+  .cc-header__link {
+    position: relative;
     display: inline-flex;
     align-items: center;
-    gap: 10px;
-    color: var(--color-ink);
+    justify-content: center;
+    /* KILN §4: 44x44, not 44 tall. "Meta" is the one label short enough to
+       render 42px wide on its own padding. */
+    min-width: var(--cc-tap);
+    min-height: var(--cc-tap);
+    padding: 0 var(--cc-space-2);
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-small);
+    font-weight: var(--cc-weight-small);
     text-decoration: none;
-    flex-shrink: 0;
+    white-space: nowrap;
   }
 
-  .cc-sigil {
-    width: 24px;
-    height: 24px;
+  .cc-header__link:hover {
+    color: var(--cc-ink);
   }
 
-  .cc-wordmark {
-    display: none;
-    flex-direction: column;
-    gap: 2px;
-    line-height: 1;
+  .cc-header__link[aria-current='page'] {
+    color: var(--cc-ink);
+    font-weight: var(--cc-weight-micro);
   }
 
-  .cc-wordmark-name {
-    font-size: var(--text-12);
-    font-weight: 500;
-    letter-spacing: 0.02em;
+  .cc-header__link[aria-current='page']::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    bottom: 12px;
+    height: 2px;
+    border-radius: var(--cc-radius-pill);
+    background: var(--cc-accent);
   }
 
-  .cc-wordmark-academy {
-    font-size: var(--text-11);
-    letter-spacing: var(--tracking-academy);
-    text-transform: uppercase;
-    color: var(--color-ink-soft);
-  }
-
-  .cc-nav {
-    display: none;
-    align-items: center;
-    gap: 22px;
-    font-size: var(--text-14);
-  }
-
-  .cc-nav-link {
-    color: var(--color-ink);
-    text-decoration: none;
-    padding: var(--space-2) 0;
-  }
-
-  .cc-nav-link[aria-current='page'] {
-    color: var(--color-accent-text);
-  }
-
-  .cc-actions {
+  /* -- right cluster ---------------------------------------------------- */
+  .cc-header__cluster {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    flex-shrink: 0;
+    gap: var(--cc-space-1);
+    margin-left: auto;
   }
 
-  .cc-search-placeholder {
+  .cc-header__prefs {
     display: none;
-    background: none;
-    font: inherit;
-    text-align: left;
-    cursor: pointer;
     align-items: center;
-    gap: var(--space-2);
-    height: 36px;
-    min-width: 200px;
-    padding: 0 var(--space-3);
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-2);
-    color: var(--color-ink-muted);
-    font-size: var(--text-13);
+    gap: var(--cc-space-1);
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+
+  .cc-header__search {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-space-2);
+    min-width: var(--cc-tap);
+    min-height: var(--cc-tap);
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--cc-radius-md);
+    background: transparent;
+    color: var(--cc-ink-muted);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .cc-header__search:hover {
+    background: var(--cc-paper-sunken);
+    color: var(--cc-ink);
+  }
+
+  .cc-header__search-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: var(--cc-tap);
+    height: var(--cc-tap);
+  }
+
+  .cc-header__search-text,
+  .cc-kbd {
+    display: none;
   }
 
   .cc-kbd {
-    margin-left: auto;
     padding: 2px 6px;
-    border: 1px solid var(--color-line-strong);
-    border-bottom-width: 2px;
-    border-radius: var(--radius-1);
-    font-size: var(--text-11);
-    color: var(--color-ink-soft);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-sm);
+    background: var(--cc-paper);
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-micro);
+    line-height: 1.4;
   }
 
-  .cc-menu {
-    border-top: 1px solid var(--color-line);
-  }
-
-  .cc-menu-summary {
-    display: flex;
+  /* -- drawer ----------------------------------------------------------- */
+  .cc-drawer__button {
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 100%;
-    min-height: var(--tap-target);
-    color: var(--color-ink-soft);
+    width: var(--cc-tap);
+    height: var(--cc-tap);
+    border-radius: var(--cc-radius-md);
+    color: var(--cc-ink-muted);
     cursor: pointer;
     list-style: none;
   }
 
-  .cc-menu-summary::-webkit-details-marker {
+  .cc-drawer__button::-webkit-details-marker {
     display: none;
   }
 
-  .cc-menu-nav {
+  .cc-drawer__button:hover {
+    background: var(--cc-paper-sunken);
+    color: var(--cc-ink);
+  }
+
+  .cc-drawer__glyph {
+    display: inline-flex;
+  }
+
+  .cc-drawer__glyph--close,
+  .cc-drawer[open] .cc-drawer__glyph--open {
+    display: none;
+  }
+
+  .cc-drawer[open] .cc-drawer__glyph--close {
+    display: inline-flex;
+  }
+
+  /* Absolute, not fixed: the header opts into `backdrop-filter`, which makes
+     it a containing block for fixed descendants — a `position: fixed` sheet
+     would size itself to the 56px bar instead of the viewport. The header is
+     `position: sticky`, so an absolutely positioned sheet hanging off its
+     bottom edge lands in exactly the right place at any scroll offset. */
+  /* A closed <details> still lays its children out unless the slot itself is
+     removed, and the sheet's containing block is the 44px summary box — so on
+     Turkish pages the longest nav label pushed the document ~46px wider than
+     the viewport (KILN §10 bans page-level horizontal scroll). Closed means
+     gone. */
+  .cc-drawer:not([open]) .cc-drawer__sheet {
+    display: none;
+  }
+
+  .cc-drawer__sheet {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    height: calc(100vh - var(--cc-header-h));
+    height: calc(100dvh - var(--cc-header-h));
+    z-index: 39;
     display: flex;
     flex-direction: column;
-    padding: var(--space-2) var(--space-4) var(--space-4);
+    background: var(--cc-paper);
+    border-top: 1px solid var(--cc-line);
+    box-shadow: var(--cc-shadow-2);
   }
 
-  .cc-menu-nav a {
+  .cc-drawer__scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: var(--cc-space-5) var(--cc-space-6) var(--cc-space-6);
+  }
+
+  .cc-drawer__eyebrow {
+    margin: 0 0 var(--cc-space-2);
+    /* `.eyebrow` (app.css) is `--cc-ink-faint`, which fails AA as text. */
+    color: var(--cc-ink-muted);
+  }
+
+  .cc-drawer__nav {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .cc-drawer__link {
     display: flex;
     align-items: center;
-    min-height: var(--tap-target);
-    color: var(--color-ink);
+    justify-content: space-between;
+    gap: var(--cc-space-3);
+    min-height: var(--cc-tap);
+    padding: var(--cc-space-2) 0;
+    border-bottom: 1px solid var(--cc-line);
+    color: var(--cc-ink);
+    font-size: var(--cc-text-body);
     text-decoration: none;
-    font-size: var(--text-16);
   }
 
-  @media (min-width: 640px) {
-    .cc-sigil {
-      width: 28px;
-      height: 28px;
+  .cc-drawer__link[aria-current='page'] {
+    color: var(--cc-accent);
+    font-weight: var(--cc-weight-h3);
+  }
+
+  .cc-drawer__tree,
+  .cc-drawer__prefs {
+    margin-top: var(--cc-space-7);
+  }
+
+  /* The rail's 36px lesson row is a DESKTOP measurement (KILN §8.8). Slotted
+     into the drawer it is a primary touch target, so it takes the §4/§10 floor
+     — block padding only, the label keeps its size. */
+  .cc-drawer__tree :global(.cc-rail__lesson),
+  .cc-drawer__tree :global(.cc-rail__module),
+  .cc-drawer__tree :global(.cc-rail__level-link) {
+    min-height: var(--cc-tap);
+  }
+
+  .cc-drawer__prefs {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .cc-drawer__foot {
+    flex: none;
+    padding: var(--cc-space-5) var(--cc-space-6);
+    border-top: 1px solid var(--cc-line);
+    background: var(--cc-paper-sunken);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-header {
+      transition: border-color var(--cc-dur) var(--cc-ease);
     }
 
-    .cc-wordmark {
+    .cc-header__search,
+    .cc-drawer__button {
+      transition:
+        background-color var(--cc-dur-fast) var(--cc-ease),
+        color var(--cc-dur-fast) var(--cc-ease);
+    }
+  }
+
+  /* -- breakpoints ------------------------------------------------------ */
+  /* 900, not 1024: this is the width at which `Lesson.astro` docks the rail
+     (KILN §7.1). When the two disagreed, a 900-1023px window showed the
+     curriculum twice — once docked, once behind the hamburger — while the
+     section nav, the labelled search field and the only language and theme
+     controls were all hidden. The header now flips where the layout does. */
+  @media (min-width: 900px) {
+    .cc-header__inner {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+    }
+
+    .cc-header__nav {
       display: flex;
     }
 
-    .cc-wordmark-name {
-      font-size: var(--text-14);
-    }
-  }
-
-  @media (min-width: 1024px) {
-    .cc-header-bar {
-      padding: 0 var(--space-8);
+    /* Grid column, not `margin-left: auto` — the nav stays centred on the page
+       no matter how long the Turkish labels run. */
+    .cc-header__cluster {
+      justify-self: end;
+      min-width: 0;
     }
 
-    .cc-nav,
-    .cc-search-placeholder {
+    .cc-header__prefs {
       display: flex;
     }
 
-    .cc-actions {
-      gap: 10px;
-    }
-
-    .cc-menu {
+    .cc-drawer {
       display: none;
+    }
+
+    .cc-header__search {
+      gap: 0;
+      min-width: 9rem;
+      padding-right: var(--cc-space-3);
+      border-color: var(--cc-line);
+      background: var(--cc-paper-sunken);
+      font-size: var(--cc-text-small);
+    }
+
+    .cc-header__search:hover {
+      border-color: var(--cc-line-strong);
+      background: var(--cc-paper-raised);
+    }
+
+    .cc-header__search-icon {
+      width: var(--cc-space-8);
+    }
+
+    .cc-header__search-text {
+      display: inline;
+      margin-right: auto;
+      /* Never two lines: the label wrapping made the 44px button 56px tall
+         and broke the bar's rhythm at the 900-1100px widths. */
+      white-space: nowrap;
+    }
+  }
+
+  /* The bar carries brand + nav + field + preferences in one row from 900 up,
+     so the field and the gutter take their full size only once there is room
+     for them — otherwise the cluster pushed the document ~40px wider than the
+     viewport at 900-1000 (KILN §10 bans page-level horizontal scroll). */
+  @media (min-width: 1024px) {
+    .cc-header__inner {
+      padding: 0 var(--cc-space-8);
+    }
+  }
+
+  @media (min-width: 1100px) {
+    .cc-header__search {
+      min-width: 15rem;
+    }
+
+    .cc-kbd {
+      display: inline-block;
+      margin-left: var(--cc-space-4);
     }
   }
 </style>
+
+<script>
+  // Two jobs, both hoisted to an external module (CSP: no inline script).
+  //
+  // 1. The header's hairline appears only once the page has scrolled
+  //    (KILN §7.2). A scroll listener is cheaper and more reliable here than
+  //    an IntersectionObserver sentinel, which a sticky ancestor can pin.
+  // 2. The mobile drawer is a plain <details> so it works with JS off; these
+  //    listeners only add the conveniences a <details> cannot express —
+  //    Escape, an outside click, closing on navigation, and locking the page
+  //    behind the sheet.
+  const header = document.querySelector<HTMLElement>('[data-cc-header]');
+  const drawer = document.querySelector<HTMLDetailsElement>('[data-cc-drawer]');
+
+  if (header) {
+    let ticking = false;
+    const sync = () => {
+      ticking = false;
+      if (window.scrollY > 2) header.setAttribute('data-scrolled', '');
+      else header.removeAttribute('data-scrolled');
+    };
+    sync();
+    window.addEventListener(
+      'scroll',
+      () => {
+        if (ticking) return;
+        ticking = true;
+        window.requestAnimationFrame(sync);
+      },
+      { passive: true },
+    );
+  }
+
+  if (drawer) {
+    const summary = drawer.querySelector('summary');
+    const close = () => {
+      if (drawer.open) drawer.open = false;
+    };
+
+    drawer.addEventListener('toggle', () => {
+      document.documentElement.style.overflow = drawer.open ? 'hidden' : '';
+      // The button is the same control in both states, so its name has to
+      // say which way it will go — an icon swap alone is not an accessible
+      // name change.
+      const label = drawer.open
+        ? summary?.getAttribute('data-label-close')
+        : summary?.getAttribute('data-label-open');
+      if (label) summary?.setAttribute('aria-label', label);
+      // Returning focus to the control that opened the sheet keeps the
+      // keyboard path unbroken when Escape or an outside click closes it.
+      if (!drawer.open && document.activeElement === document.body) {
+        (summary as HTMLElement | null)?.focus();
+      }
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && drawer.open) {
+        close();
+        (summary as HTMLElement | null)?.focus();
+      }
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!drawer.open) return;
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest('a')) close();
+      else if (!target.closest('[data-cc-drawer]')) close();
+    });
+
+    // A resize past the desktop breakpoint hides the sheet; make sure the
+    // scroll lock goes with it.
+    window.matchMedia('(min-width: 900px)').addEventListener('change', (event) => {
+      if (event.matches) close();
+    });
+  }
+</script>

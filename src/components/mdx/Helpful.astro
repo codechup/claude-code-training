@@ -1,15 +1,21 @@
 ---
-// "Was this helpful?" feedback control (D067/D069). Posts
-// `{ lessonId, lang, vote }` to the same-origin `/api/feedback` route,
-// served (once deployed — owner action O8) by the Cloudflare Worker under
-// `worker/**`. Until then the origin has no such route and the POST
-// 404s — that is an *expected* state, not a bug: on any non-2xx response
-// or network error this component hides its buttons and reveals a
-// templated GitHub Issues link instead, with no console error and no
-// stuck spinner. One vote per lesson is remembered in
-// `localStorage['cc:helpful:<lessonId>']` so a returning visitor sees the
-// thank-you state immediately instead of being asked again.
+/**
+ * "Was this helpful?" (D067/D069), restyled to the Kiln card idiom (§8.9).
+ *
+ * Posts `{ lessonId, lang, vote }` to the same-origin `/api/feedback` route
+ * served (once deployed — owner action O8) by the Worker under `worker/**`.
+ * Until then the origin has no such route and the POST 404s — an *expected*
+ * state, not a bug: on any non-2xx or network error the buttons are replaced
+ * by a templated GitHub Issues link, with no console error and no stuck
+ * spinner. One vote per lesson is remembered in
+ * `localStorage['cc:helpful:<lessonId>']`.
+ *
+ * The vote buttons use the shared icon set (KILN §6) — a check and an x,
+ * with the verdict also written on the button, so the answer is never
+ * carried by shape alone.
+ */
 import { REPO_URL } from '../../lib/repo.ts';
+import Icon from '../ui/Icon.astro';
 
 interface Props {
   lessonId: string;
@@ -20,8 +26,10 @@ const { lessonId, lang = 'en' } = Astro.props;
 
 const strings = {
   question: lang === 'tr' ? 'Bu sayfa yardımcı oldu mu?' : 'Was this helpful?',
-  yes: lang === 'tr' ? 'Evet, yardımcı oldu' : 'Yes, helpful',
-  no: lang === 'tr' ? 'Hayır, yardımcı olmadı' : 'Not helpful',
+  yes: lang === 'tr' ? 'Evet' : 'Yes',
+  no: lang === 'tr' ? 'Hayır' : 'No',
+  yesLabel: lang === 'tr' ? 'Evet, yardımcı oldu' : 'Yes, this was helpful',
+  noLabel: lang === 'tr' ? 'Hayır, yardımcı olmadı' : 'No, this was not helpful',
   thanks: lang === 'tr' ? 'Geri bildiriminiz için teşekkürler.' : 'Thanks for the feedback.',
   fallback: lang === 'tr' ? "GitHub'da bize bildirin" : 'Tell us on GitHub',
 };
@@ -38,94 +46,113 @@ const fallbackHref = githubFeedbackUrl();
 ---
 
 <div class="cc-helpful" data-cc-helpful data-lesson-id={lessonId} data-lang={lang}>
-  <span class="muted cc-helpful-question">{strings.question}</span>
-  <span class="cc-helpful-buttons" data-cc-helpful-buttons>
-    <button type="button" class="cc-helpful-btn" data-cc-helpful-vote="up" aria-label={strings.yes}>
-      <svg
-        aria-hidden="true"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.75"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-      >
-        <path d="M7 10v11H3V10zM7 10l4-7a2 2 0 0 1 3 2v4h5a2 2 0 0 1 2 2l-1 8a2 2 0 0 1-2 2H7"
-        ></path>
-      </svg>
+  <p class="cc-helpful__q">{strings.question}</p>
+  <div class="cc-helpful__actions" data-cc-helpful-buttons>
+    <button
+      type="button"
+      class="cc-helpful__btn"
+      data-cc-helpful-vote="up"
+      aria-label={strings.yesLabel}
+    >
+      <Icon name="check-circle" size={16} /><span>{strings.yes}</span>
     </button>
     <button
       type="button"
-      class="cc-helpful-btn"
+      class="cc-helpful__btn"
       data-cc-helpful-vote="down"
-      aria-label={strings.no}
+      aria-label={strings.noLabel}
     >
-      <svg
-        aria-hidden="true"
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.75"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        style="transform: rotate(180deg);"
-      >
-        <path d="M7 10v11H3V10zM7 10l4-7a2 2 0 0 1 3 2v4h5a2 2 0 0 1 2 2l-1 8a2 2 0 0 1-2 2H7"
-        ></path>
-      </svg>
+      <Icon name="x-circle" size={16} /><span>{strings.no}</span>
     </button>
-  </span>
-  <span class="muted cc-helpful-thanks" data-cc-helpful-thanks hidden>{strings.thanks}</span>
-  <a class="mono cc-helpful-fallback" data-cc-helpful-fallback href={fallbackHref} hidden>
-    {strings.fallback}
+  </div>
+  <p class="cc-helpful__thanks" data-cc-helpful-thanks hidden>
+    <Icon name="check-circle" size={16} /><span>{strings.thanks}</span>
+  </p>
+  <a class="cc-helpful__fallback" data-cc-helpful-fallback href={fallbackHref} hidden>
+    <Icon name="github" size={16} /><span>{strings.fallback}</span>
   </a>
 </div>
 
 <style>
   .cc-helpful {
+    flex: 1 1 20rem;
     display: flex;
     align-items: center;
-    gap: var(--space-3);
     flex-wrap: wrap;
-    font-size: var(--text-14);
+    gap: var(--cc-space-3) var(--cc-space-4);
+    padding: var(--cc-space-4) var(--cc-space-5);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-lg);
+    background: var(--cc-paper-raised);
   }
 
-  .cc-helpful-buttons {
+  .cc-helpful__q {
+    margin: 0;
+    max-width: none;
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+    color: var(--cc-ink-muted);
+  }
+
+  .cc-helpful__actions {
     display: inline-flex;
-    gap: var(--space-2);
+    gap: var(--cc-space-2);
+    margin-left: auto;
   }
 
-  .cc-helpful-btn {
+  .cc-helpful__btn {
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: var(--tap-target);
-    height: var(--tap-target);
-    padding: 0;
-    border: 1px solid var(--color-line-strong);
-    border-radius: var(--radius-2);
-    background: transparent;
-    color: var(--color-ink-soft);
+    gap: var(--cc-space-2);
+    min-height: var(--cc-tap);
+    min-width: var(--cc-tap);
+    padding: 0 var(--cc-space-4);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-pill);
+    background: var(--cc-paper);
+    color: var(--cc-ink-muted);
+    font-family: inherit;
+    font-size: var(--cc-text-small);
     cursor: pointer;
   }
 
-  .cc-helpful-btn:hover {
-    color: var(--color-accent-text);
-    border-color: var(--color-accent-text);
+  .cc-helpful__btn:hover {
+    border-color: var(--cc-accent-line);
+    background: var(--cc-accent-wash);
+    color: var(--cc-accent);
   }
 
-  .cc-helpful-btn:disabled {
-    opacity: 0.5;
+  .cc-helpful__btn:disabled {
+    opacity: 0.55;
     cursor: default;
   }
 
-  .cc-helpful-fallback {
-    color: var(--color-accent-text);
-    font-size: var(--text-12);
+  .cc-helpful__thanks,
+  .cc-helpful__fallback {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-space-2);
+    margin: 0 0 0 auto;
+    max-width: none;
+    min-height: var(--cc-tap);
+    font-size: var(--cc-text-small);
+  }
+
+  .cc-helpful__thanks {
+    color: var(--cc-ok);
+  }
+
+  .cc-helpful__fallback {
+    color: var(--cc-accent);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-helpful__btn {
+      transition:
+        background var(--cc-dur-fast) var(--cc-ease),
+        border-color var(--cc-dur-fast) var(--cc-ease),
+        color var(--cc-dur-fast) var(--cc-ease);
+    }
   }
 </style>
 

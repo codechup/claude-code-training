@@ -1,9 +1,34 @@
 ---
-// The lesson header block from `Lesson1280.dc.html` / `Lesson390.dc.html`:
-// level badge + "m07 Hooks · lesson 2 of 7", the title, then the meta row
-// (duration, difficulty, tags, updated + verified version) — D063.
+/**
+ * LessonMeta — the lesson header: the context line (level chip + module and
+ * position), the `<h1>`, and the fact row (duration, difficulty, tags,
+ * updated, verified version). KILN §8.8.
+ *
+ * The context line is deliberately NOT a `<nav aria-label="Breadcrumb">`.
+ * `Lesson.astro` already places the real breadcrumb (level › module ›
+ * lesson) above the title via `shell/Breadcrumbs.astro`; a second one here
+ * put two identically-named `<nav>` landmarks on every lesson page and, at
+ * 390 px, orphaned its chevron on the line above the crumb it pointed at.
+ * What survives is the one thing the breadcrumb does not carry — the level
+ * chip and the lesson's position in its module — set as plain text.
+ *
+ * KILN §9.1 defect fixed here: the meta row used to render
+ * `updated2026-09-07`, because Astro drops the literal newline+indent
+ * between a `{expression}` and the `<time>` element that follows it in the
+ * template. Every text/element join below therefore carries its whitespace
+ * explicitly — either as a separate flex item, or as an explicit `{' '}`.
+ * The same rule applies to any component that concatenates a label with a
+ * `<code>` or `<time>`.
+ *
+ * `moduleHref` is optional: pass it and the module crumb becomes a link,
+ * omit it and the breadcrumb renders as plain text. The level chip is
+ * deliberately NOT a link — a 24 px pill cannot carry a 44 px target
+ * without stopping looking like a chip, and the rail already navigates to
+ * the level.
+ */
 import { t } from '../../lib/i18n/ui.ts';
 import { levelBadgeStyle } from '../../lib/levels.ts';
+import Icon from '../ui/Icon.astro';
 
 interface Props {
   lang: string;
@@ -18,6 +43,7 @@ interface Props {
   tags: string[];
   updated: Date;
   verifiedVersion: string;
+  moduleHref?: string;
 }
 
 const {
@@ -33,96 +59,195 @@ const {
   tags,
   updated,
   verifiedVersion,
+  moduleHref,
 } = Astro.props;
 
 const strings = t(lang);
 const updatedIso = updated.toISOString().slice(0, 10);
+const moduleLabel = `${moduleShortId} ${moduleTitle}`.trim();
+const lessonOf = strings.lessonOf(position, moduleTotal, moduleLabel);
+const verifiedLabel = lang === 'tr' ? 'sürümde doğrulandı' : 'verified against';
 ---
 
-<div class="cc-meta">
-  <div class="cc-meta-row">
+<header class="cc-lmeta">
+  <p class="cc-lmeta__crumbs" data-pagefind-ignore>
     {
       level !== null && (
-        <span class="mono cc-badge" style={levelBadgeStyle(level)}>
+        <span class="cc-lmeta__chip" style={levelBadgeStyle(level)}>
           {strings.levelLabel(level)}
         </span>
       )
     }
-    <span class="mono muted cc-meta-position">
-      {strings.lessonOf(position, moduleTotal, `${moduleShortId} ${moduleTitle}`)}
-    </span>
-  </div>
+    {
+      moduleHref ? (
+        <a class="cc-lmeta__crumb" href={moduleHref}>
+          {lessonOf}
+        </a>
+      ) : (
+        <span class="cc-lmeta__crumb">{lessonOf}</span>
+      )
+    }
+  </p>
 
-  <h1 class="cc-meta-title">{title}</h1>
+  <h1 class="cc-lmeta__title">{title}</h1>
 
-  <div class="cc-meta-row cc-meta-facts">
-    <span class="muted">{durationMin} {strings.min}</span>
-    <span class="muted">{strings.difficulty[difficulty]}</span>
-    {tags.map((tag) => <span class="mono cc-chip">{tag}</span>)}
-    <span class="mono muted">
-      {strings.updated}
-      <time datetime={updatedIso}>{updatedIso}</time> · {strings.verifiedOn} v{verifiedVersion}
-    </span>
-  </div>
-  <hr />
-</div>
+  {
+    /* `data-pagefind-ignore`: duration, difficulty, the updated date and the
+      verified version are chrome repeated on every lesson. Indexed, they were
+      the excerpt every result showed. The h1 and the tags stay indexed. */
+  }
+  <ul class="cc-lmeta__facts" data-pagefind-ignore>
+    <li class="cc-lmeta__fact">
+      <Icon name="clock" size={15} /><span>{`${durationMin} ${strings.min}`}</span>
+    </li>
+    <li class="cc-lmeta__fact">
+      <Icon name="gauge" size={15} /><span>{strings.difficulty[difficulty]}</span>
+    </li>
+    {
+      /* Two facts, two rows — not one row with a separator between them. The
+        `·` was `--cc-line-strong` at 1.5:1 (invisible, so the two facts read
+        as one sentence) and, once the row was allowed to wrap between them
+        rather than inside the date, it stranded at the end of the first line.
+        The other facts in this row are separated by the flex gap and an icon;
+        these two now match them. */
+    }
+    <li class="cc-lmeta__fact cc-lmeta__fact--date">
+      <Icon name="check-circle" size={15} /><span
+        >{`${strings.updated} `}<time datetime={updatedIso}>{updatedIso}</time></span
+      >
+    </li>
+    <li class="cc-lmeta__fact cc-lmeta__fact--date">
+      <Icon name="shield" size={15} /><span>{`${verifiedLabel} v${verifiedVersion}`}</span>
+    </li>
+  </ul>
+
+  {
+    tags.length > 0 && (
+      <ul class="cc-lmeta__tags">
+        {tags.map((tag) => (
+          <li class="cc-lmeta__tag">{tag}</li>
+        ))}
+      </ul>
+    )
+  }
+</header>
 
 <style>
-  .cc-meta {
+  .cc-lmeta {
     display: flex;
     flex-direction: column;
-    gap: var(--space-5);
+    gap: var(--cc-space-4);
+    padding-bottom: var(--cc-space-6);
+    margin-bottom: var(--cc-space-7);
+    border-bottom: 1px solid var(--cc-line);
   }
 
-  .cc-meta-row {
+  /* -- context line ----------------------------------------------------- */
+  .cc-lmeta__crumbs {
+    margin: 0;
+    max-width: none;
     display: flex;
     align-items: center;
-    gap: var(--space-2);
     flex-wrap: wrap;
+    gap: var(--cc-space-2);
+    min-height: var(--cc-tap);
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+    color: var(--cc-ink-muted);
   }
 
-  .cc-meta-facts {
-    gap: 14px;
-    font-size: var(--text-13);
-  }
-
-  .cc-meta-position {
-    font-size: var(--text-12);
-  }
-
-  .cc-meta-title {
-    margin: 0;
-    font-size: var(--text-32);
-    line-height: 1.1;
-    letter-spacing: -0.015em;
-  }
-
-  .cc-badge {
-    display: inline-flex;
-    align-items: center;
-    height: 22px;
-    padding: 0 8px;
-    border-radius: var(--radius-1);
-    font-size: var(--text-11);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
-
-  .cc-chip {
+  .cc-lmeta__chip {
     display: inline-flex;
     align-items: center;
     height: 24px;
-    padding: 0 10px;
-    border-radius: var(--radius-1);
-    background: var(--color-bg-3);
-    color: var(--color-ink-soft);
-    font-size: var(--text-12);
-    letter-spacing: 0.04em;
+    padding: 0 var(--cc-space-3);
+    border-radius: var(--cc-radius-pill);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+    text-decoration: none;
+    white-space: nowrap;
   }
 
-  @media (min-width: 1024px) {
-    .cc-meta-title {
-      font-size: var(--text-40);
-    }
+  .cc-lmeta__crumb {
+    color: var(--cc-ink-muted);
+    text-decoration: none;
+  }
+
+  /* Only the linked crumb needs the 44 px box; the plain one is text. */
+  a.cc-lmeta__crumb {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--cc-tap);
+  }
+
+  a.cc-lmeta__crumb:hover {
+    color: var(--cc-accent);
+  }
+
+  /* -- title ------------------------------------------------------------ */
+  .cc-lmeta__title {
+    margin: 0;
+    max-width: var(--cc-measure);
+    font-family: var(--cc-font-display);
+    font-size: var(--cc-text-h1);
+    font-weight: var(--cc-weight-display);
+    line-height: var(--cc-leading-tight);
+    letter-spacing: var(--cc-track-h1);
+    color: var(--cc-ink);
+    text-wrap: balance;
+  }
+
+  /* -- facts ------------------------------------------------------------ */
+  .cc-lmeta__facts {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--cc-space-2) var(--cc-space-5);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .cc-lmeta__fact {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-space-2);
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+    letter-spacing: var(--cc-track-small);
+    color: var(--cc-ink-muted);
+  }
+
+  /* The row wraps BETWEEN facts and never inside one: Turkish runs longer
+     and used to split "2026-09-" / "07" across two lines at 390px, which
+     reads as a rendering fault rather than a wrap. */
+  .cc-lmeta__fact--date > span {
+    white-space: nowrap;
+  }
+
+  /* -- tags ------------------------------------------------------------- */
+  .cc-lmeta__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--cc-space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .cc-lmeta__tag {
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 var(--cc-space-3);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-pill);
+    background: var(--cc-paper-sunken);
+    color: var(--cc-ink-muted);
+    font-family: var(--cc-font-mono);
+    font-size: var(--cc-text-micro);
+    letter-spacing: 0.02em;
   }
 </style>

@@ -1,17 +1,21 @@
 ---
-// The lesson code block (D019): a terminal frame (title bar with three
-// decorative dots + a filename/title, a copy-to-clipboard button), line
-// numbers, optional `highlight` lines, and gold `annotations` — wrapped
-// around Shiki's own dual-theme output from the *existing* markdown
-// pipeline (`astro.config.ts`'s `markdown.shikiConfig`, dual-theme
-// `github-light`/`github-dark-dimmed`, `defaultColor: false`, rendered by
-// `src/styles/shiki.css`, P05). `CodeBlock` never re-highlights code
-// itself — it renders a real fenced code block as its default slot (MDX
-// already turns that into `<pre class="astro-code">…<code><span
-// class="line">…</span></code></pre>` with correct dual-theme colors) and
+// The lesson code block (D019, KILN §8.2): a slim header with a filename
+// or language chip and a copy button, line numbers, optional `highlight`
+// lines with a clay left marker and a wash, and optional gold annotations
+// — wrapped around Shiki's own dual-theme output from the *existing*
+// markdown pipeline (`astro.config.ts`'s `markdown.shikiConfig`, rendered
+// by `src/styles/shiki.css`). `CodeBlock` never re-highlights code itself:
+// it renders a real fenced code block as its default slot (MDX already
+// turns that into `<pre class="astro-code">…<code><span class="line">…
+// </span></code></pre>` with correct dual-theme colours) and
 // post-processes that HTML for the gutter/highlight/annotation chrome.
-// Verified against this repo's actual build output, not assumed — see
-// this plan's Handoff notes for the exact `<pre>` shape confirmed.
+//
+// KILN §8.11.1: the body is built as ONE HTML string and handed to
+// `set:html`. Writing per-line markup as JSX across several source lines —
+// what this file used to do — leaks the literal newlines and 8–12 spaces
+// of source indentation into the `<pre>` as text nodes, and any false
+// `{cond && …}` branch adds a blank line. There is deliberately no
+// multi-line `.map()` returning markup in this file.
 //
 // Usage in MDX:
 //
@@ -22,24 +26,19 @@
 //   ```
 //   </CodeBlock>
 //
-// A real `{3,7-9}`-style meta string on the fence itself
-// (```bash {3,7-9}) would need a Shiki transformer registered in
-// `astro.config.ts`'s `shikiConfig.transformers`, which is outside this
-// plan's `owned_paths` — `highlight` accepts the identical range syntax as
-// a prop instead (see `codeblock.ts`'s `parseLineRanges`), same visual
-// result, no config change needed. Likewise `annotations` is a prop
-// (`Record<lineNumber, text>`) rather than an in-code `// ← text` magic
-// comment: scanning arbitrary source text for a marker string risks
-// false positives across languages, where a prop cannot.
+// A real `{3,7-9}`-style meta string on the fence itself would need a Shiki
+// transformer registered in `astro.config.ts` (outside this plan's owned
+// paths) — `highlight` accepts the identical range syntax as a prop
+// instead, same visual result, no config change needed.
 import { extractLines, joinRawCode, parseLineRanges } from './codeblock.ts';
+import { escapeHtml } from './transcript.ts';
 
 interface Props {
-  /** Shown in the terminal title bar — a filename ("install.sh") or a
-   *  short label ("install"), matching `Components.dc.html`/`Lesson1280.dc.html`. */
+  /** Shown in the header — a filename ("install.sh") or a short label. */
   title?: string;
   /** `{3,7-9}`-style 1-indexed line range to visually highlight. */
   highlight?: string;
-  /** 1-indexed line number -> gold annotation text appended to that line. */
+  /** 1-indexed line number -> annotation text appended to that line. */
   annotations?: Record<number, string>;
 }
 
@@ -49,160 +48,277 @@ const rendered = await Astro.slots.render('default');
 const lines = extractLines(rendered);
 const highlighted = parseLineRanges(highlight);
 const rawCode = joinRawCode(lines);
+const gutterWidth = `${String(lines.length).length + 1}ch`;
+
+// One string, no source whitespace between elements (see the note above).
+const bodyHtml = lines
+  .map((line, i) => {
+    const n = i + 1;
+    const annotation = annotations[n];
+    const cls = highlighted.has(n) ? 'cc-code__line cc-code__line--hl' : 'cc-code__line';
+    const note = annotation
+      ? `<span class="cc-code__note" aria-hidden="true"> ← ${escapeHtml(annotation)}</span>`
+      : '';
+    return `<span class="${cls}"><span class="cc-code__n" aria-hidden="true">${n}</span><span class="cc-code__src">${line.html}</span>${note}</span>`;
+  })
+  .join('');
 ---
 
-<div class="cc-codeblock">
-  <div class="cc-codeblock-bar">
-    <span class="cc-codeblock-dots" aria-hidden="true"><span></span><span></span><span></span></span
+<figure class="cc-code cc-codeblock">
+  <div class="cc-code__bar">
+    {title && <span class="cc-code__title">{title}</span>}
+    <button
+      type="button"
+      class="cc-code__copy"
+      data-cc-copy
+      data-code={rawCode}
+      aria-label={title ? `Copy the code from ${title}` : 'Copy this code'}
     >
-    {title && <span class="mono cc-codeblock-title">{title}</span>}
-    <button type="button" class="mono cc-codeblock-copy" data-cc-copy data-code={rawCode}>
       <svg
         aria-hidden="true"
-        width="14"
-        height="14"
+        width="15"
+        height="15"
         viewBox="0 0 24 24"
         fill="none"
         stroke="currentColor"
         stroke-width="1.75"
         stroke-linecap="round"
+        stroke-linejoin="round"
       >
         <rect x="9" y="9" width="11" height="11" rx="2"></rect>
         <path d="M5 15V6a2 2 0 0 1 2-2h9"></path>
       </svg>
-      <span data-cc-copy-label>copy</span>
+      <span class="cc-code__copy-label" data-cc-copy-label>Copy</span>
     </button>
   </div>
   <pre
-    class="cc-codeblock-body mono"
-    tabindex="0"><code>{
-    lines.map((line, i) => {
-      const n = i + 1;
-      const annotation = annotations[n];
-      return (
-        <span class:list={['cc-codeblock-line', { 'cc-codeblock-line--hl': highlighted.has(n) }]}>
-          <span class="cc-codeblock-gutter" aria-hidden="true">
-            {n}
-          </span>
-          <span class="cc-codeblock-code" set:html={line.html} />
-          {annotation && (
-            <span class="cc-codeblock-annotation" aria-hidden="true">
-              {' '}
-              ← {annotation}
-            </span>
-          )}
-        </span>
-      );
-    })
-  }</code></pre>
-</div>
+    class="cc-code__body"
+    tabindex="0"
+    style={`--cc-code-gutter: ${gutterWidth}`}><code set:html={bodyHtml} /></pre>
+</figure>
 
 <style>
-  .cc-codeblock {
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-3);
-    background: var(--color-bg-1);
+  .cc-code {
+    /* Same rhythm rule as Transcript: the component's own scoped margin is
+       the one that wins, so it has to be the right one. */
+    margin-block: var(--cc-space-7);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-lg);
+    background: var(--cc-code-bg);
     overflow: hidden;
   }
 
-  .cc-codeblock-bar {
+  .cc-code__bar {
     display: flex;
     align-items: center;
-    gap: var(--space-2);
-    height: 36px;
-    padding: 0 var(--space-3);
-    border-bottom: 1px solid var(--color-line);
-    color: var(--color-ink-muted);
-    font-size: var(--text-12);
+    gap: var(--cc-space-3);
+    min-height: var(--cc-tap);
+    padding: 0 var(--cc-space-2) 0 var(--cc-space-5);
+    border-bottom: 1px solid var(--cc-line);
+    /* Same sunken ground as the body: one calm surface with a hairline
+       across it. A raised bar would vanish against a raised container —
+       an OSTabs panel, a card — and make the block look like a stray
+       highlighted row. */
+    background: var(--cc-code-bg);
   }
 
-  .cc-codeblock-dots {
-    display: inline-flex;
-    gap: 5px;
+  .cc-code__title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--cc-font-mono);
+    font-size: var(--cc-text-micro);
+    font-variant-ligatures: none;
+    color: var(--cc-ink-muted);
   }
 
-  .cc-codeblock-dots span {
-    width: 8px;
-    height: 8px;
-    border-radius: 999px;
-    background: var(--color-bg-3);
-  }
-
-  .cc-codeblock-title {
-    color: var(--color-ink-muted);
-  }
-
-  .cc-codeblock-copy {
+  .cc-code__copy {
+    flex: none;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 6px;
     margin-left: auto;
-    height: 28px;
+    min-width: var(--cc-tap);
+    min-height: var(--cc-tap);
     padding: 0 10px;
-    border: 1px solid transparent;
-    border-radius: var(--radius-1);
+    border: 0;
+    border-radius: var(--cc-radius-sm);
     background: transparent;
-    color: var(--color-ink-muted);
-    font-size: var(--text-12);
+    color: var(--cc-ink-muted);
+    font-family: var(--cc-font-sans);
+    font-size: var(--cc-text-micro);
     cursor: pointer;
   }
 
-  .cc-codeblock-copy:hover {
-    color: var(--color-ink);
-    background: var(--color-bg-3);
+  .cc-code__copy:hover {
+    color: var(--cc-ink);
   }
 
-  .cc-codeblock-copy[data-copied='true'] {
-    /* --color-ink, not --color-success: the success token fails WCAG 2.2
-       AA 4.5:1 as text against the light theme's card backgrounds
-       (measured ~3.9-4.2:1) — see this plan's Handoff notes. The "copied"
-       text change is itself sufficient confirmation. */
-    color: var(--color-ink);
-    background: var(--color-bg-3);
+  .cc-code__copy[data-copied='true'] {
+    /* The label change is the primary confirmation — never colour alone. */
+    color: var(--cc-ink);
   }
 
-  .cc-codeblock-body {
+  .cc-code__copy-label {
+    display: none;
+  }
+
+  /* KILN §8.2/§8.11.3: never wraps; the block scrolls inside its own box.
+     The four edge gradients are the pure-CSS scroll shadow (see
+     Transcript.astro for the mechanism). */
+  .cc-code__body {
     margin: 0;
-    padding: var(--space-4) 0;
+    padding: var(--cc-space-5) 0;
     overflow-x: auto;
-    font-size: var(--text-13);
-    line-height: 1.6;
+    overscroll-behavior-x: contain;
+    background-color: var(--cc-code-bg);
+    /* Covers are opaque across their outer 22px and only fade over the
+       inner 18px, so a cover fully hides its shade when the two coincide
+       (content not scrollable, or scrolled to that end) instead of
+       half-cancelling it. */
+    background-image:
+      linear-gradient(to right, var(--cc-code-bg) 55%, transparent),
+      linear-gradient(to left, var(--cc-code-bg) 55%, transparent),
+      linear-gradient(to right, var(--cc-line-strong), transparent),
+      linear-gradient(to left, var(--cc-line-strong), transparent);
+    background-position:
+      left center,
+      right center,
+      left center,
+      right center;
+    background-size:
+      40px 100%,
+      40px 100%,
+      18px 100%,
+      18px 100%;
+    background-repeat: no-repeat;
+    background-attachment: local, local, scroll, scroll;
+    font-family: var(--cc-font-mono);
+    font-size: 0.8125rem;
+    line-height: var(--cc-leading-code);
+    tab-size: 2;
+    font-variant-ligatures: none;
+    white-space: pre;
+    scrollbar-width: thin;
+    scrollbar-color: var(--cc-line-strong) transparent;
   }
 
-  .cc-codeblock-body code {
+  .cc-code__body:focus-visible {
+    outline: var(--cc-focus-width) solid var(--cc-accent);
+    outline-offset: calc(var(--cc-focus-offset) * -1);
+  }
+
+  .cc-code__body code {
     display: block;
+    width: max-content;
+    min-width: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    font: inherit;
   }
 
-  .cc-codeblock-line {
+  /* Defensive reset (KILN §8.11.2): prose typography must not reach in.
+     `font-style`/`font-weight` are deliberately NOT reset — Shiki sets them
+     per token below. */
+  .cc-code__body :global(span) {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+    letter-spacing: inherit;
+  }
+
+  /* Dual-theme Shiki colours.
+     `shiki.css` only paints tokens under a `.astro-code` ancestor, and this
+     component deliberately discards Shiki's own `<pre class="astro-code">`
+     wrapper (it re-emits each `<span class="line">`'s inner HTML inside its
+     own chrome), so the two custom properties Shiki leaves on every token
+     have to be selected here or the code renders unhighlighted. Same
+     two-block theme pattern as tokens.css. */
+  .cc-code__body :global(.cc-code__src),
+  .cc-code__body :global(.cc-code__src span) {
+    color: var(--shiki-light);
+    background-color: transparent;
+    font-style: var(--shiki-light-font-style, normal);
+    font-weight: var(--shiki-light-font-weight, normal);
+    text-decoration: var(--shiki-light-text-decoration, none);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :global(:root:not([data-theme='light'])) .cc-code__body :global(.cc-code__src),
+    :global(:root:not([data-theme='light'])) .cc-code__body :global(.cc-code__src span) {
+      color: var(--shiki-dark);
+      font-style: var(--shiki-dark-font-style, normal);
+      font-weight: var(--shiki-dark-font-weight, normal);
+      text-decoration: var(--shiki-dark-text-decoration, none);
+    }
+  }
+
+  :global(:root[data-theme='dark']) .cc-code__body :global(.cc-code__src),
+  :global(:root[data-theme='dark']) .cc-code__body :global(.cc-code__src span) {
+    color: var(--shiki-dark);
+    font-style: var(--shiki-dark-font-style, normal);
+    font-weight: var(--shiki-dark-font-weight, normal);
+    text-decoration: var(--shiki-dark-text-decoration, none);
+  }
+
+  .cc-code__body :global(.cc-code__line) {
     display: block;
-    padding: 0 var(--space-4);
+    padding-inline: var(--cc-space-5);
   }
 
-  .cc-codeblock-line--hl {
-    background: var(--color-bg-3);
-    box-shadow: inset 2px 0 0 var(--color-accent);
+  /* The highlight reaches the full scroll width and is marked by a clay
+     rule as well as a wash, so emphasis is not carried by colour alone. */
+  .cc-code__body :global(.cc-code__line--hl) {
+    background: var(--cc-accent-wash);
+    box-shadow: inset 2px 0 0 var(--cc-accent);
   }
 
-  .cc-codeblock-gutter {
+  .cc-code__body :global(.cc-code__n) {
     display: inline-block;
-    width: 2em;
-    margin-right: var(--space-3);
-    color: var(--color-ink-muted);
+    width: var(--cc-code-gutter, 2ch);
+    margin-right: var(--cc-space-4);
     text-align: right;
     user-select: none;
+    color: var(--cc-ink-faint);
   }
 
-  .cc-codeblock-annotation {
-    color: var(--color-accent-text);
+  .cc-code__body :global(.cc-code__note) {
+    /* 13px clay on the highlighted row's accent wash is 4.11:1 with
+       `--cc-accent`; the annotation is text, so it takes the text clay. */
+    color: var(--cc-accent-text);
+  }
+
+  @media (min-width: 560px) {
+    .cc-code__copy-label {
+      display: inline;
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-code__copy {
+      transition: color var(--cc-dur-fast) var(--cc-ease);
+    }
   }
 </style>
 
 <script>
   // Copy the raw code (data-code, already stripped of gutter/annotation
   // chrome by codeblock.ts) — never the rendered line's decorated markup.
+  // Shared contract with Transcript.astro: `data-cc-copy-bound` stops the
+  // second hoisted script from double-binding when a page has both.
   const buttons = document.querySelectorAll<HTMLButtonElement>('[data-cc-copy]');
 
   for (const button of buttons) {
+    if (button.dataset.ccCopyBound) continue;
+    button.dataset.ccCopyBound = '1';
     const label = button.querySelector<HTMLElement>('[data-cc-copy-label]');
     button.addEventListener('click', () => {
       const code = button.dataset.code ?? '';
@@ -221,9 +337,9 @@ const rawCode = joinRawCode(lines);
   }
 
   function showCopied(button: HTMLButtonElement, label: HTMLElement | null) {
-    const original = label?.textContent ?? 'copy';
+    const original = label?.textContent ?? 'Copy';
     button.dataset.copied = 'true';
-    if (label) label.textContent = 'copied';
+    if (label) label.textContent = 'Copied';
     window.setTimeout(() => {
       delete button.dataset.copied;
       if (label) label.textContent = original;

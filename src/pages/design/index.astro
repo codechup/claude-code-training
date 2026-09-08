@@ -1,37 +1,279 @@
 ---
-// D033/D034: `/design` is a living component library — tokens, canvas
-// exports, principles, a11y rules, plus working components — and it is
-// EN-only, outside the locale prefix (route is /design/, not /en/design/).
-//
-// P05 owns src/styles/**, public/theme-init.js, ThemeToggle.astro and
-// src/pages/design/**. The MDX component vocabulary (Callout, CodeBlock,
-// OSTabs, Transcript, Sources, WhenNotToUse, Lab from P07; Quiz,
-// DecisionTree, Helpful, Giscus, YouTubeCard from P08) is mounted here by
-// P12 (the M0 release): P07 shipped a ready-made working demo of its seven
-// as src/components/mdx/design-entries/Gallery.mdx, and P08 handed over the
-// ready-to-paste snippet for its five in that plan's Handoff notes. Both
-// are live below — nothing on this page is faked or pending any more.
-// `src/components/brand/{Sigil,Lockup}.astro` are outside this plan's
-// owned_paths (not listed in plans/P05-tokens-theme.md frontmatter even
-// though docs/design/CANVAS.md §6 describes P05 building them) — the sigil
-// below is inlined on this page only, from the exact geometry in
-// docs/design/canvas-src/build.mjs's `sigil()`/`lockup()`, as a stopgap;
-// see this plan's Handoff notes / open_questions for the follow-up that
-// should extract it into a reusable component.
-import Base from '../../layouts/Base.astro';
-import ThemeToggle from '../../components/shell/ThemeToggle.astro';
-import Gallery from '../../components/mdx/design-entries/Gallery.mdx';
-import DecisionTree from '../../components/mdx/DecisionTree.astro';
-import Giscus from '../../components/mdx/Giscus.astro';
-import Helpful from '../../components/mdx/Helpful.astro';
+/**
+ * `/design` — the living documentation of **Kiln** (D033/D034).
+ *
+ * EN-only and outside the locale prefix: the route is `/design/`, not
+ * `/en/design/`, and `Design.astro` gives it the site chrome, no hreflang
+ * alternates and no OG card.
+ *
+ * Rules this page holds itself to, because it is the page that documents
+ * them:
+ *
+ *  - **Nothing is redrawn here.** The brand comes from
+ *    `components/brand/{Mark,Lockup}.astro`, every glyph from
+ *    `components/ui/Icon.astro`, every component from `components/mdx/**`.
+ *    The one exception is the *retired* section, which necessarily draws the
+ *    pre-Kiln sigil (it exists nowhere else any more) and labels it as dead.
+ *  - **No colour value is typed on this page.** The swatch grid and the
+ *    contrast table read their numbers live from
+ *    `getComputedStyle(document.documentElement)` in the hoisted module at
+ *    the bottom, and recompute on every theme change. The arrays below carry
+ *    token *names* and roles only, so the page can never drift from
+ *    `tokens.css`.
+ *  - The hoisted `<script>` is bundled by Astro into an external module —
+ *    there is no inline script body anywhere (CSP, `check-no-inline-script`).
+ */
+import Design from '../../layouts/Design.astro';
+import Mark from '../../components/brand/Mark.astro';
+import Lockup from '../../components/brand/Lockup.astro';
+import Icon, { type IconName } from '../../components/ui/Icon.astro';
+import Callout from '../../components/mdx/Callout.astro';
+import WhenNotToUse from '../../components/mdx/WhenNotToUse.astro';
+import Transcript from '../../components/mdx/Transcript.astro';
+import Sources from '../../components/mdx/Sources.astro';
+import Lab from '../../components/mdx/Lab.astro';
 import Quiz from '../../components/mdx/Quiz.astro';
+import DecisionTree from '../../components/mdx/DecisionTree.astro';
+import Helpful from '../../components/mdx/Helpful.astro';
 import YouTubeCard from '../../components/mdx/YouTubeCard.astro';
+import Giscus from '../../components/mdx/Giscus.astro';
+import Gallery from '../../components/mdx/design-entries/Gallery.mdx';
+import { sampleSources } from '../../components/mdx/design-entries/sample-sources.ts';
 
-// -- sigil: 24-unit grid, cell 6, gap 2, margin 1, gold cell top-right.
-// Verbatim geometry from docs/design/canvas-src/build.mjs `sigil()`, with
-// `currentColor` for the ink cells (instead of a per-theme literal) so one
-// markup works in both themes without duplication.
-const SIGIL_CELLS: [number, number][] = [
+const sections = [
+  ['principles', 'Principles'],
+  ['brand', 'Brand'],
+  ['colour', 'Colour'],
+  ['type', 'Type'],
+  ['space', 'Space & shape'],
+  ['elevation', 'Elevation'],
+  ['motion', 'Motion'],
+  ['focus', 'Focus & targets'],
+  ['icons', 'Icons'],
+  ['terminal', 'Terminal & code'],
+  ['components', 'Components'],
+  ['retired', 'Retired'],
+] as const;
+
+const principles = [
+  ['The prose is the product.', 'Chrome recedes: hairlines over boxes, space over rules.'],
+  ['Terminals are dark, always.', 'A recording is an artefact of the course, not a paragraph.'],
+  ['One accent, spent carefully.', 'Clay marks the interactive and the current. Nothing else.'],
+  ['Warm neutrals only.', 'Every grey carries a little red-yellow. No blue-grey, either theme.'],
+  ['Mobile is the same page.', 'At 390 px every affordance survives, none is demoted.'],
+  ['Motion explains.', '120–320 ms, ease-out, and nothing at all under reduced motion.'],
+  ['Contrast is a floor.', 'AA minimum everywhere; body text aims past 7:1.'],
+] as const;
+
+/** Token NAMES and roles only — values are read live (see the module below). */
+type Swatch = { name: string; role: string };
+
+const rampNeutral: Swatch[] = [
+  { name: '--cc-paper', role: 'page ground' },
+  { name: '--cc-paper-raised', role: 'cards, panels, selected tab' },
+  { name: '--cc-paper-sunken', role: 'wells, code ground (light)' },
+  { name: '--cc-code-bg', role: 'code block, either theme' },
+  { name: '--cc-line', role: 'hairlines' },
+  { name: '--cc-line-strong', role: 'inputs, ghost buttons' },
+  { name: '--cc-ink', role: 'primary text' },
+  { name: '--cc-ink-muted', role: 'secondary text' },
+  { name: '--cc-ink-faint', role: 'micro labels beside another signal' },
+];
+
+const rampClay: Swatch[] = [
+  { name: '--cc-accent', role: 'links, current, brand tile' },
+  { name: '--cc-accent-hover', role: 'hover / active' },
+  { name: '--cc-accent-wash', role: 'tinted surface' },
+  { name: '--cc-accent-line', role: 'tinted border' },
+  { name: '--cc-on-accent', role: 'text on clay' },
+];
+
+const rampSemantic: Swatch[] = [
+  { name: '--cc-ok', role: 'verified, passed, tip' },
+  { name: '--cc-ok-wash', role: 'tip surface' },
+  { name: '--cc-ok-line', role: 'tip border' },
+  { name: '--cc-warn', role: 'changed / deprecated' },
+  { name: '--cc-warn-wash', role: 'changed surface' },
+  { name: '--cc-warn-line', role: 'changed border' },
+  { name: '--cc-danger', role: 'anti-pattern, destructive' },
+  { name: '--cc-danger-wash', role: 'warning surface' },
+  { name: '--cc-danger-line', role: 'warning border' },
+  { name: '--cc-info', role: 'note' },
+  { name: '--cc-info-wash', role: 'note surface' },
+  { name: '--cc-info-line', role: 'note border' },
+];
+
+const rampTerminal: Swatch[] = [
+  { name: '--cc-term-bg', role: 'terminal ground' },
+  { name: '--cc-term-bar', role: 'title bar' },
+  { name: '--cc-term-line', role: 'terminal hairline' },
+  { name: '--cc-term-fg', role: 'plain output' },
+  { name: '--cc-term-dim', role: 'wrapped continuation' },
+  { name: '--cc-term-prompt', role: 'prompt sigil, caret' },
+  { name: '--cc-term-tool', role: 'tool line (•)' },
+  { name: '--cc-term-ok', role: 'success (✓)' },
+  { name: '--cc-term-err', role: 'failure (✗, Error)' },
+  { name: '--cc-term-path', role: 'paths and file names' },
+];
+
+const rampLevel: Swatch[] = [
+  { name: '--cc-level-1', role: 'L1 Beginner' },
+  { name: '--cc-level-2', role: 'L2 Intermediate' },
+  { name: '--cc-level-3', role: 'L3 Advanced' },
+  { name: '--cc-level-4', role: 'L4 Master' },
+];
+
+/**
+ * Contrast pairs, computed client-side from the same computed properties as
+ * the swatches. The last row is deliberately a *failing* one: `ink-faint` on
+ * paper does not clear 4.5:1, which is exactly why it is reserved for micro
+ * labels that sit beside another signal and never for running text.
+ */
+const contrastPairs = [
+  { label: 'ink on paper', fg: '--cc-ink', bg: '--cc-paper', use: 'body prose' },
+  { label: 'ink on paper-raised', fg: '--cc-ink', bg: '--cc-paper-raised', use: 'card text' },
+  { label: 'ink-muted on paper', fg: '--cc-ink-muted', bg: '--cc-paper', use: 'decks, meta' },
+  { label: 'accent on paper', fg: '--cc-accent', bg: '--cc-paper', use: 'links' },
+  { label: 'on-accent on accent', fg: '--cc-on-accent', bg: '--cc-accent', use: 'primary button' },
+  { label: 'ok on ok-wash', fg: '--cc-ok', bg: '--cc-ok-wash', use: 'tip callout' },
+  { label: 'warn on warn-wash', fg: '--cc-warn', bg: '--cc-warn-wash', use: 'changed callout' },
+  {
+    label: 'danger on danger-wash',
+    fg: '--cc-danger',
+    bg: '--cc-danger-wash',
+    use: 'warning callout',
+  },
+  { label: 'info on info-wash', fg: '--cc-info', bg: '--cc-info-wash', use: 'note callout' },
+  { label: 'term-fg on term-bg', fg: '--cc-term-fg', bg: '--cc-term-bg', use: 'terminal output' },
+  { label: 'term-dim on term-bg', fg: '--cc-term-dim', bg: '--cc-term-bg', use: 'continuation' },
+  {
+    label: 'ink-faint on paper',
+    fg: '--cc-ink-faint',
+    bg: '--cc-paper',
+    use: 'micro labels only — never running text',
+  },
+] as const;
+
+const typeScale = [
+  { token: 'display', spec: 'Fraunces 600 · −0.02em · 1.1', sample: 'Learn Claude Code' },
+  { token: 'h1', spec: 'Fraunces 600 · −0.018em · 1.1', sample: 'Hooks that fail closed' },
+  { token: 'h2', spec: 'Fraunces 600 · −0.012em · 1.1', sample: 'What a PreToolUse hook sees' },
+  { token: 'h3', spec: 'Inter 650 · −0.005em · 1.3', sample: 'Reading the payload' },
+  {
+    token: 'lead',
+    spec: 'Inter 400 · 1.7',
+    sample: 'A deck sits under the title and sets up the lesson.',
+  },
+  {
+    token: 'body',
+    spec: 'Inter 400 · 1.7 · 68ch',
+    sample:
+      'Running text. The measure is capped so a line never outruns the eye, and the leading is generous enough to read a screen of prose without losing the row.',
+  },
+  { token: 'small', spec: 'Inter 450 · 0.005em · 1.55', sample: 'Meta, captions, verified dates.' },
+  { token: 'micro', spec: 'Inter 600 · 0.06em · uppercase', sample: 'Eyebrow · chip · label' },
+] as const;
+
+/** ı İ ş ğ ç ö ü in every face and weight the site actually ships. */
+const turkish = 'Değişiklik: ışık, güneş, hüzün — ÇŞĞİÖÜ çşğıöü.';
+
+const spaceSteps = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const;
+const spacePx: Record<number, string> = {
+  1: '4',
+  2: '8',
+  3: '12',
+  4: '16',
+  5: '20',
+  6: '24',
+  7: '32',
+  8: '40',
+  9: '48',
+  10: '64',
+  11: '80',
+  12: '96',
+};
+const radii = ['sm', 'md', 'lg', 'xl', 'pill'] as const;
+const radiiPx: Record<string, string> = { sm: '6', md: '10', lg: '14', xl: '20', pill: '999' };
+
+/**
+ * The full set from `Icon.astro` (KILN §6). Typed as `IconName[]`, so if a
+ * glyph is renamed there this page fails `astro check` instead of quietly
+ * documenting a name that no longer exists.
+ */
+const icons: IconName[] = [
+  'search',
+  'menu',
+  'close',
+  'sun',
+  'moon',
+  'system',
+  'language',
+  'copy',
+  'check',
+  'chevron-right',
+  'chevron-down',
+  'arrow-right',
+  'arrow-up-right',
+  'external',
+  'terminal',
+  'book',
+  'clock',
+  'gauge',
+  'lab',
+  'quiz',
+  'hook',
+  'skill',
+  'agent',
+  'mcp',
+  'plugin',
+  'shield',
+  'sparkle',
+  'github',
+  'rss',
+  'link',
+  'alert',
+  'info',
+  'check-circle',
+  'x-circle',
+  'play',
+  'list',
+];
+
+const retired = [
+  {
+    was: '3×3 grid sigil',
+    now: 'Prompt mark — chevron + cursor',
+    why: 'The grid said nothing about the subject. The new mark is a prompt waiting for input.',
+  },
+  {
+    was: 'Letter-spaced CLAUDE CODE ACADEMY',
+    now: 'Fraunces wordmark, sentence case',
+    why: 'Tracked-out caps read as a badge, not a name, and broke at 390 px.',
+  },
+  {
+    was: '// monospace eyebrows',
+    now: 'Inter micro, uppercase',
+    why: 'Monospace is for code, paths, commands and terminal output — nothing else.',
+  },
+  {
+    was: 'Three-segment theme control',
+    now: 'One cycling icon button',
+    why: 'Three targets for one decision, in a 56 px header that also carries search.',
+  },
+  {
+    was: 'Blue-slate dark theme',
+    now: 'Warm neutral in both themes',
+    why: 'Light was warm paper and dark was cold slate; the site changed identity at night.',
+  },
+  {
+    was: 'Transcripts as wrapped prose',
+    now: 'A real terminal surface',
+    why: 'Source indentation leaked into the pre and a 20-line recording rendered 2000 px tall.',
+  },
+] as const;
+
+/** The pre-Kiln sigil, drawn once here so the retired section can show it. */
+const oldSigilCells: [number, number][] = [
   [1, 1],
   [9, 1],
   [1, 9],
@@ -41,465 +283,570 @@ const SIGIL_CELLS: [number, number][] = [
   [9, 17],
   [17, 17],
 ];
-
-function sigil(size: number, opts: { mono?: boolean } = {}) {
-  const cells = SIGIL_CELLS.map(
-    ([x, y]) => `<rect x="${x}" y="${y}" width="6" height="6" rx="1"/>`,
-  ).join('');
-  const gold = opts.mono
-    ? `<rect x="17.75" y="1.75" width="4.5" height="4.5" rx="0.75" fill="none" stroke="currentColor" stroke-width="1.5"/>`
-    : `<rect x="17" y="1" width="6" height="6" rx="1" fill="var(--color-accent)"/>`;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="${size}" height="${size}" role="img" aria-label="CodeChup"><g fill="currentColor">${cells}</g>${gold}</svg>`;
-}
-
-// -- token dump metadata: names + roles only. VALUES are never hand-typed
-// here — the swatch script below reads them live from
-// getComputedStyle(document.documentElement), so this list can never drift
-// from tokens.css (see this plan's non-goals).
-const colorTokens = [
-  { v: '--color-bg-0', role: 'page ground' },
-  { v: '--color-bg-1', role: 'code, terminal' },
-  { v: '--color-bg-2', role: 'cards' },
-  { v: '--color-bg-3', role: 'raised, chips' },
-  { v: '--color-ink', role: 'primary text' },
-  { v: '--color-ink-soft', role: 'secondary' },
-  { v: '--color-ink-muted', role: 'meta, placeholders' },
-  { v: '--color-line', role: 'hairlines' },
-  { v: '--color-line-strong', role: 'input borders, ghost buttons' },
-  { v: '--color-accent', role: 'primary CTA, sigil cell, progress' },
-  { v: '--color-accent-ink', role: 'text on accent' },
-  { v: '--color-accent-text', role: 'gold as text: annotations, links' },
-  { v: '--color-caret', role: 'prompt caret, "Changed"' },
-  { v: '--color-prompt', role: 'shell prompt glyph' },
-  { v: '--color-success', role: 'states, level badges' },
-  { v: '--color-warning', role: 'states, level badges' },
-  { v: '--color-danger', role: 'states, level badges' },
-  { v: '--color-info', role: 'states, level badges' },
-] as const;
-
-// -- contrast pairs: the exact six from docs/design/CANVAS.md §3 / §6 and
-// docs/design/canvas-src/build.mjs `pairs()`. Computed live, client-side,
-// from the SAME computed custom properties as the swatches above — never
-// a second, hand-typed copy of a hex value.
-const contrastPairs = [
-  { label: 'ink on bg-0', fg: '--color-ink', bg: '--color-bg-0' },
-  { label: 'ink-soft on bg-2', fg: '--color-ink-soft', bg: '--color-bg-2' },
-  { label: 'ink-muted on bg-2', fg: '--color-ink-muted', bg: '--color-bg-2' },
-  { label: 'accent-ink on accent', fg: '--color-accent-ink', bg: '--color-accent' },
-  { label: 'accent-text on bg-1', fg: '--color-accent-text', bg: '--color-bg-1' },
-  { label: 'caret on bg-0', fg: '--color-caret', bg: '--color-bg-0' },
-] as const;
-
-const toc = [
-  ['brand', 'Brand'],
-  ['tokens', 'Tokens'],
-  ['type', 'Type'],
-  ['space', 'Space'],
-  ['motion', 'Motion'],
-  ['components', 'Components'],
-  ['transcript', 'Transcript'],
-  ['a11y', 'Accessibility'],
-  ['canvas', 'Canvas'],
-  ['changelog', 'Changelog'],
-] as const;
-
-const turkishSample = 'Değişiklik: çşğıöü ÇŞĞİÖÜ — ışık, güneş, hüzün.';
 ---
 
-<Base
-  title="Design — CodeChup Claude Code Academy"
-  description="Design tokens, brand, type, motion, accessibility rules and the living component library for CodeChup Claude Code Academy, generated from the approved design canvas."
-  lang="en"
-  path="/design/"
+<Design
+  title="Kiln — design system"
+  description="Kiln is the design language of the CodeChup Claude Code Academy: warm paper, dark ink, one clay accent, and terminals that look like terminals. Live tokens, brand, type, icons and every component in its states."
 >
-  <div
-    class="mx-auto grid max-w-[1100px] grid-cols-1 gap-8 px-4 py-10 lg:grid-cols-[200px_minmax(0,1fr)] lg:gap-12 lg:px-8"
-  >
-    <aside
-      aria-label="On this page"
-      class="mono order-2 flex flex-col gap-1 self-start lg:sticky lg:top-6 lg:order-1"
-    >
-      <span class="eyebrow mb-2">/design</span>
-      {
-        toc.map(([id, label]) => (
-          <a
-            href={`#${id}`}
-            class="border-l py-1 pl-3 text-[13px]"
-            style="border-color: var(--color-line); color: var(--color-ink-muted);"
-          >
-            {label}
-          </a>
-        ))
-      }
-    </aside>
+  <div class="k-shell">
+    <nav class="k-nav" aria-label="Sections of this page">
+      <p class="eyebrow k-nav__title">Kiln</p>
+      <ul class="k-nav__list">
+        {
+          sections.map(([id, label]) => (
+            <li>
+              <a class="k-nav__link" href={`#${id}`} data-nav-link={id}>
+                {label}
+              </a>
+            </li>
+          ))
+        }
+      </ul>
+    </nav>
 
-    <main class="order-1 flex flex-col gap-16 lg:order-2">
-      <!-- ============================================================ -->
-      <header class="flex flex-col gap-3">
-        <div class="flex items-center justify-between gap-4">
-          <div
-            class="flex items-center gap-3"
-            style="color: var(--color-ink);"
-            set:html={sigil(32)}
-          />
-          <ThemeToggle />
-        </div>
-        <h1 class="mt-2">Design</h1>
-        <p class="mono text-[12px]" style="color: var(--color-ink-muted);">
-          design version 2026.09.1 · living page · EN only (D034)
+    <div class="k-main">
+      <header class="k-hero">
+        <p class="eyebrow">Living documentation · EN only</p>
+        <h1 class="cc-display k-hero__title">Kiln</h1>
+        <p class="cc-lead k-hero__lead">
+          Warm paper, dark ink, one clay accent, and terminals that actually look like terminals.
+          Everything below is rendered by the real components, with the real tokens, in whichever
+          theme you are reading in. If a screen disagrees with this page, the screen is wrong.
         </p>
-        <p
-          class="italic"
-          style="color: var(--color-ink-soft); font-size: var(--text-18); max-width: 56ch;"
-        >
-          If a screen disagrees with this page, the screen is wrong.
+        <p class="small soft k-hero__meta">
+          Normative source: <code>docs/design/KILN.md</code>. Tokens:{' '}
+          <code>src/styles/tokens.css</code>. Nothing on this page hard-codes a colour — the values
+          and ratios are read from the live stylesheet.
         </p>
       </header>
 
-      <!-- ============================================================ -->
-      <section id="brand" class="flex flex-col gap-4 scroll-mt-6">
-        <span class="eyebrow">Brand</span>
-        <h2>Sigil, lockup, voice</h2>
-        <div class="grid gap-6 sm:grid-cols-2">
-          <div class="card flex flex-col gap-4 p-5">
-            <span class="mono text-[12px]" style="color: var(--color-ink-muted);">Sigil</span>
-            <div class="flex flex-wrap items-end gap-6" style="color: var(--color-ink);">
-              {[16, 24, 32, 64].map((s) => <span set:html={sigil(s)} />)}
-            </div>
-            <p class="text-[13px]" style="color: var(--color-ink-soft); max-width: 60ch;">
-              Shared with the CodeChup family: 3×3 rounded cells on a 24-unit grid (cell 6, gap 2,
-              margin 1), one gold cell top-right. Never rotated, recoloured or moved. Minimum 16 px.
-            </p>
-            <div class="flex items-center gap-3" style="color: var(--color-ink);">
-              <span set:html={sigil(40, { mono: true })} />
-              <span class="mono text-[11px]" style="color: var(--color-ink-muted);"
-                >one-colour / mono variant</span
-              >
-            </div>
-          </div>
-          <div class="card flex flex-col gap-4 p-5">
-            <span class="mono text-[12px]" style="color: var(--color-ink-muted);">Lockup</span>
-            <div class="flex items-center gap-3" style="color: var(--color-ink);">
-              <span set:html={sigil(28)} />
-              <span
-                class="mono"
-                style="font-size: 14px; font-weight: 500; letter-spacing: 0.02em; color: var(--color-ink);"
-              >
-                codechup<span class="caret" style="margin-left: 2px;"></span>
-              </span>
-            </div>
-            <div
-              class="mono"
-              style="font-size: 11px; letter-spacing: var(--tracking-academy); text-transform: uppercase; color: var(--color-ink-soft); margin-left: 40px;"
-            >
-              claude code academy
-            </div>
-            <p class="text-[13px]" style="color: var(--color-ink-soft); max-width: 60ch;">
-              Wordmark is lowercase JetBrains Mono with the CodeChup signal-red caret; the academy
-              line is uppercase mono at 0.18em tracking. Clear space of one cell module on all
-              sides.
-            </p>
-          </div>
+      {/* ============================================================ */}
+      <section class="k-sec" id="principles">
+        <div class="k-sec__head">
+          <p class="eyebrow">01 · Principles</p>
+          <h2>Seven rules that settle most arguments.</h2>
         </div>
-        <p class="text-[13px]" style="color: var(--color-ink-muted); max-width: 70ch;">
-          Reusable <code class="mono">Sigil.astro</code>/<code class="mono">Lockup.astro</code> components
-          and the favicon update are tracked as a follow-up — <code class="mono"
-            >src/components/brand/**</code
-          > and
-          <code class="mono">public/favicon.svg</code> are outside this plan's <code class="mono"
-            >owned_paths</code
-          >
-          (see this plan's Handoff notes).
-        </p>
+        <ol class="k-principles">
+          {
+            principles.map(([title, body], i) => (
+              <li class="k-principle">
+                <span class="k-principle__n mono" aria-hidden="true">
+                  {String(i + 1).padStart(2, '0')}
+                </span>
+                <p class="k-principle__title">{title}</p>
+                <p class="k-principle__body small soft">{body}</p>
+              </li>
+            ))
+          }
+        </ol>
       </section>
 
-      <!-- ============================================================ -->
-      <section id="tokens" class="flex flex-col gap-4 scroll-mt-6">
-        <span class="eyebrow">Tokens · live from tokens.css</span>
-        <h2>Dark and light from one set.</h2>
-        <p class="text-[13px]" style="color: var(--color-ink-muted);">
-          Every value below is read from <code class="mono"
-            >getComputedStyle(document.documentElement)</code
-          > at view time — toggle the theme above and watch them change. Nothing on this page hand-copies
-          a hex value.
-        </p>
-        <div
-          class="grid gap-3"
-          style="grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));"
-          data-token-grid
-        >
-          {
-            colorTokens.map((t) => (
-              <div
-                class="swatch flex flex-col gap-1.5 rounded-[var(--radius-2)] border p-2.5"
-                style="border-color: var(--color-line);"
+      {/* ============================================================ */}
+      <section class="k-sec" id="brand">
+        <div class="k-sec__head">
+          <p class="eyebrow">02 · Brand</p>
+          <h2>A prompt waiting for input.</h2>
+          <p class="cc-lead">
+            A chevron and a cursor block on a clay tile. It never rotates, never gains a gradient,
+            never changes hue. Minimum size 20 px; clear space equals the tile's corner radius on
+            all sides.
+          </p>
+        </div>
+
+        <div class="k-cols">
+          <figure class="k-panel k-figure">
+            <figcaption class="k-cap">Mark · tile · 20 / 32 / 48 / 64 px</figcaption>
+            <div class="k-row k-row--baseline">
+              <Mark size={20} />
+              <Mark size={32} />
+              <Mark size={48} />
+              <Mark size={64} />
+            </div>
+          </figure>
+
+          <figure class="k-panel k-figure">
+            <figcaption class="k-cap">One-colour variant · inherits currentColor</figcaption>
+            <div class="k-row k-row--baseline">
+              <span class="k-mono-mark"><Mark size={32} variant="plain" /></span>
+              <span class="k-mono-mark k-mono-mark--accent"><Mark size={48} variant="plain" /></span
               >
-                <div
-                  class="h-11 rounded-[var(--radius-1)] border"
-                  style={`background: var(${t.v}); border-color: var(--color-line);`}
-                />
-                <span class="mono text-[11px]" style="color: var(--color-ink-soft);">
-                  {t.v}
+              <span class="k-mono-mark k-mono-mark--invert"><Mark size={48} variant="plain" /></span
+              >
+            </div>
+            <p class="small soft k-figure__note">
+              For dense contexts — a rail row, a chip, a favicon at 16 px. It takes the colour of
+              whatever contains it, so it needs no theme branch.
+            </p>
+          </figure>
+        </div>
+
+        <div class="k-cols">
+          <figure class="k-panel k-figure">
+            <figcaption class="k-cap">Clear space · one corner radius on every side</figcaption>
+            <div class="k-clearspace">
+              <div class="k-clearspace__box"><Mark size={64} /></div>
+            </div>
+            <p class="small soft k-figure__note">
+              The dashed guide is the minimum keep-out. At 64 px the tile radius is 20 px, so the
+              keep-out is 20 px; the ratio holds at every size because the radius scales with the
+              viewBox.
+            </p>
+          </figure>
+
+          <figure class="k-panel k-figure">
+            <figcaption class="k-cap">
+              Lockup · sm / md / lg, and with the publisher line
+            </figcaption>
+            <div class="k-stack k-stack--start">
+              <Lockup lang="en" size="sm" />
+              <Lockup lang="en" size="md" />
+              <Lockup lang="en" size="lg" />
+              <Lockup lang="en" size="lg" publisher />
+            </div>
+            <p class="small soft k-figure__note">
+              Mark and wordmark are baseline-aligned with a 12 px gap. <em>by CodeChup</em> appears in
+              the footer and the mobile drawer — never in the desktop header, which carries the lockup
+              alone. Below 640 px the header shows the mark by itself.
+            </p>
+          </figure>
+        </div>
+      </section>
+
+      {/* ============================================================ */}
+      <section class="k-sec" id="colour">
+        <div class="k-sec__head">
+          <p class="eyebrow">03 · Colour</p>
+          <h2>Warm neutrals, one clay, four semantics.</h2>
+          <p class="cc-lead">
+            Every value below is read from the live stylesheet as you look at it, so this page
+            cannot drift from <code>tokens.css</code>. Switch the theme in the header and the
+            swatches and the ratios recompute.
+          </p>
+        </div>
+
+        {
+          [
+            { title: 'Neutral ramp — paper to ink', items: rampNeutral },
+            { title: 'Clay accent', items: rampClay },
+            { title: 'Semantic', items: rampSemantic },
+            { title: 'Terminal — identical in both themes', items: rampTerminal },
+            { title: 'Level hues — wayfinding only', items: rampLevel },
+          ].map((group) => (
+            <div class="k-group">
+              <h3 class="k-group__title">{group.title}</h3>
+              <ul class="k-swatches">
+                {group.items.map((sw) => (
+                  <li class="k-swatch">
+                    <span
+                      class="k-swatch__chip"
+                      style={`background: var(${sw.name});`}
+                      aria-hidden="true"
+                    />
+                    <span class="k-swatch__text">
+                      <code class="k-swatch__name">{sw.name}</code>
+                      <span class="k-swatch__role small soft">{sw.role}</span>
+                      <span class="k-swatch__value mono" data-token-value={sw.name}>
+                        …
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
+        }
+
+        <div class="k-group">
+          <h3 class="k-group__title">Contrast, computed live</h3>
+          <div class="k-scroller" tabindex="0" role="region" aria-label="Contrast ratio table">
+            <table class="k-table">
+              <thead>
+                <tr>
+                  <th scope="col">Pair</th>
+                  <th scope="col">Ratio</th>
+                  <th scope="col">Verdict</th>
+                  <th scope="col">Where it is used</th>
+                </tr>
+              </thead>
+              <tbody>
+                {
+                  contrastPairs.map((p) => (
+                    <tr data-contrast-row data-fg={p.fg} data-bg={p.bg}>
+                      <th scope="row" class="mono k-table__pair">
+                        {p.label}
+                      </th>
+                      <td class="mono" data-contrast-ratio>
+                        …
+                      </td>
+                      <td>
+                        <span class="k-verdict">
+                          <span class="k-verdict__icon" data-contrast-icon aria-hidden="true" />
+                          <span data-contrast-result>…</span>
+                        </span>
+                      </td>
+                      <td class="small soft">{p.use}</td>
+                    </tr>
+                  ))
+                }
+              </tbody>
+            </table>
+          </div>
+          <p class="small soft">
+            AA is 4.5:1 for normal text and 3:1 for large text and UI boundaries. The verdict is
+            written as words and reinforced with a glyph, never carried by the colour of a dot.{' '}
+            <strong class="k-strong">ink-faint fails on purpose</strong>: it is a micro label that
+            always sits beside another signal, and it is never used for running text.
+          </p>
+        </div>
+      </section>
+
+      {/* ============================================================ */}
+      <section class="k-sec" id="type">
+        <div class="k-sec__head">
+          <p class="eyebrow">04 · Type</p>
+          <h2>Fraunces for the voice, Inter for the work.</h2>
+          <p class="cc-lead">
+            Fraunces is display-only — hero, h1, h2, wordmark, level names — and never sets body
+            copy. Inter carries prose and UI from h3 down. JetBrains Mono is code, paths, commands
+            and terminal output, and nothing else.
+          </p>
+        </div>
+
+        <div class="k-panel k-typescale">
+          {
+            typeScale.map((step) => (
+              <div class="k-typerow">
+                <span class="k-typerow__meta">
+                  <code class="k-typerow__token">--cc-text-{step.token}</code>
+                  <span class="k-typerow__spec small soft">{step.spec}</span>
                 </span>
-                <span
-                  class="mono text-[11px]"
-                  data-token-value={t.v}
-                  style="color: var(--color-ink-muted);"
-                >
-                  …
-                </span>
-                <span class="text-[11px]" style="color: var(--color-ink-muted);">
-                  {t.role}
-                </span>
+                <p class={`k-typerow__sample k-t-${step.token}`}>{step.sample}</p>
               </div>
             ))
           }
         </div>
 
-        <div
-          class="mt-2 overflow-x-auto rounded-[var(--radius-3)] border"
-          style="border-color: var(--color-line);"
-          tabindex="0"
-          role="region"
-          aria-label="Contrast matrix table (scrolls horizontally on narrow screens)"
-        >
-          <table class="mono w-full min-w-[480px] border-collapse text-[13px]">
-            <thead>
-              <tr style="border-bottom: 1px solid var(--color-line);">
-                <th class="p-3 text-left font-normal" style="color: var(--color-ink-muted);"
-                  >pair</th
-                >
-                <th class="p-3 text-left font-normal" style="color: var(--color-ink-muted);"
-                  >ratio</th
-                >
-                <th class="p-3 text-left font-normal" style="color: var(--color-ink-muted);"
-                  >result</th
-                >
-              </tr>
-            </thead>
-            <tbody data-contrast-body>
-              {
-                contrastPairs.map((p) => (
-                  <tr
-                    style="border-top: 1px solid var(--color-line);"
-                    data-contrast-row
-                    data-fg={p.fg}
-                    data-bg={p.bg}
-                  >
-                    <td class="p-3">{p.label}</td>
-                    <td class="p-3" data-contrast-ratio>
-                      …
-                    </td>
-                    <td class="p-3">
-                      <span class="inline-flex items-center gap-2">
-                        <span
-                          aria-hidden="true"
-                          class="inline-block h-2 w-2 rounded-full"
-                          data-contrast-dot
-                        />
-                        <span style="color: var(--color-ink);" data-contrast-result>
-                          …
-                        </span>
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              }
-            </tbody>
-          </table>
+        <div class="k-panel">
+          <p class="k-cap">Turkish, in every face and weight the site ships</p>
+          <div class="k-stack k-stack--start k-stack--tight" lang="tr">
+            <p class="k-t-h1 k-tr">{turkish}</p>
+            <p class="k-t-h2 k-tr">{turkish}</p>
+            <p class="k-t-h3 k-tr">{turkish}</p>
+            <p class="k-tr">{turkish}</p>
+            <p class="k-tr k-tr--strong">{turkish}</p>
+            <p class="k-tr mono">{turkish}</p>
+            <p class="k-tr small">{turkish}</p>
+          </div>
+          <p class="small soft k-figure__note">
+            Fraunces, Inter and JetBrains Mono are self-hosted with the latin{' '}
+            <strong class="k-strong">and latin-ext</strong> subsets, so ı İ ş ğ ç ö ü render in every
+            face and weight instead of falling back to tofu. Turkish pages preload latin-ext; English
+            pages link it and load it only if a Turkish word appears.
+          </p>
         </div>
-        <p class="text-[12px]" style="color: var(--color-ink-muted);">
-          WCAG 2.2 AA (D036): ≥ 4.5∶1 for normal text, ≥ 3∶1 for large text/UI. Every pair used as
-          normal body/UI text (ink, ink-soft, ink-muted, accent-ink, accent-text) passes ≥ 4.5∶1 in
-          both themes; <span class="mono">caret</span> is a large glyph/UI marker (the terminal caret,
-          callout border), so its ≥ 3∶1 large-text/UI floor is the applicable one — see this plan's PR
-          for the pasted, reviewer-checkable numbers.
+      </section>
+
+      {/* ============================================================ */}
+      <section class="k-sec" id="space">
+        <div class="k-sec__head">
+          <p class="eyebrow">05 · Space &amp; shape</p>
+          <h2>A 4 px base and five radii.</h2>
+        </div>
+
+        <div class="k-panel">
+          <p class="k-cap">Space ramp · 4 px base</p>
+          <ul class="k-spaces">
+            {
+              spaceSteps.map((n) => (
+                <li class="k-space">
+                  <code class="k-space__name">--cc-space-{n}</code>
+                  <span class="k-space__px small soft">{spacePx[n]}px</span>
+                  <span
+                    class="k-space__bar"
+                    style={`width: var(--cc-space-${n});`}
+                    aria-hidden="true"
+                  />
+                </li>
+              ))
+            }
+          </ul>
+          <p class="small soft k-figure__note">
+            Blocks on a lesson page are 48 px apart (<code>--cc-space-9</code>), major sections 80
+            px (<code>--cc-space-11</code>). Gutters are 24 px, rising to 40 px above 1024 px.
+          </p>
+        </div>
+
+        <div class="k-panel">
+          <p class="k-cap">Radii</p>
+          <ul class="k-radii">
+            {
+              radii.map((r) => (
+                <li class="k-radius">
+                  <span
+                    class="k-radius__box"
+                    style={`border-radius: var(--cc-radius-${r});`}
+                    aria-hidden="true"
+                  />
+                  <code class="k-radius__name">{r}</code>
+                  <span class="small soft">{radiiPx[r]}px</span>
+                </li>
+              ))
+            }
+          </ul>
+        </div>
+      </section>
+
+      {/* ============================================================ */}
+      <section class="k-sec" id="elevation">
+        <div class="k-sec__head">
+          <p class="eyebrow">06 · Elevation</p>
+          <h2>Two shadows, and a preference for hairlines.</h2>
+          <p class="cc-lead">
+            A card that sits on the page gets a hairline, not a shadow. Shadows are reserved for
+            things that genuinely float, and both are warm-tinted — never neutral black.
+          </p>
+        </div>
+        <div class="k-elevations">
+          <div class="k-elev k-elev--flat">
+            <p class="k-elev__title">Hairline</p>
+            <p class="small soft">Resting card, panel, table. The default.</p>
+            <code class="small">--cc-line</code>
+          </div>
+          <div class="k-elev k-elev--1">
+            <p class="k-elev__title">Shadow 1</p>
+            <p class="small soft">A card lifted on hover. Barely there.</p>
+            <code class="small">--cc-shadow-1</code>
+          </div>
+          <div class="k-elev k-elev--2">
+            <p class="k-elev__title">Shadow 2</p>
+            <p class="small soft">Command palette, drawer, dialog.</p>
+            <code class="small">--cc-shadow-2</code>
+          </div>
+        </div>
+      </section>
+
+      {/* ============================================================ */}
+      <section class="k-sec" id="motion">
+        <div class="k-sec__head">
+          <p class="eyebrow">07 · Motion</p>
+          <h2>Motion explains; it never decorates.</h2>
+        </div>
+        <div class="k-panel">
+          <p class="k-cap">Durations · hover a row to see it</p>
+          <ul class="k-durations">
+            <li class="k-duration k-duration--fast">
+              <code>--cc-dur-fast</code><span class="small soft">120 ms · state flip, chip</span>
+              <span class="k-duration__dot" aria-hidden="true"></span>
+            </li>
+            <li class="k-duration k-duration--base">
+              <code>--cc-dur</code><span class="small soft">200 ms · card lift, disclosure</span>
+              <span class="k-duration__dot" aria-hidden="true"></span>
+            </li>
+            <li class="k-duration k-duration--slow">
+              <code>--cc-dur-slow</code><span class="small soft">320 ms · drawer, palette</span>
+              <span class="k-duration__dot" aria-hidden="true"></span>
+            </li>
+          </ul>
+          <p class="small soft k-figure__note">
+            Easing is <code>--cc-ease</code>, <code>cubic-bezier(.2,.7,.3,1)</code>. The one thing
+            that animates on its own is the terminal caret <span
+              class="k-caretbox"
+              aria-hidden="true"><span class="caret"></span></span
+            >. Under <code>prefers-reduced-motion: reduce</code> every transition and the caret blink
+            stop — including the three rows above, which then change instantly.
+          </p>
+        </div>
+      </section>
+
+      {/* ============================================================ */}
+      <section class="k-sec" id="focus">
+        <div class="k-sec__head">
+          <p class="eyebrow">08 · Focus &amp; targets</p>
+          <h2>One ring, everywhere, 44 px of it.</h2>
+          <p class="cc-lead">
+            A 2 px clay outline at 2 px offset, on <code>:focus-visible</code> only — the same ring on
+            a button, a link, an input, a card and the terminal body. Tab through the panel below to see
+            it; nothing here suppresses an outline.
+          </p>
+        </div>
+
+        <div class="k-panel">
+          <p class="k-cap">Real controls · tab into them</p>
+          <div class="k-row k-row--wrap">
+            <button type="button" class="k-btn">Primary</button>
+            <button type="button" class="k-btn k-btn--ghost">Ghost</button>
+            <button type="button" class="k-btn k-btn--ghost" disabled>Disabled</button>
+            <button type="button" class="k-iconbtn" aria-label="Copy this example">
+              <Icon name="copy" />
+            </button>
+            <a class="k-link" href="#focus">A link in text</a>
+            <label class="k-field">
+              <span class="sr-only">Search example</span>
+              <Icon name="search" size={18} />
+              <input class="k-field__input" type="search" placeholder="Search the course" />
+            </label>
+          </div>
+          <div class="k-focusgrid">
+            <div class="k-focusdemo">
+              <span class="k-focusdemo__ring" aria-hidden="true"></span>
+              <p class="small soft">
+                The ring, drawn statically so it can be measured: 2 px{' '}
+                <code>--cc-accent</code>, 2 px offset.
+              </p>
+            </div>
+            <div class="k-focusdemo">
+              <span class="k-focusdemo__tap" aria-hidden="true"></span>
+              <p class="small soft">
+                The minimum target, <code>--cc-tap</code> 44 × 44 px — the floor for icon buttons, nav
+                rows, chips and quiz options.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ============================================================ */}
+      <section class="k-sec" id="icons">
+        <div class="k-sec__head">
+          <p class="eyebrow">09 · Icons</p>
+          <h2>One set, {icons.length} glyphs, drawn here.</h2>
+          <p class="cc-lead">
+            24 × 24 viewBox, 1.75 stroke, round caps and joins, <code>currentColor</code>, optically
+            balanced at 20 px. There is no icon library: the CSP forbids external scripts and the
+            set has to follow the theme. Every glyph ships from{' '}
+            <code>Icon.astro</code> with a <code>name</code> prop.
+          </p>
+        </div>
+        <ul class="k-icons">
+          {
+            icons.map((name) => (
+              <li class="k-icon">
+                <Icon name={name} size={24} />
+                <code class="k-icon__name">{name}</code>
+              </li>
+            ))
+          }
+        </ul>
+        <p class="small soft">
+          Decorative icons are <code>aria-hidden</code>; an icon that is the only content of a
+          control leaves the accessible name on the control, which is why the copy button in the
+          focus panel above reads as “Copy this example” and not as a picture.
         </p>
       </section>
 
-      <!-- ============================================================ -->
-      <section id="type" class="flex flex-col gap-4 scroll-mt-6">
-        <span class="eyebrow">Type</span>
-        <h2>Inter for reading, JetBrains Mono for the terminal.</h2>
-        <div class="card flex flex-col gap-3 p-5">
-          <div
-            style="font-size: var(--text-40); font-weight: 700; letter-spacing: -0.02em; line-height: 1.05;"
-          >
-            Inter 700 · 40
-          </div>
-          <div style="font-size: var(--text-32); font-weight: 600; letter-spacing: -0.015em;">
-            Inter 600 · 32
-          </div>
-          <div style="font-size: var(--text-20); font-weight: 600;">Inter 600 · 20</div>
-          <div style="font-size: var(--text-16);">Inter 400 · 16 body, line 1.5, measure 65ch</div>
-          <div style="font-size: var(--text-14); color: var(--color-ink-soft);">
-            Inter 400 · 14 secondary
-          </div>
-          <div class="mono" style="font-size: var(--text-14);">JetBrains Mono 400 · 14 code</div>
-          <div class="eyebrow">Mono 500 · 12 eyebrow, 0.08em tracked</div>
-          <p class="mono text-[11px]" style="color: var(--color-ink-muted);">
-            Scale: 11 12 13 14 16 18 20 24 32 40 56
+      {/* ============================================================ */}
+      <section class="k-sec" id="terminal">
+        <div class="k-sec__head">
+          <p class="eyebrow">10 · Terminal &amp; code</p>
+          <h2>A recording gets a real terminal.</h2>
+          <p class="cc-lead">
+            Dark in both themes, one <code>&lt;pre&gt;</code> with <code>white-space: pre</code> and horizontal
+            scrolling, roles coloured at build time from the raw text, and a body that is focusable so
+            it can be scrolled from the keyboard. A recording never re-wraps a command and never becomes
+            a stack of paragraphs.
           </p>
         </div>
-        <div class="card flex flex-col gap-2 p-5">
-          <span class="mono text-[12px]" style="color: var(--color-ink-muted);"
-            >Turkish glyph check (latin-ext) — ş ğ ı İ ö ü ç</span
-          >
-          <p lang="tr" style="font-size: var(--text-18);">{turkishSample}</p>
-          <p lang="tr" class="mono" style="font-size: var(--text-16);">{turkishSample}</p>
-        </div>
-      </section>
 
-      <!-- ============================================================ -->
-      <section id="space" class="flex flex-col gap-4 scroll-mt-6">
-        <span class="eyebrow">Shape &amp; space</span>
-        <h2>4-pt scale, four radii.</h2>
-        <div class="card flex flex-col gap-5 p-5">
-          <div class="flex flex-wrap items-end gap-4">
-            {
-              [1, 2, 3, 4].map((n) => (
-                <div class="flex flex-col items-center gap-1">
-                  <div
-                    class="h-11 w-11 border"
-                    style={`border-radius: var(--radius-${n}); background: var(--color-bg-3); border-color: var(--color-line-strong);`}
-                  />
-                  <span class="mono text-[11px]" style="color: var(--color-ink-muted);">
-                    r{n}
-                  </span>
-                </div>
-              ))
-            }
-          </div>
-          <div class="flex flex-wrap items-end gap-2">
-            {
-              [1, 2, 3, 4, 6, 8, 12].map((n) => (
-                <div class="flex flex-col items-center gap-1">
-                  <div
-                    style={`width: var(--space-${n}); height: var(--space-${n}); background: var(--color-accent); opacity: 0.8;`}
-                  />
-                  <span class="mono text-[10px]" style="color: var(--color-ink-muted);">
-                    {n}
-                  </span>
-                </div>
-              ))
-            }
-          </div>
-          <p class="text-[13px]" style="color: var(--color-ink-soft);">
-            4-pt scale. Gutter 16 px on phone, 32–64 px on desktop. Sections 48–80 px apart.
-            Hairlines over boxes.
+        <figure class="k-figure">
+          <figcaption class="k-cap">Transcript · the real component, a real capture</figcaption>
+          <Transcript src="src/components/mdx/__fixtures__/transcripts/sample-session.txt" />
+          <p class="small soft k-figure__note">
+            The file above is a formatting fixture and says so on its own first line. A lesson
+            points <code>src</code> at a captured session under{' '}
+            <code>content/_shared/transcripts/</code>; there is deliberately no inline prop to paste
+            invented output into (D070, D093, D099). A capture longer than 24 lines collapses behind
+            a “show all” disclosure with no JavaScript.
           </p>
-        </div>
-      </section>
-
-      <!-- ============================================================ -->
-      <section id="motion" class="flex flex-col gap-4 scroll-mt-6">
-        <span class="eyebrow">Motion &amp; focus</span>
-        <h2>Only the caret moves.</h2>
-        <div class="card flex flex-col gap-3 p-5">
-          <p class="mono" style="font-size: var(--text-13); color: var(--color-ink-soft);">
-            --dur-1 120ms · --dur-2 200ms · --dur-3 320ms
-          </p>
-          <p class="mono" style="font-size: var(--text-13); color: var(--color-ink-soft);">
-            --ease-out cubic-bezier(.2,0,0,1)
-          </p>
-          <p style="font-size: var(--text-13); color: var(--color-ink-soft);">
-            The terminal caret (<span class="caret" aria-hidden="true"></span>) blinks; nothing else
-            animates by default. <code class="mono">prefers-reduced-motion</code> stops it — verified
-            by hand with devtools' "Emulate CSS prefers-reduced-motion: reduce".
-          </p>
-          <div class="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              class="btn-primary"
-              style="height: 44px; padding: 0 18px; border-radius: var(--radius-2); font-weight: 500;"
-            >
-              Rest
-            </button>
-            <button
-              type="button"
-              class="btn-primary"
-              style="height: 44px; padding: 0 18px; border-radius: var(--radius-2); font-weight: 500; filter: brightness(1.06);"
-            >
-              Hover
-            </button>
-            <button
-              type="button"
-              class="btn-primary focus-demo"
-              style="height: 44px; padding: 0 18px; border-radius: var(--radius-2); font-weight: 500; outline: var(--focus-ring-width) solid var(--focus-ring-color); outline-offset: var(--focus-ring-offset);"
-            >
-              Focus
-            </button>
-            <button
-              type="button"
-              class="btn-primary"
-              disabled
-              style="height: 44px; padding: 0 18px; border-radius: var(--radius-2); font-weight: 500; opacity: 0.45;"
-            >
-              Disabled
-            </button>
-          </div>
-          <p style="font-size: var(--text-12); color: var(--color-ink-muted);">
-            Touch targets ≥ 44 px on phone.
-          </p>
-        </div>
-      </section>
-
-      <!-- ============================================================ -->
-      <section id="components" class="flex flex-col gap-4 scroll-mt-6">
-        <span class="eyebrow">Components</span>
-        <h2>The full MDX vocabulary, rendered live.</h2>
-        <div class="card flex flex-col gap-3 p-5">
-          <div class="flex flex-wrap items-center gap-2" style="font-size: var(--text-13);">
-            <span
-              class="mono rounded-[var(--radius-1)] px-2.5 py-1"
-              style="background: var(--color-bg-3); color: var(--color-ink-soft);">hooks</span
-            >
-            <span
-              class="mono rounded-[var(--radius-1)] px-2.5 py-1"
-              style="background: var(--color-bg-3); color: var(--color-ink-soft);">mcp</span
-            >
-            <kbd
-              class="mono rounded-[var(--radius-1)] border px-1.5 py-0.5 text-[12px]"
-              style="border-color: var(--color-line-strong); color: var(--color-ink-soft);"
-              >Shift</kbd
-            >
-            <span style="color: var(--color-ink-muted);">+</span>
-            <kbd
-              class="mono rounded-[var(--radius-1)] border px-1.5 py-0.5 text-[12px]"
-              style="border-color: var(--color-line-strong); color: var(--color-ink-soft);">Tab</kbd
-            >
-          </div>
-        </div>
-        <p class="muted" style="font-size: var(--text-14);">
-          The MDX vocabulary every lesson body is written from. Everything below is the real
-          component, rendered live on this page — not a screenshot and not a mock. Sample data is
-          labelled as such. See <code class="mono">docs/design/CANVAS.md</code> §6 for the spec these
-          were drawn from.
-        </p>
+        </figure>
 
         <Gallery />
+      </section>
 
-        <div class="card flex flex-col gap-3 p-5">
-          <span class="eyebrow">Quiz</span>
+      {/* ============================================================ */}
+      <section class="k-sec" id="components">
+        <div class="k-sec__head">
+          <p class="eyebrow">11 · Components</p>
+          <h2>The MDX vocabulary every lesson is written from.</h2>
+          <p class="cc-lead">
+            Live components with sample props, not screenshots. Where a component needs data it is
+            given demo data, and the page says so.
+          </p>
+        </div>
+
+        <div class="k-group">
+          <h3 class="k-group__title">Callout · five tones</h3>
+          <div class="k-stack">
+            <Callout>Neutral information the reader should not skip.</Callout>
+            <Callout variant="tip">
+              <code>claude --resume</code> reopens the last session in this directory.
+            </Callout>
+            <Callout variant="changed">
+              Project-scope <code>defaultMode: bypassPermissions</code> is ignored since 2.1.x.
+            </Callout>
+            <Callout variant="warning">
+              A hook that exits non-zero blocks the tool call. A hook that throws blocks everything.
+            </Callout>
+            <WhenNotToUse>
+              A permission deny rule is simpler when you only need to block a fixed command pattern.
+              Reach for a hook when the decision depends on arguments or repository state.
+            </WhenNotToUse>
+          </div>
+        </div>
+
+        <div class="k-group">
+          <h3 class="k-group__title">Sources · four row types</h3>
+          <Sources sources={sampleSources} lang="en" />
+          <p class="small soft">Demo rows, not citations — see the note in the file header.</p>
+        </div>
+
+        <div class="k-group">
+          <h3 class="k-group__title">Lab</h3>
+          <Lab
+            lessonId="_design-lab"
+            repoTag="lesson/m07-02-start"
+            minutes={12}
+            difficulty="core"
+            steps={[
+              'Register the hook in `.claude/settings.json` under `PreToolUse`',
+              'Ask Claude to delete the build folder and watch it get blocked',
+              'Read the block reason in the transcript and adjust the matcher',
+            ]}
+            expected="exit 2, and Claude picks an allowed alternative"
+            checklist={[
+              'Hook script is executable and reads stdin as JSON',
+              'Blocked command shows the `reason` text',
+              'Claude falls back to an allowed alternative',
+            ]}
+          >
+            <Transcript src="src/components/mdx/__fixtures__/transcripts/sample-session.txt" />
+          </Lab>
+        </div>
+
+        <div class="k-group">
+          <h3 class="k-group__title">Quiz · answer it, then reset it</h3>
           <Quiz
-            lessonId="_design-gallery"
+            lessonId="_design-quiz"
             questionId="q1"
             lang="en"
             prompt="Which scope can set bypassPermissions?"
             options={[
-              { text: 'Project .claude/settings.json', explanation: 'Ignored there.' },
+              {
+                text: 'Project .claude/settings.json',
+                explanation: 'Ignored there — a repository cannot grant itself more permission.',
+              },
               {
                 text: 'User or managed settings',
                 correct: true,
-                explanation: 'Correct — project scope cannot set it.',
+                explanation: 'Correct — only a scope the user or their admin controls.',
               },
-              { text: 'Any scope' },
+              { text: 'Any scope', explanation: 'No scope may set it implicitly.' },
             ]}
           />
         </div>
 
-        <div class="card flex flex-col gap-3 p-5">
-          <span class="eyebrow">DecisionTree</span>
+        <div class="k-group">
+          <h3 class="k-group__title">DecisionTree</h3>
           <DecisionTree
             title="Hook, skill, or agent?"
             desc="A short decision tree for choosing between a hook and a skill."
@@ -532,195 +879,1117 @@ const turkishSample = 'Değişiklik: çşğıöü ÇŞĞİÖÜ — ışık, gün
           />
         </div>
 
-        <div class="card flex flex-col gap-3 p-5">
-          <span class="eyebrow">Helpful (backend not deployed — fallback shown, O8)</span>
-          <Helpful lessonId="_design-gallery" lang="en" />
+        <div class="k-cols">
+          <div class="k-group">
+            <h3 class="k-group__title">YouTubeCard · link, never an embed</h3>
+            <YouTubeCard
+              videoId="dQw4w9WgXcQ"
+              title="Sample video card"
+              channel="Sample channel"
+              duration="12:04"
+              lang="en"
+            />
+          </div>
+          <div class="k-group">
+            <h3 class="k-group__title">Helpful · fallback state shown</h3>
+            <Helpful lessonId="_design-helpful" lang="en" />
+            <p class="small soft">
+              The feedback endpoint is not deployed yet, so the buttons fall back to a templated
+              GitHub issue — the state you are looking at.
+            </p>
+          </div>
         </div>
 
-        <div class="card flex flex-col gap-3 p-5">
-          <span class="eyebrow">Giscus (not yet enabled — O6)</span>
+        <div class="k-group">
+          <h3 class="k-group__title">Giscus · not yet enabled</h3>
           <Giscus lang="en" />
         </div>
+      </section>
 
-        <div class="card flex flex-col gap-3 p-5">
-          <span class="eyebrow">YouTubeCard — sample data, not a real citation</span>
-          <YouTubeCard
-            videoId="dQw4w9WgXcQ"
-            title="Sample video card"
-            channel="Sample channel"
-            duration="12:04"
-            lang="en"
-          />
+      {/* ============================================================ */}
+      <section class="k-sec" id="retired">
+        <div class="k-sec__head">
+          <p class="eyebrow">12 · Retired</p>
+          <h2>What Kiln replaced, and why.</h2>
+          <p class="cc-lead">
+            The first system is gone wholesale, not tweaked. It is recorded here so the change is
+            legible and so nothing quietly comes back — none of the specimens below may appear on
+            any screen, including the favicon and the OG card.
+          </p>
         </div>
-      </section>
 
-      <!-- ============================================================ -->
-      <section id="transcript" class="flex flex-col gap-4 scroll-mt-6">
-        <span class="eyebrow">Transcript</span>
-        <h2>Real sessions, never fabricated.</h2>
-        <p class="muted" style="font-size: var(--text-14);">
-          Roles: <span class="mono">›</span> prompt, <span class="mono">⏺</span> tool,
-          <span class="mono">✓</span>/<span class="mono">✗</span> result (<code class="mono"
-            >docs/design/CANVAS.md</code
-          > §6). The component is rendered in the Components section above, from
-          <code class="mono">src/components/mdx/__fixtures__/transcripts/sample-session.txt</code> — a
-          formatting fixture that says so on its own first line. Every transcript in a real lesson points
-          at a captured session under <code class="mono">content/_shared/transcripts/</code>, and <code
-            class="mono">transcript.ts</code
-          > will not resolve a path outside those two directories: there is no inline prop to paste invented
-          output into (D019/D070/D093/D099).
-        </p>
-      </section>
-
-      <!-- ============================================================ -->
-      <section id="a11y" class="flex flex-col gap-4 scroll-mt-6">
-        <span class="eyebrow">Accessibility</span>
-        <h2>WCAG 2.2 AA, checked with axe (D036).</h2>
-        <div
-          class="card flex flex-col gap-2 p-5"
-          style="font-size: var(--text-14); color: var(--color-ink-soft);"
-        >
-          <ul class="flex flex-col gap-2 pl-5" style="list-style: disc;">
-            <li>
-              Every text/surface pair meets ≥ 4.5∶1 (normal text) or ≥ 3∶1 (large text/UI) — see the <a
-                href="#tokens"
-                style="color: var(--color-ink); text-decoration: underline;">tokens</a
-              > contrast matrix, computed live in both themes.
-            </li>
-            <li>Touch targets are ≥ 44 px on phone (D035, mobile-first at 390 px).</li>
-            <li>
-              Every interactive element has a visible 2 px accent focus outline with a 2 px offset
-              on keyboard focus (never only on hover) — see <a
-                href="#motion"
-                style="color: var(--color-ink); text-decoration: underline;">motion</a
-              >.
-            </li>
-            <li>
-              The only default animation, the terminal caret blink, stops under <code class="mono"
-                >prefers-reduced-motion: reduce</code
-              >.
-            </li>
-            <li>
-              Body and UI text is Inter, code and terminal text is JetBrains Mono; both self-hosted
-              with latin + latin-ext subsets so Turkish diacritics (ş ğ ı İ ö ü ç) never fall back
-              to tofu (D031) — see <a
-                href="#type"
-                style="color: var(--color-ink); text-decoration: underline;">type</a
-              >.
-            </li>
-            <li>
-              Theme follows the system preference by default and a manual toggle overrides it
-              without a flash of the wrong theme (D030) — see <code class="mono"
-                >public/theme-init.js</code
-              >.
-            </li>
-            <li>
-              Checked with axe-core against <code class="mono">/design/</code> at 390 px and 1280 px —
-              see this plan's PR for the pasted result.
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <!-- ============================================================ -->
-      <section id="canvas" class="flex flex-col gap-4 scroll-mt-6">
-        <span class="eyebrow">Canvas</span>
-        <h2>The approved design canvas.</h2>
-        <div class="card flex flex-col gap-3 p-5 sm:flex-row sm:items-center">
-          <div
-            class="h-[100px] w-[160px] shrink-0 rounded-[var(--radius-2)] border p-2"
-            style="background: var(--color-bg-1); border-color: var(--color-line); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px;"
-          >
-            {
-              Array.from({ length: 6 }).map((_, i) => (
-                <div
-                  style={`border-radius: 3px; background: ${i === 2 ? 'var(--color-accent)' : 'var(--color-bg-3)'};`}
-                />
-              ))
-            }
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <span style="font-size: var(--text-16);">Approved design canvas · 2026-09</span>
-            <p style="font-size: var(--text-13); color: var(--color-ink-soft); max-width: 60ch;">
-              Nine artboards: brand, tokens, landing 1280/390, lesson 1280/390 (dark and light),
-              components, this page. Generated from <code class="mono"
-                >docs/design/canvas-src/build.mjs</code
-              > — see
-              <code class="mono">docs/design/CANVAS.md</code>.
-            </p>
-            <a
-              href="https://claude.ai/code/artifact/ff75de02-137e-4821-9894-22a66afc049a"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="mono text-[12px]"
-              style="color: var(--color-accent-text);"
-            >
-              open the canvas →
-            </a>
+        <div class="k-panel k-panel--sunken">
+          <p class="k-cap">Specimens · retired, shown for identification only</p>
+          <div class="k-retired-specimens">
+            <div class="k-specimen">
+              <svg
+                class="k-oldsigil"
+                viewBox="0 0 24 24"
+                width="40"
+                height="40"
+                aria-hidden="true"
+                focusable="false"
+              >
+                {oldSigilCells.map(([x, y]) => <rect x={x} y={y} width="6" height="6" rx="1" />)}
+                <rect class="k-oldsigil__gold" x="17" y="1" width="6" height="6" rx="1"></rect>
+              </svg>
+              <span class="small soft">3×3 grid sigil</span>
+            </div>
+            <div class="k-specimen">
+              <span class="k-oldwordmark">CLAUDE CODE ACADEMY</span>
+              <span class="small soft">Letter-spaced caps lockup</span>
+            </div>
+            <div class="k-specimen">
+              <span class="k-oldeyebrow mono">// COMPONENTS</span>
+              <span class="small soft">Monospace <code>//</code> eyebrow</span>
+            </div>
+            <div class="k-specimen">
+              <span class="k-oldtheme" aria-hidden="true">
+                <span class="k-oldtheme__seg k-oldtheme__seg--on">sys</span>
+                <span class="k-oldtheme__seg">light</span>
+                <span class="k-oldtheme__seg">dark</span>
+              </span>
+              <span class="small soft">Three-segment theme control</span>
+            </div>
           </div>
         </div>
-      </section>
 
-      <!-- ============================================================ -->
-      <section id="changelog" class="flex flex-col gap-3 pb-10 scroll-mt-6">
-        <span class="eyebrow">Changelog</span>
-        <h2>Design version 2026.09.1</h2>
-        <div
-          class="flex items-start gap-3 border-t pt-3"
-          style="border-color: var(--color-line); font-size: var(--text-14);"
-        >
-          <span
-            class="mono rounded-[var(--radius-1)] px-2.5 py-1"
-            style="background: var(--color-bg-3); color: var(--color-ink-soft);">2026.09.1</span
-          >
-          <span>
-            Tokens (dark + light, system default + manual toggle), self-hosted Inter + JetBrains
-            Mono (latin + latin-ext), dual-theme Shiki wiring, and this <code class="mono"
-              >/design</code
-            > skeleton — brand, tokens, type, space, motion, a11y and canvas sections live now; the components
-            and transcript sections were filled in by P12 with P07's and P08's real components.
-          </span>
+        <div class="k-scroller" tabindex="0" role="region" aria-label="Retired patterns table">
+          <table class="k-table">
+            <thead>
+              <tr>
+                <th scope="col">Retired</th>
+                <th scope="col">Replaced by</th>
+                <th scope="col">Why</th>
+              </tr>
+            </thead>
+            <tbody>
+              {
+                retired.map((r) => (
+                  <tr>
+                    <th scope="row" class="k-table__pair">
+                      {r.was}
+                    </th>
+                    <td>{r.now}</td>
+                    <td class="small soft">{r.why}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
         </div>
       </section>
-    </main>
+    </div>
   </div>
-</Base>
+</Design>
 
 <style>
-  .card {
-    background: var(--color-bg-2);
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-3);
+  /* =====================================================================
+     `/design` page chrome. Documentation furniture only — every component
+     specimen styles itself. Tokens only; no literal colour, size or motion
+     value is written here.
+     ===================================================================== */
+
+  /* AA over the token name. KILN §3.3 sets an eyebrow in `--cc-ink-faint`,
+     but that value measures ~3.6:1 on paper and axe flags every instance
+     (the same conclusion `Lockup.astro` reached for its publisher line).
+     Eyebrows on this page are text, so they take `--cc-ink-muted`, which
+     clears 4.5:1 in both themes. `--cc-ink-faint` stays for non-text use.
+     The global `.eyebrow` in app.css still ships the faint value — see this
+     plan's Handoff notes; this override is scoped to `/design` only. */
+  .eyebrow {
+    color: var(--cc-ink-muted);
   }
 
-  .btn-primary {
-    background: var(--color-accent);
-    color: var(--color-accent-ink);
+  .k-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--cc-space-8);
+    align-items: start;
+  }
+
+  @media (min-width: 1024px) {
+    .k-shell {
+      grid-template-columns: 190px minmax(0, 1fr);
+      gap: var(--cc-space-10);
+    }
+  }
+
+  /* -- local nav -------------------------------------------------------
+     Phone: a sticky, horizontally scrolling strip under the header.
+     Desktop: a sticky column beside the content. */
+  .k-nav {
+    position: sticky;
+    top: var(--cc-header-h);
+    z-index: 2;
+    /* Full-bleed on a phone: the gutter moves onto the scrolling list so the
+       first and last link can reach the screen edges instead of being cut
+       off behind a padded box. */
+    margin-inline: calc(var(--cc-gutter) * -1);
+    background: var(--cc-paper);
+    border-block-end: 1px solid var(--cc-line);
+  }
+
+  .k-nav__title {
+    display: none;
+  }
+
+  /* The strip already scrolled, but nothing on screen said so: eight section
+     links run to ~962px inside a 390px viewport and the last four simply
+     stopped at the edge. The two-gradient scroll shadow (the terminal's, KILN
+     §8.1) marks each side that can still be scrolled — the `local` covers
+     travel with the content and cancel the `scroll` shades at the ends. */
+  .k-nav__list {
+    display: flex;
+    gap: var(--cc-space-4);
+    margin: 0;
+    padding-inline: var(--cc-gutter);
+    padding-block: 0;
+    list-style: none;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    scroll-padding-inline: var(--cc-gutter);
+    background-image:
+      linear-gradient(to right, var(--cc-paper) 55%, transparent),
+      linear-gradient(to left, var(--cc-paper) 55%, transparent),
+      linear-gradient(to right, var(--cc-line-strong), transparent),
+      linear-gradient(to left, var(--cc-line-strong), transparent);
+    background-position:
+      left center,
+      right center,
+      left center,
+      right center;
+    background-size:
+      40px 100%,
+      40px 100%,
+      18px 100%,
+      18px 100%;
+    background-repeat: no-repeat;
+    background-attachment: local, local, scroll, scroll;
+  }
+
+  .k-nav__link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--cc-tap);
+    /* A one-word section name ("Type", "Icons") was only 33–39px wide in the
+       scrolling strip; 44 in both axes (KILN §4). */
+    min-width: var(--cc-tap);
+    white-space: nowrap;
+    font-size: var(--cc-text-small);
+    color: var(--cc-ink-muted);
+    text-decoration: none;
+    border-block-end: 2px solid transparent;
+  }
+
+  .k-nav__link:hover {
+    color: var(--cc-ink);
+  }
+
+  .k-nav__link[aria-current='true'] {
+    color: var(--cc-accent);
+    border-block-end-color: var(--cc-accent);
+  }
+
+  @media (min-width: 1024px) {
+    .k-nav {
+      top: calc(var(--cc-header-h) + var(--cc-space-6));
+      margin-inline: 0;
+      background: none;
+      border-block-end: 0;
+    }
+
+    .k-nav__title {
+      display: flex;
+      margin: 0 0 var(--cc-space-3);
+    }
+
+    .k-nav__list {
+      flex-direction: column;
+      gap: 0;
+      padding-inline: 0;
+      overflow: visible;
+      background-image: none;
+      border-inline-start: 1px solid var(--cc-line);
+    }
+
+    .k-nav__link {
+      justify-content: flex-start;
+      min-height: var(--cc-tap);
+      padding-inline-start: var(--cc-space-4);
+      margin-inline-start: -1px;
+      border-block-end: 0;
+      border-inline-start: 2px solid transparent;
+    }
+
+    .k-nav__link[aria-current='true'] {
+      border-inline-start-color: var(--cc-accent);
+    }
+  }
+
+  /* -- rhythm ---------------------------------------------------------- */
+  .k-main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-11);
+    min-width: 0;
+  }
+
+  .k-hero {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-4);
+    padding-block-end: var(--cc-space-8);
+    border-block-end: 1px solid var(--cc-line);
+  }
+
+  .k-hero__title {
+    margin-block-start: var(--cc-space-1);
+  }
+
+  .k-hero__lead,
+  .k-hero__meta {
+    margin: 0;
+  }
+
+  .k-sec {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-6);
+    scroll-margin-top: calc(var(--cc-header-h) + var(--cc-tap) + var(--cc-space-4));
+    min-width: 0;
+  }
+
+  @media (min-width: 1024px) {
+    .k-sec {
+      scroll-margin-top: calc(var(--cc-header-h) + var(--cc-space-6));
+    }
+  }
+
+  .k-sec__head {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-3);
+  }
+
+  .k-sec__head p {
+    margin: 0;
+  }
+
+  .k-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-4);
+    min-width: 0;
+  }
+
+  .k-group__title {
+    margin: 0;
+    padding-block-end: var(--cc-space-2);
+    border-block-end: 1px solid var(--cc-line);
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-small);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+  }
+
+  .k-cols {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--cc-space-6);
+    align-items: start;
+  }
+
+  @media (min-width: 860px) {
+    .k-cols {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  /* -- panels ---------------------------------------------------------- */
+  .k-panel {
+    padding: var(--cc-space-6);
+    background: var(--cc-paper-raised);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-lg);
+    min-width: 0;
+  }
+
+  .k-panel--sunken {
+    background: var(--cc-paper-sunken);
+  }
+
+  .k-cap {
+    display: block;
+    margin: 0 0 var(--cc-space-4);
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+  }
+
+  .k-figure {
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-3);
+    min-width: 0;
+  }
+
+  .k-figure__note {
+    margin: 0;
+  }
+
+  /* Inside a panel the note follows a specimen, so it needs the air that a
+     figure's own flex gap would otherwise give it. */
+  .k-panel > .k-figure__note {
+    margin-block-start: var(--cc-space-5);
+  }
+
+  /* The caret is a terminal glyph; on paper it needs its terminal ground to
+     be visible at all. */
+  .k-caretbox {
+    display: inline-flex;
+    align-items: center;
+    padding-inline: var(--cc-space-1);
+    background: var(--cc-term-bg);
+    border-radius: var(--cc-radius-sm);
+    vertical-align: -0.2em;
+  }
+
+  .k-row {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-space-6);
+  }
+
+  .k-row--baseline {
+    align-items: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .k-row--wrap {
+    flex-wrap: wrap;
+    gap: var(--cc-space-4);
+  }
+
+  .k-stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-4);
+    align-items: stretch;
+    min-width: 0;
+  }
+
+  /* For specimens that must keep their intrinsic width — a lockup is not a
+     full-bleed block and stretching it would misrepresent it. */
+  .k-stack--start {
+    align-items: flex-start;
+  }
+
+  .k-stack--tight {
+    gap: var(--cc-space-2);
+  }
+
+  .k-strong {
+    color: var(--cc-ink);
+    font-weight: 600;
+  }
+
+  /* -- principles ------------------------------------------------------ */
+  .k-principles {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border-block-start: 1px solid var(--cc-line);
+  }
+
+  @media (min-width: 720px) {
+    .k-principles {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      column-gap: var(--cc-space-8);
+    }
+  }
+
+  .k-principle {
+    display: grid;
+    grid-template-columns: 2.5rem minmax(0, 1fr);
+    align-items: baseline;
+    align-content: start;
+    column-gap: var(--cc-space-3);
+    padding-block: var(--cc-space-4);
+    border-block-end: 1px solid var(--cc-line);
+  }
+
+  .k-principle__n {
+    color: var(--cc-accent);
+    font-size: var(--cc-text-micro);
+  }
+
+  .k-principle__title,
+  .k-principle__body {
+    margin: 0;
+    grid-column: 2;
+  }
+
+  .k-principle__title {
+    font-weight: 600;
+  }
+
+  /* -- brand ----------------------------------------------------------- */
+  .k-mono-mark {
+    display: inline-flex;
+    color: var(--cc-ink);
+  }
+
+  .k-mono-mark--accent {
+    color: var(--cc-accent);
+  }
+
+  .k-mono-mark--invert {
+    padding: var(--cc-space-2);
+    background: var(--cc-ink);
+    color: var(--cc-paper);
+    border-radius: var(--cc-radius-sm);
+  }
+
+  .k-clearspace {
+    display: flex;
+    justify-content: center;
+    padding-block: var(--cc-space-4);
+  }
+
+  /* The keep-out equals the tile's corner radius: 10 of the 32 viewBox
+     units, so at 64px it is 20px — and the ratio holds at any size. */
+  .k-clearspace__box {
+    --k-mark-size: 64px;
+    padding: calc(var(--k-mark-size) * 10 / 32);
+    outline: 1px dashed var(--cc-accent-line);
+    outline-offset: 0;
+    background: var(--cc-paper-sunken);
+  }
+
+  /* -- swatches -------------------------------------------------------- */
+  .k-swatches {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--cc-space-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .k-swatch {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-space-3);
+    padding: var(--cc-space-3);
+    background: var(--cc-paper-raised);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-md);
+    min-width: 0;
+  }
+
+  .k-swatch__chip {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--cc-line-strong);
+    border-radius: var(--cc-radius-sm);
+  }
+
+  .k-swatch__text {
+    display: grid;
+    gap: 1px;
+    min-width: 0;
+  }
+
+  .k-swatch__name {
+    font-size: var(--cc-text-micro);
+    color: var(--cc-ink);
+    overflow-wrap: anywhere;
+  }
+
+  .k-swatch__role,
+  .k-swatch__value {
+    line-height: var(--cc-leading-small);
+  }
+
+  .k-swatch__value {
+    font-size: var(--cc-text-micro);
+    color: var(--cc-ink-muted);
+    text-transform: uppercase;
+  }
+
+  /* -- tables ---------------------------------------------------------- */
+  .k-scroller {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-lg);
+    background: var(--cc-paper-raised);
+  }
+
+  .k-table {
+    width: 100%;
+    min-width: 560px;
+    border-collapse: collapse;
+    font-size: var(--cc-text-small);
+    text-align: left;
+  }
+
+  .k-table th,
+  .k-table td {
+    padding: var(--cc-space-3) var(--cc-space-4);
+    vertical-align: baseline;
+    font-weight: 400;
+  }
+
+  .k-table thead th {
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+    border-block-end: 1px solid var(--cc-line-strong);
+  }
+
+  .k-table tbody tr + tr th,
+  .k-table tbody tr + tr td {
+    border-block-start: 1px solid var(--cc-line);
+  }
+
+  .k-table__pair {
+    color: var(--cc-ink);
+    white-space: nowrap;
+  }
+
+  .k-verdict {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-space-2);
+    white-space: nowrap;
+  }
+
+  .k-verdict__icon {
+    display: inline-block;
+    width: 1ch;
+    font-family: var(--cc-font-mono);
+    color: var(--cc-ink-muted);
+  }
+
+  /* -- type ------------------------------------------------------------ */
+  .k-typescale {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-6);
+  }
+
+  .k-typerow {
+    display: grid;
+    gap: var(--cc-space-2);
+    padding-block-start: var(--cc-space-5);
+    border-block-start: 1px solid var(--cc-line);
+  }
+
+  .k-typerow:first-child {
+    padding-block-start: 0;
+    border-block-start: 0;
+  }
+
+  @media (min-width: 900px) {
+    .k-typerow {
+      grid-template-columns: 200px minmax(0, 1fr);
+      gap: var(--cc-space-6);
+      align-items: start;
+    }
+  }
+
+  .k-typerow__meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .k-typerow__token {
+    font-size: var(--cc-text-micro);
+    color: var(--cc-ink);
+  }
+
+  .k-typerow__spec {
+    line-height: var(--cc-leading-small);
+  }
+
+  .k-typerow__sample {
+    margin: 0;
+    max-width: var(--cc-measure);
+  }
+
+  .k-t-display,
+  .k-t-h1,
+  .k-t-h2 {
+    font-family: var(--cc-font-display);
+    font-weight: var(--cc-weight-display);
+    font-optical-sizing: auto;
+    line-height: var(--cc-leading-tight);
+  }
+
+  .k-t-display {
+    font-size: var(--cc-text-display);
+    letter-spacing: var(--cc-track-display);
+  }
+
+  .k-t-h1 {
+    font-size: var(--cc-text-h1);
+    letter-spacing: var(--cc-track-h1);
+  }
+
+  .k-t-h2 {
+    font-size: var(--cc-text-h2);
+    letter-spacing: var(--cc-track-h2);
+  }
+
+  .k-t-h3 {
+    font-size: var(--cc-text-h3);
+    font-weight: var(--cc-weight-h3);
+    line-height: var(--cc-leading-h3);
+    letter-spacing: var(--cc-track-h3);
+  }
+
+  .k-t-lead {
+    font-size: var(--cc-text-lead);
+  }
+
+  .k-t-small {
+    font-size: var(--cc-text-small);
+    font-weight: var(--cc-weight-small);
+    letter-spacing: var(--cc-track-small);
+  }
+
+  .k-t-micro {
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+    color: var(--cc-ink-muted);
+  }
+
+  .k-tr {
+    margin: 0;
+    max-width: none;
+  }
+
+  .k-tr--strong {
+    font-weight: 700;
+  }
+
+  /* -- space & radius -------------------------------------------------- */
+  .k-spaces,
+  .k-radii {
+    display: grid;
+    gap: var(--cc-space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .k-space {
+    display: grid;
+    grid-template-columns: 10rem 3.5rem minmax(0, 1fr);
+    align-items: center;
+    gap: var(--cc-space-3);
+    min-height: var(--cc-space-6);
+  }
+
+  /* A ruler, not a lozenge: rounding a 4px bar would turn the first three
+     steps into identical dots. */
+  .k-space__bar {
+    height: 10px;
+    background: var(--cc-accent);
+  }
+
+  .k-space__name,
+  .k-radius__name {
+    font-size: var(--cc-text-micro);
+    color: var(--cc-ink);
+  }
+
+  .k-radii {
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: var(--cc-space-4);
+  }
+
+  .k-radius {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--cc-space-2);
+  }
+
+  .k-radius__box {
+    width: 100%;
+    height: 56px;
+    background: var(--cc-paper-sunken);
+    border: 1px solid var(--cc-line-strong);
+  }
+
+  /* -- elevation ------------------------------------------------------- */
+  .k-elevations {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--cc-space-6);
+  }
+
+  .k-elev {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-2);
+    padding: var(--cc-space-6);
+    background: var(--cc-paper-raised);
+    border-radius: var(--cc-radius-lg);
+  }
+
+  .k-elev p {
+    margin: 0;
+  }
+
+  .k-elev__title {
+    font-weight: 600;
+  }
+
+  .k-elev--flat {
+    border: 1px solid var(--cc-line);
+  }
+
+  .k-elev--1 {
+    box-shadow: var(--cc-shadow-1);
+  }
+
+  .k-elev--2 {
+    box-shadow: var(--cc-shadow-2);
+  }
+
+  /* -- motion ---------------------------------------------------------- */
+  .k-durations {
+    display: grid;
+    gap: var(--cc-space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .k-duration {
+    display: grid;
+    grid-template-columns: 9.5rem minmax(0, 1fr) 20px;
+    align-items: center;
+    gap: var(--cc-space-3);
+    min-height: var(--cc-tap);
+    padding-inline: var(--cc-space-3);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-md);
+    background: var(--cc-paper-raised);
+  }
+
+  .k-duration code {
+    font-size: var(--cc-text-micro);
+  }
+
+  .k-duration__dot {
+    width: 12px;
+    height: 12px;
+    border-radius: var(--cc-radius-pill);
+    background: var(--cc-line-strong);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .k-duration__dot {
+      transition:
+        transform var(--cc-dur) var(--cc-ease),
+        background-color var(--cc-dur) var(--cc-ease);
+    }
+
+    .k-duration--fast .k-duration__dot {
+      transition-duration: var(--cc-dur-fast);
+    }
+
+    .k-duration--slow .k-duration__dot {
+      transition-duration: var(--cc-dur-slow);
+    }
+  }
+
+  .k-duration:hover .k-duration__dot {
+    transform: translateX(calc(var(--cc-space-2) * -1)) scale(1.6);
+    background: var(--cc-accent);
+  }
+
+  /* -- focus ----------------------------------------------------------- */
+  .k-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--cc-tap);
+    padding-inline: var(--cc-space-5);
     border: 1px solid transparent;
+    border-radius: var(--cc-radius-md);
+    background: var(--cc-accent);
+    color: var(--cc-on-accent);
+    font: inherit;
+    font-weight: 500;
+    cursor: pointer;
   }
 
-  h2 {
-    font-size: var(--text-24);
+  .k-btn:hover {
+    background: var(--cc-accent-hover);
+  }
+
+  .k-btn--ghost {
+    background: var(--cc-paper-raised);
+    color: var(--cc-ink);
+    border-color: var(--cc-line-strong);
+  }
+
+  .k-btn--ghost:hover {
+    background: var(--cc-paper-sunken);
+    color: var(--cc-ink);
+  }
+
+  .k-btn[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .k-iconbtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: var(--cc-tap);
+    height: var(--cc-tap);
+    border: 1px solid var(--cc-line-strong);
+    border-radius: var(--cc-radius-md);
+    background: var(--cc-paper-raised);
+    color: var(--cc-ink-muted);
+    cursor: pointer;
+  }
+
+  .k-iconbtn:hover {
+    color: var(--cc-ink);
+  }
+
+  .k-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--cc-tap);
+    color: var(--cc-accent);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.15em;
+  }
+
+  .k-field {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-space-2);
+    min-height: var(--cc-tap);
+    padding-inline: var(--cc-space-3);
+    border: 1px solid var(--cc-line-strong);
+    border-radius: var(--cc-radius-md);
+    background: var(--cc-paper-raised);
+    color: var(--cc-ink-muted);
+  }
+
+  .k-field__input {
+    /* The wrapper was 44px tall but the input inside it was 24 — the target
+       the pointer actually lands on is the input, so it takes the floor. */
+    min-height: var(--cc-tap);
+    border: 0;
+    background: none;
+    color: var(--cc-ink);
+    font: inherit;
+    font-size: var(--cc-text-small);
+    min-width: 12ch;
+  }
+
+  .k-field__input::placeholder {
+    color: var(--cc-ink-faint);
+  }
+
+  .k-focusgrid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--cc-space-6);
+    margin-block-start: var(--cc-space-6);
+    padding-block-start: var(--cc-space-6);
+    border-block-start: 1px solid var(--cc-line);
+  }
+
+  .k-focusdemo {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--cc-space-4);
+  }
+
+  .k-focusdemo p {
+    margin: 0;
+  }
+
+  .k-focusdemo__ring {
+    flex: none;
+    width: var(--cc-tap);
+    height: var(--cc-tap);
+    border-radius: var(--cc-radius-md);
+    background: var(--cc-paper-sunken);
+    outline: var(--cc-focus-width) solid var(--cc-focus-color);
+    outline-offset: var(--cc-focus-offset);
+  }
+
+  .k-focusdemo__tap {
+    flex: none;
+    width: var(--cc-tap);
+    height: var(--cc-tap);
+    border-radius: var(--cc-radius-md);
+    border: 1px dashed var(--cc-line-strong);
+    background: var(--cc-accent-wash);
+  }
+
+  /* -- icons ----------------------------------------------------------- */
+  .k-icons {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+    gap: 1px;
+    margin: 0;
+    padding: 1px;
+    list-style: none;
+    background: var(--cc-paper-raised);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-lg);
+    overflow: hidden;
+  }
+
+  .k-icon {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--cc-space-2);
+    min-height: 88px;
+    padding: var(--cc-space-3);
+    background: var(--cc-paper-raised);
+    color: var(--cc-ink);
+    text-align: center;
+    /* The hairline is a shadow, not a border: it fills the 1px grid gap
+       between cells and leaves the empty tail of the last row clean. */
+    box-shadow: 0 0 0 1px var(--cc-line);
+  }
+
+  .k-icon__name {
+    font-size: var(--cc-text-micro);
+    color: var(--cc-ink-muted);
+  }
+
+  /* -- retired --------------------------------------------------------- */
+  .k-retired-specimens {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--cc-space-6);
+  }
+
+  .k-specimen {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--cc-space-3);
+    padding: var(--cc-space-4);
+    background: var(--cc-paper);
+    border: 1px dashed var(--cc-line-strong);
+    border-radius: var(--cc-radius-md);
+    /* Retired specimens are shown greyed and struck out of the system: the
+       dashed border and the muted ink say "not in use" alongside the
+       caption, so the state is never carried by colour alone. */
+    color: var(--cc-ink-faint);
+  }
+
+  .k-oldsigil {
+    fill: var(--cc-ink-faint);
+  }
+
+  .k-oldsigil__gold {
+    fill: var(--cc-line-strong);
+  }
+
+  .k-oldwordmark {
+    font-family: var(--cc-font-mono);
+    font-size: var(--cc-text-micro);
+    letter-spacing: 0.18em;
+    color: var(--cc-ink-muted);
+  }
+
+  .k-oldeyebrow {
+    font-size: var(--cc-text-micro);
+    letter-spacing: 0.08em;
+    color: var(--cc-ink-muted);
+  }
+
+  .k-oldtheme {
+    display: inline-flex;
+    border: 1px solid var(--cc-line-strong);
+    border-radius: var(--cc-radius-sm);
+    overflow: hidden;
+  }
+
+  .k-oldtheme__seg {
+    padding: var(--cc-space-1) var(--cc-space-3);
+    font-family: var(--cc-font-mono);
+    font-size: var(--cc-text-micro);
+    color: var(--cc-ink-muted);
+    border-inline-end: 1px solid var(--cc-line-strong);
+  }
+
+  .k-oldtheme__seg:last-child {
+    border-inline-end: 0;
+  }
+
+  .k-oldtheme__seg--on {
+    background: var(--cc-paper-sunken);
+    color: var(--cc-ink);
   }
 </style>
 
 <script>
-  // Reads every token value LIVE from computed style — this is what keeps
-  // the dump (and the contrast matrix) from ever drifting away from
-  // tokens.css. Re-runs whenever `data-theme` changes (the toggle) or the
-  // OS preference changes while "system" is selected, so the numbers on
-  // screen always match whichever theme is actually showing.
-  function parseColor(raw: string): [number, number, number] | null {
+  /*
+   * Three jobs, all read-only against the DOM this page already rendered:
+   *
+   *  1. fill every `[data-token-value]` with the token's LIVE computed value;
+   *  2. compute every contrast row from those same live values;
+   *  3. mark the local-nav link for the section currently on screen.
+   *
+   * (1) and (2) are what keep this page from drifting out of sync with
+   * tokens.css: no colour is ever typed into the page source, so a token edit
+   * shows up here on the next reload without anyone remembering to update a
+   * table. Both re-run on a theme change.
+   *
+   * Astro bundles this into an external module — there is no inline script
+   * body (CSP `script-src 'self'`).
+   */
+  type RGB = [number, number, number];
+
+  function parseColor(raw: string): RGB | null {
     const value = raw.trim();
-    // 6-digit hex (#rrggbb).
     const hex6 = value.match(/^#([0-9a-f]{6})$/i);
     if (hex6) {
       const n = parseInt(hex6[1], 16);
       return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
     }
-    // 3-digit shorthand hex (#rgb) — the CSS minifier shortens six-digit values
-    // (e.g. pure white) to the three-digit form in the compiled stylesheet, so getComputedStyle can return
-    // either form depending on the token's actual value.
+    // The CSS minifier shortens six-digit values to three digits, so a token
+    // can come back either way depending on its value.
     const hex3 = value.match(/^#([0-9a-f])([0-9a-f])([0-9a-f])$/i);
     if (hex3) {
       return [
@@ -729,15 +1998,15 @@ const turkishSample = 'Değişiklik: çşğıöü ÇŞĞİÖÜ — ışık, gün
         parseInt(hex3[3] + hex3[3], 16),
       ];
     }
-    const rgb = value.match(/rgba?\(([^)]+)\)/i);
-    if (rgb) {
-      const parts = rgb[1].split(',').map((p) => parseFloat(p));
+    const fn = value.match(/rgba?\(([^)]+)\)/i);
+    if (fn) {
+      const parts = fn[1].split(/[ ,/]+/).map((p) => parseFloat(p));
       if (parts.length >= 3) return [parts[0], parts[1], parts[2]];
     }
     return null;
   }
 
-  function relLuminance([r, g, b]: [number, number, number]): number {
+  function relLuminance([r, g, b]: RGB): number {
     const [R, G, B] = [r, g, b].map((v) => {
       const s = v / 255;
       return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
@@ -745,12 +2014,12 @@ const turkishSample = 'Değişiklik: çşğıöü ÇŞĞİÖÜ — ışık, gün
     return 0.2126 * R + 0.7152 * G + 0.0722 * B;
   }
 
-  function contrastRatio(a: [number, number, number], b: [number, number, number]): number {
+  function contrastRatio(a: RGB, b: RGB): number {
     const [l1, l2] = [relLuminance(a), relLuminance(b)].sort((p, q) => q - p);
     return (l1 + 0.05) / (l2 + 0.05);
   }
 
-  function refresh() {
+  function refresh(): void {
     const styles = getComputedStyle(document.documentElement);
 
     document.querySelectorAll<HTMLElement>('[data-token-value]').forEach((el) => {
@@ -759,50 +2028,107 @@ const turkishSample = 'Değişiklik: çşğıöü ÇŞĞİÖÜ — ışık, gün
       el.textContent = styles.getPropertyValue(name).trim() || '—';
     });
 
-    document.querySelectorAll<HTMLTableRowElement>('[data-contrast-row]').forEach((row) => {
+    document.querySelectorAll<HTMLElement>('[data-contrast-row]').forEach((row) => {
       const fgVar = row.dataset.fg;
       const bgVar = row.dataset.bg;
       const ratioCell = row.querySelector<HTMLElement>('[data-contrast-ratio]');
       const resultCell = row.querySelector<HTMLElement>('[data-contrast-result]');
-      const dot = row.querySelector<HTMLElement>('[data-contrast-dot]');
-      if (!fgVar || !bgVar || !ratioCell || !resultCell || !dot) return;
+      const icon = row.querySelector<HTMLElement>('[data-contrast-icon]');
+      if (!fgVar || !bgVar || !ratioCell || !resultCell || !icon) return;
 
       const fg = parseColor(styles.getPropertyValue(fgVar));
       const bg = parseColor(styles.getPropertyValue(bgVar));
       if (!fg || !bg) {
         ratioCell.textContent = '—';
         resultCell.textContent = 'unknown';
-        dot.style.background = 'var(--color-ink-muted)';
+        icon.textContent = '?';
         return;
       }
 
-      // The result is always readable as TEXT in `--color-ink` (verified
-      // AA pass against bg-0/bg-2 in both themes) — the dot is a
-      // decorative, non-text reinforcement only, not the only way the
-      // pass/fail state is conveyed (axe: color-contrast, WCAG 1.4.1).
+      // The verdict is always readable as words in the page's own ink; the
+      // glyph beside it is a second, non-colour signal (WCAG 1.4.1).
       const ratio = contrastRatio(fg, bg);
-      ratioCell.textContent = `${ratio.toFixed(1)}:1`;
-      resultCell.textContent = ratio >= 4.5 ? 'AA pass' : ratio >= 3 ? 'AA large only' : 'fail';
-      dot.style.background =
-        ratio >= 4.5
-          ? 'var(--color-success)'
-          : ratio >= 3
-            ? 'var(--color-warning)'
-            : 'var(--color-danger)';
+      ratioCell.textContent = `${ratio.toFixed(2)}:1`;
+      if (ratio >= 7) {
+        resultCell.textContent = 'AAA';
+        icon.textContent = '✓';
+      } else if (ratio >= 4.5) {
+        resultCell.textContent = 'AA';
+        icon.textContent = '✓';
+      } else if (ratio >= 3) {
+        resultCell.textContent = 'AA large / UI only';
+        icon.textContent = '~';
+      } else {
+        resultCell.textContent = 'below AA';
+        icon.textContent = '✗';
+      }
     });
   }
 
   refresh();
 
-  // The toggle sets data-theme synchronously on click; a MutationObserver
-  // catches that (and any other future writer of the same attribute).
+  // The theme control writes `data-theme` synchronously; catch that, and an
+  // OS-level change while "system" is selected.
   new MutationObserver(refresh).observe(document.documentElement, {
     attributes: true,
     attributeFilter: ['data-theme'],
   });
-
-  // Also catch a live OS-preference change while "system" is selected —
-  // theme-init.js/ThemeToggle already update data-theme in that case, but
-  // this covers the fallback no-JS-attribute state too.
   window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', refresh);
+
+  // -- local nav: mark the section currently in view ----------------------
+  const links = new Map<string, HTMLAnchorElement>();
+  document.querySelectorAll<HTMLAnchorElement>('[data-nav-link]').forEach((a) => {
+    const id = a.dataset.navLink;
+    if (id) links.set(id, a);
+  });
+
+  const sections = [...links.keys()]
+    .map((id) => document.getElementById(id))
+    .filter((el): el is HTMLElement => el !== null);
+
+  if (sections.length > 0) {
+    const list = document.querySelector<HTMLElement>('.k-nav__list');
+    let current = '';
+    const setCurrent = (id: string) => {
+      if (id === current) return;
+      current = id;
+      links.forEach((a, key) => {
+        if (key === id) a.setAttribute('aria-current', 'true');
+        else a.removeAttribute('aria-current');
+      });
+
+      // On phones the nav is a horizontal strip, so the current item can sit
+      // off-screen. Nudge the strip itself — never `scrollIntoView`, which
+      // would also scroll the page out from under the reader.
+      const active = links.get(id);
+      if (!list || !active || list.scrollWidth <= list.clientWidth) return;
+      const left = active.offsetLeft - (list.clientWidth - active.offsetWidth) / 2;
+      list.scrollTo({ left: Math.max(0, left), behavior: 'auto' });
+    };
+
+    const onScroll = () => {
+      // The "current" section is the last one whose top has passed the
+      // reading line, a third of the way down the viewport.
+      const line = window.innerHeight / 3;
+      let found = sections[0].id;
+      for (const section of sections) {
+        if (section.getBoundingClientRect().top <= line) found = section.id;
+      }
+      setCurrent(found);
+    };
+
+    let queued = false;
+    const schedule = () => {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => {
+        queued = false;
+        onScroll();
+      });
+    };
+
+    onScroll();
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule, { passive: true });
+  }
 </script>

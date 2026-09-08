@@ -1,13 +1,30 @@
 ---
-// The left level -> module -> lesson tree (D061), drawn from
-// `docs/design/canvas-out/Lesson1280.dc.html`'s `aside.nav`: 240px column,
-// mono uppercase level headings, the current module expanded to its lessons.
-//
-// On phone the sidebar is not rendered at all — `Lesson390.dc.html` replaces
-// it with the breadcrumb strip that `Lesson.astro` draws, and the header's
-// menu carries the top-level links.
+/**
+ * The curriculum rail — KILN §8.8.
+ *
+ * Level groups carry a 2 px marker in the level hue and a single-line label
+ * plus the level chip (KILN §9.3: the old rail wrapped "LEVEL 2 ·
+ * INTERMEDIATE" mid-label, because the level number and the level name were
+ * one string set in letter-spaced uppercase monospace — they are now two
+ * things, the chip and the name).
+ *
+ * Modules are `<details>` disclosures with a chevron, open on the module the
+ * reader is in. Lesson rows are 36 px tall with a 2 px clay marker when
+ * current and a check when completed; the whole row is a 44 px target
+ * because the padding around the 36 px text box is part of the link.
+ *
+ * Completion and "scroll the current lesson into view" are the only client
+ * behaviour, in a hoisted module (CSP: no inline script body). Completion
+ * lives in `localStorage` (D020), so it is applied after load rather than
+ * rendered — the rail is fully usable with JS off.
+ *
+ * `data-pagefind-ignore`: the rail repeats the whole curriculum on every
+ * page, which would otherwise make every lesson match every query.
+ */
 import { t } from '../../lib/i18n/ui.ts';
 import type { NavTree } from '../../lib/nav.ts';
+import { levelColorVar, levelBadgeStyle } from '../../lib/levels.ts';
+import Icon from '../ui/Icon.astro';
 
 interface Props {
   lang: string;
@@ -19,55 +36,94 @@ interface Props {
 
 const { lang, tree, activeLevel, activeModule, activeLessonId } = Astro.props;
 const strings = t(lang);
+const overviewLabel = lang === 'tr' ? 'Genel bakış' : 'Overview';
 
-function levelHeading(number: number | null, title: string): string {
-  return number ? `${strings.levelLabel(number)} · ${title}` : title;
-}
+// `shortId` is the module id when there is one (`m07-hooks` -> "m07") and the
+// bare URL slug otherwise — which is what the Playbook and Meta groups get.
+// "m01" is a real identifier the course refers to; "how-this-site-was-built"
+// is just the URL, carries nothing the title does not, and pushed every title
+// in those two groups to a different left edge.
+const isModuleId = (id: string) => /^m\d+$/.test(id);
 ---
 
-<nav class="cc-sidebar" aria-label={strings.curriculum}>
-  <ul class="cc-sidebar-levels">
+<nav
+  class="cc-rail"
+  aria-label={strings.curriculum}
+  data-cc-rail
+  data-lang={lang}
+  data-pagefind-ignore
+>
+  <ul class="cc-rail__levels">
     {
       tree.levels.map((level) => (
-        <li>
-          <a class="cc-sidebar-level" href={level.path}>
-            {levelHeading(level.number, level.title)}
+        <li class="cc-rail__level" style={`--cc-rail-hue: ${levelColorVar(level.number)}`}>
+          <a
+            class="cc-rail__level-link"
+            href={level.path}
+            aria-current={level.slug === activeLevel && !activeModule ? 'page' : undefined}
+          >
+            <span class="cc-rail__level-name">{level.title}</span>{' '}
+            {level.number !== null && (
+              <span class="cc-rail__level-chip" style={levelBadgeStyle(level.number)}>
+                {`L${level.number}`}
+              </span>
+            )}
           </a>
-          <ul class="cc-sidebar-modules">
-            {level.modules.map((mod) => (
-              <li>
-                <a
-                  href={mod.path}
-                  class="cc-sidebar-module"
-                  aria-current={
-                    mod.slug === activeModule && level.slug === activeLevel && !activeLessonId
-                      ? 'page'
-                      : undefined
-                  }
-                  data-current={
-                    mod.slug === activeModule && level.slug === activeLevel ? 'true' : undefined
-                  }
-                >
-                  {mod.shortId} {mod.title}
-                </a>
-                {mod.slug === activeModule &&
-                  level.slug === activeLevel &&
-                  mod.lessons.length > 0 && (
-                    <ul class="cc-sidebar-lessons">
+
+          <ul class="cc-rail__modules">
+            {level.modules.map((mod) => {
+              const isCurrentModule = mod.slug === activeModule && level.slug === activeLevel;
+              return (
+                <li>
+                  <details class="cc-rail__disclosure" open={isCurrentModule || undefined}>
+                    <summary
+                      class="cc-rail__module"
+                      data-current={isCurrentModule ? 'true' : undefined}
+                    >
+                      <span class="cc-rail__chevron" aria-hidden="true">
+                        <Icon name="chevron-right" size={14} />
+                      </span>
+                      {isModuleId(mod.shortId) && (
+                        <span class="cc-rail__module-id">{mod.shortId}</span>
+                      )}
+                      {/* An explicit space: adjacent spans concatenate in the
+                          text layer, so the accessible name and the Pagefind
+                          excerpt read "m01Getting Claude Code running"
+                          (KILN §9.1). The visual gap comes from the flex gap;
+                          this is for the text layer. */}{' '}
+                      <span class="cc-rail__module-title">{mod.title}</span>
+                    </summary>
+
+                    <ul class="cc-rail__lessons">
+                      <li>
+                        <a
+                          class="cc-rail__lesson cc-rail__lesson--overview"
+                          href={mod.path}
+                          aria-current={isCurrentModule && !activeLessonId ? 'page' : undefined}
+                        >
+                          <span class="cc-rail__lesson-text">{overviewLabel}</span>
+                        </a>
+                      </li>
                       {mod.lessons.map((lesson) => (
                         <li>
                           <a
+                            class="cc-rail__lesson"
                             href={lesson.path}
+                            data-cc-rail-lesson={lesson.id}
                             aria-current={lesson.id === activeLessonId ? 'page' : undefined}
                           >
-                            {lesson.title}
+                            <span class="cc-rail__done" aria-hidden="true" hidden>
+                              <Icon name="check" size={13} />
+                            </span>
+                            <span class="cc-rail__lesson-text">{lesson.title}</span>
                           </a>
                         </li>
                       ))}
                     </ul>
-                  )}
-              </li>
-            ))}
+                  </details>
+                </li>
+              );
+            })}
           </ul>
         </li>
       ))
@@ -76,53 +132,276 @@ function levelHeading(number: number | null, title: string): string {
 </nav>
 
 <style>
-  .cc-sidebar {
-    padding: var(--space-5) var(--space-3);
-    border-right: 1px solid var(--color-line);
+  .cc-rail {
+    padding: var(--cc-space-6) var(--cc-space-4) var(--cc-space-10);
+    font-size: var(--cc-text-small);
   }
 
-  .cc-sidebar ul {
+  .cc-rail ul {
     list-style: none;
     margin: 0;
     padding: 0;
   }
 
-  .cc-sidebar a {
-    display: block;
-    padding: 6px 10px;
-    border-radius: var(--radius-2);
-    font-size: var(--text-14);
-    color: var(--color-ink-soft);
+  /* -- level group ------------------------------------------------------ */
+  .cc-rail__level {
+    position: relative;
+    padding-left: var(--cc-space-3);
+    margin-bottom: var(--cc-space-6);
+  }
+
+  /* The 2 px marker in the level hue — the only place a level colour
+     appears in the rail (KILN §2.3: wayfinding, never a fill). */
+  .cc-rail__level::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 4px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--cc-rail-hue);
+  }
+
+  .cc-rail__level-link {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--cc-space-2);
+    min-height: var(--cc-tap);
+    padding: var(--cc-space-2) var(--cc-space-2) var(--cc-space-2) var(--cc-space-3);
+    color: var(--cc-ink);
     text-decoration: none;
   }
 
-  .cc-sidebar a:hover {
-    color: var(--color-accent-text);
+  /* Single line, sentence case, no letter-spaced uppercase — the label can
+     no longer wrap in the middle of itself (KILN §9.3). */
+  .cc-rail__level-name {
+    font-family: var(--cc-font-display);
+    font-size: var(--cc-text-body);
+    font-weight: var(--cc-weight-display);
+    letter-spacing: var(--cc-track-h3);
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  .cc-sidebar-level {
-    font-family: var(--font-family-mono);
-    font-size: var(--text-11);
-    letter-spacing: var(--tracking-eyebrow);
+  .cc-rail__level-link:hover .cc-rail__level-name {
+    color: var(--cc-accent);
+  }
+
+  .cc-rail__level-chip {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 var(--cc-space-2);
+    border-radius: var(--cc-radius-pill);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+  }
+
+  /* -- module disclosure ------------------------------------------------ */
+  .cc-rail__module {
+    display: flex;
+    align-items: center;
+    padding-top: var(--cc-space-2);
+    padding-bottom: var(--cc-space-2);
+    gap: var(--cc-space-2);
+    min-height: var(--cc-tap);
+    padding: var(--cc-space-1) var(--cc-space-2);
+    border-radius: var(--cc-radius-sm);
+    color: var(--cc-ink-muted);
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .cc-rail__module::-webkit-details-marker {
+    display: none;
+  }
+
+  .cc-rail__module:hover {
+    background: var(--cc-paper-sunken);
+    color: var(--cc-ink);
+  }
+
+  .cc-rail__module[data-current='true'] {
+    color: var(--cc-ink);
+    font-weight: 550;
+  }
+
+  .cc-rail__chevron {
+    display: inline-flex;
+    flex: none;
+    color: var(--cc-ink-faint);
+  }
+
+  .cc-rail__disclosure[open] > .cc-rail__module .cc-rail__chevron {
+    transform: rotate(90deg);
+  }
+
+  /* A fixed track, so every module title in a group starts on the same left
+     edge instead of wherever its id happens to end. */
+  .cc-rail__module-id {
+    flex: none;
+    min-width: 2.25rem;
+    font-family: var(--cc-font-mono);
+    font-size: var(--cc-text-micro);
+    color: var(--cc-ink-muted);
+  }
+
+  /* Wraps to at most two lines rather than truncating: a rail whose rows
+     all end in an ellipsis tells the reader nothing. The row keeps its
+     minimum height, so short titles still sit on the 36/44px rhythm. */
+  .cc-rail__module-title,
+  .cc-rail__lesson-text {
+    min-width: 0;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+  }
+
+  /* -- lesson rows ------------------------------------------------------ */
+  .cc-rail__lessons {
+    margin-left: var(--cc-space-4);
+    padding-left: var(--cc-space-3);
+    border-left: 1px solid var(--cc-line);
+  }
+
+  .cc-rail__lesson {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--cc-space-2);
+    min-height: 36px;
+    padding: var(--cc-space-1) var(--cc-space-2);
+    border-radius: var(--cc-radius-sm);
+    color: var(--cc-ink-muted);
+    text-decoration: none;
+    line-height: 1.35;
+  }
+
+  .cc-rail__lesson:hover {
+    background: var(--cc-paper-sunken);
+    color: var(--cc-ink);
+  }
+
+  .cc-rail__lesson--overview {
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
     text-transform: uppercase;
-    color: var(--color-ink-muted);
-    margin: 14px 0 6px;
+    min-height: 32px;
   }
 
-  .cc-sidebar-module[data-current='true'] {
-    color: var(--color-ink);
+  /* Current: a 2 px clay marker on the rail line, plus weight and ink — the
+     state is never carried by colour alone. */
+  .cc-rail__lesson[aria-current='page'] {
+    color: var(--cc-ink);
+    font-weight: 550;
+    background: var(--cc-accent-wash);
   }
 
-  .cc-sidebar-lessons {
-    padding-left: 10px;
+  .cc-rail__lesson[aria-current='page']::before {
+    content: '';
+    position: absolute;
+    left: calc(var(--cc-space-3) * -1 - 1px);
+    top: 4px;
+    bottom: 4px;
+    width: 2px;
+    border-radius: 1px;
+    background: var(--cc-accent);
   }
 
-  .cc-sidebar-lessons a {
-    font-size: var(--text-13);
+  .cc-rail__done {
+    display: inline-flex;
+    flex: none;
+    color: var(--cc-ok);
   }
 
-  .cc-sidebar a[aria-current='page'] {
-    background: var(--color-bg-3);
-    color: var(--color-ink);
+  .cc-rail__done[hidden] {
+    display: none;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-rail__chevron {
+      transition: transform var(--cc-dur-fast) var(--cc-ease);
+    }
+
+    .cc-rail__lesson,
+    .cc-rail__module {
+      transition:
+        background var(--cc-dur-fast) var(--cc-ease),
+        color var(--cc-dur-fast) var(--cc-ease);
+    }
   }
 </style>
+
+<script>
+  import { isComplete } from '../../lib/progress.ts';
+
+  // A lesson page renders the tree TWICE — once as the sticky rail column,
+  // once inside the header's mobile drawer — and exactly one of the two has
+  // layout at any viewport. `querySelector` used to take the first in
+  // document order, which is the drawer copy, so on desktop the completion
+  // checks and the scroll-into-view were being applied to a hidden tree
+  // while the visible rail got neither.
+  for (const rail of document.querySelectorAll<HTMLElement>('[data-cc-rail]')) {
+    const lang = rail.dataset.lang ?? 'en';
+
+    // Completed lessons get their check revealed, in EVERY copy: the drawer
+    // copy is hidden now but is the only tree the reader sees on a phone.
+    // Reading storage can throw (private browsing), in which case the rail
+    // simply shows no checks.
+    try {
+      for (const link of rail.querySelectorAll<HTMLElement>('[data-cc-rail-lesson]')) {
+        const id = link.dataset.ccRailLesson ?? '';
+        if (id && isComplete(lang, id)) {
+          link.querySelector<HTMLElement>('.cc-rail__done')?.removeAttribute('hidden');
+        }
+      }
+    } catch {
+      // no checks — the rail is still complete and navigable.
+    }
+
+    // Bring the current lesson into view inside the rail's own scroller —
+    // only for the copy the reader can actually see. Neither cheaper test
+    // works here: the drawer copy sits in a closed <details> inside an
+    // absolutely-positioned sheet, so it still resolves an `offsetParent`
+    // AND still lays out a full-height box. `checkVisibility()` is the one
+    // that answers the real question, with `offsetParent` as the fallback
+    // for engines that predate it. Scrolling the drawer copy would push the
+    // drawer's own nav off the top of the sheet before it is ever seen.
+    const shown =
+      typeof rail.checkVisibility === 'function'
+        ? rail.checkVisibility()
+        : rail.offsetParent !== null;
+    if (!shown) continue;
+
+    // `scrollIntoView` would scroll every scrollable ancestor including the
+    // document, landing the reader mid-lesson on load, so the offset is
+    // applied directly to the nearest scrolling ancestor instead. Always
+    // instant: this is not motion the reader asked for.
+    const current = rail.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!current) continue;
+
+    let scroller: HTMLElement | null = rail.parentElement;
+    while (scroller && scroller.scrollHeight <= scroller.clientHeight) {
+      scroller = scroller.parentElement;
+      if (scroller === document.body) scroller = null;
+    }
+    if (scroller) {
+      const delta =
+        current.getBoundingClientRect().top -
+        scroller.getBoundingClientRect().top -
+        scroller.clientHeight / 2;
+      scroller.scrollTop += delta;
+    }
+  }
+</script>

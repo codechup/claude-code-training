@@ -1,17 +1,28 @@
 ---
-// Module index (`/[lang]/[level]/[module]/`).
-//
-// The same route shape also serves the standalone, non-numbered reference
-// pages under `playbook/` and `meta/` (e.g. `/en/playbook/glossary/`): they
-// are section entries at the same depth, they just have no lessons under
-// them, so the page renders their MDX body and skips the lesson list.
+/**
+ * Module index (`/[lang]/[level]/[module]/`) — rebuilt on Kiln.
+ *
+ * The same route shape also serves the standalone reference pages under
+ * `playbook/` and `meta/` (e.g. `/en/playbook/glossary/`): section entries
+ * at the same depth with no lessons beneath them, so the page renders their
+ * MDX body and skips the lesson list entirely.
+ *
+ * The lesson list is the point of this page, and it is rendered ONCE, from
+ * the nav tree — never hand-written, and never repeated in prose. Each row
+ * states its position, its duration and its difficulty, and marks itself
+ * done from stored progress with a check *and* the word (KILN §10: never
+ * state by colour alone).
+ */
 import type { InferGetStaticParamsType } from 'astro';
 import { getCollection, render, type CollectionEntry } from 'astro:content';
 import Section from '../../../../layouts/Section.astro';
 import ProgressBar from '../../../../components/lesson/ProgressBar.astro';
+import Icon from '../../../../components/ui/Icon.astro';
 import { buildNav, findLevel, findModule } from '../../../../lib/nav.ts';
+import { levelBadgeStyle } from '../../../../lib/levels.ts';
 import { t } from '../../../../lib/i18n/ui.ts';
 import { swapLangInPath } from '../../../../lib/slugs.ts';
+import '../../../../styles/prose.css';
 
 export async function getStaticPaths() {
   const sections = await getCollection('sections');
@@ -39,6 +50,13 @@ const altPath = swapLangInPath(path, lang === 'en' ? 'tr' : 'en');
 
 const { Content } = await render(section);
 const moduleLessons = navModule?.lessons ?? [];
+const totalMinutes = moduleLessons.reduce((sum, l) => sum + l.durationMin, 0);
+
+const COPY: Record<string, { lessonsHeading: string; start: string; done: string }> = {
+  en: { lessonsHeading: 'Lessons, in order', start: 'Start the first lesson', done: 'done' },
+  tr: { lessonsHeading: 'Dersler, sırasıyla', start: 'İlk dersle başla', done: 'tamamlandı' },
+};
+const c = COPY[lang] ?? COPY.en;
 ---
 
 <Section
@@ -47,6 +65,7 @@ const moduleLessons = navModule?.lessons ?? [];
   description={section.data.description}
   path={path}
   altPath={altPath}
+  active={level === 'playbook' ? 'playbook' : 'curriculum'}
   crumbs={[
     { label: strings.curriculum, href: `/${lang}/` },
     { label: navLevel?.title ?? level, href: `/${lang}/${level}/` },
@@ -54,12 +73,34 @@ const moduleLessons = navModule?.lessons ?? [];
   ]}
 >
   <header class="cc-head">
-    <span class="mono muted cc-kicker">
-      {navModule?.shortId ?? module}
-      {navLevel?.number ? ` · ${strings.levelLabel(navLevel.number)}` : ''}
-    </span>
+    <div class="cc-head__id">
+      <span class="cc-head__module mono">{navModule?.shortId ?? module}</span>
+      {
+        navLevel?.number != null && (
+          <span class="cc-chip" style={levelBadgeStyle(navLevel.number)}>
+            {strings.levelLabel(navLevel.number)}
+          </span>
+        )
+      }
+    </div>
+
     <h1>{section.data.title}</h1>
-    <p class="soft">{section.data.description}</p>
+    <p class="cc-lead">{section.data.description}</p>
+
+    {
+      moduleLessons.length > 0 && (
+        <p class="cc-head__meta small soft">
+          <span>
+            {moduleLessons.length} {strings.lessons}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>
+            {totalMinutes} {strings.min}
+          </span>
+        </p>
+      )
+    }
+
     {
       moduleLessons.length > 0 && (
         <ProgressBar
@@ -71,6 +112,15 @@ const moduleLessons = navModule?.lessons ?? [];
         />
       )
     }
+
+    {
+      moduleLessons[0] && (
+        <a class="cc-btn cc-btn--primary cc-head__cta" href={moduleLessons[0].path}>
+          {c.start}
+          <Icon name="arrow-right" size={18} />
+        </a>
+      )
+    }
   </header>
 
   <div class="cc-prose">
@@ -79,89 +129,300 @@ const moduleLessons = navModule?.lessons ?? [];
 
   {
     moduleLessons.length > 0 ? (
-      <ol class="cc-lesson-list">
-        {moduleLessons.map((lesson) => (
-          <li>
-            <a href={lesson.path}>
-              <span class="cc-lesson-title">{lesson.title}</span>
-              <span class="soft cc-lesson-desc">{lesson.description}</span>
-              <span class="mono muted cc-lesson-meta">
-                {lesson.durationMin} {strings.min} · {strings.difficulty[lesson.difficulty]}
-              </span>
-            </a>
-          </li>
-        ))}
-      </ol>
+      <section class="cc-lessons" aria-labelledby="lessons-heading">
+        <h2 class="cc-lessons__heading" id="lessons-heading">
+          {c.lessonsHeading}
+        </h2>
+        <ol class="cc-lessons__list">
+          {moduleLessons.map((lesson) => (
+            <li class="cc-lesson" data-cc-lesson data-lang={lang} data-lesson-id={lesson.id}>
+              <a class="cc-lesson__link" href={lesson.path}>
+                <span class="cc-lesson__num mono" aria-hidden="true">
+                  {String(lesson.indexInModule).padStart(2, '0')}
+                </span>
+                <span class="cc-lesson__text">
+                  <span class="cc-lesson__title">{lesson.title}</span>
+                  <span class="cc-lesson__desc small soft">{lesson.description}</span>
+                  <span class="cc-lesson__meta small soft">
+                    <span class="cc-lesson__fact">
+                      <Icon name="clock" size={14} />
+                      {lesson.durationMin} {strings.min}
+                    </span>
+                    <span class="cc-lesson__fact">
+                      <Icon name="gauge" size={14} />
+                      {strings.difficulty[lesson.difficulty]}
+                    </span>
+                  </span>
+                </span>
+                <span class="cc-lesson__state" data-cc-lesson-state hidden>
+                  <Icon name="check" size={16} />
+                  <span class="cc-lesson__stateword">{c.done}</span>
+                </span>
+                <span class="cc-lesson__chevron" aria-hidden="true">
+                  <Icon name="chevron-right" size={18} />
+                </span>
+              </a>
+            </li>
+          ))}
+        </ol>
+      </section>
     ) : (
-      navLevel?.number !== null && <p class="muted">{strings.noLessonsYet}</p>
+      navLevel?.number != null && <p class="soft">{strings.noLessonsYet}</p>
     )
   }
 </Section>
 
 <style>
+  /* ==== header ========================================================= */
   .cc-head {
     display: flex;
     flex-direction: column;
-    gap: var(--space-3);
+    align-items: flex-start;
+    gap: var(--cc-space-4);
+  }
+
+  .cc-head__id {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--cc-space-3);
+  }
+
+  .cc-head__module {
+    font-size: var(--cc-text-micro);
+    font-weight: 600;
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+    color: var(--cc-accent);
   }
 
   .cc-head h1 {
     margin: 0;
-    font-size: var(--text-32);
   }
 
-  .cc-head p {
+  .cc-head :global(p) {
     margin: 0;
   }
 
-  .cc-kicker {
-    font-size: var(--text-12);
-    letter-spacing: var(--tracking-eyebrow);
+  .cc-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    padding-inline: var(--cc-space-3);
+    border-radius: var(--cc-radius-pill);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
     text-transform: uppercase;
+    white-space: nowrap;
   }
 
-  .cc-prose {
-    color: var(--color-ink-soft);
+  /* ProgressBar is a flex child of a column header, so it collapses to its
+     140px basis unless it is told to fill the row. */
+  .cc-head :global(.cc-progress-row) {
+    width: 100%;
+    max-width: 460px;
+    margin-block-start: 0;
   }
 
-  .cc-lesson-list {
-    list-style: none;
+  .cc-head__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--cc-space-2);
+  }
+
+  .cc-head__cta {
+    margin-block-start: var(--cc-space-2);
+  }
+
+  .cc-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--cc-space-2);
+    min-height: var(--cc-tap);
+    padding-inline: var(--cc-space-6);
+    border: 1px solid transparent;
+    border-radius: var(--cc-radius-md);
+    font-weight: 550;
+    line-height: 1.2;
+    text-decoration: none;
+  }
+
+  .cc-btn--primary {
+    background: var(--cc-accent);
+    color: var(--cc-on-accent);
+  }
+
+  .cc-btn--primary:hover {
+    background: var(--cc-accent-hover);
+    color: var(--cc-on-accent);
+  }
+
+  /* ==== lesson list ==================================================== */
+  .cc-lessons {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-5);
+  }
+
+  .cc-lessons__heading {
+    margin: 0;
+    font-family: var(--cc-font-sans);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+    color: var(--cc-ink-muted);
+    padding-block-end: var(--cc-space-3);
+    border-block-end: 1px solid var(--cc-line);
+  }
+
+  .cc-lessons__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-3);
     margin: 0;
     padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-    counter-reset: lesson;
+    list-style: none;
   }
 
-  .cc-lesson-list a {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-1);
-    padding: var(--space-4);
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-3);
-    background: var(--color-bg-2);
+  .cc-lesson__link {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    gap: var(--cc-space-4);
+    min-height: var(--cc-tap);
+    padding: var(--cc-space-5) var(--cc-space-5);
+    background: var(--cc-paper-raised);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-lg);
     text-decoration: none;
-    color: var(--color-ink);
-    min-height: var(--tap-target);
+    color: var(--cc-ink);
   }
 
-  .cc-lesson-title {
-    font-weight: 500;
+  .cc-lesson__link:hover {
+    border-color: var(--cc-line-strong);
+    box-shadow: var(--cc-shadow-1);
+    color: var(--cc-ink);
   }
 
-  .cc-lesson-desc {
-    font-size: var(--text-14);
+  .cc-lesson__num {
+    font-size: var(--cc-text-small);
+    font-weight: 600;
+    line-height: 1.6;
+    color: var(--cc-ink-muted);
+    font-variant-numeric: tabular-nums;
   }
 
-  .cc-lesson-meta {
-    font-size: var(--text-12);
+  .cc-lesson__link:hover .cc-lesson__num {
+    color: var(--cc-accent);
   }
 
-  @media (min-width: 768px) {
-    .cc-head h1 {
-      font-size: var(--text-40);
+  .cc-lesson__text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cc-space-2);
+    min-width: 0;
+  }
+
+  .cc-lesson__title {
+    font-weight: 550;
+    line-height: var(--cc-leading-h3);
+  }
+
+  .cc-lesson__link:hover .cc-lesson__title {
+    color: var(--cc-accent);
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+  }
+
+  .cc-lesson__desc {
+    display: block;
+  }
+
+  .cc-lesson__meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--cc-space-2) var(--cc-space-4);
+    margin-block-start: var(--cc-space-1);
+  }
+
+  .cc-lesson__fact {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-space-2);
+    white-space: nowrap;
+  }
+
+  .cc-lesson__fact :global(svg) {
+    color: var(--cc-ink-muted);
+  }
+
+  /* Completion: a check, the word, and a tinted pill — three signals, so it
+     never depends on the colour (KILN §10). Hidden until the hoisted script
+     has read `localStorage`, so the static page never claims progress. */
+  .cc-lesson__state {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-space-2);
+    padding: 0 var(--cc-space-3);
+    height: 26px;
+    border-radius: var(--cc-radius-pill);
+    background: var(--cc-ok-wash);
+    border: 1px solid var(--cc-ok-line);
+    color: var(--cc-ok);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .cc-lesson__chevron {
+    display: inline-flex;
+    align-self: center;
+    color: var(--cc-ink-muted);
+  }
+
+  .cc-lesson__link:hover .cc-lesson__chevron {
+    color: var(--cc-accent);
+  }
+
+  @media (max-width: 559px) {
+    /* The chevron is decoration on a phone; the row is already the target. */
+    .cc-lesson__chevron {
+      display: none;
+    }
+
+    .cc-lesson__link {
+      gap: var(--cc-space-3);
+      padding: var(--cc-space-4);
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-lesson__link,
+    .cc-btn {
+      transition:
+        background-color var(--cc-dur-fast) var(--cc-ease),
+        border-color var(--cc-dur-fast) var(--cc-ease),
+        box-shadow var(--cc-dur) var(--cc-ease),
+        color var(--cc-dur-fast) var(--cc-ease);
     }
   }
 </style>
+
+<script>
+  // Per-lesson completion marks. Progress is browser-local (D020), so the
+  // server renders every row unmarked and this hoisted module — bundled by
+  // Astro to an external file, satisfying `script-src 'self'` — reveals the
+  // ones already done. `src/lib/progress.ts` owns the storage contract.
+  import { isComplete } from '../../../../lib/progress.ts';
+
+  for (const row of document.querySelectorAll<HTMLElement>('[data-cc-lesson]')) {
+    if (!isComplete(row.dataset.lang ?? 'en', row.dataset.lessonId ?? '')) continue;
+    const state = row.querySelector<HTMLElement>('[data-cc-lesson-state]');
+    if (state) state.hidden = false;
+  }
+</script>

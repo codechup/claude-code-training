@@ -1,0 +1,71 @@
+---
+/**
+ * SkipLink — the first focusable thing on every page (WCAG 2.4.1).
+ *
+ * It was copy-pasted verbatim into Landing, Section and Lesson; this is the
+ * one copy. The target is always `<main id="main" tabindex="-1">`, which the
+ * layouts render: without `tabindex="-1"` the browser moves the *scroll*
+ * position but not focus, so the next Tab lands back in the header — the
+ * keyboard defect this component exists to close. `:focus-visible` styling
+ * on the main element itself is suppressed in the layouts so a mouse click
+ * inside the prose never paints a ring around the whole page.
+ */
+import { t } from '../../lib/i18n/ui.ts';
+
+interface Props {
+  /** Locale for the label. `/design/` is EN-only, so this defaults to `en`. */
+  lang?: string;
+  /** Fragment to jump to. Every layout uses the default. */
+  href?: string;
+}
+
+const { lang = 'en', href = '#main' } = Astro.props;
+const strings = t(lang);
+---
+
+<a class="cc-skip" href={href}>{strings.skipToContent}</a>
+
+<style>
+  /*
+   * Off-screen rather than `display: none` so it stays reachable by Tab: the
+   * resting state is translated above the viewport, which lets the focused
+   * state animate down from the top edge without ever widening the page (no
+   * horizontal scroll at 320px).
+   *
+   * The shadow is NOT part of the resting state. A transform moves a box but
+   * does not clip what it paints, so `--cc-shadow-2` (0 18px 44px) reached
+   * back down over the top-left corner of every page in both themes — a pale
+   * smudge next to the brand mark, the first thing a reader saw. Elevation
+   * belongs to the focused state, where the link is actually floating.
+   */
+  .cc-skip {
+    position: fixed;
+    inset-block-start: var(--cc-space-2);
+    inset-inline-start: var(--cc-space-2);
+    z-index: 90;
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--cc-tap);
+    padding: 0 var(--cc-space-5);
+    border: 1px solid var(--cc-line-strong);
+    border-radius: var(--cc-radius-pill);
+    background: var(--cc-paper-raised);
+    box-shadow: none;
+    color: var(--cc-ink);
+    font-size: var(--cc-text-small);
+    font-weight: var(--cc-weight-small);
+    text-decoration: none;
+    transform: translateY(calc(-100% - var(--cc-space-4)));
+  }
+
+  .cc-skip:focus-visible {
+    box-shadow: var(--cc-shadow-2);
+    transform: translateY(0);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-skip {
+      transition: transform var(--cc-dur) var(--cc-ease);
+    }
+  }
+</style>

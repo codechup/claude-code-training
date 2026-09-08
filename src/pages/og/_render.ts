@@ -1,20 +1,24 @@
 // Build-time OG (social card) image rendering (D065): `satori` lays out a
 // plain node tree into SVG, `sharp` rasterizes that SVG to a 1200x630 PNG.
 //
-// Layout mirrors `docs/design/canvas-out/Brand.dc.html`'s "Social card
-// 1200×630" artboard: lockup top-left (sigil + wordmark), an eyebrow line,
-// the title, and an 8px gold bar along the bottom. Colors are the dark-theme
-// values from `src/styles/tokens.css` (a social-card preview always renders
-// on a dark ground regardless of the viewer's OS theme).
+// Kiln (docs/design/KILN.md §5): the card is the brand at its largest — the
+// clay tile mark and the "Claude Code Academy" wordmark top-left, an eyebrow,
+// the title in the display face, the publisher line bottom-left, and a clay
+// rule along the bottom edge. The retired 3x3 sigil, the lowercase mono
+// `codechup` wordmark and the letter-spaced `CLAUDE CODE ACADEMY` line are
+// gone from here as well as from the site chrome (§5.2).
 //
-// Font note (plan P09): satori cannot parse WOFF2, only TTF/OTF/WOFF, so
-// fonts are loaded from `@fontsource/inter` and `@fontsource/jetbrains-mono`
-// (the static, non-variable packages, which ship `.woff` files) rather than
-// the `@fontsource-variable/inter` package the rest of the site uses (that
-// one only ships `.woff2`). Both the `latin` and `latin-ext` subsets are
-// loaded and registered as CSS font-family fallbacks (`"Inter", "Inter
-// Ext"`) so Turkish letters outside the plain latin subset (ı, İ, ş, ğ, ö,
-// ü, ç) still render instead of falling back to satori's missing-glyph box.
+// A social card always renders on the DARK ground regardless of the viewer's
+// OS theme, so every colour comes from the `:root[data-theme='dark']` block
+// of tokens.css.
+//
+// Font note: satori parses TTF/OTF/WOFF but NOT WOFF2, so the faces here come
+// from the STATIC `@fontsource/*` packages (which ship `.woff`) rather than
+// the `@fontsource-variable/*` packages the site itself loads (WOFF2 only).
+// Both the `latin` and `latin-ext` subsets of every face are registered as a
+// family fallback pair (`"Fraunces", "Fraunces Ext"`) so Turkish letters
+// outside plain latin (ı İ ş ğ ö ü ç) render instead of satori's
+// missing-glyph box.
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,21 +28,29 @@ import sharp from 'sharp';
 export const OG_WIDTH = 1200;
 export const OG_HEIGHT = 630;
 
-// Colors are READ from `src/styles/tokens.css` at render time, never
-// copy-pasted as literals here — `scripts/check-raw-colors.mjs` (CLAUDE.md:
-// "Design only through tokens") bans raw hex/rgb literals everywhere
-// outside that one file, and satori (unlike a browser) cannot resolve
-// `var(--color-x)` itself, so this is the one place a build script needs
-// the *resolved* value rather than the custom-property reference.
-const TOKEN_NAMES = ['bg-1', 'ink', 'ink-muted', 'caret', 'accent'] as const;
+// Colours are READ from `src/styles/tokens.css` at render time, never
+// copy-pasted as literals here — `scripts/check-raw-colors.mjs` bans raw
+// hex/rgb literals everywhere outside that one file, and satori (unlike a
+// browser) cannot resolve `var(--cc-x)` itself, so this is the one place a
+// build script needs the *resolved* value rather than the property reference.
+const TOKEN_NAMES = [
+  'paper',
+  'paper-raised',
+  'line',
+  'ink',
+  'ink-muted',
+  'accent',
+  'on-accent',
+] as const;
 type TokenName = (typeof TOKEN_NAMES)[number];
 
 let tokensPromise: Promise<Record<TokenName, string>> | null = null;
 
 /**
- * Parse the explicit `:root[data-theme='dark']` block of tokens.css (a
- * social card always renders on a dark ground regardless of the viewer's
- * OS theme) and pull out the handful of `--color-*` values this card uses.
+ * Parse the explicit `:root[data-theme='dark']` block of tokens.css and pull
+ * out the Kiln tokens this card uses. tokens.css documents that block as a
+ * flat list of `--name: value;` declarations precisely so this can stay a
+ * regex rather than a CSS parser.
  */
 async function loadDarkTokens(): Promise<Record<TokenName, string>> {
   if (!tokensPromise) {
@@ -49,9 +61,9 @@ async function loadDarkTokens(): Promise<Record<TokenName, string>> {
 
       const values = {} as Record<TokenName, string>;
       for (const name of TOKEN_NAMES) {
-        const re = new RegExp(`--color-${name}:\\s*([^;]+);`);
+        const re = new RegExp(`--cc-${name}:\\s*([^;]+);`);
         const value = re.exec(block)?.[1]?.trim();
-        if (!value) throw new Error(`tokens.css: missing --color-${name} in the dark block`);
+        if (!value) throw new Error(`tokens.css: missing --cc-${name} in the dark block`);
         values[name] = value;
       }
       return values;
@@ -60,29 +72,28 @@ async function loadDarkTokens(): Promise<Record<TokenName, string>> {
   return tokensPromise;
 }
 
-const SIGIL_CELLS: [number, number][] = [
-  [1, 1],
-  [9, 1],
-  [1, 9],
-  [9, 9],
-  [17, 9],
-  [1, 17],
-  [9, 17],
-  [17, 17],
-];
-
 async function loadFontFile(specifier: string): Promise<Buffer> {
   const resolved = import.meta.resolve(specifier);
   return readFile(fileURLToPath(resolved));
 }
 
+/** `null` when the package is not installed — the caller falls back to Inter. */
+async function tryLoadFontFile(specifier: string): Promise<Buffer | null> {
+  try {
+    return await loadFontFile(specifier);
+  } catch {
+    return null;
+  }
+}
+
 interface LoadedFonts {
   inter400: Buffer;
   inter400Ext: Buffer;
-  inter700: Buffer;
-  inter700Ext: Buffer;
-  mono500: Buffer;
-  mono500Ext: Buffer;
+  inter600: Buffer;
+  inter600Ext: Buffer;
+  /** Fraunces (display). Null when `@fontsource/fraunces` is not installed. */
+  display: Buffer | null;
+  displayExt: Buffer | null;
 }
 
 let fontsPromise: Promise<LoadedFonts> | null = null;
@@ -93,17 +104,23 @@ function loadFonts(): Promise<LoadedFonts> {
     fontsPromise = Promise.all([
       loadFontFile('@fontsource/inter/files/inter-latin-400-normal.woff'),
       loadFontFile('@fontsource/inter/files/inter-latin-ext-400-normal.woff'),
-      loadFontFile('@fontsource/inter/files/inter-latin-700-normal.woff'),
-      loadFontFile('@fontsource/inter/files/inter-latin-ext-700-normal.woff'),
-      loadFontFile('@fontsource/jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff'),
-      loadFontFile('@fontsource/jetbrains-mono/files/jetbrains-mono-latin-ext-500-normal.woff'),
-    ]).then(([inter400, inter400Ext, inter700, inter700Ext, mono500, mono500Ext]) => ({
+      loadFontFile('@fontsource/inter/files/inter-latin-600-normal.woff'),
+      loadFontFile('@fontsource/inter/files/inter-latin-ext-600-normal.woff'),
+      // Display face. The site loads Fraunces from the VARIABLE package,
+      // which ships WOFF2 only and satori cannot parse; the static package
+      // ships the `.woff` files below. If it is absent the card still
+      // renders — the display face simply falls back to Inter 600 — so a
+      // missing optional dependency degrades the card instead of failing
+      // the build.
+      tryLoadFontFile('@fontsource/fraunces/files/fraunces-latin-600-normal.woff'),
+      tryLoadFontFile('@fontsource/fraunces/files/fraunces-latin-ext-600-normal.woff'),
+    ]).then(([inter400, inter400Ext, inter600, inter600Ext, display, displayExt]) => ({
       inter400,
       inter400Ext,
-      inter700,
-      inter700Ext,
-      mono500,
-      mono500Ext,
+      inter600,
+      inter600Ext,
+      display,
+      displayExt,
     }));
   }
   return fontsPromise;
@@ -124,31 +141,42 @@ function h(
   // explicit display" rule) keys off `typeof children === 'string'`. A
   // single-item array here would look, to that check, like a div that has
   // already wrapped into multiple lines, and satori would then require an
-  // explicit `display: flex|contents|none` on every text-holding div,
-  // which conflicts with the `-webkit-box` display the line-clamp title
-  // needs. Unwrapping keeps this file's children ergonomics (always pass
-  // an array) without hitting that.
+  // explicit `display: flex|contents|none` on every text-holding div, which
+  // conflicts with the `-webkit-box` display the line-clamp title needs.
   const normalized = children && children.length === 1 ? children[0] : children;
   return { type, props: { style, children: normalized } };
 }
 
-// Coordinates are the raw 24-unit grid (see Header.astro's SIGIL_CELLS) —
-// the `viewBox` does the scaling to `size`, exactly like the header's own
-// inline SVG, so this never needs its own scale math.
-function sigil(size: number, inkColor: string, accentColor: string): Node {
+/**
+ * The Kiln mark (KILN §5.1) — the same 32-unit drawing as
+ * `src/components/brand/Mark.astro`, so the `viewBox` does all the scaling
+ * and there is no separate geometry to keep in sync.
+ */
+function mark(size: number, tile: string, ink: string): Node {
   return {
     type: 'svg',
     props: {
       width: size,
       height: size,
-      viewBox: '0 0 24 24',
+      viewBox: '0 0 32 32',
       style: { display: 'flex' },
       children: [
-        ...SIGIL_CELLS.map(([x, y]) => ({
+        { type: 'rect', props: { width: 32, height: 32, rx: 10, fill: tile } },
+        {
+          type: 'path',
+          props: {
+            d: 'M10.7 9.8 16.7 16l-6 6.2',
+            fill: 'none',
+            stroke: ink,
+            'stroke-width': 2.8,
+            'stroke-linecap': 'round',
+            'stroke-linejoin': 'round',
+          },
+        },
+        {
           type: 'rect',
-          props: { x, y, width: 6, height: 6, rx: 1, fill: inkColor },
-        })),
-        { type: 'rect', props: { x: 17, y: 1, width: 6, height: 6, rx: 1, fill: accentColor } },
+          props: { x: 19.7, y: 11.5, width: 3, height: 9, rx: 1.5, fill: ink },
+        },
       ],
     },
   };
@@ -158,106 +186,118 @@ export interface OgCardInput {
   /** e.g. "Level 1 · Getting Claude Code running" */
   eyebrow: string;
   title: string;
-  /** The mono wordmark line, e.g. "codechup" (D016/D017: same in both languages). */
+  /** Wordmark, e.g. "Claude Code Academy" / "Claude Code Akademisi" (KILN §5.2). */
+  brand?: string;
+  /** Publisher line under the wordmark (KILN §5.2). */
+  publisher?: string;
+  /** @deprecated pre-Kiln mono wordmark; ignored. */
   wordmark?: string;
-  /** The mono line under the wordmark, e.g. "claude code academy" / "claude code akademisi". */
-  wordmarkSub?: string;
 }
 
 /** Render one OG card to a PNG buffer (1200x630). */
 export async function renderOgCard({
   eyebrow,
   title,
-  wordmark = 'codechup',
-  wordmarkSub = 'claude code academy',
+  brand,
+  publisher = 'by CodeChup',
 }: OgCardInput): Promise<Buffer> {
   const [fonts, colors] = await Promise.all([loadFonts(), loadDarkTokens()]);
+
+  const brandLine = brand ?? 'Claude Code Academy';
+  const displayFamily = fonts.display
+    ? 'Fraunces, Fraunces Ext, Inter, Inter Ext'
+    : 'Inter, Inter Ext';
 
   const tree = h(
     'div',
     {
       display: 'flex',
       flexDirection: 'column',
-      justifyContent: 'space-between',
       width: `${OG_WIDTH}px`,
       height: `${OG_HEIGHT}px`,
-      padding: '48px',
-      backgroundColor: colors['bg-1'],
+      backgroundColor: colors.paper,
       fontFamily: 'Inter, Inter Ext',
     },
     [
-      // top: sigil + wordmark lockup
-      h('div', { display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '12px' }, [
-        sigil(40, colors.ink, colors.accent),
-        h('div', { display: 'flex', flexDirection: 'column', gap: '2px' }, [
+      h(
+        'div',
+        {
+          display: 'flex',
+          flex: '1',
+          flexDirection: 'column',
+          justifyContent: 'space-between',
+          padding: '64px',
+        },
+        [
+          // top: the lockup
+          h('div', { display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '16px' }, [
+            mark(52, colors.accent, colors['on-accent']),
+            h(
+              'span',
+              {
+                display: 'flex',
+                fontFamily: displayFamily,
+                fontWeight: 600,
+                fontSize: '30px',
+                letterSpacing: '-0.02em',
+                color: colors.ink,
+              },
+              [brandLine],
+            ),
+          ]),
+          // middle: eyebrow + title
+          h('div', { display: 'flex', flexDirection: 'column', maxWidth: '1000px' }, [
+            h(
+              'div',
+              {
+                display: 'flex',
+                marginBottom: '20px',
+                fontFamily: 'Inter, Inter Ext',
+                fontWeight: 600,
+                fontSize: '20px',
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+                color: colors['ink-muted'],
+              },
+              [eyebrow],
+            ),
+            h(
+              'div',
+              {
+                display: '-webkit-box',
+                WebkitBoxOrient: 'vertical',
+                WebkitLineClamp: 3,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                fontFamily: displayFamily,
+                fontWeight: 600,
+                fontSize: '62px',
+                lineHeight: 1.1,
+                letterSpacing: '-0.02em',
+                color: colors.ink,
+              },
+              [title],
+            ),
+          ]),
+          // bottom: publisher line
           h(
-            'span',
+            'div',
             {
               display: 'flex',
-              fontFamily: 'JetBrains Mono, JetBrains Mono Ext',
-              fontWeight: 500,
-              fontSize: '20px',
-              letterSpacing: '0.02em',
-              color: colors.ink,
-            },
-            [wordmark],
-          ),
-          h(
-            'span',
-            {
-              display: 'flex',
-              fontFamily: 'JetBrains Mono, JetBrains Mono Ext',
-              fontWeight: 500,
-              fontSize: '14px',
-              letterSpacing: '0.18em',
-              textTransform: 'uppercase',
+              fontFamily: 'Inter, Inter Ext',
+              fontWeight: 400,
+              fontSize: '22px',
               color: colors['ink-muted'],
             },
-            [wordmarkSub],
+            [publisher],
           ),
-        ]),
-      ]),
-      // middle: eyebrow + title
-      h('div', { display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '1000px' }, [
-        h(
-          'div',
-          {
-            display: 'flex',
-            fontFamily: 'JetBrains Mono, JetBrains Mono Ext',
-            fontWeight: 500,
-            fontSize: '14px',
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-            color: colors['ink-muted'],
-          },
-          [
-            h('span', { display: 'flex', color: colors.caret }, ['// ']),
-            h('span', { display: 'flex' }, [eyebrow]),
-          ],
-        ),
-        h(
-          'div',
-          {
-            display: '-webkit-box',
-            WebkitBoxOrient: 'vertical',
-            WebkitLineClamp: 3,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            fontFamily: 'Inter, Inter Ext',
-            fontWeight: 700,
-            fontSize: '40px',
-            lineHeight: 1.15,
-            letterSpacing: '-0.015em',
-            color: colors.ink,
-          },
-          [title],
-        ),
-      ]),
-      // bottom: 8px gold bar
+        ],
+      ),
+      // the clay rule along the bottom edge
       h('div', {
         display: 'flex',
         width: '100%',
-        height: '8px',
+        height: '10px',
         backgroundColor: colors.accent,
       }),
     ],
@@ -269,10 +309,28 @@ export async function renderOgCard({
     fonts: [
       { name: 'Inter', data: fonts.inter400, weight: 400, style: 'normal' },
       { name: 'Inter Ext', data: fonts.inter400Ext, weight: 400, style: 'normal' },
-      { name: 'Inter', data: fonts.inter700, weight: 700, style: 'normal' },
-      { name: 'Inter Ext', data: fonts.inter700Ext, weight: 700, style: 'normal' },
-      { name: 'JetBrains Mono', data: fonts.mono500, weight: 500, style: 'normal' },
-      { name: 'JetBrains Mono Ext', data: fonts.mono500Ext, weight: 500, style: 'normal' },
+      { name: 'Inter', data: fonts.inter600, weight: 600, style: 'normal' },
+      { name: 'Inter Ext', data: fonts.inter600Ext, weight: 600, style: 'normal' },
+      ...(fonts.display
+        ? [
+            {
+              name: 'Fraunces',
+              data: fonts.display,
+              weight: 600 as const,
+              style: 'normal' as const,
+            },
+          ]
+        : []),
+      ...(fonts.displayExt
+        ? [
+            {
+              name: 'Fraunces Ext',
+              data: fonts.displayExt,
+              weight: 600 as const,
+              style: 'normal' as const,
+            },
+          ]
+        : []),
     ],
   });
 

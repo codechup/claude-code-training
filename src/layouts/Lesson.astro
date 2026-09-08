@@ -1,19 +1,39 @@
 ---
-// The lesson page shell.
+// The lesson reading surface — KILN §7.1's three-column documentation grid:
 //
-// Desktop (>=1024px) is the three-column grid from
-// `docs/design/canvas-out/Lesson1280.dc.html`: 240px sidebar tree ·
-// min-content body (max 760px) · 220px "On this page" rail.
+//     [ rail 264 ][ prose 1fr, capped at 68ch ][ context 232 ]
 //
-// Phone (390px, `Lesson390.dc.html`) drops both rails to a single column and
-// puts a 40px breadcrumb strip (`L2 / m07 Hooks / Block dangerous commands`)
-// directly under the header.
+//   >= 1240   all three. Rail and context are sticky under the header and
+//             scroll independently, with thin scrollbars.
+//   900-1239  the context column folds into an "On this page" disclosure
+//             pinned above the prose; the rail stays.
+//   <  900    the rail moves into the header's slide-in drawer (see the
+//             DRAWER CONTRACT below) and the prose runs full width.
+//
+// DRAWER CONTRACT (no inline script anywhere — CSP).
+// `Header.astro` owns the mobile drawer: the toggle, the panel, the
+// open/close mechanism (a `<details>`/`<summary>` disclosure or an
+// equivalent script-free control) and the panel's chrome — nav links,
+// language, theme, publisher line. This layout hands it the curriculum tree
+// through the named slot **`drawer-tree`**, which the header renders inside
+// that panel, after its own nav:
+//
+//     <slot name="drawer-tree" />
+//
+// The tree is therefore rendered twice in the document, and exactly one copy
+// is ever in the accessibility tree: the header hides its whole drawer at
+// >= 900 with `display: none`, and this layout hides the rail column below
+// 900 the same way, so no duplicate `<nav>` landmark is ever exposed. Until
+// the header renders that slot the tree simply does not appear below 900 —
+// nothing breaks, the page is just missing its curriculum nav on phones.
 import Base from './Base.astro';
 import Header from '../components/shell/Header.astro';
 import Footer from '../components/shell/Footer.astro';
+import SkipLink from '../components/shell/SkipLink.astro';
+import Breadcrumbs from '../components/shell/Breadcrumbs.astro';
 import Sidebar from '../components/lesson/Sidebar.astro';
 import TOC from '../components/lesson/TOC.astro';
-import type { TocHeading } from '../components/lesson/TOC.astro';
+import type { TocHeading, TocMeta, TocProgress } from '../components/lesson/TOC.astro';
 import { t } from '../lib/i18n/ui.ts';
 import { alternatesFor } from '../lib/seo.ts';
 import type { NavTree } from '../lib/nav.ts';
@@ -29,7 +49,11 @@ interface Props {
   activeModule: string;
   activeLessonId: string;
   headings: TocHeading[];
-  /** Short strings for the phone breadcrumb strip, e.g. ["L2", "m07 Hooks", "…"]. */
+  /** Lesson facts for the context column (KILN §8.8). Optional. */
+  contextMeta?: TocMeta;
+  /** Module progress ring for the context column (KILN §8.8). Optional. */
+  contextProgress?: TocProgress;
+  /** Level › module › lesson, rendered above the title (KILN §8.8). */
   crumbs: { label: string; href?: string }[];
 }
 
@@ -44,10 +68,13 @@ const {
   activeModule,
   activeLessonId,
   headings,
+  contextMeta,
+  contextProgress,
   crumbs,
 } = Astro.props;
 
 const strings = t(lang);
+const hasContext = headings.some((h) => h.depth >= 2 && h.depth <= 3);
 ---
 
 <Base
@@ -56,125 +83,362 @@ const strings = t(lang);
   lang={lang}
   path={path}
   alternates={alternatesFor(lang, path, altPath)}
+  bodyClass="cc-page-lesson"
 >
-  <a class="cc-skip" href="#main">{strings.skipToContent}</a>
-  <Header lang={lang} altPath={altPath} active="curriculum" />
+  <SkipLink lang={lang} />
 
-  <nav class="cc-crumbs mono" aria-label={strings.breadcrumb}>
-    <ol>
-      {
-        crumbs.map((crumb) => (
-          <li>
-            {crumb.href ? <a href={crumb.href}>{crumb.label}</a> : <span>{crumb.label}</span>}
-          </li>
-        ))
-      }
-    </ol>
-  </nav>
+  <Header lang={lang} altPath={altPath} active="curriculum">
+    <Fragment slot="drawer-tree">
+      <div class="cc-lesson__drawer-rail">
+        <Sidebar
+          lang={lang}
+          tree={tree}
+          activeLevel={activeLevel}
+          activeModule={activeModule}
+          activeLessonId={activeLessonId}
+        />
+      </div>
+    </Fragment>
+  </Header>
 
-  <div class="cc-lesson-grid">
-    <div class="cc-lesson-rail cc-lesson-rail-left">
-      <Sidebar
-        lang={lang}
-        tree={tree}
-        activeLevel={activeLevel}
-        activeModule={activeModule}
-        activeLessonId={activeLessonId}
-      />
+  <div class="cc-lesson" data-has-context={hasContext ? 'true' : 'false'}>
+    <div class="cc-lesson__rail">
+      <div class="cc-lesson__rail-scroll">
+        <Sidebar
+          lang={lang}
+          tree={tree}
+          activeLevel={activeLevel}
+          activeModule={activeModule}
+          activeLessonId={activeLessonId}
+        />
+      </div>
     </div>
 
-    <main id="main" class="cc-lesson-main" tabindex="-1">
+    <div class="cc-lesson__crumbs"><Breadcrumbs lang={lang} crumbs={crumbs} /></div>
+
+    <main id="main" class="cc-lesson__prose" tabindex="-1">
+      {
+        /*
+         * The lesson's identity block — level chip, title, meta, tags — comes
+         * through its own slot so the context disclosure can sit AFTER it. Read
+         * in DOM order the page is now breadcrumb -> chip -> title -> meta ->
+         * tags -> "On this page" -> first section; the collapsed contents list
+         * used to be wedged between the breadcrumb and the title it belongs to.
+         */
+      }
+      <slot name="head" />
+
+      {
+        hasContext && (
+          <aside class="cc-lesson__context">
+            {/*
+             * One copy of the context list, two presentations, no script: the
+             * panel is a SIBLING of the disclosure rather than its child, so
+             * CSS can reveal it unconditionally in the three-column layout
+             * (`<details>` content cannot be un-hidden by CSS) and gate it on
+             * `[open]` everywhere below 1240.
+             *
+             * From 1240 up the aside is lifted out of the prose flow and
+             * pinned to the third column with `position: absolute` against
+             * `.cc-lesson`, so one element serves both the disclosure (in
+             * reading order, inside the prose) and the sticky context column
+             * (beside it) without a second copy in the DOM.
+             */}
+            <details class="cc-lesson__ctx-toggle">
+              <summary>{strings.onThisPage}</summary>
+            </details>
+            <div class="cc-lesson__ctx-panel">
+              <TOC lang={lang} headings={headings} meta={contextMeta} progress={contextProgress} />
+              <slot name="context" />
+            </div>
+          </aside>
+        )
+      }
+
       <slot />
     </main>
-
-    <div class="cc-lesson-rail cc-lesson-rail-right">
-      <TOC lang={lang} headings={headings} />
-    </div>
   </div>
 
   <Footer lang={lang} />
 </Base>
 
 <style>
-  .cc-skip {
-    position: absolute;
-    left: -9999px;
-    top: 0;
-    z-index: 10;
-    padding: var(--space-2) var(--space-4);
-    background: var(--color-bg-2);
-    color: var(--color-ink);
-    border: 1px solid var(--color-line-strong);
-    border-radius: var(--radius-2);
+  /* ---- the grid ------------------------------------------------------
+     Mobile first: one column, context disclosure above the prose, rail
+     absent (it lives in the header drawer). */
+  .cc-lesson {
+    position: relative;
+    width: 100%;
+    max-width: var(--cc-max-page);
+    margin-inline: auto;
+    padding-inline: var(--cc-gutter);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      'crumbs'
+      'main';
+    align-items: start;
   }
 
-  .cc-skip:focus {
-    left: var(--space-4);
-    top: var(--space-2);
+  .cc-lesson__rail {
+    display: none;
+    grid-area: rail;
   }
 
-  .cc-crumbs {
-    padding: 0 var(--space-4);
-    border-bottom: 1px solid var(--color-line);
-    font-size: var(--text-12);
-    color: var(--color-ink-muted);
+  /* The drawer copy of the tree (slotted into the header). Hidden from 900
+     up by THIS layout as well as by the header hiding its drawer, so the
+     document never exposes two curriculum `<nav>` landmarks even if the two
+     breakpoints ever drift apart. */
+  @media (min-width: 900px) {
+    .cc-lesson__drawer-rail {
+      display: none;
+    }
   }
 
-  .cc-crumbs ol {
+  /* Below 1240 the column is a disclosure inside the prose flow. */
+  .cc-lesson__context {
+    min-width: 0;
+  }
+
+  /* The prose measure is the column, not just the paragraph (KILN §3.2) —
+     the breadcrumb sits on the same left edge and the same cap. */
+  .cc-lesson__crumbs,
+  .cc-lesson__prose {
+    min-width: 0;
+    max-width: var(--cc-measure);
+  }
+
+  .cc-lesson__crumbs {
+    grid-area: crumbs;
+    padding-block: var(--cc-space-5) 0;
+  }
+
+  .cc-lesson__prose {
+    grid-area: main;
+    display: flex;
+    flex-direction: column;
+    /* KILN §4: 48px between blocks on a lesson page. The gap owns the
+       rhythm, so a block's own vertical margin is zeroed here rather than
+       added to it — otherwise every page-level `margin` lands on top of a
+       48px gap and the column drifts out of rhythm. */
+    gap: var(--cc-space-9);
+    padding-block: var(--cc-space-6) var(--cc-space-12);
+  }
+
+  /* `main` is carried in the selector on purpose: it lifts this rule above
+     a page-level `.cc-body { margin }`, which otherwise lands on top of the
+     gap and pushes the rhythm out by 24-32px per block. */
+  main.cc-lesson__prose > :global(*) {
+    margin-block: 0;
+  }
+
+  /* ---- "On this page" disclosure (< 1240) ---------------------------- */
+  .cc-lesson__ctx-toggle {
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-md);
+    background: var(--cc-paper-raised);
+  }
+
+  .cc-lesson__ctx-toggle summary {
     display: flex;
     align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-2);
+    gap: var(--cc-space-2);
+    min-height: var(--cc-tap);
+    padding-inline: var(--cc-space-4);
+    border-radius: var(--cc-radius-md);
+    cursor: pointer;
+    color: var(--cc-ink);
+    font-size: var(--cc-text-small);
+    font-weight: var(--cc-weight-h3);
     list-style: none;
-    margin: 0;
-    padding: 0;
-    min-height: 40px;
   }
 
-  .cc-crumbs li + li::before {
-    content: '/';
-    margin-right: var(--space-2);
-  }
-
-  .cc-crumbs a {
-    color: var(--color-ink-muted);
-    text-decoration: none;
-  }
-
-  .cc-lesson-grid {
-    display: block;
-  }
-
-  .cc-lesson-rail {
+  .cc-lesson__ctx-toggle summary::-webkit-details-marker {
     display: none;
   }
 
-  .cc-lesson-main {
-    padding: var(--space-6) var(--space-4) var(--space-8);
-    max-width: 760px;
+  /* State is carried by the marker's rotation AND by the open/closed
+     triangle glyph, never by colour alone. */
+  .cc-lesson__ctx-toggle summary::before {
+    content: '';
+    width: 0.5em;
+    height: 0.5em;
+    border-right: 2px solid var(--cc-accent);
+    border-bottom: 2px solid var(--cc-accent);
+    transform: rotate(-45deg);
+    transform-origin: 60% 60%;
   }
 
-  @media (min-width: 1024px) {
-    .cc-lesson-grid {
-      display: grid;
-      grid-template-columns: 240px minmax(0, 1fr) 220px;
-      align-items: start;
+  .cc-lesson__ctx-toggle[open] summary::before {
+    transform: rotate(45deg);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-lesson__ctx-toggle summary::before {
+      transition: transform var(--cc-dur-fast) var(--cc-ease);
+    }
+  }
+
+  /* Open, the toggle and the panel read as one card rather than a box with
+     a list falling out of it. */
+  .cc-lesson__ctx-toggle[open] {
+    border-end-start-radius: 0;
+    border-end-end-radius: 0;
+    border-block-end-color: transparent;
+  }
+
+  .cc-lesson__ctx-panel {
+    display: none;
+  }
+
+  .cc-lesson__ctx-toggle[open] + .cc-lesson__ctx-panel {
+    display: block;
+    border: 1px solid var(--cc-line);
+    border-block-start: 0;
+    border-end-start-radius: var(--cc-radius-md);
+    border-end-end-radius: var(--cc-radius-md);
+    background: var(--cc-paper-raised);
+    padding-block-end: var(--cc-space-4);
+  }
+
+  /* In the disclosure the column is a card, not a sticky rail: it drops the
+     rail's 64px tail and takes the card's own padding instead. */
+  .cc-lesson__ctx-panel :global(.cc-ctx) {
+    padding: 0 var(--cc-space-4) var(--cc-space-1) var(--cc-space-4);
+    gap: var(--cc-space-6);
+  }
+
+  /* Below 1240 the column is a collapsed disclosure and the lesson's facts
+     are already in the header two rows above it, so the disclosure carries
+     the contents list alone. The meta and progress blocks are the wide
+     layout's job (KILN §8.8) — see the 1240 block. */
+  .cc-lesson__ctx-panel :global(.cc-ctx__meta),
+  .cc-lesson__ctx-panel :global(.cc-ctx__progress) {
+    display: none;
+  }
+
+  /* The list already sits under a summary reading "On this page" — the
+     column's own label would say it twice. Hidden visually, kept in the
+     accessibility tree because the nav names itself from it. */
+  .cc-lesson__ctx-panel :global(.cc-ctx__toc .cc-ctx__label) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* ---- 900px: the rail arrives -------------------------------------- */
+  @media (min-width: 900px) {
+    .cc-lesson {
+      grid-template-columns: var(--cc-rail-w) minmax(0, 1fr);
+      grid-template-areas:
+        'rail crumbs'
+        'rail main';
+      grid-template-rows: auto 1fr;
+      column-gap: var(--cc-space-7);
     }
 
-    .cc-crumbs {
+    .cc-lesson__rail {
+      display: block;
+      position: sticky;
+      top: var(--cc-header-h);
+      align-self: start;
+      /* the rail owns the hairline; the prose stays unruled (KILN §1.1) */
+      border-inline-end: 1px solid var(--cc-line);
+      padding-inline-end: var(--cc-space-4);
+      margin-inline-end: calc(var(--cc-space-4) * -1);
+    }
+
+    .cc-lesson__rail-scroll {
+      max-height: calc(100vh - var(--cc-header-h));
+      max-height: calc(100svh - var(--cc-header-h));
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-width: thin;
+      scrollbar-color: var(--cc-line-strong) transparent;
+      padding-block: var(--cc-space-6) var(--cc-space-9);
+    }
+  }
+
+  /* ---- 1240px: the context column ------------------------------------ */
+  @media (min-width: 1240px) {
+    .cc-lesson {
+      grid-template-columns: var(--cc-rail-w) minmax(0, 1fr) var(--cc-context-w);
+      grid-template-areas:
+        'rail crumbs .'
+        'rail main   .';
+      grid-template-rows: auto 1fr;
+      column-gap: var(--cc-space-8);
+    }
+
+    /* The third column is reserved by the grid and filled by the aside, which
+       is lifted out of the prose flow and anchored to `.cc-lesson` so it can
+       be a child of `<main>` (reading order) and a full-height column
+       (layout) at the same time. Its panel does the sticking. */
+    .cc-lesson__context {
+      position: absolute;
+      inset-block: 0;
+      inset-inline-end: var(--cc-gutter);
+      width: var(--cc-context-w);
+    }
+
+    .cc-lesson__ctx-panel,
+    .cc-lesson__ctx-toggle[open] + .cc-lesson__ctx-panel {
+      position: sticky;
+      top: var(--cc-header-h);
+      max-height: calc(100svh - var(--cc-header-h));
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-width: thin;
+      scrollbar-color: var(--cc-line-strong) transparent;
+      /* aligns the column's first label with the breadcrumb line beside it;
+         the column's own vertical padding comes from `.cc-ctx`. */
+      padding-block-start: var(--cc-space-4);
+    }
+
+    /* the disclosure is a small-screen affordance only */
+    .cc-lesson__ctx-toggle {
       display: none;
     }
 
-    .cc-lesson-rail {
+    .cc-lesson__ctx-panel,
+    .cc-lesson__ctx-toggle[open] + .cc-lesson__ctx-panel {
       display: block;
-      position: sticky;
-      top: 0;
-      max-height: 100vh;
-      overflow-y: auto;
+      border: 0;
+      border-radius: 0;
+      background: none;
+      padding-block-end: 0;
     }
 
-    .cc-lesson-main {
-      padding: var(--space-8) var(--space-12);
+    .cc-lesson__ctx-panel :global(.cc-ctx) {
+      padding: 0;
+      gap: var(--cc-space-7);
+    }
+
+    /* KILN §8.8: three stacked blocks — contents, lesson meta, module ring.
+       The column used to hold the first alone and end in ~280px of empty
+       paper, while duration/difficulty/updated/verified competed with the h1
+       in the prose header. Here the column carries them, so the header drops
+       them and the title sits on the breadcrumb and the level chip alone. */
+    .cc-lesson__ctx-panel :global(.cc-ctx__meta),
+    .cc-lesson__ctx-panel :global(.cc-ctx__progress) {
+      display: block;
+    }
+
+    .cc-lesson[data-has-context='true'] .cc-lesson__prose :global(.cc-lmeta__facts) {
+      display: none;
+    }
+
+    .cc-lesson__ctx-panel :global(.cc-ctx__toc .cc-ctx__label) {
+      position: static;
+      width: auto;
+      height: auto;
+      margin: 0 0 var(--cc-space-3);
+      overflow: visible;
+      clip-path: none;
     }
   }
 </style>

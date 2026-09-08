@@ -1,40 +1,43 @@
-// Level badge colours (docs/design/CANVAS.md §6: "level badges `level-1…4`
-// colours from §3"). The canvas draws them as tinted chips; here each level
-// maps to an existing semantic token so no new colour literal enters the
-// codebase (scripts/check-raw-colors.mjs).
+// Level hues (docs/design/KILN.md §2.3). Each level owns one hue, defined
+// once in tokens.css as `--cc-level-1…4`, and it is used for WAYFINDING ONLY:
+// the level chip, the rail marker and the progress ring. Never a background
+// fill larger than a chip (KILN §2.3).
 //
-// Contrast note (D036, WCAG 2.2 AA): the level colour is used for the chip's
-// BACKGROUND TINT and border only. `--color-success` / `--color-warning`
-// against `--color-bg-0` in the light theme sit below 4.5:1 for small text,
-// so badge text is always `--color-ink`.
+// Contrast note (KILN §10, WCAG 2.2 AA): the level hue carries the chip's
+// tint and border, never its text. Chip text is always `--cc-ink`, which
+// clears AA against every tint at both themes' paper values; the hue itself
+// is only ever asked to clear 3:1 as a non-text boundary.
+//
+// The export shape is unchanged from the pre-Kiln module so existing callers
+// (LessonMeta, ProgressBar, the level and lesson routes) keep working.
 
-/** The semantic token a level's badge is tinted with. */
+/** The token a level's chip, marker and ring are drawn with. */
 export function levelColorVar(level: number | null): string {
   switch (level) {
     case 1:
-      return 'var(--color-info)';
+      return 'var(--cc-level-1)';
     case 2:
-      return 'var(--color-success)';
+      return 'var(--cc-level-2)';
     case 3:
-      return 'var(--color-warning)';
+      return 'var(--cc-level-3)';
     case 4:
-      return 'var(--color-accent)';
+      return 'var(--cc-level-4)';
     default:
-      return 'var(--color-ink-muted)';
+      return 'var(--cc-ink-faint)';
   }
 }
 
-/** Inline style for a level badge / tinted chip. */
+/** Inline style for a level chip: hue as tint and hairline, ink as text. */
 export function levelBadgeStyle(level: number | null): string {
   const c = levelColorVar(level);
   return [
-    `background: color-mix(in srgb, ${c} 16%, transparent)`,
-    `border: 1px solid color-mix(in srgb, ${c} 45%, transparent)`,
-    'color: var(--color-ink)',
+    `background: color-mix(in srgb, ${c} 14%, transparent)`,
+    `border: 1px solid color-mix(in srgb, ${c} 42%, transparent)`,
+    'color: var(--cc-ink)',
   ].join('; ');
 }
 
-/** Inline style for the accent rule / progress fill of a level. */
+/** Inline style for the rail marker / progress fill of a level. */
 export function levelAccentStyle(level: number | null): string {
   return `background: ${levelColorVar(level)}`;
 }

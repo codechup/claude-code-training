@@ -62,6 +62,38 @@ describe('Turkish diacritics (D016, D018)', () => {
   });
 });
 
+// KILN §5.2 — the lockup is the product name in Fraunces; "by CodeChup" is a
+// separate publisher line that appears in the footer and the mobile drawer,
+// never inside the wordmark. The retired `brandWordmark` / `brandAcademy`
+// pair (lowercase mono "codechup" + letter-spaced "claude code academy") must
+// not come back.
+describe('brand lockup (KILN §5.2)', () => {
+  it('names the product, without the publisher folded in', () => {
+    expect(ui.en.brandName).toBe('Claude Code Academy');
+    expect(ui.tr.brandName).toBe('Claude Code Akademisi');
+    for (const strings of Object.values(ui)) {
+      expect(strings.brandName).not.toMatch(/codechup/i);
+    }
+  });
+
+  it('carries the publisher line separately, in each locale', () => {
+    expect(ui.en.brandPublisher).toBe('by CodeChup');
+    expect(ui.tr.brandPublisher).toBe('CodeChup tarafından');
+  });
+
+  it('uses the product name as the site name (page titles, OG)', () => {
+    expect(ui.en.siteName).toBe(ui.en.brandName);
+    expect(ui.tr.siteName).toBe(ui.tr.brandName);
+  });
+
+  it('has retired the pre-Kiln wordmark keys', () => {
+    for (const strings of Object.values(ui)) {
+      expect(strings).not.toHaveProperty('brandWordmark');
+      expect(strings).not.toHaveProperty('brandAcademy');
+    }
+  });
+});
+
 describe('formatters', () => {
   it('renders the module counters in each language', () => {
     expect(ui.en.inModule(2, 7, 'm07')).toBe('2 / 7 in m07');

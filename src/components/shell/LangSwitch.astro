@@ -1,62 +1,83 @@
 ---
-// Swaps the first path segment between "en" and "tr" and remembers the
-// choice in a `cc_lang` cookie (1 year, SameSite=Lax) that the origin's `/`
-// redirect honours over Accept-Language (D017; nginx side lives in
-// docs/deploy, not in this repo — src/pages/index.astro is the static
-// fallback for the same rule).
-//
-// Draft handling (plans/P06 Scope): whether the target-language page exists
-// as a live page is decided at BUILD time by the page that renders this
-// component (it holds the collections and therefore the set of `draft: true`
-// ids). When `targetPath` is null the switch renders as static text —
-// "Türkçesi hazırlanıyor" when the missing page is Turkish, "English version
-// coming" the other way around — instead of a link into a 404.
+/**
+ * Language toggle (D017). Swaps the first path segment between "en" and "tr"
+ * and remembers the choice in a `cc_lang` cookie (1 year, SameSite=Lax) that
+ * the origin's `/` redirect honours over Accept-Language (the nginx side
+ * lives in docs/deploy, not in this repo — `src/pages/index.astro` is the
+ * static fallback for the same rule).
+ *
+ * Draft handling (plans/P06 Scope): whether the target-language page exists
+ * is decided at BUILD time by the page rendering this component (it holds
+ * the collections and therefore the set of `draft: true` ids). When
+ * `targetPath` is null the switch renders as static text — "Türkçesi
+ * hazırlanıyor" / "English version coming" — instead of a link into a 404.
+ *
+ * Kiln: a 44px control in the header cluster showing the TARGET language
+ * (the thing clicking it gets you), and a full-width labelled row in the
+ * mobile drawer. More than one instance may be on the page, so the script
+ * below selects by class, never by id.
+ */
+import Icon from '../ui/Icon.astro';
 import { draftNotice, otherLang, t } from '../../lib/i18n/ui.ts';
 
 interface Props {
   currentLang: string;
+  /** Optional DOM id. At most ONE instance per page may carry it. */
+  id?: string;
   /** Absolute path of the sibling-language page, or null when it is a draft. */
   targetPath?: string | null;
+  /** `bare` = header cluster; `row` = full-width drawer row. */
+  variant?: 'bare' | 'row';
 }
 
-const { currentLang, targetPath } = Astro.props;
+const { currentLang, targetPath, variant = 'bare', id } = Astro.props;
 const target = otherLang(currentLang);
 const strings = t(currentLang);
-const label = target === 'en' ? 'EN' : 'TR';
-const current = currentLang === 'en' ? 'EN' : 'TR';
 const available = typeof targetPath === 'string' && targetPath.length > 0;
+
+/** Endonyms — a language is always offered in its own language. */
+const ENDONYM: Record<string, string> = { en: 'English', tr: 'Türkçe' };
+const code = target.toUpperCase();
 ---
 
 {
   available ? (
     <a
-      id="cc-lang-switch"
+      id={id}
       href={targetPath}
       hreflang={target}
-      lang={target}
       data-target-lang={target}
-      class="cc-lang"
-      aria-label={`${strings.language}: ${label}`}
+      class:list={['cc-lang', `cc-lang--${variant}`]}
+      aria-label={`${strings.language}: ${ENDONYM[target]}`}
     >
-      <span class="mono" aria-hidden="true">
-        {current}
+      <span class="cc-lang__icon">
+        <Icon name="language" size={20} />
       </span>
-      <span class="muted" aria-hidden="true">
-        /
+      <span class="cc-lang__code" aria-hidden="true">
+        {code}
       </span>
-      <span class="mono muted" aria-hidden="true">
-        {label}
+      <span class="cc-lang__name" lang={target} aria-hidden="true">
+        {ENDONYM[target]}
       </span>
     </a>
   ) : (
     <span
-      id="cc-lang-switch-draft"
-      class="cc-lang cc-lang-draft mono"
-      lang={target}
+      id={id}
+      class:list={['cc-lang', `cc-lang--${variant}`, 'cc-lang--draft']}
       data-target-lang={target}
       data-draft="true"
+      aria-disabled="true"
+      title={draftNotice(target)}
     >
-      {draftNotice(target)}
+      <span class="cc-lang__icon">
+        <Icon name="language" size={20} />
+      </span>
+      <span class="cc-lang__code" aria-hidden="true">
+        {code}
+      </span>
+      <span class="cc-lang__draft-text" lang={target}>
+        {draftNotice(target)}
+      </span>
     </span>
   )
 }
@@ -65,27 +86,100 @@ const available = typeof targetPath === 'string' && targetPath.length > 0;
   .cc-lang {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    min-height: var(--tap-target);
-    padding: 0 10px;
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-2);
-    font-size: var(--text-13);
+    gap: var(--cc-space-1);
+    min-height: var(--cc-tap);
+    border: 1px solid transparent;
+    border-radius: var(--cc-radius-md);
+    color: var(--cc-ink-muted);
     text-decoration: none;
-    color: var(--color-ink);
     white-space: nowrap;
   }
 
-  .cc-lang-draft {
-    color: var(--color-ink-muted);
-    font-size: var(--text-12);
-    border-style: dashed;
-    max-width: 12rem;
+  a.cc-lang:hover {
+    background: var(--cc-paper-sunken);
+    color: var(--cc-ink);
   }
 
-  @media (min-width: 640px) {
+  .cc-lang__icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: var(--cc-tap);
+    height: var(--cc-tap);
+  }
+
+  .cc-lang__code {
+    font-size: var(--cc-text-small);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-small);
+    padding-right: var(--cc-space-2);
+  }
+
+  /* Header cluster: icon + "TR". The endonym is drawer-only. */
+  .cc-lang--bare .cc-lang__name {
+    display: none;
+  }
+
+  .cc-lang--row {
+    width: 100%;
+    gap: var(--cc-space-2);
+    padding-right: var(--cc-space-3);
+    color: var(--cc-ink);
+    font-size: var(--cc-text-body);
+  }
+
+  .cc-lang--row .cc-lang__code {
+    display: none;
+  }
+
+  /* Left-aligned with the drawer's nav labels — see ThemeToggle. */
+  .cc-lang--row .cc-lang__icon {
+    width: var(--cc-space-7);
+    justify-content: flex-start;
+  }
+
+  /* The empty state keeps the SAME footprint as the working control (KILN
+     §1.5: the persistent chrome must not move between pages). At 1024px the
+     full notice — "Türkçesi hazırlanıyor" — ran ~195px wide and pushed the
+     theme button off the right edge of /design/. The notice is now the
+     control's accessible name and its tooltip; what is drawn is the globe and
+     the target code, dimmed and undecorated. */
+  .cc-lang--draft {
+    /* `--cc-ink-faint` is 3.96:1 on paper — decorative only (KILN §10, AA). */
+    color: var(--cc-ink-muted);
+    cursor: default;
+  }
+
+  .cc-lang--bare.cc-lang--draft .cc-lang__draft-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* In the drawer there is room for the sentence, and it is the only thing
+     that explains why the row does nothing. */
+  .cc-lang--row.cc-lang--draft {
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-small);
+  }
+
+  .cc-lang--row.cc-lang--draft .cc-lang__draft-text {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
     .cc-lang {
-      min-height: 36px;
+      transition:
+        background-color var(--cc-dur-fast) var(--cc-ease),
+        color var(--cc-dur-fast) var(--cc-ease);
     }
   }
 </style>
@@ -95,15 +189,16 @@ const available = typeof targetPath === 'string' && targetPath.length > 0;
   // (and src/pages/index.astro's JS fallback) can honour it next time.
   // Hoisted — Astro bundles this into an external module, so no inline
   // script body reaches the page (CSP: script-src 'self').
-  const link = document.getElementById('cc-lang-switch');
-  link?.addEventListener('click', () => {
-    const target = link.dataset.targetLang;
-    if (!target) return;
-    try {
-      document.cookie = `cc_lang=${target}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`;
-    } catch {
-      // Cookie writes can fail under strict privacy settings — the link's
-      // navigation still works without the preference being saved.
-    }
-  });
+  for (const link of document.querySelectorAll<HTMLAnchorElement>('a.cc-lang[data-target-lang]')) {
+    link.addEventListener('click', () => {
+      const target = link.dataset.targetLang;
+      if (!target) return;
+      try {
+        document.cookie = `cc_lang=${target}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`;
+      } catch {
+        // Cookie writes can fail under strict privacy settings — the link's
+        // navigation still works without the preference being saved.
+      }
+    });
+  }
 </script>

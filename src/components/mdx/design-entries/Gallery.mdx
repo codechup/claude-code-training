@@ -1,114 +1,91 @@
-import Callout from '../Callout.astro';
-import WhenNotToUse from '../WhenNotToUse.astro';
 import CodeBlock from '../CodeBlock.astro';
 import OSTabs from '../OSTabs.astro';
-import Transcript from '../Transcript.astro';
-import Sources from '../Sources.astro';
-import Lab from '../Lab.astro';
-import { sampleSources } from './sample-sources.ts';
 
-{/* Working demo of this plan's seven MDX components, for /design/'s gallery section (P07 Handoff notes explain why this is .mdx not .astro, the ownership handoff to P05, and a fenced-code-in-JSX formatting gotcha found while writing it). */}
+{/* Code specimens for `/design` (KILN 8.2, 8.3). This file is MDX, not Astro, for one reason: CodeBlock renders a real fenced code block as its slot and post-processes Shiki's dual-theme output, and a fence only exists in Markdown. Every other component on /design is composed directly in src/pages/design/index.astro. Formatting gotcha: a fence inside JSX must sit at column 0 with a blank line above and below it. */}
 
-<div class="flex flex-col gap-[var(--space-8)]">
+<div class="flex flex-col gap-[var(--cc-space-8)]">
 
-<section class="flex flex-col gap-[var(--space-3)]">
-  <h3 class="eyebrow">Callout</h3>
-  <div class="flex flex-col gap-[var(--space-3)]">
-    <Callout>Neutral information the reader should not skip.</Callout>
-    <Callout variant="when-not-to-use">
-      A permission deny rule in <code>settings.json</code> is simpler when you only need to block a
-      fixed command pattern.
-    </Callout>
-    <Callout variant="changed">
-      Project-scope <code>defaultMode: bypassPermissions</code> is ignored since 2.1.x.
-    </Callout>
-  </div>
+<section class="flex flex-col gap-[var(--cc-space-3)]">
+  <p class="m-0 text-[length:var(--cc-text-micro)] font-semibold uppercase tracking-[var(--cc-track-micro)] text-[var(--cc-ink-muted)]">Code block · language chip only</p>
+
+<CodeBlock>
+
+```bash
+claude --version
+claude doctor
+```
+
+</CodeBlock>
+
 </section>
 
-<section class="flex flex-col gap-[var(--space-3)]">
-  <h3 class="eyebrow">WhenNotToUse</h3>
-  <WhenNotToUse>
-    A permission deny rule is simpler when you only need to block a fixed command pattern. Reach for
-    a hook when the decision depends on arguments or repository state.
-  </WhenNotToUse>
+<section class="flex flex-col gap-[var(--cc-space-3)]">
+  <p class="m-0 text-[length:var(--cc-text-micro)] font-semibold uppercase tracking-[var(--cc-track-micro)] text-[var(--cc-ink-muted)]">Code block · filename, highlight, annotation gutter</p>
+
+<CodeBlock title=".claude/settings.json" highlight="3-5" annotations={{ 4: 'runs before every Bash call' }}>
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": ".claude/hooks/guard.mjs" }] }
+    ]
+  }
+}
+```
+
+</CodeBlock>
+
 </section>
 
-<section class="flex flex-col gap-[var(--space-3)]">
-  <h3 class="eyebrow">CodeBlock · OSTabs · highlight · annotations</h3>
-  <OSTabs>
-    <Fragment slot="macos">
-      <CodeBlock title="install.sh" highlight="1" annotations={{ 1: 'native installer' }}>
+<section class="flex flex-col gap-[var(--cc-space-3)]">
+  <p class="m-0 text-[length:var(--cc-text-micro)] font-semibold uppercase tracking-[var(--cc-track-micro)] text-[var(--cc-ink-muted)]">OS tabs · four platforms, one code block each</p>
+
+<OSTabs>
+  <Fragment slot="macos">
+
+<CodeBlock title="install.sh">
 
 ```bash
 brew install --cask claude-code
 claude --version
 ```
 
-      </CodeBlock>
-    </Fragment>
-    <Fragment slot="linux">
-      <CodeBlock title="install.sh" highlight="1" annotations={{ 1: 'official script' }}>
+</CodeBlock>
+
+  </Fragment>
+  <Fragment slot="linux">
+
+<CodeBlock title="install.sh">
 
 ```bash
 curl -fsSL https://claude.ai/install.sh | bash
 claude --version
 ```
 
-      </CodeBlock>
-    </Fragment>
-    <Fragment slot="windows">
-      <CodeBlock title="install.ps1" highlight="1" annotations={{ 1: 'PowerShell installer' }}>
+</CodeBlock>
+
+  </Fragment>
+  <Fragment slot="windows">
+
+<CodeBlock title="install.ps1">
 
 ```powershell
 irm https://claude.ai/install.ps1 | iex
 claude --version
 ```
 
-      </CodeBlock>
-    </Fragment>
+</CodeBlock>
 
-  </OSTabs>
-  <p class="muted m-0 text-[length:var(--text-12)]">
-    The tab choice is remembered site-wide (<code>localStorage cc:os</code>, and{' '}
-    <code>cc:os:shell</code> for the PowerShell/WSL split — see <code>os-tabs.ts</code>). Windows
-    (WSL) is omitted above on purpose to demonstrate the fallback: it reuses the Linux panel's real
-    content instead of inventing a separate one.
+  </Fragment>
+</OSTabs>
+
+  <p class="small soft m-0">
+    The macro OS choice is remembered site-wide in <code>localStorage["cc:os"]</code>, the
+    Windows shell split in <code>cc:os:shell</code>. The <em>Windows (WSL)</em> slot is left
+    unfilled on purpose: it falls back to the Linux panel's real commands rather than inventing
+    a fourth variant.
   </p>
-</section>
-
-<section class="flex flex-col gap-[var(--space-3)]">
-  <h3 class="eyebrow">Transcript · real session, simplified</h3>
-  <Transcript src="src/components/mdx/__fixtures__/transcripts/sample-session.txt" />
-  <p class="muted m-0 text-[length:var(--text-12)]">
-    This file is a formatting sample (see its own first line) — a real lesson points{' '}
-    <code>src</code> at a file under <code>content/_shared/transcripts/</code>, captured from an
-    actual lab run (D070/D093/D099).
-  </p>
-</section>
-
-<section class="flex flex-col gap-[var(--space-3)]">
-  <h3 class="eyebrow">Sources</h3>
-  <Sources sources={sampleSources} lang="en" />
-</section>
-
-<section class="flex flex-col gap-[var(--space-3)]">
-  <h3 class="eyebrow">Lab</h3>
-  <Lab
-    lessonId="design-gallery-lab"
-    repoTag="lesson/m07-02-start"
-    steps={[
-      'Register the hook in .claude/settings.json under PreToolUse',
-      'Ask Claude to delete the build folder and watch it get blocked',
-    ]}
-    expected="exit 2, Claude picks an alternative"
-    checklist={[
-      'Hook script is executable and reads stdin as JSON',
-      'Blocked command shows the "reason" text',
-      'Claude falls back to an allowed alternative',
-    ]}
-  >
-    <Transcript src="src/components/mdx/__fixtures__/transcripts/sample-session.txt" />
-  </Lab>
 </section>
 
 </div>

@@ -1,9 +1,19 @@
 ---
-// The bottom prev/next bar (D061), per `Lesson1280.dc.html`: a ghost button
-// pointing back, a soft button pointing forward, and the module progress bar
-// underneath (rendered by the lesson layout, not here).
+/**
+ * Prev/next — KILN §8.8: two large tappable cards at the end of a lesson,
+ * each carrying a direction label, the lesson title and, when the neighbour
+ * lives in another module, that module's name.
+ *
+ * The "next" card is the one the reader almost always wants, so it takes the
+ * accent treatment; "previous" stays a quiet hairline card. When there is no
+ * neighbour on one side the other card takes the full row rather than being
+ * balanced against an empty box.
+ */
+import { getCollection } from 'astro:content';
 import { t } from '../../lib/i18n/ui.ts';
 import type { NavLesson } from '../../lib/nav.ts';
+import { moduleShortId } from '../../lib/slugs.ts';
+import Icon from '../ui/Icon.astro';
 
 interface Props {
   lang: string;
@@ -13,68 +23,189 @@ interface Props {
 
 const { lang, prev, next } = Astro.props;
 const strings = t(lang);
+
+/*
+ * `NavLesson` carries the lesson's id (`lang/level/module/slug`) but not its
+ * module's *title*, and the caller hands this component only the two
+ * neighbours — so the module names are resolved here from the `sections`
+ * collection (module sections are the three-segment ids). It is one extra
+ * read of an already-loaded, tiny collection at build time; the alternative
+ * would be widening `NavLesson`, which every other consumer would pay for.
+ */
+const moduleTitles = new Map(
+  (await getCollection('sections'))
+    .filter((s) => s.id.split('/').length === 3)
+    .map((s) => [s.id, s.data.title] as const),
+);
+
+/** The module the reader is currently in — nothing is labelled inside it. */
+const currentModule =
+  (Astro.params.module as string | undefined) ?? Astro.url.pathname.split('/').filter(Boolean)[2];
+
+/**
+ * A neighbour that lives in another module gets that module's name, so the
+ * reader knows the card crosses a boundary (KILN §8.8).
+ */
+function crossingLabel(lesson: NavLesson | null): string | null {
+  if (!lesson) return null;
+  const [lessonLang, level, mod] = lesson.id.split('/');
+  if (!mod || mod === currentModule) return null;
+  const title = moduleTitles.get(`${lessonLang}/${level}/${mod}`);
+  return `${moduleShortId(mod)} ${title ?? ''}`.trim();
+}
+
+const prevModule = crossingLabel(prev);
+const nextModule = crossingLabel(next);
 ---
 
-<nav class="cc-prevnext" aria-label={`${strings.previous} / ${strings.next}`}>
+<nav class="cc-pn" aria-label={`${strings.previous} / ${strings.next}`}>
   {
-    prev ? (
-      <a class="cc-prevnext-link cc-prevnext-prev" href={prev.path} rel="prev">
-        <span class="mono muted cc-prevnext-kicker">← {strings.previous}</span>
-        <span class="cc-prevnext-title">{prev.title}</span>
+    prev && (
+      <a class="cc-pn__card cc-pn__card--prev" href={prev.path} rel="prev">
+        <span class="cc-pn__dir">
+          <Icon name="arrow-right" size={15} />
+          <span>{strings.previous}</span>
+        </span>
+        {/* Explicit spaces: adjacent spans concatenate in the text layer, so
+            the link's accessible name read "PreviousFork, background and
+            worktree isolation" (KILN §9.1). */}{' '}
+        <span class="cc-pn__title">{prev.title}</span>
+        {prevModule && (
+          <Fragment>
+            {' '}
+            <span class="cc-pn__module">{prevModule}</span>
+          </Fragment>
+        )}
       </a>
-    ) : (
-      <span class="cc-prevnext-spacer" />
     )
   }
   {
-    next ? (
-      <a class="cc-prevnext-link cc-prevnext-next" href={next.path} rel="next">
-        <span class="mono muted cc-prevnext-kicker">{strings.next} →</span>
-        <span class="cc-prevnext-title">{next.title}</span>
+    next && (
+      <a class="cc-pn__card cc-pn__card--next" href={next.path} rel="next">
+        <span class="cc-pn__dir">
+          <span>{strings.next}</span>
+          <Icon name="arrow-right" size={15} />
+        </span>{' '}
+        <span class="cc-pn__title">{next.title}</span>
+        {nextModule && (
+          <Fragment>
+            {' '}
+            <span class="cc-pn__module">{nextModule}</span>
+          </Fragment>
+        )}
       </a>
-    ) : (
-      <span class="cc-prevnext-spacer" />
     )
   }
 </nav>
 
 <style>
-  .cc-prevnext {
-    display: flex;
-    justify-content: space-between;
-    gap: var(--space-3);
-    flex-wrap: wrap;
+  .cc-pn {
+    display: grid;
+    gap: var(--cc-space-3);
+    margin-top: var(--cc-space-9);
+    max-width: var(--cc-measure);
   }
 
-  .cc-prevnext-link {
+  .cc-pn__card {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    min-height: var(--tap-target);
-    padding: var(--space-2) var(--space-4);
-    border-radius: var(--radius-2);
-    border: 1px solid var(--color-line-strong);
-    color: var(--color-ink);
+    gap: var(--cc-space-2);
+    min-height: 84px;
+    padding: var(--cc-space-4) var(--cc-space-5);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-lg);
+    background: var(--cc-paper-raised);
+    color: var(--cc-ink);
     text-decoration: none;
-    max-width: 48%;
   }
 
-  .cc-prevnext-next {
+  .cc-pn__card:hover {
+    border-color: var(--cc-accent-line);
+    box-shadow: var(--cc-shadow-1);
+  }
+
+  /* One card idiom across the site (KILN §8.9): both cards are
+     `--cc-paper-raised` with the hairline. "Next" carries the emphasis
+     inside that idiom — the clay label and arrow, and the accent underline
+     the idiom already gives a card title — rather than a wash fill, which
+     made two peer controls read as two different components. */
+  .cc-pn__card--next {
+    align-items: flex-end;
     text-align: right;
-    background: var(--color-bg-3);
-    border-color: transparent;
+    /* Emphasis inside the idiom: the same raised paper and hairline, drawn
+       in clay and resting one step up. The wash fill made two peer controls
+       read as two different components; a permanent title underline made the
+       card read as a text link. */
+    border-color: var(--cc-accent-line);
+    box-shadow: var(--cc-shadow-1);
   }
 
-  .cc-prevnext-kicker {
-    font-size: var(--text-12);
+  .cc-pn__dir {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-space-2);
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    line-height: 1;
+    text-transform: uppercase;
   }
 
-  .cc-prevnext-title {
-    font-size: var(--text-14);
-    font-weight: 500;
+  .cc-pn__card--next .cc-pn__dir {
+    /* 12px clay: `--cc-accent-text` is the AA-safe accent for small text. */
+    color: var(--cc-accent-text);
   }
 
-  .cc-prevnext-spacer {
-    display: block;
+  /* One arrow glyph in the set, mirrored for "previous" — the icon rules
+     (KILN §6) forbid a second, redundant left-pointing path. */
+  .cc-pn__card--prev .cc-pn__dir :global(svg) {
+    transform: scaleX(-1);
+  }
+
+  .cc-pn__title {
+    font-family: var(--cc-font-display);
+    font-size: var(--cc-text-h3);
+    font-weight: var(--cc-weight-display);
+    line-height: var(--cc-leading-h3);
+    letter-spacing: var(--cc-track-h3);
+    color: var(--cc-ink);
+    text-wrap: balance;
+  }
+
+  /* Only shown when the card crosses into another module, so it is a fact
+     about the jump rather than a repeated subtitle. `--cc-ink-muted`, not
+     `--cc-ink-faint`: faint is 4.2:1 on paper and 3.5:1 on the accent wash,
+     under the AA floor for 14px text. */
+  .cc-pn__module {
+    margin-top: calc(-1 * var(--cc-space-1));
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+  }
+
+  .cc-pn__card:hover .cc-pn__title {
+    color: var(--cc-accent);
+  }
+
+  @media (min-width: 720px) {
+    .cc-pn {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    /* A lone neighbour keeps its side of the row rather than stretching. */
+    .cc-pn__card--next:only-child {
+      grid-column: 2;
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-pn__card,
+    .cc-pn__title {
+      transition:
+        border-color var(--cc-dur-fast) var(--cc-ease),
+        box-shadow var(--cc-dur-fast) var(--cc-ease),
+        color var(--cc-dur-fast) var(--cc-ease);
+    }
   }
 </style>

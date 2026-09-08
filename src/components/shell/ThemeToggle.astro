@@ -1,82 +1,172 @@
 ---
-// Three-state theme control (D030): system / dark / light. Writes the
-// chosen state verbatim to localStorage["cc:theme"] — public/theme-init.js
-// reads the same key before paint on every subsequent load and resolves
-// "system" (or anything unset/invalid) to the OS preference. The client
-// script below does the same resolution live, and re-resolves whenever
-// the OS preference changes while "system" is selected and the page
-// stays open.
-//
-// Three real <button> elements — not a single cycling button — so every
-// state is independently reachable by keyboard (Tab + Enter/Space) and
-// its current selection is exposed to assistive tech via
-// `aria-pressed`, not just a visual style.
-const options = [
-  { value: 'system', label: 'System', glyph: '◐' },
-  { value: 'dark', label: 'Dark', glyph: '☽' },
-  { value: 'light', label: 'Light', glyph: '☀' },
-] as const;
+/**
+ * Theme control (KILN §7.2, D030) — ONE icon button that cycles
+ * system → light → dark → system.
+ *
+ * The pre-Kiln three-segment control is retired. The button shows the glyph
+ * of the CURRENT choice and its accessible name states both the current
+ * choice and the next one, so the control never conveys state by colour or
+ * by icon shape alone (WCAG 1.4.1): "Theme: system — switch to light".
+ *
+ * It writes the chosen state verbatim to `localStorage["cc:theme"]`;
+ * `public/theme-init.js` reads the same key before paint on every subsequent
+ * load and resolves "system" (or anything unset/invalid) to the OS
+ * preference. The hoisted module below does the same resolution live and
+ * re-resolves whenever the OS preference changes while "system" is selected.
+ *
+ * More than one instance may be on the page (header cluster + mobile
+ * drawer): the script selects by class, never by id, and keeps every
+ * instance in sync.
+ */
+import Icon from '../ui/Icon.astro';
+
+interface Props {
+  lang?: string;
+  /** Optional DOM id. At most ONE instance per page may carry it. */
+  id?: string;
+  /** `bare` = 44px icon button (header); `row` = full-width labelled row (drawer). */
+  variant?: 'bare' | 'row';
+}
+
+const { lang = 'en', variant = 'bare', id } = Astro.props;
+
+const COPY: Record<string, { theme: string; system: string; light: string; dark: string }> = {
+  en: { theme: 'Theme', system: 'system', light: 'light', dark: 'dark' },
+  tr: { theme: 'Tema', system: 'sistem', light: 'açık', dark: 'koyu' },
+};
+const c = COPY[lang] ?? COPY.en;
+
+const NEXT = { system: 'light', light: 'dark', dark: 'system' } as const;
+type Choice = keyof typeof NEXT;
+
+/** "Theme: system — switch to light" / "Tema: sistem — açık temaya geç". */
+function label(choice: Choice): string {
+  const next = NEXT[choice];
+  return lang === 'tr'
+    ? `${c.theme}: ${c[choice]} — ${c[next]} temaya geç`
+    : `${c.theme}: ${c[choice]} — switch to ${c[next]}`;
+}
+
+const labels = { system: label('system'), light: label('light'), dark: label('dark') };
+const names = { system: c.system, light: c.light, dark: c.dark };
 ---
 
-<div
-  id="cc-theme-toggle"
-  role="group"
-  aria-label="Color theme"
-  class="mono inline-flex items-center gap-1 rounded-[var(--radius-2)] border p-1"
-  style={`border-color: var(--color-line-strong); background: var(--color-bg-2);`}
+<button
+  id={id}
+  type="button"
+  class:list={['cc-theme', `cc-theme--${variant}`]}
+  data-cc-theme
+  data-choice="system"
+  data-labels={JSON.stringify(labels)}
+  data-names={JSON.stringify(names)}
+  aria-label={labels.system}
+  title={labels.system}
 >
-  {
-    options.map((opt) => (
-      <button
-        type="button"
-        data-theme-choice={opt.value}
-        aria-pressed="false"
-        title={opt.label}
-        class="inline-flex h-8 min-w-8 items-center justify-center gap-1 rounded-[var(--radius-1)] px-2 text-[13px]"
-      >
-        <span aria-hidden="true">{opt.glyph}</span>
-        <span class="sr-only">{opt.label}</span>
-      </button>
-    ))
-  }
-</div>
+  <span class="cc-theme__icon" data-for="system"><Icon name="system" size={20} /></span>
+  <span class="cc-theme__icon" data-for="light"><Icon name="sun" size={20} /></span>
+  <span class="cc-theme__icon" data-for="dark"><Icon name="moon" size={20} /></span>
+  <span class="cc-theme__label">
+    {c.theme}
+    <span class="cc-theme__value" data-cc-theme-value>{c.system}</span>
+  </span>
+</button>
 
 <style>
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
+  /* AA over the token name (KILN §10 and .claude/rules/design.md): the spec
+     names `--cc-ink-faint` for these micro labels, but that value measures
+     3.6:1 on `--cc-paper-sunken` and axe flags every one of them. They are
+     text, so they take `--cc-ink-muted`, which clears 4.5:1 in both themes.
+     `--cc-ink-faint` stays for non-text uses only. */
+  .cc-theme {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-space-3);
+    min-width: var(--cc-tap);
+    min-height: var(--cc-tap);
     padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-
-  #cc-theme-toggle button {
-    color: var(--color-ink-soft);
+    border: 1px solid transparent;
+    border-radius: var(--cc-radius-md);
     background: transparent;
-    border: none;
+    color: var(--cc-ink-muted);
+    font: inherit;
     cursor: pointer;
   }
 
-  #cc-theme-toggle button[aria-pressed='true'] {
-    color: var(--color-ink);
-    background: var(--color-bg-3);
+  .cc-theme:hover {
+    background: var(--cc-paper-sunken);
+    color: var(--cc-ink);
+  }
+
+  .cc-theme__icon {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: var(--cc-tap);
+    height: var(--cc-tap);
+  }
+
+  .cc-theme[data-choice='system'] .cc-theme__icon[data-for='system'],
+  .cc-theme[data-choice='light'] .cc-theme__icon[data-for='light'],
+  .cc-theme[data-choice='dark'] .cc-theme__icon[data-for='dark'] {
+    display: flex;
+  }
+
+  /* Bare (header) — icon only; the button carries the name. */
+  .cc-theme--bare .cc-theme__label {
+    display: none;
+  }
+
+  /* Row (drawer) — the icon keeps company with a visible label so the
+     control is legible without hovering for a tooltip. */
+  .cc-theme--row {
+    width: 100%;
+    justify-content: flex-start;
+    gap: var(--cc-space-2);
+    padding-right: var(--cc-space-3);
+    color: var(--cc-ink);
+    font-size: var(--cc-text-body);
+  }
+
+  /* Left-align the row icon with the drawer's nav labels instead of
+     centring it in a 44px box, which would indent the whole settings
+     group away from everything above it. */
+  .cc-theme--row .cc-theme__icon {
+    width: var(--cc-space-7);
+    justify-content: flex-start;
+  }
+
+  .cc-theme__label {
+    display: inline-flex;
+    align-items: baseline;
+    gap: var(--cc-space-2);
+  }
+
+  .cc-theme__value {
+    color: var(--cc-ink-muted);
+    font-size: var(--cc-text-small);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-theme {
+      transition:
+        background-color var(--cc-dur-fast) var(--cc-ease),
+        color var(--cc-dur-fast) var(--cc-ease);
+    }
   }
 </style>
 
 <script>
+  type Choice = 'system' | 'light' | 'dark';
+
   const STORAGE_KEY = 'cc:theme';
+  const NEXT: Record<Choice, Choice> = { system: 'light', light: 'dark', dark: 'system' };
+
   const root = document.documentElement;
-  const group = document.getElementById('cc-theme-toggle');
-  const buttons = group
-    ? Array.from(group.querySelectorAll<HTMLButtonElement>('button[data-theme-choice]'))
-    : [];
+  const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('button[data-cc-theme]'));
   const media = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
 
-  function readStored(): 'system' | 'dark' | 'light' {
+  function readStored(): Choice {
     try {
       const stored = window.localStorage.getItem(STORAGE_KEY);
       if (stored === 'dark' || stored === 'light') return stored;
@@ -87,43 +177,47 @@ const options = [
     return 'system';
   }
 
-  function resolve(choice: 'system' | 'dark' | 'light'): 'dark' | 'light' {
+  function resolve(choice: Choice): 'dark' | 'light' {
     if (choice === 'dark' || choice === 'light') return choice;
     return media?.matches ? 'dark' : 'light';
   }
 
-  function applyUi(choice: 'system' | 'dark' | 'light') {
+  function paint(choice: Choice) {
     for (const button of buttons) {
-      button.setAttribute('aria-pressed', String(button.dataset.themeChoice === choice));
+      const labels = JSON.parse(button.dataset.labels ?? '{}') as Record<string, string>;
+      const names = JSON.parse(button.dataset.names ?? '{}') as Record<string, string>;
+      button.dataset.choice = choice;
+      const label = labels[choice];
+      if (label) {
+        button.setAttribute('aria-label', label);
+        button.setAttribute('title', label);
+      }
+      const value = button.querySelector('[data-cc-theme-value]');
+      if (value && names[choice]) value.textContent = names[choice];
     }
   }
 
-  function setChoice(choice: 'system' | 'dark' | 'light') {
+  function setChoice(choice: Choice) {
     root.setAttribute('data-theme', resolve(choice));
-    applyUi(choice);
+    paint(choice);
     try {
       window.localStorage.setItem(STORAGE_KEY, choice);
     } catch {
-      // The toggle still works for the current page load; it just will
-      // not persist across a reload.
+      // The toggle still works for this page load; it just will not persist.
     }
   }
 
   // Reflect the choice theme-init.js already resolved before paint.
-  applyUi(readStored());
+  paint(readStored());
 
   for (const button of buttons) {
     button.addEventListener('click', () => {
-      const choice = button.dataset.themeChoice as 'system' | 'dark' | 'light';
-      setChoice(choice);
+      setChoice(NEXT[(button.dataset.choice as Choice) ?? 'system'] ?? 'light');
     });
   }
 
-  // While "system" is selected, follow live OS-preference changes without
-  // requiring a reload.
+  // While "system" is selected, follow live OS-preference changes.
   media?.addEventListener?.('change', () => {
-    if (readStored() === 'system') {
-      root.setAttribute('data-theme', resolve('system'));
-    }
+    if (readStored() === 'system') root.setAttribute('data-theme', resolve('system'));
   });
 </script>

@@ -11,8 +11,10 @@ import type { Lang } from '../slugs.ts';
 export interface UiStrings {
   siteName: string;
   siteTagline: string;
-  brandWordmark: string;
-  brandAcademy: string;
+  /** The product name, set in the Fraunces wordmark (KILN §5.2). */
+  brandName: string;
+  /** The publisher line under the wordmark — footer and drawer only. */
+  brandPublisher: string;
   skipToContent: string;
   mainNav: string;
   curriculum: string;
@@ -69,10 +71,10 @@ export interface UiStrings {
 }
 
 const en: UiStrings = {
-  siteName: 'CodeChup Claude Code Academy',
+  siteName: 'Claude Code Academy',
   siteTagline: 'Learn Claude Code from zero to autonomous — hands-on, source-verified lessons.',
-  brandWordmark: 'codechup',
-  brandAcademy: 'claude code academy',
+  brandName: 'Claude Code Academy',
+  brandPublisher: 'by CodeChup',
   skipToContent: 'Skip to content',
   mainNav: 'Main',
   curriculum: 'Curriculum',
@@ -133,12 +135,12 @@ const en: UiStrings = {
 };
 
 const tr: UiStrings = {
-  siteName: 'CodeChup Claude Code Akademisi',
+  siteName: 'Claude Code Akademisi',
   siteTagline:
     "Claude Code'u sıfırdan otonom kullanıma: uygulamalı ve kaynağı doğrulanmış derslerle.",
-  brandWordmark: 'codechup',
-  brandAcademy: 'claude code akademisi',
-  skipToContent: 'İçeriğe geç',
+  brandName: 'Claude Code Akademisi',
+  brandPublisher: 'CodeChup tarafından',
+  skipToContent: 'İçeriğe geçin',
   mainNav: 'Ana menü',
   curriculum: 'Müfredat',
   playbook: 'Playbook',
@@ -147,9 +149,9 @@ const tr: UiStrings = {
   searchLessons: 'Derslerde ara',
   searchHint: 'Ctrl K',
   openMenu: 'Menü',
-  start: 'Başla',
-  startLevel1: "Seviye 1'e başla",
-  seeCurriculumMap: 'Müfredat haritasına bak',
+  start: 'Başlayın',
+  startLevel1: "Seviye 1'e başlayın",
+  seeCurriculumMap: 'Müfredat haritasına bakın',
   language: 'Dil',
   drafted: 'Türkçesi hazırlanıyor',
   min: 'dk',
@@ -160,29 +162,29 @@ const tr: UiStrings = {
   onThisPage: 'Bu sayfada',
   previous: 'Önceki',
   next: 'Sonraki',
-  editOnGitHub: "Bu sayfayı GitHub'da düzenle",
-  wasThisHelpful: 'Bu sayfa işine yaradı mı?',
+  editOnGitHub: "Bu sayfayı GitHub'da düzenleyin",
+  wasThisHelpful: 'Bu sayfa işinize yaradı mı?',
   sources: 'Kaynaklar',
   breadcrumb: 'Sayfa yolu',
   lessonOf: (n, total, moduleId) => `${moduleId} · ders ${n} / ${total}`,
   inModule: (done, total, moduleId) => `${moduleId} içinde ${done} / ${total}`,
-  progressNote: 'İlerlemen bu tarayıcıda saklanır. Hesap gerekmez.',
+  progressNote: 'İlerlemeniz bu tarayıcıda saklanır. Hesap gerekmez.',
   whatChanged: 'Neler değişti',
   whatChangedLead: 'Güncel sürümle birlikte güncelleniyor.',
   fourLevels: 'Dört seviye',
-  fourLevelsLead: 'Kaldığın yerden devam et.',
+  fourLevelsLead: 'Kaldığınız yerden devam edin.',
   curriculumMap: 'Müfredat haritası',
   curriculumMapLead: 'Her özellik için bir ders.',
   playbookCardTitle: 'CLAUDE.md, rule, skill, hook, agent mı yoksa MCP mi?',
   playbookCardBody:
     'Her ekibin ikinci haftasında sorduğu sorunun karar ağacı; ayrıca anti-pattern kataloğu ve sözlük.',
-  openThePlaybook: 'Playbook’u aç',
+  openThePlaybook: 'Playbook’u açın',
   heroEyebrow: 'Sıfırdan otonom kullanıma',
-  heroTitle: "Claude Code'u gerçekten kullanacağın şekilde öğren.",
+  heroTitle: "Claude Code'u gerçekten kullanacağınız şekilde öğrenin.",
   heroBody:
-    'Geliştiriciler için seviyeli ve uygulamalı bir müfredat. Her özelliğin kendi terminalinde çalıştırdığın bir laboratuvarı, sık yapılan hataları ve güncel sürüme göre doğrulanmış kaynakları var.',
+    'Geliştiriciler için seviyeli ve uygulamalı bir müfredat. Her özelliğin kendi terminalinizde çalıştırdığınız bir laboratuvarı, sık yapılan hataları ve güncel sürüme göre doğrulanmış kaynakları var.',
   heroBodyShort:
-    'Seviyeli, uygulamalı ve güncel sürüme göre doğrulanmış. Laboratuvarlar kendi terminalinde çalışır.',
+    'Seviyeli, uygulamalı ve güncel sürüme göre doğrulanmış. Laboratuvarlar kendi terminalinizde çalışır.',
   free: 'ücretsiz, MIT',
   noLessonsYet: 'Bu modülün dersleri yazılıyor.',
   feedSource: 'Kaynak:',

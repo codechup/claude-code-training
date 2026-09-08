@@ -1,14 +1,62 @@
 ---
-// Bilingual 404. It sits outside the locale prefix (a 404 can be served for
-// any path, including ones with no readable locale segment), so it shows
-// both languages rather than guessing — the same rule `src/pages/index.astro`
-// follows.
+/**
+ * 404 — rebuilt on Kiln.
+ *
+ * It sits outside the locale prefix (a 404 can be served for any path,
+ * including one with no readable locale segment), so it shows BOTH
+ * languages rather than guessing — the same rule `src/pages/index.astro`
+ * follows, and the reason it carries no `Header`: the header's language
+ * switch, search and nav are all locale-bound, and half of them would point
+ * at the wrong tree.
+ *
+ * What it does instead is be useful: each language column offers its
+ * landing page, its curriculum map and its playbook, and the strip below
+ * lists the four levels with their honest lesson counts, so a reader who
+ * arrived from a stale link can re-enter the course at the right depth in
+ * one tap rather than starting over at the home page.
+ */
 import Base from '../layouts/Base.astro';
 import Footer from '../components/shell/Footer.astro';
+import SkipLink from '../components/shell/SkipLink.astro';
+import Lockup from '../components/brand/Lockup.astro';
+import Icon from '../components/ui/Icon.astro';
+import { getCollection } from 'astro:content';
+import { buildNav } from '../lib/nav.ts';
+import { hoursFromMinutes, levelColorVar } from '../lib/levels.ts';
 import { t } from '../lib/i18n/ui.ts';
+
+const sections = await getCollection('sections');
+const lessons = await getCollection('lessons');
 
 const en = t('en');
 const tr = t('tr');
+
+// The level strip is drawn from the English tree — the page is bilingual,
+// but a level's shape (four levels, their counts) is the same in both, and
+// each row links into the locale of the column it sits under.
+const enTree = buildNav('en', sections, lessons);
+const trTree = buildNav('tr', sections, lessons);
+const enLevels = enTree.levels.filter((l) => l.number !== null);
+const trLevels = trTree.levels.filter((l) => l.number !== null);
+
+const COLUMNS = [
+  {
+    lang: 'en',
+    strings: en,
+    levels: enLevels,
+    map: '/en/#curriculum-map',
+    playbook: '/en/playbook/',
+    home: '/en/',
+  },
+  {
+    lang: 'tr',
+    strings: tr,
+    levels: trLevels,
+    map: '/tr/#curriculum-map',
+    playbook: '/tr/playbook/',
+    home: '/tr/',
+  },
+] as const;
 ---
 
 <Base
@@ -16,74 +64,266 @@ const tr = t('tr');
   description="Page not found. / Sayfa bulunamadı."
   lang="en"
   path="/404/"
+  ogImage={null}
 >
-  <main class="cc-404">
-    <p class="mono cc-code" aria-hidden="true">404</p>
+  <SkipLink lang="en" />
+  <main id="main" class="cc-404" tabindex="-1">
+    <div class="cc-404__inner">
+      <Lockup lang="en" href="/en/" size="lg" class="cc-404__brand" />
 
-    <section class="cc-404-block">
-      <h1>{en.notFoundTitle}</h1>
-      <p class="soft">{en.notFoundBody}</p>
-      <a class="cc-btn" href="/en/">{en.backHome}</a>
-    </section>
+      <p class="cc-404__code" aria-hidden="true">404</p>
+      <h1 class="cc-404__title">{en.notFoundTitle} <span lang="tr">/ {tr.notFoundTitle}</span></h1>
 
-    <hr />
+      <div class="cc-404__cols">
+        {
+          COLUMNS.map((col) => (
+            <section class="cc-404__col" lang={col.lang} aria-labelledby={`nf-${col.lang}`}>
+              <h2 class="cc-404__colhead" id={`nf-${col.lang}`}>
+                {col.lang === 'en' ? 'English' : 'Türkçe'}
+              </h2>
+              <p class="cc-404__body soft">{col.strings.notFoundBody}</p>
 
-    <section class="cc-404-block" lang="tr">
-      <h2>{tr.notFoundTitle}</h2>
-      <p class="soft">{tr.notFoundBody}</p>
-      <a class="cc-btn" href="/tr/">{tr.backHome}</a>
-    </section>
+              <a class="cc-btn cc-btn--primary" href={col.home}>
+                {col.strings.backHome}
+                <Icon name="arrow-right" size={18} />
+              </a>
+
+              <ul class="cc-404__links small">
+                <li>
+                  <a href={col.map}>
+                    <Icon name="list" size={16} />
+                    {col.strings.curriculumMap}
+                  </a>
+                </li>
+                <li>
+                  <a href={col.playbook}>
+                    <Icon name="book" size={16} />
+                    {col.strings.playbook}
+                  </a>
+                </li>
+              </ul>
+
+              <ul class="cc-404__levels">
+                {col.levels.map((level) => (
+                  <li>
+                    <a href={level.path}>
+                      <span
+                        class="cc-404__marker"
+                        style={`background: ${levelColorVar(level.number)}`}
+                        aria-hidden="true"
+                      />
+                      <span class="cc-404__levelname">
+                        <span class="cc-404__levellabel">
+                          {col.strings.levelLabel(level.number ?? 0)}
+                        </span>
+                        <span>{level.title}</span>
+                      </span>
+                      <span class="cc-404__levelmeta">
+                        {level.lessonCount} · {hoursFromMinutes(level.durationMin)}{' '}
+                        {col.strings.hours}
+                      </span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))
+        }
+      </div>
+    </div>
   </main>
   <Footer lang="en" />
 </Base>
 
 <style>
   .cc-404 {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-6);
-    max-width: 640px;
-    margin: 0 auto;
-    padding: var(--space-16) var(--space-4);
-    min-height: 60vh;
+    padding-block: var(--cc-space-10) var(--cc-space-12);
   }
 
-  .cc-code {
-    margin: 0;
-    font-size: var(--text-56);
-    font-weight: 700;
-    color: var(--color-accent-text);
-  }
-
-  .cc-404-block {
+  .cc-404__inner {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: var(--space-3);
+    gap: var(--cc-space-4);
+    width: 100%;
+    max-width: 920px;
+    margin-inline: auto;
+    padding-inline: var(--cc-gutter);
   }
 
-  .cc-404-block h1 {
+  .cc-404__brand {
+    margin-block-end: var(--cc-space-6);
+  }
+
+  /* KILN §3.3: monospace is for code, paths, commands and terminal output —
+     nothing else. A status code printed at display size is a page title, so
+     it takes the display face like every other page title on the site. */
+  .cc-404__code {
     margin: 0;
-    font-size: var(--text-32);
+    font-family: var(--cc-font-display);
+    font-optical-sizing: auto;
+    font-size: var(--cc-text-display);
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: var(--cc-track-display);
+    color: var(--cc-accent);
   }
 
-  .cc-404-block h2 {
+  .cc-404__title {
+    margin: 0 0 var(--cc-space-6);
+    max-width: 22ch;
+  }
+
+  .cc-404__title span {
+    color: var(--cc-ink-muted);
+  }
+
+  .cc-404__cols {
+    display: grid;
+    gap: var(--cc-space-8);
+    width: 100%;
+  }
+
+  .cc-404__col {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--cc-space-4);
+    padding-block-start: var(--cc-space-5);
+    border-block-start: 2px solid var(--cc-line-strong);
+  }
+
+  .cc-404__colhead {
     margin: 0;
-    font-size: var(--text-24);
+    font-family: var(--cc-font-sans);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+    color: var(--cc-ink-muted);
   }
 
-  .cc-404-block p {
+  .cc-404__body {
     margin: 0;
   }
 
   .cc-btn {
     display: inline-flex;
     align-items: center;
-    min-height: var(--tap-target);
-    padding: 0 18px;
-    border: 1px solid var(--color-line-strong);
-    border-radius: var(--radius-2);
-    color: var(--color-ink);
+    justify-content: center;
+    gap: var(--cc-space-2);
+    min-height: var(--cc-tap);
+    padding-inline: var(--cc-space-6);
+    border: 1px solid transparent;
+    border-radius: var(--cc-radius-md);
+    font-weight: 550;
+    line-height: 1.2;
     text-decoration: none;
+  }
+
+  .cc-btn--primary {
+    background: var(--cc-accent);
+    color: var(--cc-on-accent);
+  }
+
+  .cc-btn--primary:hover {
+    background: var(--cc-accent-hover);
+    color: var(--cc-on-accent);
+  }
+
+  .cc-404__links,
+  .cc-404__levels {
+    display: flex;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    width: 100%;
+  }
+
+  .cc-404__links {
+    flex-wrap: wrap;
+    gap: var(--cc-space-2) var(--cc-space-5);
+  }
+
+  .cc-404__links a {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--cc-space-2);
+    min-height: var(--cc-tap);
+    color: var(--cc-accent);
+    text-decoration: none;
+  }
+
+  .cc-404__links a:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+
+  .cc-404__levels {
+    flex-direction: column;
+    border-block-start: 1px solid var(--cc-line);
+  }
+
+  .cc-404__levels a {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-space-3);
+    min-height: var(--cc-tap);
+    padding-block: var(--cc-space-2);
+    border-block-end: 1px solid var(--cc-line);
+    color: var(--cc-ink);
+    text-decoration: none;
+  }
+
+  .cc-404__levels a:hover {
+    color: var(--cc-accent);
+  }
+
+  .cc-404__marker {
+    flex: none;
+    width: 3px;
+    height: 20px;
+    border-radius: var(--cc-radius-pill);
+  }
+
+  .cc-404__levelname {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+  }
+
+  .cc-404__levellabel {
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+    color: var(--cc-ink-muted);
+  }
+
+  .cc-404__levelmeta {
+    flex: none;
+    font-size: var(--cc-text-micro);
+    color: var(--cc-ink-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  @media (min-width: 768px) {
+    .cc-404__cols {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: var(--cc-space-8);
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-btn,
+    .cc-404__levels a,
+    .cc-404__links a {
+      transition:
+        background-color var(--cc-dur-fast) var(--cc-ease),
+        color var(--cc-dur-fast) var(--cc-ease);
+    }
   }
 </style>

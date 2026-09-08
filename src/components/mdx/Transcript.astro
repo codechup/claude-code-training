@@ -1,16 +1,32 @@
 ---
 // A real, previously-captured Claude Code session, rendered read-only
-// (D019, D070, D093, D099). `src` is a repo-root-relative path and MUST
-// resolve to a real file under `content/_shared/transcripts/` (a lesson's
-// real lab recording) or this component's own
-// `src/components/mdx/__fixtures__/transcripts/` (a clearly-labelled
-// formatting sample, never a lesson's evidence) — see `transcript.ts`'s
-// `ALLOWED_PREFIXES`. There is deliberately no inline/freeform prop for
-// transcript content: that would be exactly the fabrication path D093
-// forbids. A missing or disallowed path throws here, in the component's
+// (D019, D070, D093, D099) on a real terminal surface (KILN §8.1).
+//
+// `src` is a repo-root-relative path and MUST resolve to a real file under
+// `content/_shared/transcripts/` (a lesson's real lab recording) or this
+// component's own `src/components/mdx/__fixtures__/transcripts/` (a
+// clearly-labelled formatting sample, never a lesson's evidence) — see
+// `transcript.ts`'s `ALLOWED_PREFIXES`. There is deliberately no
+// inline/freeform prop for transcript content: that would be exactly the
+// fabrication path D093 forbids. A missing or disallowed path, and now
+// also a malformed `range` (KILN §8.11.5), throws here in the component's
 // own frontmatter, which Astro turns into a build error naming the file —
-// never a silently empty block.
-import { loadTranscript, sliceRange, type TranscriptLine } from './transcript.ts';
+// never a silently empty or silently widened block.
+//
+// KILN §8.11.1: the body's markup is built as ONE string in
+// `transcript.ts` and handed to `set:html`. Emitting per-line markup as
+// JSX across several source lines is what leaked literal newlines and 8–12
+// spaces of source indentation into the `<pre>` and made a 20-line
+// recording render over 2000 px tall. There is deliberately no multi-line
+// `.map()` in this file.
+import {
+  barTitle,
+  COLLAPSE_AFTER,
+  loadTranscript,
+  rawText,
+  renderTranscriptHtml,
+  sliceRange,
+} from './transcript.ts';
 import { REPO_URL } from '../../lib/repo.ts';
 
 interface Props {
@@ -18,156 +34,511 @@ interface Props {
    *  "content/_shared/transcripts/m07-hooks/guard-bash.txt". */
   src: string;
   /** Optional 1-indexed inclusive line range, e.g. "2-6", to show only
-   *  part of a longer captured session. */
+   *  part of a longer captured session. Malformed or reversed fails the build. */
   range?: string;
+  /** Overrides the bar title (default: the first recorded command). */
+  title?: string;
 }
 
-const { src, range } = Astro.props as Props;
+const { src, range, title } = Astro.props as Props;
 
-// Not wrapped in try/catch: a bad path must fail the build loudly.
+// Not wrapped in try/catch: a bad path or range must fail the build loudly.
 const allLines = loadTranscript(src);
-const lines = sliceRange(allLines, range);
+const lines = sliceRange(allLines, range, src);
 
-const ROLE_LABEL: Record<TranscriptLine['role'], string> = {
-  prompt: 'prompt',
-  tool: 'tool call',
-  'result-ok': 'result: success',
-  'result-fail': 'result: failed',
-  text: '',
-};
-
+const bodyHtml = renderTranscriptHtml(lines);
+const raw = rawText(lines);
+const barLabel = title ?? barTitle(lines, src);
+const collapsible = lines.length > COLLAPSE_AFTER;
 const rawHref = `${REPO_URL}/blob/main/${src}`;
+const fileName = src.split('/').pop() ?? src;
 ---
 
-<figure class="cc-transcript">
-  <pre
-    class="cc-transcript-body mono"
-    tabindex="0"><code>{
-    lines.map((line) => (
-      <span class={`cc-transcript-line cc-transcript-line--${line.role}`}>
-        {line.role === 'prompt' && (
-          <span class="cc-transcript-glyph" aria-hidden="true">
-            ›
-          </span>
-        )}
-        {line.role === 'tool' && (
-          <span class="cc-transcript-glyph" aria-hidden="true">
-            ⏺
-          </span>
-        )}
-        {line.role === 'result-ok' && (
-          <span class="cc-transcript-glyph" aria-hidden="true">
-            ✓
-          </span>
-        )}
-        {line.role === 'result-fail' && (
-          <span class="cc-transcript-glyph" aria-hidden="true">
-            ✗
-          </span>
-        )}
-        <span class="sr-only">{ROLE_LABEL[line.role] && `${ROLE_LABEL[line.role]}: `}</span>
-        <span class="cc-transcript-text">{line.text}</span>
-      </span>
-    ))
-  }</code></pre>
-  <figcaption class="cc-transcript-caption">
-    <span class="muted">Roles: prompt (›), tool (⏺), result (✓/✗). Captured, never fabricated.</span
+{
+  /* `cc-transcript` is kept alongside the Kiln `cc-term` name because e2e/lesson.spec.ts selects on it. */
+}
+<figure
+  class="cc-term cc-transcript"
+  role="figure"
+  aria-label={`Recorded Claude Code session: ${barLabel}`}
+>
+  <div class="cc-term__bar">
+    <span class="cc-term__dots" aria-hidden="true"><span></span><span></span><span></span></span>
+    <span class="cc-term__title" title={barLabel}>{barLabel}</span>
+    {
+      /* lang="en": the label is English, and `text-transform: uppercase`
+        under lang="tr" would otherwise dot the I — "REAL RECORDİNG". */
+    }
+    <span class="cc-term__badge" lang="en">Real recording</span>
+    <button
+      type="button"
+      class="cc-term__copy"
+      data-cc-copy
+      data-code={raw}
+      aria-label={`Copy the recorded session ${fileName}`}
     >
-    <a class="mono cc-transcript-raw" href={rawHref} target="_blank" rel="noopener noreferrer">
-      raw transcript
+      <svg
+        aria-hidden="true"
+        width="15"
+        height="15"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <rect x="9" y="9" width="11" height="11" rx="2"></rect>
+        <path d="M5 15V6a2 2 0 0 1 2-2h9"></path>
+      </svg>
+      <span class="cc-term__copy-label" data-cc-copy-label>Copy</span>
+    </button>
+  </div>
+
+  <pre
+    class:list={['cc-term__body', { 'cc-term__body--clamped': collapsible }]}
+    tabindex="0"><code set:html={bodyHtml} /></pre>
+
+  {
+    collapsible && (
+      <details class="cc-term__expand">
+        <summary>
+          <span class="cc-term__expand-more">Show all {lines.length} lines</span>
+          <span class="cc-term__expand-less">Show first {COLLAPSE_AFTER} lines</span>
+        </summary>
+      </details>
+    )
+  }
+
+  <figcaption class="cc-term__cap">
+    <span class="cc-term__legend">
+      <span class="cc-term__key cc-term__key--prompt">› prompt</span>
+      <span class="cc-term__key cc-term__key--tool">⏺ tool</span>
+      <span class="cc-term__key cc-term__key--ok">✓ passed</span>
+      <span class="cc-term__key cc-term__key--fail">✗ failed</span>
+    </span>
+    <a
+      class="cc-term__raw cc-transcript-raw"
+      href={rawHref}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`raw recording ${fileName}`}
+    >
+      raw recording
     </a>
   </figcaption>
 </figure>
 
 <style>
-  .cc-transcript {
-    margin: 0;
-    border: 1px solid var(--color-line);
-    border-radius: var(--radius-3);
-    background: var(--color-bg-1);
+  /* ---- frame ---------------------------------------------------------- */
+  .cc-term {
+    display: flex;
+    flex-direction: column;
+    /* The component owns its own rhythm: an Astro-scoped component rule
+       outranks prose.css by design (KILN §8.11.2), so a margin set here is
+       the one that survives — including inside a <Lab> step, where the two
+       recordings used to sit ~6px apart. */
+    margin-block: var(--cc-space-7);
+    border: 1px solid var(--cc-term-line);
+    border-radius: var(--cc-radius-lg);
+    background: var(--cc-term-bg);
     overflow: hidden;
+    /* A recording is a physical artefact of the course: dark in BOTH
+       themes (KILN §1.2, §2.2). */
+    color-scheme: dark;
   }
 
-  .cc-transcript-body {
+  /* ---- bar ------------------------------------------------------------ */
+  .cc-term__bar {
+    display: flex;
+    align-items: center;
+    gap: var(--cc-space-3);
+    min-height: var(--cc-tap);
+    padding: 0 var(--cc-space-3) 0 var(--cc-space-4);
+    border-bottom: 1px solid var(--cc-term-line);
+    background: var(--cc-term-bar);
+  }
+
+  .cc-term__dots {
+    display: none;
+    flex: none;
+    gap: 6px;
+  }
+
+  .cc-term__dots span {
+    width: 9px;
+    height: 9px;
+    border-radius: var(--cc-radius-pill);
+    background: var(--cc-term-line);
+  }
+
+  .cc-term__title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--cc-font-mono);
+    font-size: var(--cc-text-micro);
+    font-variant-ligatures: none;
+    color: var(--cc-term-dim);
+  }
+
+  .cc-term__badge {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 8px;
+    border: 1px solid var(--cc-term-line);
+    border-radius: var(--cc-radius-pill);
+    font-size: var(--cc-text-micro);
+    font-weight: var(--cc-weight-micro);
+    letter-spacing: var(--cc-track-micro);
+    text-transform: uppercase;
+    line-height: 1;
+    color: var(--cc-term-ok);
+  }
+
+  .cc-term__copy {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-width: var(--cc-tap);
+    min-height: var(--cc-tap);
+    padding: 0 10px;
+    border: 0;
+    border-radius: var(--cc-radius-sm);
+    background: transparent;
+    color: var(--cc-term-dim);
+    font-family: var(--cc-font-sans);
+    font-size: var(--cc-text-micro);
+    cursor: pointer;
+  }
+
+  .cc-term__copy:hover {
+    color: var(--cc-term-fg);
+  }
+
+  .cc-term__copy[data-copied='true'] {
+    color: var(--cc-term-ok);
+  }
+
+  .cc-term__copy-label {
+    display: none;
+  }
+
+  /* ---- body ------------------------------------------------------------
+     KILN §8.11.3: `white-space: pre` and horizontal scrolling, full stop.
+     A recorded command is never re-wrapped, and the 2536-character prose
+     lines in the corpus scroll instead of escaping the frame.
+
+     The two right-edge gradients are the pure-CSS scroll shadow: the
+     `scroll`-attached shade is pinned to the visible right edge, and the
+     `local`-attached cover travels with the content, so it sits exactly on
+     top of the shade — hiding it — when the content is scrolled to its end
+     or does not overflow at all. No script, no scroll listener. */
+  .cc-term__body {
+    order: 2;
     margin: 0;
-    padding: var(--space-4);
+    padding: 0;
     overflow-x: auto;
-    font-size: var(--text-13);
-    line-height: 1.6;
-    color: var(--color-ink-muted);
-    white-space: pre-wrap;
+    overscroll-behavior-x: contain;
+    background-color: var(--cc-term-bg);
+    /* Covers are opaque across their outer 22px and only fade over the
+       inner 18px, so a cover fully hides its shade when the two coincide
+       (content not scrollable, or scrolled to that end) instead of
+       half-cancelling it. */
+    background-image:
+      linear-gradient(to right, var(--cc-term-bg) 55%, transparent),
+      linear-gradient(to left, var(--cc-term-bg) 55%, transparent),
+      linear-gradient(to right, var(--cc-term-line), transparent),
+      linear-gradient(to left, var(--cc-term-line), transparent);
+    background-position:
+      left center,
+      right center,
+      left center,
+      right center;
+    background-size:
+      40px 100%,
+      40px 100%,
+      18px 100%,
+      18px 100%;
+    background-repeat: no-repeat;
+    background-attachment: local, local, scroll, scroll;
+    font-family: var(--cc-font-mono);
+    font-size: 0.8125rem;
+    line-height: var(--cc-leading-code);
+    tab-size: 2;
+    font-variant-ligatures: none;
+    color: var(--cc-term-fg);
+    scrollbar-width: thin;
+    scrollbar-color: var(--cc-term-line) transparent;
   }
 
-  .cc-transcript-body code {
+  /* Inside the frame, so the ring is never clipped by `overflow: hidden`. */
+  .cc-term__body:focus-visible {
+    outline: var(--cc-focus-width) solid var(--cc-accent);
+    outline-offset: calc(var(--cc-focus-offset) * -1);
+  }
+
+  .cc-term__body code {
+    display: block;
+    width: max-content;
+    min-width: 100%;
+    padding: var(--cc-space-4) var(--cc-space-5);
+    border: 0;
+    border-radius: 0;
+    background: none;
+    font: inherit;
+    color: inherit;
+  }
+
+  /* Defensive reset (KILN §8.11.2): nothing a prose stylesheet says about
+     block elements may reach a line inside the recording. */
+  .cc-term__body :global(span),
+  .cc-term__body :global(p),
+  .cc-term__body :global(div),
+  .cc-term__body :global(br) {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    letter-spacing: inherit;
+  }
+
+  .cc-term__body :global(.cc-term__line) {
     display: block;
   }
 
-  .cc-transcript-line {
-    display: block;
-  }
-
-  .cc-transcript-line--prompt {
-    color: var(--color-prompt);
-  }
-
-  .cc-transcript-line--tool {
-    color: var(--color-ink-muted);
-  }
-
-  /* The line's own text stays a legible ink tone in both themes — only the
-     role glyph (below) carries the semantic success/failure color.
-     --color-success/--color-caret as body TEXT fail WCAG 2.2 AA 4.5:1
-     against the light theme's --color-bg-1/--color-bg-2 (measured 3.9-4.2:1,
-     confirmed with axe against a real render) even though both tokens are
-     fine as icon/border accents (>3:1, and fine as text in the dark theme) —
-     see this plan's Handoff notes. */
-  .cc-transcript-line--result-ok,
-  .cc-transcript-line--result-fail,
-  .cc-transcript-line--text {
-    color: var(--color-ink-soft);
-  }
-
-  .cc-transcript-glyph {
+  .cc-term__body :global(.cc-term__glyph) {
     display: inline-block;
-    width: 1.4em;
+    width: 2ch;
   }
 
-  .cc-transcript-line--result-ok .cc-transcript-glyph {
-    color: var(--color-success);
+  /* ---- roles: the TEXT is coloured, not just the glyph (KILN §8.11.4) -- */
+  .cc-term__body :global(.cc-term__line--prompt) {
+    color: var(--cc-term-fg);
   }
 
-  .cc-transcript-line--result-fail .cc-transcript-glyph {
-    color: var(--color-caret);
+  .cc-term__body :global(.cc-term__line--prompt .cc-term__glyph) {
+    color: var(--cc-term-prompt);
   }
 
-  .cc-transcript-caption {
+  .cc-term__body :global(.cc-term__line--tool),
+  .cc-term__body :global(.cc-term__line--tool .cc-term__path) {
+    color: var(--cc-term-tool);
+  }
+
+  .cc-term__body :global(.cc-term__line--result-ok),
+  .cc-term__body :global(.cc-term__line--result-ok .cc-term__path) {
+    color: var(--cc-term-ok);
+  }
+
+  .cc-term__body :global(.cc-term__line--result-fail),
+  .cc-term__body :global(.cc-term__line--result-fail .cc-term__path) {
+    color: var(--cc-term-err);
+  }
+
+  .cc-term__body :global(.cc-term__line--meta) {
+    color: var(--cc-term-dim);
+  }
+
+  .cc-term__body :global(.cc-term__path) {
+    color: var(--cc-term-path);
+  }
+
+  /* ---- collapse (KILN §8.1): 24 lines, capped at 32rem, no JS ---------- */
+  .cc-term__body--clamped {
+    max-height: 32rem;
+    overflow-y: hidden;
+    mask-image: linear-gradient(to bottom, currentColor calc(100% - 4rem), transparent);
+  }
+
+  .cc-term:has(.cc-term__expand[open]) .cc-term__body--clamped {
+    max-height: none;
+    overflow-y: visible;
+    mask-image: none;
+  }
+
+  .cc-term__expand {
+    order: 3;
+    border-top: 1px solid var(--cc-term-line);
+    background: var(--cc-term-bar);
+  }
+
+  .cc-term__expand summary {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--cc-tap);
+    padding: 0 var(--cc-space-4);
+    list-style: none;
+    cursor: pointer;
+    font-size: var(--cc-text-small);
+    font-weight: var(--cc-weight-small);
+    color: var(--cc-term-prompt);
+  }
+
+  .cc-term__expand summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .cc-term__expand summary:hover {
+    color: var(--cc-term-fg);
+  }
+
+  .cc-term__expand summary:focus-visible {
+    outline: var(--cc-focus-width) solid var(--cc-accent);
+    outline-offset: calc(var(--cc-focus-offset) * -1);
+  }
+
+  .cc-term__expand-less,
+  .cc-term__expand[open] .cc-term__expand-more {
+    display: none;
+  }
+
+  .cc-term__expand[open] .cc-term__expand-less {
+    display: inline;
+  }
+
+  /* ---- caption -------------------------------------------------------- */
+  .cc-term__cap {
+    order: 4;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--space-3);
-    padding: 10px var(--space-4);
-    border-top: 1px solid var(--color-line);
-    font-size: var(--text-12);
+    gap: var(--cc-space-3);
+    flex-wrap: wrap;
+    /* The block padding is thin because `.cc-term__raw` now carries the
+       44px target itself (KILN §4); the caption still reads as a 52px
+       band rather than a 68px one. */
+    padding: var(--cc-space-1) var(--cc-space-4);
+    border-top: 1px solid var(--cc-term-line);
+    background: var(--cc-term-bar);
+    font-size: var(--cc-text-micro);
+    line-height: var(--cc-leading-small);
+    color: var(--cc-term-dim);
   }
 
-  .cc-transcript-raw {
-    color: var(--color-ink-muted);
+  .cc-term__legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--cc-space-1) var(--cc-space-3);
+  }
+
+  .cc-term__key {
+    font-family: var(--cc-font-mono);
+    font-variant-ligatures: none;
     white-space: nowrap;
   }
 
-  .cc-transcript-raw:hover {
-    color: var(--color-accent-text);
+  .cc-term__key--prompt {
+    color: var(--cc-term-prompt);
   }
 
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
+  .cc-term__key--tool {
+    color: var(--cc-term-tool);
+  }
+
+  .cc-term__key--ok {
+    color: var(--cc-term-ok);
+  }
+
+  .cc-term__key--fail {
+    color: var(--cc-term-err);
+  }
+
+  .cc-term__raw {
+    /* 94×19 was the smallest target on every lesson page. */
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--cc-tap);
+    font-family: var(--cc-font-mono);
+    font-variant-ligatures: none;
     white-space: nowrap;
-    border: 0;
+    color: var(--cc-term-dim);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 0.18em;
+  }
+
+  .cc-term__raw:hover {
+    color: var(--cc-term-prompt);
+  }
+
+  .cc-term__raw:focus-visible {
+    outline: var(--cc-focus-width) solid var(--cc-accent);
+    outline-offset: var(--cc-focus-offset);
+  }
+
+  /* ---- ≥560px: room for the dot cluster and the copy label ------------- */
+  /* Under 560px the bar carries only what is normative — the provenance
+     badge and the copy control. The command itself is the first line of
+     the recording, right below, and the file name is in the caption. */
+  .cc-term__title {
+    display: none;
+  }
+
+  @media (min-width: 560px) {
+    .cc-term__dots {
+      display: inline-flex;
+    }
+
+    .cc-term__title {
+      display: block;
+    }
+
+    .cc-term__copy-label {
+      display: inline;
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .cc-term__copy,
+    .cc-term__raw,
+    .cc-term__expand summary {
+      transition: color var(--cc-dur-fast) var(--cc-ease);
+    }
   }
 </style>
+
+<script>
+  // Copy the raw recorded text. Shared contract with CodeBlock: whichever
+  // hoisted script runs first binds the button, and the `data-cc-copy-bound`
+  // flag stops the second from double-binding when a page has both.
+  const buttons = document.querySelectorAll<HTMLButtonElement>('[data-cc-copy]');
+
+  for (const button of buttons) {
+    if (button.dataset.ccCopyBound) continue;
+    button.dataset.ccCopyBound = '1';
+    const label = button.querySelector<HTMLElement>('[data-cc-copy-label]');
+    button.addEventListener('click', () => {
+      const code = button.dataset.code ?? '';
+      try {
+        void navigator.clipboard.writeText(code).then(
+          () => showCopied(button, label),
+          () => {
+            // Clipboard write refused (permissions, insecure context) —
+            // the button simply does nothing rather than throwing.
+          },
+        );
+      } catch {
+        // navigator.clipboard unavailable — no-op, never breaks the page.
+      }
+    });
+  }
+
+  function showCopied(button: HTMLButtonElement, label: HTMLElement | null) {
+    const original = label?.textContent ?? 'Copy';
+    button.dataset.copied = 'true';
+    if (label) label.textContent = 'Copied';
+    window.setTimeout(() => {
+      delete button.dataset.copied;
+      if (label) label.textContent = original;
+    }, 1500);
+  }
+</script>

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 // Level/module/lesson routes, exercised against the M0 release lesson
 // (content/{en,tr}/l1-beginner/m01-start/01-what-claude-code-is.mdx, written
@@ -8,25 +8,33 @@ import { expect, test } from '@playwright/test';
 const EN = '/en/l1-beginner/m01-start/what-claude-code-is/';
 const TR = '/tr/l1-beginner/m01-start/what-claude-code-is/';
 
+/** The page's own content column, excluding the header drawer's rail copy. */
+const main = (page: Page) => page.locator('main#main');
+
 test('level index lists its modules', async ({ page }) => {
   const response = await page.goto('/en/l1-beginner/');
   expect(response?.status()).toBe(200);
   await expect(page.locator('h1')).toBeVisible();
-  await expect(page.locator('a[href="/en/l1-beginner/m01-start/"]')).toBeVisible();
+  // Scoped to the main landmark: KILN §7.2 slots the full curriculum rail
+  // into the (closed) header drawer on every page type, so an unscoped
+  // locator also matches the drawer copy of the same link.
+  await expect(main(page).locator('a[href="/en/l1-beginner/m01-start/"]')).toBeVisible();
 });
 
 test('module index lists its lessons', async ({ page }) => {
   const response = await page.goto('/en/l1-beginner/m01-start/');
   expect(response?.status()).toBe(200);
   await expect(page.locator('h1')).toBeVisible();
-  await expect(page.locator(`a[href="${EN}"]`).first()).toBeVisible();
+  await expect(main(page).locator(`a[href="${EN}"]`).first()).toBeVisible();
 });
 
 test('lesson page renders title, sources and the shared shell', async ({ page }) => {
   const response = await page.goto(EN);
   expect(response?.status()).toBe(200);
   await expect(page.locator('h1')).toContainText('What Claude Code is and how it works');
-  await expect(page.locator('header')).toBeVisible();
+  // `header` alone is ambiguous now: `LessonMeta` renders a `<header>` of
+  // its own around the title, so this asks for the banner landmark.
+  await expect(page.getByRole('banner')).toBeVisible();
   await expect(page.locator('footer')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Sources' })).toBeVisible();
 });
@@ -43,7 +51,7 @@ test('the TR twin is live and is a real translation', async ({ page }) => {
 
 test('TR module index lists the translated lesson', async ({ page }) => {
   await page.goto('/tr/l1-beginner/m01-start/');
-  await expect(page.locator(`a[href="${TR}"]`).first()).toBeVisible();
+  await expect(main(page).locator(`a[href="${TR}"]`).first()).toBeVisible();
 });
 
 // Un-skipped by P06 (content-pipeline), rewritten by P12 (M0 release): the
@@ -61,12 +69,17 @@ test('lesson prev/next bar, TOC and module progress', async ({ page }) => {
   // module has more than one live lesson (P13 onward).
   await expect(prevNext.locator('a[rel="prev"]')).toHaveCount(0);
 
-  // Module progress bar renders "n / m in m01" from localStorage (D020).
-  await expect(page.getByText(/0 \/ \d+ in m01/)).toBeVisible();
+  // Module progress bar renders "n / m lessons" from localStorage (D020).
+  // Kiln states the count, never the internal module id — the module is
+  // already named by the page title and the breadcrumb.
+  await expect(page.getByText(/0 \/ \d+ lessons/)).toBeVisible();
 
-  // "On this page" lists the lesson's real H2s.
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await page.goto(EN);
+  // "On this page" lists the lesson's real H2s. Kiln renders the context
+  // column once and presents it two ways (sticky column >= 1240, disclosure
+  // below), so the list is in the DOM at every width — the disclosure is
+  // opened first where that is how it is reached.
+  const ctxToggle = page.locator('.cc-lesson__ctx-toggle');
+  if (await ctxToggle.isVisible()) await ctxToggle.locator('summary').click();
   const toc = page.getByRole('navigation', { name: 'On this page' });
   await expect(toc.locator('a[href="#concept"]')).toBeVisible();
   await expect(toc.locator('a[href="#hands-on-lab"]')).toBeVisible();
@@ -76,13 +89,13 @@ test('marking a lesson done round-trips through localStorage', async ({ page }) 
   await page.goto(EN);
   const toggle = page.getByRole('button', { name: 'Mark as done' });
   await toggle.click();
-  await expect(page.getByText(/1 \/ \d+ in m01/)).toBeVisible();
+  await expect(page.getByText(/1 \/ \d+ lessons/)).toBeVisible();
 
   const stored = await page.evaluate(() => window.localStorage.getItem('cc:progress:en'));
   expect(stored).toContain('en/l1-beginner/m01-start/what-claude-code-is');
 
   await page.reload();
-  await expect(page.getByText(/1 \/ \d+ in m01/)).toBeVisible();
+  await expect(page.getByText(/1 \/ \d+ lessons/)).toBeVisible();
 });
 
 // Un-skipped by P12 (the M0 release plan), replacing
@@ -103,7 +116,8 @@ test.describe('M0 release lesson: the D006 template renders end to end', () => {
         'Quiz',
         'Sources',
       ],
-      whenNotTo: 'When not to use this',
+      // KILN §8.4 gives the variant a deliberately stronger label.
+      whenNotTo: 'When NOT to use this',
       changed: 'Changed',
     },
     {
@@ -138,12 +152,12 @@ test.describe('M0 release lesson: the D006 template renders end to end', () => {
       // captured transcripts (D099) — no fabricated output anywhere.
       const lab = page.locator('.cc-lab');
       await expect(lab).toHaveCount(1);
-      await expect(lab.locator('.cc-lab-steps li')).toHaveCount(5);
-      await expect(lab.locator('.cc-lab-expected')).toBeVisible();
-      await expect(lab.locator('.cc-lab-checklist input[type="checkbox"]')).toHaveCount(5);
-      await expect(page.locator('figure.cc-transcript')).toHaveCount(4);
+      await expect(lab.locator('.cc-lab__steps > li')).toHaveCount(5);
+      await expect(lab.locator('.cc-lab__expected')).toBeVisible();
+      await expect(lab.locator('.cc-lab__checklist input[type="checkbox"]')).toHaveCount(5);
+      await expect(page.locator('figure.cc-term')).toHaveCount(4);
       // Every transcript links back to its raw recording in the repository.
-      const raw = page.locator('figure.cc-transcript a.cc-transcript-raw').first();
+      const raw = page.locator('figure.cc-term a.cc-term__raw').first();
       await expect(raw).toHaveAttribute(
         'href',
         /content\/_shared\/transcripts\/m01-start\/.+\.txt$/,
@@ -153,9 +167,9 @@ test.describe('M0 release lesson: the D006 template renders end to end', () => {
       await expect(page.locator('.cc-quiz')).toHaveCount(3);
 
       // Sources: at least one official docs entry, marked as such (D041).
-      await expect(page.locator('.cc-mdx-sources-official').first()).toBeVisible();
+      await expect(page.locator('.cc-sources__chip--official').first()).toBeVisible();
       await expect(
-        page.locator('.cc-mdx-sources a[href*="code.claude.com/docs"]').first(),
+        page.locator('.cc-sources a[href*="code.claude.com/docs"]').first(),
       ).toBeVisible();
 
       // The lesson is not a placeholder any more.
@@ -252,4 +266,60 @@ test('a quiz answer is scored instantly and survives a reload', async ({ page })
 
   await page.reload();
   await expect(page.locator('.cc-quiz').first().getByRole('radio').nth(1)).toBeChecked();
+});
+
+// Round-3 defect: a wide prose table used to be its own scroller. It scrolled,
+// but the reader saw nothing to say so and a keyboard could not reach it —
+// axe raised `scrollable-region-focusable` (serious) on both tables of this
+// lesson at 390px. Each table is now wrapped at build time (src/lib/prose-hast.ts)
+// in a focusable `.cc-table-scroll` container.
+test('every prose table sits in a focusable scroll container', async ({ page }) => {
+  await page.goto('/en/l1-beginner/m01-start/install/');
+
+  const tables = page.locator('.cc-body table');
+  const count = await tables.count();
+  expect(count).toBeGreaterThan(0);
+
+  for (let i = 0; i < count; i += 1) {
+    const wrapper = tables.nth(i).locator('xpath=..');
+    await expect(wrapper).toHaveClass(/cc-table-scroll/);
+    await expect(wrapper).toHaveAttribute('tabindex', '0');
+    expect(await wrapper.evaluate((el) => getComputedStyle(el).overflowX)).toBe('auto');
+  }
+});
+
+// Round-3 defect: the whole label row was always the hit area (a `<label>`
+// forwards its clicks), but the control itself measured 22x22 and read as a
+// sub-44px target. The input now fills its row, so what the pointer lands on
+// and what an audit measures are the same box.
+test('a lab checkbox and a quiz answer are hit anywhere on their row', async ({ page }) => {
+  await page.goto(EN);
+
+  for (const [row, control] of [
+    ['.cc-lab__check', '.cc-lab__box'],
+    ['.cc-quiz__option', '.cc-quiz__radio'],
+  ]) {
+    const hits = await page.evaluate(
+      ([rowSel, ctrlSel]) => {
+        const el = document.querySelector(rowSel)!;
+        el.scrollIntoView({ block: 'center' });
+        const r = el.getBoundingClientRect();
+        const ctrl = el.querySelector(ctrlSel);
+        const corners: [number, number][] = [
+          [r.left + 2, r.top + 2],
+          [r.right - 2, r.top + 2],
+          [r.left + 2, r.bottom - 2],
+          [r.right - 2, r.bottom - 2],
+        ];
+        return {
+          size: [Math.round(r.width), Math.round(r.height)],
+          all: corners.every(([x, y]) => document.elementFromPoint(x, y) === ctrl),
+        };
+      },
+      [row, control],
+    );
+    expect(hits.size[0]).toBeGreaterThanOrEqual(44);
+    expect(hits.size[1]).toBeGreaterThanOrEqual(44);
+    expect(hits.all).toBe(true);
+  }
 });

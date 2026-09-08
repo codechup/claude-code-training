@@ -1,6 +1,10 @@
 ---
 // The progress bar drawn on the landing level cards (`Main.dc.html`) and at
-// the foot of a lesson next to "2 / 7 in m07" (`Lesson1280.dc.html`).
+// the foot of a lesson next to "2 / 7 lessons" (`Lesson1280.dc.html`).
+//
+// One idiom everywhere: a count, never a percentage, and never the raw module
+// id — the module is already named by the page title and the breadcrumb, so
+// repeating "in m07" here only leaked an internal identifier into reader copy.
 //
 // Progress lives entirely in `localStorage` — there are no accounts (D020) —
 // so the server renders the empty state and a hoisted script (bundled by
@@ -13,9 +17,9 @@ interface Props {
   lang: string;
   /** Lesson entry ids this bar measures. */
   ids: string[];
-  /** "42%" (level cards) or "2 / 7 in m07" (lesson foot). */
+  /** Accepted but ignored — the label is always the count form now. */
   labelMode?: 'percent' | 'count';
-  /** Short module id used by the count label, e.g. "m07". */
+  /** Accepted but ignored — the module id is no longer shown in the label. */
   moduleId?: string;
   /** When set, renders a "mark as done" toggle for this lesson. */
   lessonId?: string;
@@ -23,17 +27,15 @@ interface Props {
   level?: number | null;
 }
 
-const { lang, ids, labelMode = 'percent', moduleId = '', lessonId, level } = Astro.props;
+const { lang, ids, lessonId, level } = Astro.props;
 const strings = t(lang);
 
 // `{done}` / `{total}` placeholders so the client script can re-render the
-// label without knowing anything about the locale.
-const template = labelMode === 'count' ? strings.inModule('{done}', '{total}', moduleId) : '{pct}%';
+// label without knowing anything about the locale. EN "0 / 5 lessons",
+// TR "0 / 5 ders".
+const template = `{done} / {total} ${strings.lessons}`;
 
-const initial =
-  labelMode === 'count'
-    ? template.replace('{done}', '0').replace('{total}', String(ids.length))
-    : '0%';
+const initial = template.replace('{done}', '0').replace('{total}', String(ids.length));
 
 const doneLabel = lang === 'tr' ? 'Tamamlandı olarak işaretle' : 'Mark as done';
 ---
@@ -49,16 +51,17 @@ const doneLabel = lang === 'tr' ? 'Tamamlandı olarak işaretle' : 'Mark as done
     aria-valuemin="0"
     aria-valuemax={ids.length}
     aria-valuenow="0"
+    aria-valuetext={initial}
     aria-label={strings.progressNote}
   >
     <div class="cc-progress-fill" style={`width: 0%; ${levelAccentStyle(level ?? null)}`}></div>
   </div>
-  <span class="mono muted cc-progress-label" data-cc-progress-label>{initial}</span>
+  <span class="cc-progress-label" data-cc-progress-label>{initial}</span>
   {
     lessonId && (
       <button
         type="button"
-        class="mono cc-progress-toggle"
+        class="cc-progress-toggle"
         data-cc-progress-toggle
         data-lang={lang}
         data-lesson-id={lessonId}
@@ -71,49 +74,76 @@ const doneLabel = lang === 'tr' ? 'Tamamlandı olarak işaretle' : 'Mark as done
 </div>
 
 <style>
+  /* KILN §8.8/§4: a 6px track on the sunken paper, filled with the level hue
+     (or the accent when no level is given), and a 44px pill toggle. */
   .cc-progress-row {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--cc-space-4);
     flex-wrap: wrap;
+    margin-top: var(--cc-space-6);
   }
 
   .cc-progress {
-    flex: 1 1 120px;
-    height: 4px;
-    border-radius: 999px;
-    background: var(--color-bg-3);
+    flex: 1 1 140px;
+    height: 6px;
+    border-radius: var(--cc-radius-pill);
+    background: var(--cc-paper-sunken);
+    box-shadow: inset 0 0 0 1px var(--cc-line);
     overflow: hidden;
   }
 
   .cc-progress-fill {
     height: 100%;
-    transition: width var(--dur-2) var(--ease-out);
+    border-radius: var(--cc-radius-pill);
   }
 
   .cc-progress-label {
-    font-size: var(--text-12);
+    font-size: var(--cc-text-small);
+    line-height: var(--cc-leading-small);
+    color: var(--cc-ink-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
 
   .cc-progress-toggle {
-    min-height: var(--tap-target);
-    padding: 0 var(--space-3);
-    border: 1px solid var(--color-line-strong);
-    border-radius: var(--radius-2);
-    background: transparent;
-    color: var(--color-ink);
-    font-size: var(--text-12);
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--cc-tap);
+    padding: 0 var(--cc-space-5);
+    border: 1px solid var(--cc-line);
+    border-radius: var(--cc-radius-pill);
+    background: var(--cc-paper-raised);
+    color: var(--cc-ink-muted);
+    font-family: inherit;
+    font-size: var(--cc-text-small);
     cursor: pointer;
   }
 
-  .cc-progress-toggle[aria-pressed='true'] {
-    background: var(--color-bg-3);
-    color: var(--color-accent-text);
+  .cc-progress-toggle:hover {
+    border-color: var(--cc-accent-line);
+    color: var(--cc-accent);
   }
 
-  @media (prefers-reduced-motion: reduce) {
+  /* Done is carried by the pressed state and the label text, never by the
+     colour alone. */
+  .cc-progress-toggle[aria-pressed='true'] {
+    background: var(--cc-accent-wash);
+    border-color: var(--cc-accent-line);
+    color: var(--cc-accent);
+    font-weight: 550;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
     .cc-progress-fill {
-      transition: none;
+      transition: width var(--cc-dur) var(--cc-ease);
+    }
+
+    .cc-progress-toggle {
+      transition:
+        background var(--cc-dur-fast) var(--cc-ease),
+        border-color var(--cc-dur-fast) var(--cc-ease),
+        color var(--cc-dur-fast) var(--cc-ease);
     }
   }
 </style>
@@ -139,14 +169,13 @@ const doneLabel = lang === 'tr' ? 'Tamamlandı olarak işaretle' : 'Mark as done
       if (fill) fill.style.width = `${pct}%`;
       bar.setAttribute('aria-valuenow', String(done));
 
+      const text = (bar.dataset.labelTemplate ?? '{done} / {total}')
+        .replace('{done}', String(done))
+        .replace('{total}', String(total));
+      bar.setAttribute('aria-valuetext', text);
+
       const label = bar.parentElement?.querySelector<HTMLElement>('[data-cc-progress-label]');
-      const template = bar.dataset.labelTemplate ?? '{pct}%';
-      if (label) {
-        label.textContent = template
-          .replace('{done}', String(done))
-          .replace('{total}', String(total))
-          .replace('{pct}', String(pct));
-      }
+      if (label) label.textContent = text;
     }
   }
 
